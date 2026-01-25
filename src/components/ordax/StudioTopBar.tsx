@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -20,21 +20,34 @@ import {
   User,
   Bell,
   Save,
+  Gamepad2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
+import { PresetSelectionModal } from "./PresetSelectionModal";
+import type { OrdaxSpec } from "@/lib/ordax/types";
 
 type Props = {
   onSave?: () => void;
   onExport?: () => void;
   onToggleLeft?: () => void;
   onToggleRight?: () => void;
+  onPresetConfirm?: (spec: OrdaxSpec) => void;
 };
 
 export const StudioTopBar = forwardRef<HTMLDivElement, Props>(function StudioTopBar(
-  { onSave, onExport, onToggleLeft, onToggleRight }: Props,
+  { onSave, onExport, onToggleLeft, onToggleRight, onPresetConfirm }: Props,
   ref,
 ) {
+  const [presetModalOpen, setPresetModalOpen] = useState(false);
+
+  const handlePresetConfirm = (spec: OrdaxSpec) => {
+    onPresetConfirm?.(spec);
+    toast.success('Jogo criado!', {
+      description: 'Seu jogo está pronto para jogar'
+    });
+  };
+
   return (
     <div ref={ref} className="h-12 border-b border-border/50 bg-card/60 flex items-center justify-between px-4">
       {/* Left Section */}
@@ -84,6 +97,16 @@ export const StudioTopBar = forwardRef<HTMLDivElement, Props>(function StudioTop
         >
           <Package className="h-3 w-3" />
           Assets
+        </Button>
+
+        <Button 
+          variant="default" 
+          size="sm" 
+          className="h-8 text-xs gap-2 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"
+          onClick={() => setPresetModalOpen(true)}
+        >
+          <Gamepad2 className="h-3 w-3" />
+          Jogos Canônicos
         </Button>
 
         <Button 
@@ -169,6 +192,13 @@ export const StudioTopBar = forwardRef<HTMLDivElement, Props>(function StudioTop
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      
+      {/* Preset Selection Modal */}
+      <PresetSelectionModal
+        open={presetModalOpen}
+        onOpenChange={setPresetModalOpen}
+        onConfirm={handlePresetConfirm}
+      />
     </div>
   );
 });

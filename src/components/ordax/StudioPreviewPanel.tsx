@@ -12,22 +12,27 @@ import {
   Eye,
   Code2,
   Activity,
+  Dna,
 } from "lucide-react";
 import type { OrdaxSpec } from "@/lib/ordax/types";
 import { OrdaxCanvas, type OrdaxCanvasHandle } from "@/components/ordax/OrdaxCanvas";
+import { RemixButton } from "@/components/ordax/RemixButton";
+import { GenomeViewer } from "@/components/ordax/GenomeViewer";
+import { extractGenome } from "@/lib/ordax/game-genome";
 import { toast } from "sonner";
 import { StellarVanguardStudioRunner } from "@/games/stellar-vanguard/StudioRunner";
 
 type Props = {
   spec?: OrdaxSpec;
   gameId?: string;
+  onRemixComplete?: (remixedSpec: any, remixId: string) => void;
 };
 
 type EngineMode = "json" | "code";
 
-export function StudioPreviewPanel({ spec, gameId }: Props) {
+export function StudioPreviewPanel({ spec, gameId, onRemixComplete }: Props) {
   const [running, setRunning] = useState(false);
-  const [activeTab, setActiveTab] = useState<"preview" | "visual">("preview");
+  const [activeTab, setActiveTab] = useState<"preview" | "visual" | "genome">("preview");
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [showStartOverlay, setShowStartOverlay] = useState(false);
   const canvasRef = useRef<OrdaxCanvasHandle>(null);
@@ -115,6 +120,12 @@ export function StudioPreviewPanel({ spec, gameId }: Props) {
               <Code2 className="h-3 w-3" />
               Visual Editor
             </TabsTrigger>
+            {spec?.runtime && (
+              <TabsTrigger value="genome" className="text-xs gap-2 h-7">
+                <Dna className="h-3 w-3" />
+                Genome
+              </TabsTrigger>
+            )}
           </TabsList>
         </Tabs>
 
@@ -187,6 +198,16 @@ export function StudioPreviewPanel({ spec, gameId }: Props) {
 
             <div className="h-4 w-px bg-border/50 mx-1"></div>
 
+            <RemixButton
+              currentSpec={spec?.runtime as any}
+              gameId={gameId || 'unknown'}
+              onRemixComplete={(remixedSpec, remixId) => {
+                onRemixComplete?.(remixedSpec, remixId);
+              }}
+            />
+
+            <div className="h-4 w-px bg-border/50 mx-1"></div>
+
             <Button
               variant="ghost"
               size="sm"
@@ -220,7 +241,13 @@ export function StudioPreviewPanel({ spec, gameId }: Props) {
 
       {/* Preview Area */}
       <div className="relative flex-1 bg-background flex flex-col">
-        {!spec && engineMode === "json" ? (
+        {activeTab === "genome" && spec?.runtime ? (
+          <div className="flex-1 p-4 overflow-y-auto">
+            <div className="max-w-4xl mx-auto">
+              <GenomeViewer genome={extractGenome(spec.runtime)} />
+            </div>
+          </div>
+        ) : !spec && engineMode === "json" ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <div className="text-center space-y-4 max-w-md">
               <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center border border-border/50">

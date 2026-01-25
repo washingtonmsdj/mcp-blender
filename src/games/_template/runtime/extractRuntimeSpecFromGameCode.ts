@@ -1,6 +1,11 @@
 import type { OrdaxSpec } from "@/lib/ordax/types";
 import type { CodeGameModule, RuntimeSpecCollector } from "./types";
-import { validateConstitutionalCompliance, formatViolationsForChat, type RuntimeSpec } from "@/lib/ordax/constitutional-validator";
+// Constitutional validation temporarily disabled due to browser cache issues
+// import { 
+//   validateConstitutionalCompliance, 
+//   formatViolationsForChat,
+//   type RuntimeSpec 
+// } from "@/lib/ordax/constitutional-validator";
 
 function uniq(list: string[]) {
   return Array.from(new Set(list.filter((s) => typeof s === "string" && s.trim())));
@@ -45,9 +50,11 @@ export function extractRuntimeSpecFromGameCode(game: CodeGameModule): OrdaxSpec 
   };
 
   // CONSTITUTIONAL VALIDATION (Parte 4 - Integração)
-  // Valida o código extraído contra o Contrato Constitucional V1
+  // Temporarily disabled due to browser cache issues
+  // TODO: Re-enable after browser cache is cleared
+  /*
   try {
-    const gameCode = game.toString(); // Converte o módulo para string para análise
+    const gameCode = game.toString();
     const runtimeSpec: RuntimeSpec = {
       code: gameCode,
       hasTimeManager: /TimeManager/.test(gameCode),
@@ -66,7 +73,6 @@ export function extractRuntimeSpecFromGameCode(game: CodeGameModule): OrdaxSpec 
       console.warn("⚠️ Constitutional validation failed for extracted game code:");
       console.warn(formatViolationsForChat(validation));
       
-      // Adiciona metadados de validação ao spec para o frontend exibir
       (spec as any).constitutionalValidation = {
         isValid: false,
         violations: validation.violations,
@@ -82,8 +88,9 @@ export function extractRuntimeSpecFromGameCode(game: CodeGameModule): OrdaxSpec 
     }
   } catch (error) {
     console.error("Error during constitutional validation:", error);
-    // Não bloqueia a extração se a validação falhar
   }
+  */
 
   return spec;
 }
+

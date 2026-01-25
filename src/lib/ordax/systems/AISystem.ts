@@ -38,6 +38,7 @@ export class AISystem {
   }
 
   update(dt: number, entities: any[]) {
+    // Process registered agents (advanced mode)
     for (const agent of this.agents.values()) {
       const entity = entities.find((e) => e.id === agent.id);
       if (!entity) continue;
@@ -54,6 +55,33 @@ export class AISystem {
           break;
         case "wander":
           this.updateWander(agent, entity, dt);
+          break;
+      }
+    }
+
+    // Process entities with props directly (simple mode - for autofilled entities)
+    for (const entity of entities) {
+      // Skip if already processed via agent
+      if (this.agents.has(entity.id)) continue;
+
+      // Skip if no props or no AI
+      if (!entity.props || !entity.props.ai) continue;
+
+      // Read behavior from props
+      const behavior = entity.props.ai;
+      const speed = entity.props.speed || 100;
+      const target = entity.props.target || "player";
+
+      // Execute behavior
+      switch (behavior) {
+        case "chase":
+          this.updateChaseSimple(entity, entities, speed, dt);
+          break;
+        case "flee":
+          this.updateFleeSimple(entity, entities, speed, dt);
+          break;
+        case "wander":
+          this.updateWanderSimple(entity, speed, dt);
           break;
       }
     }
@@ -117,5 +145,58 @@ export class AISystem {
 
     entity.x += Math.cos(entity.wanderAngle) * agent.speed * dt;
     entity.y += Math.sin(entity.wanderAngle) * agent.speed * dt;
+  }
+
+  // Simple mode methods (work with props directly)
+  private updateChaseSimple(entity: any, entities: any[], speed: number, dt: number) {
+    const target = entities.find((e) => e.type === "player" || e.id === "player");
+    if (!target) return;
+
+    const dx = target.x - entity.x;
+    const dy = target.y - entity.y;
+    const distance = Math.hypot(dx, dy);
+
+    if (distance > 0) {
+      // Update velocity in props
+      if (entity.props) {
+        entity.props.vx = (dx / distance) * speed;
+        entity.props.vy = (dy / distance) * speed;
+      }
+    }
+  }
+
+  private updateFleeSimple(entity: any, entities: any[], speed: number, dt: number) {
+    const target = entities.find((e) => e.type === "player" || e.id === "player");
+    if (!target) return;
+
+    const dx = entity.x - target.x;
+    const dy = entity.y - target.y;
+    const distance = Math.hypot(dx, dy);
+
+    if (distance > 0) {
+      // Update velocity in props
+      if (entity.props) {
+        entity.props.vx = (dx / distance) * speed;
+        entity.props.vy = (dy / distance) * speed;
+      }
+    }
+  }
+
+  private updateWanderSimple(entity: any, speed: number, dt: number) {
+    if (!entity.props) return;
+
+    if (!entity.props.wanderAngle) {
+      entity.props.wanderAngle = Math.random() * Math.PI * 2;
+      entity.props.wanderTimer = 0;
+    }
+
+    entity.props.wanderTimer += dt;
+    if (entity.props.wanderTimer > 2) {
+      entity.props.wanderAngle = Math.random() * Math.PI * 2;
+      entity.props.wanderTimer = 0;
+    }
+
+    entity.props.vx = Math.cos(entity.props.wanderAngle) * speed;
+    entity.props.vy = Math.sin(entity.props.wanderAngle) * speed;
   }
 }

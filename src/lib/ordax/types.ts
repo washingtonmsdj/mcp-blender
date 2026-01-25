@@ -1,5 +1,19 @@
 export type OrdaxGameType = "platformer" | "topdown" | "shooter" | "puzzle" | "racing" | "sports" | "unknown";
 
+// RuntimeSpec - Estrutura simplificada para presets e remix
+export interface RuntimeSpec {
+  profile: string;
+  entities: Record<string, any>;
+  spawners?: Record<string, any>;
+  rules?: {
+    winCondition?: any;
+    loseCondition?: any;
+  };
+  ui?: {
+    hud?: any;
+  };
+}
+
 export type OrdaxEntity = {
   id: string;
   type: string;

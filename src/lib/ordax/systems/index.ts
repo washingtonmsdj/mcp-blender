@@ -39,6 +39,21 @@ export type { Item, InventorySlot } from "./InventorySystem";
 export { SaveSystem } from "./SaveSystem";
 export type { SaveData } from "./SaveSystem";
 
+// NEW: Top-Down Shooter Systems
+export { InputSystem } from "./InputSystem";
+export type { InputState } from "./InputSystem";
+
+export { SpawnerSystem } from "./SpawnerSystem";
+
+export { CombatSystem } from "./CombatSystem";
+export type { DamageEvent } from "./CombatSystem";
+
+export { GameStateSystem } from "./GameStateSystem";
+export type { GameState, GameStateEvent } from "./GameStateSystem";
+
+// NEW: Juice & Feel Systems (Fase 5)
+export { JuiceSystem } from "./JuiceSystem";
+
 // System Registry
 export const ORDAX_SYSTEMS = [
   "InputSystem",
@@ -50,12 +65,15 @@ export const ORDAX_SYSTEMS = [
   "CameraSystem",
   "AISystem",
   "SpawnerSystem",
+  "CombatSystem",
+  "GameStateSystem",
   "ScoreSystem",
   "UISystem",
   "TimerSystem",
   "DialogueSystem",
   "InventorySystem",
   "SaveSystem",
+  "JuiceSystem",
 ] as const;
 
 export type OrdaxSystemName = typeof ORDAX_SYSTEMS[number];

@@ -98,7 +98,8 @@ export class PhysicsSystem {
   }
 
   // Update physics
-  update(dt: number, entities: any[], gravity: Vector2) {
+  update(dt: number, entities: any[], gravity?: Vector2) {
+    // Process registered components (advanced mode)
     for (const [id, comp] of this.components) {
       const entity = entities.find((e) => e.id === id);
       if (!entity) continue;
@@ -113,8 +114,10 @@ export class PhysicsSystem {
       comp.forces = [];
 
       // Add gravity force (F = mg)
-      fx += gravity.x * comp.mass;
-      fy += gravity.y * comp.mass;
+      if (gravity) {
+        fx += gravity.x * comp.mass;
+        fy += gravity.y * comp.mass;
+      }
 
       // Calculate acceleration (F = ma -> a = F/m)
       comp.ax = fx / comp.mass;
@@ -148,6 +151,29 @@ export class PhysicsSystem {
       // Update position
       entity.x += comp.vx * dt;
       entity.y += comp.vy * dt;
+    }
+
+    // Process entities with props directly (simple mode - for autofilled entities)
+    for (const entity of entities) {
+      // Skip if already processed via component
+      if (this.components.has(entity.id)) continue;
+
+      // Skip if no props
+      if (!entity.props) continue;
+
+      // Check if entity has velocity props
+      const vx = entity.props.vx;
+      const vy = entity.props.vy;
+
+      if (vx === undefined && vy === undefined) continue;
+
+      // Simple velocity-based movement (top-down shooter style)
+      entity.x += (vx || 0) * dt;
+      entity.y += (vy || 0) * dt;
+
+      // Update props position (keep in sync)
+      entity.props.x = entity.x;
+      entity.props.y = entity.y;
     }
   }
 

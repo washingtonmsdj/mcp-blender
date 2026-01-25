@@ -46,7 +46,7 @@ const Index = () => {
         <Separator className="bg-border/50" />
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card className="glass-panel hover:neon-glow transition-all cursor-pointer group">
             <CardHeader>
               <div className="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center mb-2 group-hover:neon-glow transition-all">
@@ -61,6 +61,25 @@ const Index = () => {
               <Link to="/workspace">
                 <Button className="w-full neon-glow">
                   Abrir Workspace
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-panel hover:neon-glow transition-all cursor-pointer group">
+            <CardHeader>
+              <div className="w-10 h-10 bg-neon-cyan/20 rounded-lg flex items-center justify-center mb-2 group-hover:neon-glow transition-all">
+                <Gamepad2 className="h-5 w-5 text-neon-cyan" />
+              </div>
+              <CardTitle className="group-hover:neon-text transition-all">Top-Down Demo</CardTitle>
+              <CardDescription className="text-xs">
+                Fases 4 + 5 integradas (Juice & Feel)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link to="/topdown-demo">
+                <Button className="w-full neon-glow bg-neon-cyan/20 hover:bg-neon-cyan/30">
+                  Jogar Demo
                 </Button>
               </Link>
             </CardContent>

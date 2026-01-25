@@ -60,6 +60,57 @@ export function StudioWorkspace() {
     );
   };
 
+  // Handle preset confirmation
+  const handlePresetConfirm = (newSpec: OrdaxSpec) => {
+    const raw = JSON.stringify(newSpec, null, 2);
+    handleSpecUpdate(newSpec, raw);
+    
+    // Save to VFS
+    if (!vfs.getNodeByPath("/presets")) vfs.createFolder("presets", "/");
+    const safeName = `${newSpec.title.toLowerCase().replace(/\s+/g, '-')}.ordax.json`;
+    const existing = vfs.getNodeByPath(`/presets/${safeName}`);
+    if (existing?.type === "file") {
+      vfs.updateFileContent(existing.id, raw);
+    } else {
+      vfs.createFile(safeName, "/presets", "json", raw);
+    }
+    
+    toast.success('Preset carregado!', {
+      description: `${newSpec.title} pronto para jogar`
+    });
+  };
+
+  // Handle remix completion
+  const handleRemixComplete = (remixedSpec: any, remixId: string) => {
+    const ordaxSpec: OrdaxSpec = {
+      gameType: 'topdown',
+      title: `${spec?.title || 'Game'} (Remix)`,
+      description: 'Remixed game',
+      systems: ['InputSystem', 'PhysicsSystem', 'CollisionSystem', 'RenderSystem'],
+      scene: {
+        gravity: { x: 0, y: 0 },
+        entities: []
+      }
+    };
+    
+    const raw = JSON.stringify(ordaxSpec, null, 2);
+    handleSpecUpdate(ordaxSpec, raw);
+    
+    // Save to VFS
+    if (!vfs.getNodeByPath("/remixes")) vfs.createFolder("remixes", "/");
+    const safeName = `${remixId}.ordax.json`;
+    const existing = vfs.getNodeByPath(`/remixes/${safeName}`);
+    if (existing?.type === "file") {
+      vfs.updateFileContent(existing.id, raw);
+    } else {
+      vfs.createFile(safeName, "/remixes", "json", raw);
+    }
+    
+    toast.success('Remix criado!', {
+      description: 'Seu novo jogo está pronto'
+    });
+  };
+
   // Load a predefined game into the Studio (via /workspace?game=...)
   useEffect(() => {
     if (!requestedGameId) return;
@@ -180,6 +231,7 @@ export function StudioWorkspace() {
           setRightOpen((v) => !v);
           setLeftOpen(false);
         }}
+        onPresetConfirm={handlePresetConfirm}
       />
 
       {/* Main Content */}
@@ -205,7 +257,11 @@ export function StudioWorkspace() {
                 {showEditor ? (
                   <CodeEditorPanel openFileId={openFileId} onClose={handleEditorClose} />
                 ) : (
-                  <StudioPreviewPanel spec={spec} gameId={requestedGameId ?? undefined} />
+                  <StudioPreviewPanel 
+                    spec={spec} 
+                    gameId={requestedGameId ?? undefined}
+                    onRemixComplete={handleRemixComplete}
+                  />
                 )}
               </ResizablePanel>
             </ResizablePanelGroup>

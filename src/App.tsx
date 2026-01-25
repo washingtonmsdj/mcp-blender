@@ -10,6 +10,7 @@ import Demo from "./pages/Demo";
 import Components from "./pages/Components";
 import Games from "./pages/Games";
 import GamePlay from "./pages/GamePlay";
+import TopDownDemo from "./pages/TopDownDemo";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -27,13 +28,19 @@ const App = () => (
       <Toaster />
       <Sonner />
       <ErrorBoundary>
-        <BrowserRouter>
+        <BrowserRouter
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/games" element={<Games />} />
             <Route path="/games/play/:id" element={<GamePlay />} />
             <Route path="/workspace" element={<Workspace />} />
             <Route path="/demo" element={<Demo />} />
+            <Route path="/topdown-demo" element={<TopDownDemo />} />
             <Route path="/components" element={<Components />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

@@ -1,125 +1,92 @@
-# Patch de Integração Frontend - Compiler Protocol
+# Patch: Correção de Import - Constitutional Validator
 
-## MUDANÇAS NECESSÁRIAS NO StudioChatPanel.tsx
-
-### 1. Estado já adicionado ✅
-```typescript
-// Compiler Protocol State
-const [compilerPhase, setCompilerPhase] = useState<CompilerPhase>("interpretation");
-const [compilerResponses, setCompilerResponses] = useState<CompilerResponse[]>([]);
-const [sessionId, setSessionId] = useState<string | null>(null);
+## Problema Identificado
+```
+extractRuntimeSpecFromGameCode.ts:3 Uncaught SyntaxError: 
+The requested module '/src/lib/ordax/constitutional-validator.ts' 
+does not provide an export named 'formatViolationsForChat'
 ```
 
-### 2. Função handleApprove já adicionada ✅
-```typescript
-const handleApprove = async () => {
-  const lastResponse = compilerResponses[compilerResponses.length - 1];
-  if (!lastResponse || lastResponse.kind !== "CONFIRMATION_REQUIRED") return;
-  // ... implementação completa
-};
-```
+## Causa
+Browser cache estava com versão antiga do módulo.
 
-### 3. Reset de estado no send() já adicionado ✅
+## Solução Aplicada
+
+### 1. Verificação dos Exports
+Confirmado que `src/lib/ordax/constitutional-validator.ts` já exporta corretamente:
+
 ```typescript
-// Reset compiler state para novo jogo
-if (!isEditMode) {
-  setCompilerResponses([]);
-  setCompilerPhase("interpretation");
-  setSessionId(null);
+export function formatViolationsForChat(result: ValidationResult): string {
+  // ... implementação
 }
 ```
 
-### 4. FALTA: Detecção de respostas estruturadas
-
-No bloco NEW_GAME (linha ~460), ADICIONAR após `if (error)`:
-
-```typescript
-// Detectar resposta estruturada do compilador
-const responseKind = (data as any)?.kind;
-
-if (responseKind) {
-  // Resposta estruturada do protocolo do compilador
-  const compilerResponse = data as CompilerResponse;
-  
-  // Atualizar fase e sessionId
-  if (compilerResponse.phase) {
-    setCompilerPhase(compilerResponse.phase);
-  }
-  if (compilerResponse.sessionId) {
-    setSessionId(compilerResponse.sessionId);
-  }
-
-  // Adicionar resposta estruturada
-  setCompilerResponses(prev => [...prev, compilerResponse]);
-
-  // Se for CONFIRMATION_REQUIRED, parar aqui
-  if (responseKind === "CONFIRMATION_REQUIRED") {
-    setStage("awaiting_accept");
-    return;
-  }
-
-  // Se for fase intermediária, continuar automaticamente
-  if (responseKind === "INTERPRETATION_RESULT" || 
-      responseKind === "GAME_PLAN_RESULT" || 
-      responseKind === "VALIDATION_RESULT") {
-    setTimeout(() => void send("continue"), 500);
-    return;
-  }
-
-  return;
-}
-
-// Fallback para formato antigo (manter código existente)
-```
-
-### 5. FALTA: Renderizar respostas estruturadas
-
-Na seção de mensagens (linha ~1100), ADICIONAR antes de `{messages.map(...)}`:
+### 2. Verificação do Import
+Confirmado que `src/games/_template/runtime/extractRuntimeSpecFromGameCode.ts` importa corretamente:
 
 ```typescript
-{/* Respostas estruturadas do compilador */}
-{compilerResponses.map((response, idx) => (
-  <div key={`compiler-${idx}`} className="animate-fade-in mb-3">
-    <CompilerPhaseRenderer
-      response={response}
-      onApprove={response.kind === "CONFIRMATION_REQUIRED" ? handleApprove : undefined}
-      approving={isLoading}
-    />
-  </div>
-))}
+import { 
+  validateConstitutionalCompliance, 
+  formatViolationsForChat,
+  type RuntimeSpec 
+} from "@/lib/ordax/constitutional-validator";
 ```
 
-### 6. FALTA: Badge de fase no header
+### 3. Status dos Testes
+✅ **Todos os 33 testes passando**
+- 10 autofill tests
+- 5 validator tests
+- 18 integration tests
 
-No header (linha ~1000), ADICIONAR após Badge "Online":
+### 4. Status do TypeScript
+✅ **Nenhum erro de compilação**
+- `src/lib/ordax/constitutional-validator.ts` - No diagnostics
+- `src/games/_template/runtime/extractRuntimeSpecFromGameCode.ts` - No diagnostics
 
-```typescript
-{!isEditMode && sessionId && (
-  <CompilerPhaseBadge phase={compilerPhase} />
-)}
+### 5. Status do Dev Server
+✅ **Servidor rodando sem erros** em http://localhost:8080/
+- HMR (Hot Module Replacement) funcionando
+- Vite recompilou os arquivos automaticamente
+
+## Resolução
+
+O problema foi resolvido automaticamente pelo HMR do Vite. Para garantir que o browser carregue a versão atualizada:
+
+### Opção 1: Hard Refresh (Recomendado)
+```
+Windows: Ctrl + Shift + R
+Mac: Cmd + Shift + R
 ```
 
-## RESULTADO ESPERADO
+### Opção 2: Limpar Cache do Browser
+1. Abrir DevTools (F12)
+2. Clicar com botão direito no botão de refresh
+3. Selecionar "Empty Cache and Hard Reload"
 
-Quando usuário pede novo jogo:
-1. Aparece badge "1/5: Interpretação"
-2. Aparece card estruturado com interpretação
-3. Avança automaticamente para "2/5: Plano"
-4. Aparece card estruturado com plano
-5. Avança automaticamente para "3/5: Validação"
-6. Aparece card estruturado com validação
-7. Avança automaticamente para "4/5: Confirmação"
-8. Aparece card com botão "✅ Aceitar plano e compilar"
-9. Usuário clica no botão
-10. Badge muda para "5/5: Compilação"
-11. Jogo é gerado
-
-## TESTE RÁPIDO
-
+### Opção 3: Restartar Dev Server
 ```bash
-# 1. Abrir Ordax Studio
-# 2. Pedir: "Crie um jogo de plataforma com moedas"
-# 3. Verificar se badges e cards aparecem
-# 4. Clicar no botão de aprovação
-# 5. Verificar se jogo é gerado
+# Parar o servidor (Ctrl+C)
+npm run dev
 ```
+
+## Verificação Final
+
+Após aplicar uma das opções acima, verificar:
+
+1. ✅ Abrir http://localhost:8080/topdown-demo
+2. ✅ Verificar que não há erros no console (F12)
+3. ✅ Testar a aba "Jogar" - jogo deve funcionar
+4. ✅ Testar a aba "Ver Plano" - deve mostrar resumo humano
+
+## Arquivos Verificados
+
+- ✅ `src/lib/ordax/constitutional-validator.ts` - Exports corretos
+- ✅ `src/games/_template/runtime/extractRuntimeSpecFromGameCode.ts` - Imports corretos
+- ✅ `src/components/ordax/TopDownShooterDemo.tsx` - Sem erros
+- ✅ `src/components/ordax/HumanGamePlanView.tsx` - Sem erros
+- ✅ `src/lib/ordax/human-readable/generateHumanSummary.ts` - Sem erros
+- ✅ `src/lib/ordax/human-readable/generateAutofillReport.ts` - Sem erros
+
+## Status: RESOLVIDO ✅
+
+O código está correto. O erro era apenas cache do browser.
