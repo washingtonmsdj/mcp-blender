@@ -1,73 +1,238 @@
-# Welcome to your Lovable project
+# 🎮 Ordax Engine
 
-## Project info
+> Motor de jogos 2D com IA integrada e sistema visual moderno
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-18.3-61dafb)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-5.4-646cff)](https://vitejs.dev/)
+[![Tailwind](https://img.shields.io/badge/Tailwind-3.4-38bdf8)](https://tailwindcss.com/)
 
-## How can I edit this code?
+## ✨ Features
 
-There are several ways of editing your application.
+- 🎨 **Tema Dark Gaming** com efeitos neon profissionais
+- 🤖 **IA Integrada** para geração de jogos via chat
+- 🎯 **16+ Componentes** prontos para uso
+- 📦 **50+ Componentes UI** (shadcn/ui)
+- 🚀 **Performance Otimizada** com Vite + SWC
+- 📱 **Totalmente Responsivo**
+- ♿ **Acessível** (ARIA compliant)
+- 📚 **Documentação Completa**
 
-**Use Lovable**
+## 🚀 Quick Start
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+```bash
+# Instalar dependências
+npm install
 
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Rodar em desenvolvimento
 npm run dev
+
+# Build para produção
+npm run build
 ```
 
-**Edit a file directly in GitHub**
+## 🌐 Páginas Disponíveis
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+- **/** - Home (Dashboard com projetos e quick actions)
+- **/workspace** - Workspace Ordax (Editor de jogos com IA)
+- **/demo** - Visual Showcase (Demonstração do tema)
+- **/components** - Components Library (Todos os componentes) ⭐
 
-**Use GitHub Codespaces**
+## 📦 Stack Tecnológica
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### Core
+- React 18.3 + TypeScript 5.8
+- Vite 5.4 (build tool)
+- React Router 6.30
 
-## What technologies are used for this project?
+### UI
+- Tailwind CSS 3.4
+- shadcn/ui (50+ componentes)
+- Radix UI (primitivos)
+- Lucide React (ícones)
 
-This project is built with:
+### State & Forms
+- TanStack Query 5.83
+- React Hook Form 7.61
+- Zod 3.25 (validação)
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Backend
+- Supabase 2.91
+- Edge Functions (Deno)
 
-## How can I deploy this project?
+## 🎨 Sistema Visual
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+### Cores Neon
+- **Cyan**: `#00D9FF` - Primary
+- **Magenta**: `#E600E6` - Secondary
+- **Green**: `#00E673` - Success
+- **Orange**: `#FF8C1A` - Warning
+- **Purple**: `#9933FF` - Special
 
-## Can I connect a custom domain to my Lovable project?
+### Classes Utilitárias
+```css
+.glass-panel    /* Efeito vidro fosco */
+.neon-glow      /* Brilho neon */
+.neon-text      /* Texto com glow */
+```
 
-Yes, you can!
+### Fontes
+- **UI**: Space Grotesk
+- **Code**: JetBrains Mono
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## 📚 Documentação
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+### Guias Principais
+- [FRONTEND_REPLICATION_GUIDE.md](./FRONTEND_REPLICATION_GUIDE.md) - Guia completo
+- [FRONTEND_COMPONENTS_EXAMPLES.md](./FRONTEND_COMPONENTS_EXAMPLES.md) - Exemplos
+- [FRONTEND_COMPLETE_SUMMARY.md](./FRONTEND_COMPLETE_SUMMARY.md) - Resumo
+
+### Implementação
+- [VISUAL_SYSTEM.md](./VISUAL_SYSTEM.md) - Sistema visual
+- [COMPONENTES_IMPLEMENTADOS.md](./COMPONENTES_IMPLEMENTADOS.md) - Componentes
+- [GUIA_RAPIDO_COMPONENTES.md](./GUIA_RAPIDO_COMPONENTES.md) - Guia rápido
+
+### Referência
+- [INDEX_DOCUMENTACAO.md](./INDEX_DOCUMENTACAO.md) - Índice completo
+- [RESUMO_FINAL_IMPLEMENTACAO.md](./RESUMO_FINAL_IMPLEMENTACAO.md) - Resumo final
+
+## 🧩 Componentes Disponíveis
+
+### Layout
+- Header, MainLayout, ProjectSidebar
+
+### Forms
+- ProjectForm (com validação Zod)
+
+### Modals
+- NewProjectDialog, DeleteConfirmDialog
+
+### Loading
+- Spinner, ProgressBar, Skeleton
+
+### Data
+- ProjectsTable, ProjectCard, ProjectsGrid
+
+### Advanced
+- ToastExamples, ProjectTabs, FAQ
+
+### Ordax
+- OrdaxWorkspace, ChatPanel, EditorPanel, PreviewPanel, OrdaxCanvas
+
+## 💡 Exemplos de Uso
+
+### Layout Completo
+```typescript
+import { MainLayout } from "@/components/layout/MainLayout";
+import { ProjectSidebar } from "@/components/layout/ProjectSidebar";
+
+export default function MyPage() {
+  return (
+    <MainLayout sidebar={<ProjectSidebar />}>
+      <div className="p-8">
+        <h1 className="text-4xl font-bold neon-text">Minha Página</h1>
+      </div>
+    </MainLayout>
+  );
+}
+```
+
+### Toast Notification
+```typescript
+import { toast } from "sonner";
+
+toast.success("Projeto criado com sucesso!");
+toast.error("Erro ao salvar");
+```
+
+### Card com Efeitos
+```typescript
+<Card className="glass-panel hover:neon-glow transition-all">
+  <CardHeader>
+    <CardTitle className="neon-text">Título</CardTitle>
+  </CardHeader>
+  <CardContent>Conteúdo</CardContent>
+</Card>
+```
+
+## 🛠️ Scripts Disponíveis
+
+```bash
+npm run dev          # Servidor de desenvolvimento
+npm run build        # Build de produção
+npm run preview      # Preview do build
+npm run lint         # Lint do código
+```
+
+## 📁 Estrutura do Projeto
+
+```
+src/
+├── components/
+│   ├── ui/              # shadcn/ui (50+ componentes)
+│   ├── layout/          # Header, MainLayout, ProjectSidebar
+│   ├── forms/           # ProjectForm
+│   ├── modals/          # Dialogs
+│   ├── loading/         # Loading states
+│   ├── data/            # Tables, Cards, Grids
+│   ├── advanced/        # Tabs, FAQ, Toast
+│   ├── demo/            # VisualShowcase
+│   └── ordax/           # Engine components
+├── pages/
+│   ├── Index.tsx        # Workspace
+│   ├── Demo.tsx         # Visual demo
+│   ├── Components.tsx   # Components library
+│   └── NotFound.tsx     # 404
+├── lib/
+│   ├── ordax/           # Engine logic
+│   └── utils.ts
+├── hooks/               # Custom hooks
+├── integrations/        # Supabase
+├── App.tsx
+├── main.tsx
+└── index.css
+```
+
+## 🎯 Roadmap
+
+- [x] Sistema visual completo
+- [x] Componentes base
+- [x] Integração com IA
+- [x] Editor de código
+- [x] Preview em tempo real
+- [ ] Sistema de assets
+- [ ] Exportação de projetos
+- [ ] Multiplayer
+- [ ] Marketplace de templates
+
+## 🤝 Contribuindo
+
+Contribuições são bem-vindas! Por favor:
+
+1. Fork o projeto
+2. Crie uma branch (`git checkout -b feature/AmazingFeature`)
+3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
+4. Push para a branch (`git push origin feature/AmazingFeature`)
+5. Abra um Pull Request
+
+## 📄 Licença
+
+Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+
+## 🙏 Agradecimentos
+
+- [shadcn/ui](https://ui.shadcn.com/) - Componentes UI
+- [Radix UI](https://www.radix-ui.com/) - Primitivos acessíveis
+- [Tailwind CSS](https://tailwindcss.com/) - Framework CSS
+- [Lucide](https://lucide.dev/) - Ícones
+- [Lovable](https://lovable.dev/) - Plataforma de desenvolvimento
+
+## 📞 Suporte
+
+- 📚 [Documentação Completa](./INDEX_DOCUMENTACAO.md)
+- 🎨 [Visual Showcase](http://localhost:8080/demo)
+- 📦 [Components Library](http://localhost:8080/components)
+
+---
+
+**Feito com ❤️ usando React + TypeScript + Vite**

@@ -1,0 +1,4 @@
+project_id = "keuyzwcrjlechrxuqcta"
+
+[functions.game-ai-chat]
+verify_jwt = false

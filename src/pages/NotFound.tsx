@@ -1,5 +1,8 @@
-import { useLocation } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 import { useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Home, Sparkles } from "lucide-react";
 
 const NotFound = () => {
   const location = useLocation();
@@ -9,14 +12,34 @@ const NotFound = () => {
   }, [location.pathname]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">404</h1>
-        <p className="mb-4 text-xl text-muted-foreground">Oops! Page not found</p>
-        <a href="/" className="text-primary underline hover:text-primary/90">
-          Return to Home
-        </a>
-      </div>
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <Card className="glass-panel neon-glow max-w-lg w-full">
+        <CardHeader className="text-center">
+          <CardTitle className="text-6xl font-bold neon-text mb-4">404</CardTitle>
+          <CardDescription className="text-lg">
+            Page not found
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-center text-muted-foreground">
+            The page you're looking for doesn't exist or has been moved.
+          </p>
+          <div className="flex gap-2">
+            <Link to="/" className="flex-1">
+              <Button className="w-full neon-glow">
+                <Home className="mr-2 h-4 w-4" />
+                Go Home
+              </Button>
+            </Link>
+            <Link to="/workspace" className="flex-1">
+              <Button variant="outline" className="w-full glass-panel">
+                <Sparkles className="mr-2 h-4 w-4" />
+                Workspace
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
