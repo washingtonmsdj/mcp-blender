@@ -1,9 +1,211 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { CompilerSessionStore } from "../_shared/compiler-session-store.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// Constitutional Validator Types (inline para Deno)
+type ViolationLevel = 'CRITICAL' | 'SEVERE' | 'MINOR';
+
+interface ConstitutionalViolation {
+  id: string;
+  level: ViolationLevel;
+  pilar: string;
+  rule: string;
+  message: string;
+  fix: string;
+}
+
+interface ValidationResult {
+  isValid: boolean;
+  violations: ConstitutionalViolation[];
+  summary: {
+    critical: number;
+    severe: number;
+    minor: number;
+  };
+}
+
+interface RuntimeSpec {
+  code: string;
+  hasTimeManager?: boolean;
+  hasStateManager?: boolean;
+  hasInputManager?: boolean;
+  hasSaveManager?: boolean;
+  hasViewportManager?: boolean;
+  hasStartScreen?: boolean;
+  hasHUD?: boolean;
+  hasGameOverScreen?: boolean;
+}
+
+const CANONICAL_ALLOWED_DIRS = new Set(["systems", "entities", "ui", "state", "input", "audio", "spawn", "utils", "_derived"]);
+const CANONICAL_ROOT_FILES = new Set(["codeGame.ts"]);
+
+// Constitutional Validation Rules (inline)
+const VALIDATION_RULES = [
+  {
+    id: 'TIME_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Time Management',
+    check: (spec: RuntimeSpec) => {
+      const hasUpdateWithDelta = /update\s*\(\s*deltaTime\s*:\s*number\s*\)/.test(spec.code);
+      const usesDeltaInMovement = /[+\-*\/]=?\s*.*\s*\*\s*deltaTime/.test(spec.code);
+      return hasUpdateWithDelta && usesDeltaInMovement;
+    },
+    message: 'Game must use deltaTime for frame-independent movement',
+    fix: 'Add deltaTime parameter to update() and multiply all movement by deltaTime'
+  },
+  {
+    id: 'FSM_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'FSM',
+    check: (spec: RuntimeSpec) => {
+      const hasEnum = /enum\s+GameState\s*{/.test(spec.code);
+      const hasStart = /START\s*=/.test(spec.code);
+      const hasPlaying = /PLAYING\s*=/.test(spec.code);
+      const hasPaused = /PAUSED\s*=/.test(spec.code);
+      const hasGameOver = /GAME_OVER\s*=/.test(spec.code);
+      return hasEnum && hasStart && hasPlaying && hasPaused && hasGameOver;
+    },
+    message: 'GameState enum must exist with START, PLAYING, PAUSED, GAME_OVER',
+    fix: 'Add GameState enum with all required states'
+  },
+  {
+    id: 'FSM_002',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'FSM',
+    check: (spec: RuntimeSpec) => spec.hasStateManager === true || /currentState/.test(spec.code),
+    message: 'StateManager is required for game state management',
+    fix: 'Add StateManager to core systems'
+  },
+  {
+    id: 'UI_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'UI System',
+    check: (spec: RuntimeSpec) => spec.hasStartScreen === true || /StartScreen|renderStartScreen/.test(spec.code),
+    message: 'StartScreen is required for game initialization',
+    fix: 'Add StartScreen component with render() and handleClick()'
+  },
+  {
+    id: 'UI_002',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'UI System',
+    check: (spec: RuntimeSpec) => spec.hasGameOverScreen === true || /GameOverScreen|renderGameOverScreen/.test(spec.code),
+    message: 'GameOverScreen is required for game completion',
+    fix: 'Add GameOverScreen component with score display and restart option'
+  },
+  {
+    id: 'UI_003',
+    level: 'SEVERE' as ViolationLevel,
+    pilar: 'UI System',
+    check: (spec: RuntimeSpec) => spec.hasHUD === true || /HUD|renderHUD/.test(spec.code),
+    message: 'HUD is required for displaying game information',
+    fix: 'Add HUD component to display score, lives, or other game info'
+  },
+  {
+    id: 'INPUT_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Input System',
+    check: (spec: RuntimeSpec) => spec.hasInputManager === true || /keys\s*[:=].*Map/.test(spec.code),
+    message: 'InputManager is required for centralized input handling',
+    fix: 'Add InputManager to core systems'
+  },
+  {
+    id: 'INPUT_002',
+    level: 'SEVERE' as ViolationLevel,
+    pilar: 'Input System',
+    check: (spec: RuntimeSpec) => {
+      const hasKeyboard = /keydown|keyup/.test(spec.code);
+      const hasMouseOrTouch = /mousedown|mouseup|touchstart|touchend|click/.test(spec.code);
+      return hasKeyboard && hasMouseOrTouch;
+    },
+    message: 'InputManager must support at least keyboard and mouse/touch',
+    fix: 'Add event listeners for keyboard and mouse/touch'
+  },
+  {
+    id: 'SAVE_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Save System',
+    check: (spec: RuntimeSpec) => spec.hasSaveManager === true || /localStorage/.test(spec.code),
+    message: 'SaveManager is required for data persistence',
+    fix: 'Add SaveManager to core systems'
+  },
+  {
+    id: 'SAVE_002',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Save System',
+    check: (spec: RuntimeSpec) => {
+      const hasSave = /localStorage\.setItem/.test(spec.code) || /saveHighScore/.test(spec.code);
+      const hasLoad = /localStorage\.getItem/.test(spec.code) || /loadHighScore/.test(spec.code);
+      return hasSave && hasLoad;
+    },
+    message: 'HighScore must be persisted using localStorage',
+    fix: 'Add saveHighScore() and loadHighScore() methods'
+  },
+  {
+    id: 'VIEWPORT_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Viewport Management',
+    check: (spec: RuntimeSpec) => /addEventListener\s*\(\s*['"]resize['"]/.test(spec.code) || /handleResize/.test(spec.code),
+    message: 'Resize handler is required for responsive canvas',
+    fix: 'Add window resize event listener'
+  },
+  {
+    id: 'LOOP_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Game Loop',
+    check: (spec: RuntimeSpec) => /requestAnimationFrame/.test(spec.code),
+    message: 'Game loop must use requestAnimationFrame',
+    fix: 'Replace setInterval/setTimeout with requestAnimationFrame'
+  },
+  {
+    id: 'LOOP_002',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Game Loop',
+    check: (spec: RuntimeSpec) => {
+      const hasUpdate = /function\s+update\s*\(|update\s*\(.*\)\s*{|update\s*:\s*\(/.test(spec.code);
+      const hasRender = /function\s+render\s*\(|render\s*\(.*\)\s*{|render\s*:\s*\(/.test(spec.code);
+      return hasUpdate && hasRender;
+    },
+    message: 'Game loop must separate update() and render() logic',
+    fix: 'Create separate update() and render() functions'
+  }
+];
+
+function validateConstitutionalCompliance(spec: RuntimeSpec): ValidationResult {
+  const violations: ConstitutionalViolation[] = [];
+
+  for (const rule of VALIDATION_RULES) {
+    try {
+      if (!rule.check(spec)) {
+        violations.push({
+          id: rule.id,
+          level: rule.level,
+          pilar: rule.pilar,
+          rule: '',
+          message: rule.message,
+          fix: rule.fix
+        });
+      }
+    } catch (error) {
+      console.error(`Error checking rule ${rule.id}:`, error);
+    }
+  }
+
+  const summary = {
+    critical: violations.filter(v => v.level === 'CRITICAL').length,
+    severe: violations.filter(v => v.level === 'SEVERE').length,
+    minor: violations.filter(v => v.level === 'MINOR').length
+  };
+
+  return {
+    isValid: summary.critical === 0,
+    violations,
+    summary
+  };
+}
 
 const CANONICAL_ALLOWED_DIRS = new Set(["systems", "entities", "ui", "state", "input", "audio", "spawn", "utils", "_derived"]);
 const CANONICAL_ROOT_FILES = new Set(["codeGame.ts"]);
@@ -516,13 +718,86 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, currentSpec, phase, approvedPlan, approvedPlanHuman, mode, targetGameId, projectFiles } = await req.json();
+    const { messages, currentSpec, phase, approvedPlan, approvedPlanHuman, mode, targetGameId, projectFiles, userId, sessionId } = await req.json();
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error("Supabase credentials not configured");
+    }
+
+    // ============================================================================
+    // COMPILER PROTOCOL VALIDATION (CRÍTICO)
+    // ============================================================================
+    
     const resolvedMode = (mode ?? "spec") as "spec" | "code_patch";
     const isNewGame = resolvedMode === "spec" && !currentSpec;
+
+    // Se for NEW_GAME, validar protocolo do compilador
+    if (isNewGame && sessionId) {
+      const sessionStore = new CompilerSessionStore(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      const session = await sessionStore.loadSession(sessionId);
+
+      if (!session) {
+        // Sessão não encontrada - bloquear streaming
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            const error = JSON.stringify({
+              error: "COMPILER_PROTOCOL_VIOLATION",
+              message: "Session not found. Cannot stream without valid compiler session.",
+              protocol: "ORDAX_COMPILER_PROTOCOL_V1"
+            });
+            controller.enqueue(encoder.encode(error));
+            controller.close();
+          }
+        });
+
+        return new Response(stream, {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "text/plain; charset=utf-8",
+          },
+        });
+      }
+
+      // Validar fase e aprovação
+      if (session.phase !== "compilation" || !session.approvedByUser) {
+        // Protocolo violado - bloquear streaming
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            const error = JSON.stringify({
+              error: "COMPILER_PROTOCOL_VIOLATION",
+              message: `Cannot stream compilation. Current phase: ${session.phase}, Approved: ${session.approvedByUser}. Must be in compilation phase with user approval.`,
+              currentPhase: session.phase,
+              approvedByUser: session.approvedByUser,
+              protocol: "ORDAX_COMPILER_PROTOCOL_V1"
+            });
+            controller.enqueue(encoder.encode(error));
+            controller.close();
+          }
+        });
+
+        return new Response(stream, {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "text/plain; charset=utf-8",
+          },
+        });
+      }
+
+      // Protocolo validado - pode continuar com streaming
+      console.log(`✅ Compiler protocol validated for session ${sessionId}`);
+    }
+
+    // ============================================================================
+    // CONTINUAR COM STREAMING NORMAL
+    // ============================================================================
+
     const userPrompt = (messages ?? []).slice().reverse().find((m: any) => m?.role === "user")?.content ?? "";
     let planWarnings: string[] = [];
     let validatedPlan: GamePlan | null = null;
@@ -562,6 +837,34 @@ serve(async (req) => {
     const baseSpecPrompt = `Você é a IA do Ordax (engine de jogos). Gere APENAS um JSON válido, sem markdown nem cercas de código.
 
 Objetivo: inferir um gameType explícito e devolver uma especificação completa e visual, executável pelo preview.
+
+⚠️ CONTRATO CONSTITUCIONAL ORDAX V1 (OBRIGATÓRIO):
+Todo jogo DEVE cumprir os 7 pilares operacionais mínimos:
+
+1. TIME MANAGEMENT: Usar deltaTime em todo movimento/física
+2. FSM: GameState enum com START, PLAYING, PAUSED, GAME_OVER
+3. UI SYSTEM: StartScreen + HUD + GameOverScreen (obrigatórios)
+4. INPUT SYSTEM: InputManager centralizado (keyboard + mouse/touch)
+5. SAVE SYSTEM: SaveManager com localStorage para highScore
+6. VIEWPORT MANAGEMENT: Resize handler para canvas responsivo
+7. GAME LOOP: requestAnimationFrame + separação update()/render()
+
+🚫 PROIBIDO:
+- Movimento sem deltaTime (ex: player.x += 5)
+- Jogo sem FSM ou estados explícitos
+- UI incompleta (faltando StartScreen, HUD ou GameOverScreen)
+- Input desorganizado (listeners espalhados)
+- Sem persistência (score que desaparece)
+- Canvas fixo sem adaptação
+- setInterval/setTimeout para game loop
+
+✅ ESTRUTURA MÍNIMA OBRIGATÓRIA:
+- enum GameState { START, PLAYING, PAUSED, GAME_OVER }
+- InputManager com keys Map e mouse/touch
+- SaveManager com saveHighScore() e loadHighScore()
+- renderStartScreen(), renderHUD(), renderGameOverScreen()
+- gameLoop(timestamp) com deltaTime
+- window.addEventListener('resize', handleResize)
 
 Formato de saída (JSON):
 {
@@ -607,7 +910,11 @@ REGRAS DE BACKGROUND POR TIPO DE JOGO:
 
 CONTEXTO / EDIÇÃO:
 - Se currentSpec existir, sua tarefa é EDITAR o projeto atual: mantenha o máximo possível e altere APENAS o necessário para atender o pedido do usuário.
-- Retorne o JSON COMPLETO atualizado.`;
+- Retorne o JSON COMPLETO atualizado.
+
+⚠️ VALIDAÇÃO CONSTITUCIONAL:
+Seu código será validado automaticamente. Se falhar, você DEVE corrigir TODAS as violações CRÍTICAS.
+NÃO responda "jogo pronto" ou sugira "adicionar depois". Gere TUDO desde o início.`;
 
     const wrapperHint = `\n\nCONTRATO DE SAÍDA (SEMPRE): retorne um JSON com o seguinte formato (sem markdown):\n{\n  "spec": <OrdaxSpec>,\n  "assistantSummary": string,\n  "appliedEdits": string[],\n  "semanticPatch": { "kind": "SEMANTIC_PATCH", "ops": any[] },\n  "report": {\n    "whatWasRequested": string,\n    "whatWasApplied": string[],\n    "whatCouldNotBeAppliedAndWhy": string[],\n    "engineLimitationsHit": string[]\n  }${isNewGame ? ",\n  \"planWarnings\": string[]" : ""}\n}\n\nRegras do contrato:\n- spec: deve ser o JSON COMPLETO atualizado (não retorne apenas dicas).\n- assistantSummary: 2-5 linhas dizendo exatamente o que foi implementado.\n- appliedEdits: lista curta (3-10) de mudanças concretas (ex: "Player: adicionada prop shield=50").\n- semanticPatch: obrigatório; descreve semanticamente o que mudou (ops devem corresponder ao que você aplicou).\n- report: obrigatório; responda de forma objetiva.\n\nSe você NÃO conseguir aplicar o pedido, retorne um JSON de erro: { "error": "COMPILER_ERROR", "message": "...", "engineLimitationsHit": string[] } (sem spec).\n${isNewGame ? "- planWarnings: copie exatamente o array fornecido em planWarnings (do backend) — não invente novos." : ""}`;
 

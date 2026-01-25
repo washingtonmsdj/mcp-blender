@@ -28,6 +28,7 @@ import { buildHumanGamePlanText } from "@/lib/ordax/human-game-plan";
 import { validateRuntimeAgainstPlan } from "@/lib/ordax/validateRuntimeAgainstPlan";
 import { applyCodeSemanticPatch, loadCodeGameFromVfs, type CodeSemanticPatch } from "@/lib/ordax/code-mutator";
 import { extractRuntimeSpecFromGameCode } from "@/games/_template";
+import { CompilerPhaseRenderer, CompilerPhaseBadge, type CompilerResponse, type CompilerPhase } from "@/components/ordax/CompilerPhaseRenderer";
 
 function summarizePatch(patch: CodeSemanticPatch) {
   const dirs = new Set<string>();
@@ -255,6 +256,11 @@ export function StudioChatPanel({ onSpec, currentSpec, gameId }: Props) {
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
 
+  // Compiler Protocol State
+  const [compilerPhase, setCompilerPhase] = useState<CompilerPhase>("interpretation");
+  const [compilerResponses, setCompilerResponses] = useState<CompilerResponse[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
   // AI Debug
   const [showDebug, setShowDebug] = useState(false);
   const [debugRaw, setDebugRaw] = useState<string>("");
@@ -378,9 +384,48 @@ export function StudioChatPanel({ onSpec, currentSpec, gameId }: Props) {
     }
   }, [currentSpec]);
 
+  const handleApprove = async () => {
+    const lastResponse = compilerResponses[compilerResponses.length - 1];
+    if (!lastResponse || lastResponse.kind !== "CONFIRMATION_REQUIRED") return;
+
+    setIsLoading(true);
+    setStage("generating");
+
+    try {
+      const { data, error } = await supabase.functions.invoke("game-ai-chat", {
+        body: {
+          action: "APPROVE_PLAN",
+          sessionId,
+          userId: "user-" + Date.now(),
+          messages,
+        },
+      });
+
+      if (error) {
+        toast.error(`Erro: ${error.message}`);
+        setIsLoading(false);
+        return;
+      }
+
+      // Após aprovação, gerar o jogo
+      await generateSpecStreaming(messages, undefined, lastResponse.plan);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Erro: ${msg}`);
+      setIsLoading(false);
+    }
+  };
+
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || isLoading) return;
+
+    // Reset compiler state para novo jogo
+    if (!isEditMode) {
+      setCompilerResponses([]);
+      setCompilerPhase("interpretation");
+      setSessionId(null);
+    }
 
     const userMessage: ChatMsg = { role: "user", content: trimmed };
     lastUserPromptRef.current = trimmed;
@@ -409,19 +454,54 @@ export function StudioChatPanel({ onSpec, currentSpec, gameId }: Props) {
             mode: "spec",
             phase: "plan",
             messages: [...messages, userMessage],
+            userId: "user-" + Date.now(),
           },
         });
 
         setIsLoading(false);
-        setStage("awaiting_accept");
 
         if (error) {
           toast.error(`Erro: ${error.message}`);
           return;
         }
 
-        // Planner can return either the new structured payload (preferred)
-        // or a legacy payload with { raw: "{...json...}" }.
+        // Detectar resposta estruturada do compilador
+        const responseKind = (data as any)?.kind;
+
+        if (responseKind) {
+          // Resposta estruturada do protocolo do compilador
+          const compilerResponse = data as CompilerResponse;
+          
+          // Atualizar fase e sessionId
+          if (compilerResponse.phase) {
+            setCompilerPhase(compilerResponse.phase);
+          }
+          if (compilerResponse.sessionId) {
+            setSessionId(compilerResponse.sessionId);
+          }
+
+          // Adicionar resposta estruturada
+          setCompilerResponses(prev => [...prev, compilerResponse]);
+
+          // Se for CONFIRMATION_REQUIRED, parar aqui (usuário precisa aprovar)
+          if (responseKind === "CONFIRMATION_REQUIRED") {
+            setStage("awaiting_accept");
+            return;
+          }
+
+          // Se for fase intermediária, continuar automaticamente
+          if (responseKind === "INTERPRETATION_RESULT" || 
+              responseKind === "GAME_PLAN_RESULT" || 
+              responseKind === "VALIDATION_RESULT") {
+            setTimeout(() => void send("continue"), 500);
+            return;
+          }
+
+          return;
+        }
+
+        // Fallback para formato antigo (legacy)
+        setStage("awaiting_accept");
         const isStructured = (data as any)?.kind === "GAME_PLAN_RESULT";
         const legacyRaw = (data as any)?.raw as string | undefined;
 
@@ -1127,6 +1207,9 @@ export function StudioChatPanel({ onSpec, currentSpec, gameId }: Props) {
             <span className="w-1 h-1 rounded-full bg-neon-green mr-1 animate-pulse"></span>
             Online
           </Badge>
+          {!isEditMode && sessionId && (
+            <CompilerPhaseBadge phase={compilerPhase} />
+          )}
         </div>
         {(isLoading || isStreaming || acceptingPlan || stage !== "idle") && (
           <div className="text-xs text-primary font-mono animate-pulse">
@@ -1249,41 +1332,36 @@ export function StudioChatPanel({ onSpec, currentSpec, gameId }: Props) {
         )}
 
         <div className="space-y-3">
-          {messages.map((m, idx) => (
+          {/* Respostas estruturadas do compilador */}
+          {compilerResponses.map((response, idx) => (
+            <div key={`compiler-${idx}`} className="animate-fade-in">
+              <CompilerPhaseRenderer
+                response={response}
+                onApprove={response.kind === "CONFIRMATION_REQUIRED" ? handleApprove : undefined}
+                approving={isLoading}
+              />
+            </div>
+          ))}
+
+          {/* Mensagens de usuário apenas */}
+          {messages.filter(m => m.role === "user").map((m, idx) => (
             <div
-              key={idx}
-              className={cn(
-                "flex gap-3 animate-fade-in",
-                m.role === "user" ? "justify-end" : "justify-start"
-              )}
+              key={`user-${idx}`}
+              className="flex gap-3 animate-fade-in justify-end"
             >
-              {m.role === "assistant" && (
-                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                </div>
-              )}
-              <div
-                className={cn(
-                  "max-w-[80%] rounded-lg px-4 py-3 text-xs",
-                  m.role === "user"
-                    ? "bg-primary/20 border border-primary/30 text-foreground"
-                    : "glass-panel border border-border/50 text-foreground"
-                )}
-              >
+              <div className="max-w-[80%] rounded-lg px-4 py-3 text-xs bg-primary/20 border border-primary/30 text-foreground">
                 <div className="whitespace-pre-wrap leading-relaxed">
                   {m.content}
                 </div>
               </div>
-              {m.role === "user" && (
-                <div className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center shrink-0">
-                  <span className="text-xs">👤</span>
-                </div>
-              )}
+              <div className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center shrink-0">
+                <span className="text-xs">👤</span>
+              </div>
             </div>
           ))}
 
-          {/* Loading indicator (for cases where streaming has no visible chunks) */}
-          {(isLoading || isStreaming) && !streamingContent && (
+          {/* Loading indicator */}
+          {(isLoading || isStreaming) && !streamingContent && compilerResponses.length === 0 && (
             <div className="flex gap-3 animate-fade-in">
               <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
                 <Sparkles className="h-4 w-4 text-primary animate-pulse" />
@@ -1321,6 +1399,11 @@ export function StudioChatPanel({ onSpec, currentSpec, gameId }: Props) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={placeholder}
+            disabled={
+              isLoading || 
+              compilerPhase === "confirmation" || 
+              compilerPhase === "compilation"
+            }
             className="min-h-[80px] max-h-[120px] resize-none bg-background border-border/50 text-xs"
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {

@@ -1,13 +1,261 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { CompilerSessionStore, type CompilerSessionState } from "../_shared/compiler-session-store.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// ============================================================================
+// COMPILER SESSION STATE (Parte 1 - Máquina de Estados com Persistência)
+// ============================================================================
+
+function getSessionId(messages: any[], userId?: string): string {
+  // Gera ID baseado no userId + primeiras mensagens
+  const msgHash = JSON.stringify(messages.slice(0, 2));
+  return `${userId || "anon"}_${btoa(msgHash).slice(0, 32)}`;
+}
+
+// Constitutional Validator Types (inline para Deno)
+type ViolationLevel = 'CRITICAL' | 'SEVERE' | 'MINOR';
+
+interface ConstitutionalViolation {
+  id: string;
+  level: ViolationLevel;
+  pilar: string;
+  rule: string;
+  message: string;
+  fix: string;
+}
+
+interface ValidationResult {
+  isValid: boolean;
+  violations: ConstitutionalViolation[];
+  summary: {
+    critical: number;
+    severe: number;
+    minor: number;
+  };
+}
+
+interface RuntimeSpec {
+  code: string;
+  hasTimeManager?: boolean;
+  hasStateManager?: boolean;
+  hasInputManager?: boolean;
+  hasSaveManager?: boolean;
+  hasViewportManager?: boolean;
+  hasStartScreen?: boolean;
+  hasHUD?: boolean;
+  hasGameOverScreen?: boolean;
+}
+
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
 type Mode = "spec" | "coach" | "code_patch";
+
+// Constitutional Validation Rules
+const VALIDATION_RULES = [
+  // PILAR 1: Time Management
+  {
+    id: 'TIME_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Time Management',
+    rule: 'deltaTime must be used in all movement/physics updates',
+    check: (spec: RuntimeSpec) => {
+      const hasUpdateWithDelta = /update\s*\(\s*deltaTime\s*:\s*number\s*\)/.test(spec.code);
+      const usesDeltaInMovement = /[+\-*\/]=?\s*.*\s*\*\s*deltaTime/.test(spec.code);
+      return hasUpdateWithDelta && usesDeltaInMovement;
+    },
+    message: 'Game must use deltaTime for frame-independent movement',
+    fix: 'Add deltaTime parameter to update() and multiply all movement by deltaTime'
+  },
+  // PILAR 2: FSM
+  {
+    id: 'FSM_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'FSM',
+    rule: 'GameState enum must exist with minimum 4 states',
+    check: (spec: RuntimeSpec) => {
+      const hasEnum = /enum\s+GameState\s*{/.test(spec.code);
+      const hasStart = /START\s*=/.test(spec.code);
+      const hasPlaying = /PLAYING\s*=/.test(spec.code);
+      const hasPaused = /PAUSED\s*=/.test(spec.code);
+      const hasGameOver = /GAME_OVER\s*=/.test(spec.code);
+      return hasEnum && hasStart && hasPlaying && hasPaused && hasGameOver;
+    },
+    message: 'GameState enum must exist with START, PLAYING, PAUSED, GAME_OVER',
+    fix: 'Add GameState enum with all required states'
+  },
+  {
+    id: 'FSM_002',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'FSM',
+    rule: 'StateManager must exist',
+    check: (spec: RuntimeSpec) => spec.hasStateManager === true || /currentState/.test(spec.code),
+    message: 'StateManager is required for game state management',
+    fix: 'Add StateManager to core systems'
+  },
+  // PILAR 3: UI System
+  {
+    id: 'UI_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'UI System',
+    rule: 'StartScreen must exist',
+    check: (spec: RuntimeSpec) => spec.hasStartScreen === true || /StartScreen|renderStartScreen/.test(spec.code),
+    message: 'StartScreen is required for game initialization',
+    fix: 'Add StartScreen component with render() and handleClick()'
+  },
+  {
+    id: 'UI_002',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'UI System',
+    rule: 'GameOverScreen must exist',
+    check: (spec: RuntimeSpec) => spec.hasGameOverScreen === true || /GameOverScreen|renderGameOverScreen/.test(spec.code),
+    message: 'GameOverScreen is required for game completion',
+    fix: 'Add GameOverScreen component with score display and restart option'
+  },
+  {
+    id: 'UI_003',
+    level: 'SEVERE' as ViolationLevel,
+    pilar: 'UI System',
+    rule: 'HUD must exist',
+    check: (spec: RuntimeSpec) => spec.hasHUD === true || /HUD|renderHUD/.test(spec.code),
+    message: 'HUD is required for displaying game information',
+    fix: 'Add HUD component to display score, lives, or other game info'
+  },
+  // PILAR 4: Input System
+  {
+    id: 'INPUT_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Input System',
+    rule: 'InputManager must exist',
+    check: (spec: RuntimeSpec) => spec.hasInputManager === true || /keys\s*[:=].*Map/.test(spec.code),
+    message: 'InputManager is required for centralized input handling',
+    fix: 'Add InputManager to core systems'
+  },
+  {
+    id: 'INPUT_002',
+    level: 'SEVERE' as ViolationLevel,
+    pilar: 'Input System',
+    rule: 'InputManager must support keyboard and mouse/touch',
+    check: (spec: RuntimeSpec) => {
+      const hasKeyboard = /keydown|keyup/.test(spec.code);
+      const hasMouseOrTouch = /mousedown|mouseup|touchstart|touchend|click/.test(spec.code);
+      return hasKeyboard && hasMouseOrTouch;
+    },
+    message: 'InputManager must support at least keyboard and mouse/touch',
+    fix: 'Add event listeners for keyboard and mouse/touch'
+  },
+  // PILAR 5: Save System
+  {
+    id: 'SAVE_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Save System',
+    rule: 'SaveManager must exist',
+    check: (spec: RuntimeSpec) => spec.hasSaveManager === true || /localStorage/.test(spec.code),
+    message: 'SaveManager is required for data persistence',
+    fix: 'Add SaveManager to core systems'
+  },
+  {
+    id: 'SAVE_002',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Save System',
+    rule: 'HighScore must be saved to localStorage',
+    check: (spec: RuntimeSpec) => {
+      const hasSave = /localStorage\.setItem/.test(spec.code) || /saveHighScore/.test(spec.code);
+      const hasLoad = /localStorage\.getItem/.test(spec.code) || /loadHighScore/.test(spec.code);
+      return hasSave && hasLoad;
+    },
+    message: 'HighScore must be persisted using localStorage',
+    fix: 'Add saveHighScore() and loadHighScore() methods'
+  },
+  // PILAR 6: Viewport Management
+  {
+    id: 'VIEWPORT_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Viewport Management',
+    rule: 'Resize handler must exist',
+    check: (spec: RuntimeSpec) => /addEventListener\s*\(\s*['"]resize['"]/.test(spec.code) || /handleResize/.test(spec.code),
+    message: 'Resize handler is required for responsive canvas',
+    fix: 'Add window resize event listener'
+  },
+  // PILAR 7: Game Loop
+  {
+    id: 'LOOP_001',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Game Loop',
+    rule: 'Must use requestAnimationFrame',
+    check: (spec: RuntimeSpec) => /requestAnimationFrame/.test(spec.code),
+    message: 'Game loop must use requestAnimationFrame',
+    fix: 'Replace setInterval/setTimeout with requestAnimationFrame'
+  },
+  {
+    id: 'LOOP_002',
+    level: 'CRITICAL' as ViolationLevel,
+    pilar: 'Game Loop',
+    rule: 'Must separate update() and render()',
+    check: (spec: RuntimeSpec) => {
+      const hasUpdate = /function\s+update\s*\(|update\s*\(.*\)\s*{|update\s*:\s*\(/.test(spec.code);
+      const hasRender = /function\s+render\s*\(|render\s*\(.*\)\s*{|render\s*:\s*\(/.test(spec.code);
+      return hasUpdate && hasRender;
+    },
+    message: 'Game loop must separate update() and render() logic',
+    fix: 'Create separate update() and render() functions'
+  }
+];
+
+function validateConstitutionalCompliance(spec: RuntimeSpec): ValidationResult {
+  const violations: ConstitutionalViolation[] = [];
+
+  for (const rule of VALIDATION_RULES) {
+    try {
+      if (!rule.check(spec)) {
+        violations.push({
+          id: rule.id,
+          level: rule.level,
+          pilar: rule.pilar,
+          rule: rule.rule,
+          message: rule.message,
+          fix: rule.fix
+        });
+      }
+    } catch (error) {
+      console.error(`Error checking rule ${rule.id}:`, error);
+    }
+  }
+
+  const summary = {
+    critical: violations.filter(v => v.level === 'CRITICAL').length,
+    severe: violations.filter(v => v.level === 'SEVERE').length,
+    minor: violations.filter(v => v.level === 'MINOR').length
+  };
+
+  return {
+    isValid: summary.critical === 0,
+    violations,
+    summary
+  };
+}
+
+function formatViolationsForAI(result: ValidationResult): string {
+  if (result.isValid && result.violations.length === 0) {
+    return 'CONSTITUTIONAL_VALIDATION_PASSED';
+  }
+
+  let output = 'CONSTITUTIONAL_VALIDATION_FAILED\n\n';
+  output += `violations: [\n`;
+  
+  result.violations.forEach(v => {
+    output += `  { id: '${v.id}', level: '${v.level}', pilar: '${v.pilar}', message: '${v.message}', fix: '${v.fix}' },\n`;
+  });
+  
+  output += `]\n\n`;
+  output += `REQUIRED_ACTION: Fix all CRITICAL violations and regenerate code.\n`;
+  output += `PROHIBITED: Responding "game ready" or suggesting "add later".\n`;
+
+  return output;
+}
 
 const CANONICAL_ALLOWED_DIRS = new Set(["systems", "entities", "ui", "state", "input", "audio", "spawn", "utils", "_derived"]);
 const CANONICAL_ROOT_FILES = new Set(["codeGame.ts"]);
@@ -547,6 +795,34 @@ Você é a IA do Ordax (engine de jogos). Gere APENAS um JSON válido, sem markd
 
 Objetivo: inferir um gameType explícito e devolver uma especificação completa e visual, executável pelo preview.
 
+⚠️ CONTRATO CONSTITUCIONAL ORDAX V1 (OBRIGATÓRIO):
+Todo jogo DEVE cumprir os 7 pilares operacionais mínimos:
+
+1. TIME MANAGEMENT: Usar deltaTime em todo movimento/física
+2. FSM: GameState enum com START, PLAYING, PAUSED, GAME_OVER
+3. UI SYSTEM: StartScreen + HUD + GameOverScreen (obrigatórios)
+4. INPUT SYSTEM: InputManager centralizado (keyboard + mouse/touch)
+5. SAVE SYSTEM: SaveManager com localStorage para highScore
+6. VIEWPORT MANAGEMENT: Resize handler para canvas responsivo
+7. GAME LOOP: requestAnimationFrame + separação update()/render()
+
+🚫 PROIBIDO:
+- Movimento sem deltaTime (ex: player.x += 5)
+- Jogo sem FSM ou estados explícitos
+- UI incompleta (faltando StartScreen, HUD ou GameOverScreen)
+- Input desorganizado (listeners espalhados)
+- Sem persistência (score que desaparece)
+- Canvas fixo sem adaptação
+- setInterval/setTimeout para game loop
+
+✅ ESTRUTURA MÍNIMA OBRIGATÓRIA:
+- enum GameState { START, PLAYING, PAUSED, GAME_OVER }
+- InputManager com keys Map e mouse/touch
+- SaveManager com saveHighScore() e loadHighScore()
+- renderStartScreen(), renderHUD(), renderGameOverScreen()
+- gameLoop(timestamp) com deltaTime
+- window.addEventListener('resize', handleResize)
+
  CONTRATO DE SAÍDA (SEMPRE):
 {
   "spec": {
@@ -615,6 +891,10 @@ EXEMPLOS DE BACKGROUNDS CORRETOS:
 
 - entities: não inventar assets reais; descrever com props simples (ex: speed, health).
 - Se o usuário pedir algo fora de escopo, ainda devolver gameType coerente, scene mínima + visual completo.
+
+⚠️ VALIDAÇÃO CONSTITUCIONAL:
+Seu código será validado automaticamente. Se falhar, você DEVE corrigir TODAS as violações CRÍTICAS.
+NÃO responda "jogo pronto" ou sugira "adicionar depois". Gere TUDO desde o início.
 `.trim();
 }
 
@@ -686,7 +966,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, currentSpec, mode, phase, approvedPlan, approvedPlanHuman, targetGameId, projectFiles } = (await req.json()) as {
+    const { messages, currentSpec, mode, phase, approvedPlan, approvedPlanHuman, targetGameId, projectFiles, userId, action } = (await req.json()) as {
       messages: ChatMessage[];
       currentSpec?: unknown;
       mode?: Mode;
@@ -695,12 +975,79 @@ serve(async (req) => {
       approvedPlanHuman?: unknown;
       targetGameId?: unknown;
       projectFiles?: unknown;
+      userId?: string;
+      action?: string;
     };
 
     const resolvedMode: Mode = mode ?? "spec";
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error("Supabase credentials not configured");
+    }
+
+    // Inicializar store de sessões
+    const sessionStore = new CompilerSessionStore(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // ============================================================================
+    // PARTE 2: VALIDAÇÃO DE FASE DO COMPILADOR (Protocolo Obrigatório)
+    // ============================================================================
+    
+    // Obter ou criar sessão do compilador (com persistência)
+    const sessionId = getSessionId(messages, userId);
+    const isNewGame = resolvedMode === "spec" && !currentSpec;
+    const session = await sessionStore.getOrCreateSession(sessionId, isNewGame, userId, typeof targetGameId === "string" ? targetGameId : undefined);
+
+    // Processar ação de aprovação
+    if (action === "APPROVE_PLAN" && session.gamePlan) {
+      await sessionStore.updateSession(sessionId, {
+        approvedByUser: true,
+        phase: "compilation"
+      });
+      
+      // Recarregar sessão atualizada
+      const updatedSession = await sessionStore.loadSession(sessionId);
+      if (updatedSession) {
+        Object.assign(session, updatedSession);
+      }
+    }
+
+    // Validar fase atual antes de permitir geração
+    if (isNewGame) {
+      // Para NEW_GAME, protocolo de 5 fases é OBRIGATÓRIO
+      
+      // Se tentando compilar sem passar pelas fases anteriores
+      if (phase === "spec" && session.phase !== "compilation") {
+        return new Response(JSON.stringify({
+          error: "COMPILER_PROTOCOL_VIOLATION",
+          message: `Cannot compile game. Current phase: ${session.phase}. Must complete all phases: interpretation → plan → validation → confirmation → compilation`,
+          currentPhase: session.phase,
+          requiredPhase: "compilation",
+          protocol: "ORDAX_COMPILER_PROTOCOL_V1"
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Se tentando compilar sem aprovação do usuário
+      if (phase === "spec" && !session.approvedByUser) {
+        return new Response(JSON.stringify({
+          error: "COMPILER_PROTOCOL_VIOLATION",
+          message: "Cannot compile game without user approval. User must explicitly approve the game plan.",
+          currentPhase: session.phase,
+          approvedByUser: session.approvedByUser,
+          protocol: "ORDAX_COMPILER_PROTOCOL_V1"
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     if (resolvedMode === "coach" && !currentSpec) {
       return new Response(JSON.stringify({ error: "currentSpec é obrigatório no modo coach" }), {
@@ -709,28 +1056,99 @@ serve(async (req) => {
       });
     }
 
-    const editHint =
-      resolvedMode === "spec" && currentSpec
-        ? `\n\nCONTEXTO: Existe um JSON atual do projeto (currentSpec). Sua tarefa é EDITAR o projeto atual: mantenha o máximo possível e altere APENAS o necessário para atender o pedido do usuário. Preencha appliedEdits com as mudanças que VOCÊ realmente fez e escreva assistantSummary com o resultado implementado.`
-        : "";
-
-    // NEW_GAME contract: mandatory GAME_PLAN phase (only when creating from scratch)
-    const isNewGame = resolvedMode === "spec" && !currentSpec;
-    const resolvedPhase: "plan" | "spec" = isNewGame ? (phase ?? "plan") : "spec";
+    // ============================================================================
+    // PARTE 3: LÓGICA DE FASES DO COMPILADOR (Protocolo de 5 Fases)
+    // ============================================================================
+    
     const userPrompt = (messages ?? []).slice().reverse().find((m) => m.role === "user")?.content ?? "";
     let planWarnings: string[] = [];
     let validatedPlan: GamePlan | null = null;
     let planDiff: PlanDiff | null = null;
+    
     if (isNewGame) {
-      // If user is trying to skip the plan, hard-reject.
-      if (resolvedPhase === "spec" && !approvedPlan) {
-        return new Response(JSON.stringify({ error: "GAME_PLAN obrigatório: revise/aceite o plano antes de gerar o runtimeSpec." }), {
-          status: 400,
+      // Determinar fase atual baseado no input
+      const currentPhase = session.phase;
+      
+      // FASE 1: INTERPRETATION
+      if (currentPhase === "interpretation") {
+        // Gerar interpretação do pedido
+        const interpretationPrompt = `Você é o Ordax Interpreter. Analise o pedido do usuário e retorne APENAS um JSON válido (sem markdown).
+
+Formato obrigatório:
+{
+  "phase": "interpretation",
+  "interpretation": {
+    "gameType": "platformer"|"topdown"|"shooter"|"puzzle"|"racing"|"sports"|"unknown",
+    "mechanics": ["mecânica 1", "mecânica 2", ...],
+    "restrictions": ["restrição 1", "restrição 2", ...],
+    "objective": "descrição do objetivo do jogador em 1 frase"
+  }
+}
+
+Regras:
+- Identifique o tipo de jogo explicitamente
+- Liste TODAS as mecânicas mencionadas pelo usuário
+- Identifique restrições (ex: "sem inimigos", "tempo limitado")
+- Descreva o objetivo do jogador claramente
+- NÃO assuma mecânicas não mencionadas
+- NÃO invente restrições`;
+
+        const interpretationResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-3-flash-preview",
+            messages: [{ role: "system", content: interpretationPrompt }, ...(messages ?? [])],
+            temperature: 0.2,
+          }),
+        });
+
+        if (!interpretationResp.ok) {
+          const t = await interpretationResp.text();
+          console.error("AI gateway (interpretation) error:", interpretationResp.status, t);
+          return new Response(JSON.stringify({ error: "AI gateway error (interpretation)" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const interpretationPayload = (await interpretationResp.json()) as any;
+        const interpretationText = interpretationPayload?.choices?.[0]?.message?.content as string | undefined;
+        const cleanedInterpretation = (interpretationText ?? "").replace(/^```[a-zA-Z]*\n?/, "").replace(/\n?```$/, "").trim();
+        
+        let interpretationResult: any;
+        try {
+          interpretationResult = JSON.parse(cleanedInterpretation);
+        } catch {
+          return new Response(JSON.stringify({ error: "Failed to parse interpretation result" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // Atualizar sessão com interpretação e avançar para próxima fase
+        await sessionStore.updateSession(sessionId, {
+          interpretationResult: interpretationResult.interpretation,
+          phase: "plan"
+        });
+
+        return new Response(JSON.stringify({
+          kind: "INTERPRETATION_RESULT",
+          phase: "interpretation",
+          interpretation: interpretationResult.interpretation,
+          nextPhase: "plan",
+          sessionId
+        }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-
-      const planPrompt = `Você é o Ordax Planner. Gere APENAS um JSON válido (sem markdown) do tipo GAME_PLAN.
+      
+      // FASE 2: PLAN CONSTRUCTION
+      if (currentPhase === "plan" && !approvedPlan) {
+        const planPrompt = `Você é o Ordax Planner. Gere APENAS um JSON válido (sem markdown) do tipo GAME_PLAN.
 
 Regras:
 - O output DEVE ter: kind="GAME_PLAN", gameType, title, description, coreLoop, requiredSystems (array).
@@ -739,18 +1157,36 @@ Regras:
 
 Formato:
 {
+  "phase": "plan",
   "kind": "GAME_PLAN",
   "gameType": "platformer"|"topdown"|"shooter"|"puzzle"|"racing"|"sports"|"unknown",
   "title": string,
   "description": string,
   "coreLoop": string,
-  "requiredSystems": string[]
+  "requiredSystems": string[],
+  "requiredEntities": string[],
+  "loopType": "winlose"|"survival"|"objective",
+  "lifecycle": {
+    "requiredStates": ["start", "playing", "gameover"],
+    "requiredTransitions": ["start->playing", "playing->gameover", "gameover->restart"],
+    "requiredUI": ["hud", "gameover_screen"],
+    "requiredSignalsAnyOf": ["player_health", "objective_progress", "timer"],
+    "signal": "player_health"|"objective_progress"|"timer",
+    "requiredControls": ["start_game", "restart_game"],
+    "startCondition": string,
+    "loseCondition": string,
+    "winCondition": string (opcional),
+    "scoreRule": string
+  },
+  "mustHave": {
+    "hasEnemies": boolean,
+    "hasAI": boolean,
+    "hasScore": boolean,
+    "hasHUD": boolean,
+    "hasSpawner": boolean
+  }
 }`;
 
-      const planSource = resolvedPhase === "spec" ? approvedPlan : undefined;
-      let planJson: unknown = planSource ?? {};
-
-      if (!planSource) {
         const planResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -759,7 +1195,11 @@ Formato:
           },
           body: JSON.stringify({
             model: "google/gemini-3-flash-preview",
-            messages: [{ role: "system", content: planPrompt }, ...(messages ?? [])],
+            messages: [
+              { role: "system", content: planPrompt },
+              { role: "system", content: `INTERPRETATION: ${JSON.stringify(session.interpretation)}` },
+              ...(messages ?? [])
+            ],
             temperature: 0.2,
           }),
         });
@@ -776,6 +1216,8 @@ Formato:
         const planPayload = (await planResp.json()) as any;
         const planText = planPayload?.choices?.[0]?.message?.content as string | undefined;
         const cleanedPlan = (planText ?? "").replace(/^```[a-zA-Z]*\n?/, "").replace(/\n?```$/, "").trim();
+        
+        let planJson: any;
         try {
           planJson = JSON.parse(cleanedPlan);
         } catch {
@@ -790,19 +1232,136 @@ Formato:
             requiredEntities: [],
           };
         }
-      }
 
-      const completed = validateAndCompletePlan(planJson, userPrompt);
-      validatedPlan = completed.plan;
-      planWarnings = uniq([...planWarnings, ...completed.warnings]);
-      planDiff = completed.diff;
+        // Validar e completar o plano
+        const completed = validateAndCompletePlan(planJson, userPrompt);
+        validatedPlan = completed.plan;
+        planWarnings = uniq([...planWarnings, ...completed.warnings]);
+        planDiff = completed.diff;
 
-      if (resolvedPhase === "plan") {
-        return new Response(JSON.stringify({ kind: "GAME_PLAN_RESULT", plan: validatedPlan, planWarnings, planDiff }), {
+        // Atualizar sessão com plano e avançar para validação
+        await sessionStore.updateSession(sessionId, {
+          gamePlan: validatedPlan,
+          phase: "validation"
+        });
+
+        return new Response(JSON.stringify({
+          kind: "GAME_PLAN_RESULT",
+          phase: "plan",
+          plan: validatedPlan,
+          planWarnings,
+          planDiff,
+          nextPhase: "validation",
+          sessionId
+        }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+
+      // FASE 3: CONSTITUTIONAL VALIDATION
+      if (currentPhase === "validation") {
+        // Obter plano da sessão
+        const planToValidate = session.gamePlan;
+        if (!planToValidate) {
+          return new Response(JSON.stringify({ error: "No game plan found in session" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // Criar um runtimeSpec simulado para validação
+        const mockSpec: RuntimeSpec = {
+          code: JSON.stringify(planToValidate),
+          hasTimeManager: true, // Assumir que será gerado
+          hasStateManager: true,
+          hasInputManager: true,
+          hasSaveManager: true,
+          hasViewportManager: true,
+          hasStartScreen: true,
+          hasHUD: planToValidate.mustHave?.hasHUD ?? true,
+          hasGameOverScreen: true
+        };
+
+        const validationResult = validateConstitutionalCompliance(mockSpec);
+
+        // Atualizar sessão com resultado da validação
+        await sessionStore.updateSession(sessionId, {
+          validationReport: validationResult,
+          phase: "confirmation"
+        });
+
+        return new Response(JSON.stringify({
+          kind: "VALIDATION_RESULT",
+          phase: "validation",
+          validation: validationResult,
+          plan: planToValidate,
+          nextPhase: "confirmation",
+          sessionId
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // FASE 4: USER CONFIRMATION
+      if (currentPhase === "confirmation" && !session.approvedByUser) {
+        // Retornar plano para confirmação do usuário
+        const planToConfirm = session.gamePlan;
+        const validationReport = session.validationReport;
+
+        return new Response(JSON.stringify({
+          kind: "CONFIRMATION_REQUIRED",
+          phase: "confirmation",
+          plan: planToConfirm,
+          validation: validationReport,
+          message: "Please review and approve the game plan before compilation",
+          nextPhase: "compilation",
+          sessionId
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // FASE 5: COMPILATION
+      // Se chegou aqui com approvedPlan, significa que o usuário aprovou
+      if (approvedPlan || session.approvedByUser) {
+        // Usar plano da sessão se já foi aprovado
+        const planSource = approvedPlan || session.gamePlan;
+        let planJson: unknown = planSource ?? {};
+
+        const completed = validateAndCompletePlan(planJson, userPrompt);
+        validatedPlan = completed.plan;
+        planWarnings = uniq([...planWarnings, ...completed.warnings]);
+        planDiff = completed.diff;
+      }
     }
+
+    // ============================================================================
+    // COMPILAÇÃO (Fase 5 ou edição de jogo existente)
+    // ============================================================================
+
+    if (isNewGame && !validatedPlan) {
+      // Se chegou aqui sem plano validado, algo deu errado
+      return new Response(JSON.stringify({
+        error: "COMPILER_PROTOCOL_VIOLATION",
+        message: "Cannot compile without validated plan",
+        currentPhase: session.phase
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (resolvedMode === "coach" && !currentSpec) {
+      return new Response(JSON.stringify({ error: "currentSpec é obrigatório no modo coach" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const editHint =
+      resolvedMode === "spec" && currentSpec
+        ? `\n\nCONTEXTO: Existe um JSON atual do projeto (currentSpec). Sua tarefa é EDITAR o projeto atual: mantenha o máximo possível e altere APENAS o necessário para atender o pedido do usuário. Preencha appliedEdits com as mudanças que VOCÊ realmente fez e escreva assistantSummary com o resultado implementado.`
+        : "";
 
      const codeCtx =
        resolvedMode === "code_patch"
@@ -924,6 +1483,55 @@ Formato:
         return new Response(JSON.stringify({ raw: JSON.stringify(outErr) }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+      }
+    }
+
+    // CONSTITUTIONAL VALIDATION (Parte 3 - Integração)
+    // Valida jogos gerados contra o Contrato Constitucional V1
+    if (resolvedMode === "spec" && !currentSpec) {
+      // Apenas valida NEW_GAME (não edições)
+      let parsed: any;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        // Se não conseguir parsear, deixa passar (erro será tratado no frontend)
+        console.warn("Could not parse spec for constitutional validation");
+      }
+
+      if (parsed && parsed.spec && !parsed.error) {
+        const specCode = JSON.stringify(parsed.spec);
+        const runtimeSpec: RuntimeSpec = {
+          code: specCode,
+          hasTimeManager: /TimeManager/.test(specCode),
+          hasStateManager: /StateManager|currentState/.test(specCode),
+          hasInputManager: /InputManager|keys.*Map/.test(specCode),
+          hasSaveManager: /SaveManager|localStorage/.test(specCode),
+          hasViewportManager: /ViewportManager|handleResize/.test(specCode),
+          hasStartScreen: /StartScreen|renderStartScreen/.test(specCode),
+          hasHUD: /HUD|renderHUD/.test(specCode),
+          hasGameOverScreen: /GameOverScreen|renderGameOverScreen/.test(specCode)
+        };
+
+        const validation = validateConstitutionalCompliance(runtimeSpec);
+
+        if (!validation.isValid) {
+          console.warn("Constitutional validation failed:", validation);
+          
+          // Retorna erro constitucional para o AI corrigir
+          const constitutionalError = {
+            error: "CONSTITUTIONAL_ERROR",
+            message: "Game violates Ordax Engine Contract V1",
+            violations: validation.violations,
+            summary: validation.summary,
+            aiPrompt: formatViolationsForAI(validation)
+          };
+
+          return new Response(JSON.stringify({ raw: JSON.stringify(constitutionalError) }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        console.log("Constitutional validation passed ✅");
       }
     }
 
