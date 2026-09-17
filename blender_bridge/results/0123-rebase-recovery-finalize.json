@@ -1,0 +1,11 @@
+{
+  "id": "0123-rebase-recovery-finalize",
+  "command_file": "0123-rebase-recovery-finalize.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 16.119,
+  "result": {
+    "executed": true,
+    "result": "Janela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nFOUNDATION_REBASE_RECOVERY_OK\n{\"mode\":\"RECOVER_PARTIAL_IN_MEMORY\",\"delta_applied_now\":[0.0,0.0],\"tower_xy\":[0.0,0.0],\"roots_shifted_now\":0,\"distances_before\":{\"tower_hall\":39.78500187899604,\"tower_passadico\":16.13000221436894,\"hall_passadico\":23.654999915368712},\"distances_after\":{\"tower_hall\":39.78500187899604,\"tower_passadico\":16.13000221436894,\"hall_passadico\":23.654999915368712},\"effective_terrains\":[\"WORLD | TERRENO MASTER | blockout\"],\"legacy_hidden_count\":13,\"origin_utm\":[552777.983102109,8565679.443171103]}\nQA=PASS_AND_SAVED\n"
+  }
+}
