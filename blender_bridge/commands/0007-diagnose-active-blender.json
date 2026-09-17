@@ -1,0 +1,8 @@
+{
+  "id": "0007-diagnose-active-blender",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\nscene = bpy.context.scene\nprint('FILEPATH=' + (bpy.data.filepath or '<UNSAVED>'))\nprint('SCENE=' + scene.name)\nprint('OBJECTS=' + ','.join(sorted(o.name for o in scene.objects)[:120]))\nprint('COLLECTIONS=' + ','.join(sorted(c.name for c in bpy.data.collections)[:120]))\nprint('WINDOWS=' + str(len(bpy.context.window_manager.windows)))"
+  },
+  "enabled": true
+}
