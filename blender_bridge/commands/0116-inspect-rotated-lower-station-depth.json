@@ -1,0 +1,8 @@
+{
+  "id": "0116-inspect-rotated-lower-station-depth",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, json\nfrom mathutils import Vector\nEXPECTED=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=EXPECTED: raise RuntimeError(f'ABORTADO arquivo errado {bpy.data.filepath!r}')\nparent=bpy.data.collections['01 WORLD | ELEVADOR LACERDA | blockout v4']; low=bpy.data.collections['D | ESTACAO CIDADE BAIXA | blockout v1']; tower=next(o for o in parent.objects if 'torre documental' in o.name.lower() and o.type=='MESH'); hall=next(o for o in parent.objects if 'hall piso terreo marcador' in o.name.lower() and o.type=='MESH'); EX=(hall.location.xy-tower.location.xy).normalized(); EY=Vector((-EX.y,EX.x)); t=tower.location.xy\nfor o in sorted(low.objects,key=lambda x:x.name):\n n=o.name.lower()\n if any(k in n for k in ['porta entrada','porta lacerda','porta saida','pilar fachada','piso saguão','piso saguao','cobertura']):\n  v=o.location.xy-t; print(o.name,'EX',round(v.dot(EX),3),'EY',round(v.dot(EY),3),'Z',round(o.location.z,3),'DIMS',tuple(round(float(x),3) for x in o.dimensions))\nprint('ROTATED_LOWER_DEPTH_INSPECT_OK')"
+  },
+  "enabled": true
+}
