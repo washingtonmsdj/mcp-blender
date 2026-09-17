@@ -1,0 +1,11 @@
+{
+  "id": "0118-solve-lower-station-depth-to-grade",
+  "command_file": "0118-solve-lower-station-depth-to-grade.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 12.815,
+  "result": {
+    "executed": true,
+    "result": "BEST_SHIFT_M 6.5 TERRAIN_Z_AT_DOORS [0.799, 0.799, 0.799] SCORE 1.033\nSHIFT 8 Z [0.799, 0.799, 0.799]\nSHIFT 10 Z [0.799, 0.799, 0.799]\nSHIFT 12 Z [0.799, 0.799, 0.799]\nSHIFT 14 Z [0.799, 0.799, 0.799]\nSHIFT 16 Z [0.799, 0.799, 0.799]\nSHIFT 18 Z [0.799, 0.799, 0.799]\nSHIFT 20 Z [0.799, 0.799, 0.799]\nLOWER_DEPTH_SOLVE_OK\n"
+  }
+}
