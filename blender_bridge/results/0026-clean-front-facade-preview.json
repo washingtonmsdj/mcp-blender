@@ -1,0 +1,11 @@
+{
+  "id": "0026-clean-front-facade-preview",
+  "command_file": "0026-clean-front-facade-preview.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 2.533,
+  "result": {
+    "executed": true,
+    "result": "CLEAN_FRONT bytes=4659 base64=6212 camera=(23.763, -16.481, 47.7)\n"
+  }
+}
