@@ -1,0 +1,8 @@
+{
+  "id": "0011-confirm-new-file",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\nprint('FILEPATH=' + repr(bpy.data.filepath))\nprint('SCENE=' + bpy.context.scene.name)\nprint('OBJECTS=' + ','.join(sorted(o.name for o in bpy.context.scene.objects)))\nprint('COLLECTIONS=' + ','.join(sorted(c.name for c in bpy.data.collections)))\n"
+  },
+  "enabled": true
+}
