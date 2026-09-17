@@ -1,0 +1,11 @@
+{
+  "id": "0029-publish-compact-qa-renders",
+  "command_file": "0029-publish-compact-qa-renders.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.301,
+  "result": {
+    "executed": true,
+    "result": "qa_frontal_small.jpg 9790\nqa_perspectiva_small.jpg 10639\nqa_acesso_small.jpg 9172\nCOMPACT_QA_RENDERS_OK\n"
+  }
+}
