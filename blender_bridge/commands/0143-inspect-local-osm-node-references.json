@@ -1,0 +1,8 @@
+{
+  "id": "0143-inspect-local-osm-node-references",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, json\nEXPECTED=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=EXPECTED: raise RuntimeError(f'ABORTADO arquivo errado {bpy.data.filepath!r}')\npath=r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\data\\osm\\salvador_osm_map.xml'\ntext=open(path,'r',encoding='utf-8',errors='replace').read()\nrefs=['11734895385','12189974188','13144235879','12189974189','11734895388','11734895381','13144235885','11734895380']\nout=[]\nfor rid in refs:\n    idxs=[]; start=0\n    while True:\n        i=text.find(rid,start)\n        if i<0: break\n        idxs.append(i); start=i+len(rid)\n    snippets=[text[max(0,i-90):min(len(text),i+120)].replace('\\n',' ') for i in idxs[:5]]\n    out.append({'id':rid,'count':len(idxs),'has_node_literal':('<node id=\\\"'+rid+'\\\"') in text,'has_ref_literal':('ref=\\\"'+rid+'\\\"') in text,'snippets':snippets})\nprint('LOCAL_OSM_NODE_REF_INSPECT_BEGIN'); print(json.dumps({'file_size':len(text),'node_token_count':text.count('<node '),'items':out},ensure_ascii=False,separators=(',',':'))); print('LOCAL_OSM_NODE_REF_INSPECT_END')"
+  },
+  "enabled": true
+}
