@@ -1,0 +1,11 @@
+{
+  "id": "0151-build-upper-v5-osm-qa-candidate",
+  "command_file": "0151-build-upper-v5-osm-qa-candidate.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.676,
+  "result": {
+    "executed": true,
+    "result": "Janela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nUPPER_V5_OSM_QA_OK\n{\"candidate_collection\":\"QA | CIDADE ALTA V5 | OSM LIVE + DOC\",\"objects\":27,\"station_center_xy\":[46.0308,-43.0404],\"station_rotation_deg\":-35.3822,\"station_delta_rotation_deg\":7.7989,\"bridge_length_m\":51.6529,\"bridge_rotation_deg\":135.1293,\"bridge_endpoint_local_station\":[-7.6681,0.3953],\"bridge_endpoint_inside_station\":true,\"v4_upper_viewport_hidden\":27,\"tower_unchanged\":true,\"terrain_unchanged\":true,\"saved\":true}\nQA=PASS_AND_SAVED\n"
+  }
+}
