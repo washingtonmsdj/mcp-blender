@@ -1,0 +1,11 @@
+{
+  "id": "0009-switch-visible-window-to-salvador",
+  "command_file": "0009-switch-visible-window-to-salvador.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.181,
+  "result": {
+    "executed": true,
+    "result": "Switched 1 window(s) to scene SALVADOR | ESBOCO OFICIAL; framed 1 VIEW_3D area(s); scene_objects=1456\n"
+  }
+}
