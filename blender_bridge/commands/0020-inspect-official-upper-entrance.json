@@ -1,0 +1,8 @@
+{
+  "id": "0020-inspect-official-upper-entrance",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\nfrom mathutils import Vector\n\nTARGETS = [\n    'OFICIAL | Entrada superior | cobertura',\n    'OFICIAL | Entrada superior | fachada direita',\n    'OFICIAL | Entrada superior | fachada esquerda',\n    'OFICIAL | Entrada superior | lintel',\n    'OFICIAL | Entrada superior | parede lateral A',\n    'OFICIAL | Entrada superior | parede lateral B',\n    'OFICIAL | Terminal alto | piso de entrada',\n    'OFICIAL | Terminal alto | galeria piso',\n    'OFICIAL | Terminal alto | galeria cobertura',\n    'OFICIAL | Terminal alto | apoio junto encosta'\n]\n\ndef bounds_world(o):\n    pts=[o.matrix_world @ Vector(c) for c in o.bound_box]\n    mins=tuple(round(min(p[i] for p in pts),4) for i in range(3))\n    maxs=tuple(round(max(p[i] for p in pts),4) for i in range(3))\n    return mins,maxs\n\nprint('FILE='+bpy.data.filepath)\nprint('SCENE='+bpy.context.scene.name)\nfor name in TARGETS:\n    o=bpy.data.objects.get(name)\n    if not o:\n        print('MISSING='+name)\n        continue\n    loc=tuple(round(v,4) for v in o.location)\n    rot=tuple(round(v,6) for v in o.rotation_euler)\n    dim=tuple(round(v,4) for v in o.dimensions)\n    mins,maxs=bounds_world(o)\n    cols=[c.name for c in o.users_collection]\n    print(f'OBJ={name}|LOC={loc}|ROT={rot}|DIM={dim}|MIN={mins}|MAX={maxs}|COLL={cols}')\n"
+  },
+  "enabled": true
+}
