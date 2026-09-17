@@ -1,0 +1,11 @@
+{
+  "id": "0124-organize-foundation-hierarchy",
+  "command_file": "0124-organize-foundation-hierarchy.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.654,
+  "result": {
+    "executed": true,
+    "result": "Janela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nFOUNDATION_HIERARCHY_OK\n{\"objects\":2060,\"collections_before\":23,\"collections_after\":29,\"root_required\":[\"00 WORLD | GEOREF\",\"01 WORLD | ELEVADOR LACERDA | MASTER\",\"02 WORLD | TERRENO MASTER\",\"03 WORLD | ENTORNO GIS | STAGING\",\"04 WORLD | EDIFICACOES\",\"90 QA | REFERENCIAS\",\"99 LEGADO | NAO USAR\"],\"elevador_children\":[\"01 WORLD | ELEVADOR LACERDA | blockout v4\"],\"terrain_children\":[\"00 WORLD | TERRENO MASTER\"],\"staging_children\":[\"02 ENTORNO | OSM e patamares\"],\"buildings_children\":[\"06 PREFEITURA | Palacio Thome de Souza\"],\"qa_children\":[\"04 MAPA AMPLIADO | referencia fora do recorte\",\"09 CHATGPT | calibracao dimensional cadastro 2000\",\"ChatGPT_Visible_Test\"],\"legacy_children\":[\"01 ELEVADOR OFICIAL | esboco original\",\"03 TERRENO | aproximacao volumetrica pendente de levantamento\",\"07 CHATGPT | estudo fachada superior 6 janelas\",\"08 CHATGPT | estudo acesso superior marquise terreo\",\"10 CHATGPT | candidato escala real v1\",\"11 CHATGPT | candidato escala real v2 ancorado\",\"12 CHATGPT | blockout jogavel v3\",\"13 CHATGPT | terreno jogavel v1\",\"Lacerda_Do_Zero\",\"Lacerda_Upper_Blockout\"]}\nQA=PASS_AND_SAVED\n"
+  }
+}
