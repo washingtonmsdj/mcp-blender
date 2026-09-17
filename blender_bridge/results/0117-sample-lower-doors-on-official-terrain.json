@@ -1,0 +1,11 @@
+{
+  "id": "0117-sample-lower-doors-on-official-terrain",
+  "command_file": "0117-sample-lower-doors-on-official-terrain.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 1.687,
+  "result": {
+    "executed": true,
+    "result": "V4 | CB | porta entrada CONTACT_Z 0.455 TERRAIN_Z 5.175 DELTA_FLOOR_MINUS_TERRAIN -4.72 GRID_DIST 1.056\nV4 | CB | porta lacerda CONTACT_Z 0.455 TERRAIN_Z 5.957 DELTA_FLOOR_MINUS_TERRAIN -5.502 GRID_DIST 0.086\nV4 | CB | porta saida CONTACT_Z 0.455 TERRAIN_Z 6.843 DELTA_FLOOR_MINUS_TERRAIN -6.388 GRID_DIST 1.221\nLOWER_DOOR_TERRAIN_SAMPLE_OK\n"
+  }
+}
