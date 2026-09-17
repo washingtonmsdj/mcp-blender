@@ -1,0 +1,8 @@
+{
+  "id": "0082-inspect-upper-station-levels",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\nfrom mathutils import Vector\nelev=bpy.data.collections.get('01 WORLD | ELEVADOR LACERDA | blockout v4')\nif not elev: raise RuntimeError('elevador ausente')\nterms=('piso','parede','janela','porta','cobertura','marquise','hall','fachada','bloco')\nfor o in elev.objects:\n    if any(t in o.name.lower() for t in terms):\n        if o.type=='MESH':\n            pts=[o.matrix_world@Vector(c) for c in o.bound_box]\n            print(o.name,'Z',(round(min(p.z for p in pts),3),round(max(p.z for p in pts),3)),'DIMS',tuple(round(v,3) for v in o.dimensions),'LOC',tuple(round(v,3) for v in o.location))\n        else: print(o.name,o.type)\nprint('UPPER_LEVEL_INSPECT_OK')"
+  },
+  "enabled": true
+}
