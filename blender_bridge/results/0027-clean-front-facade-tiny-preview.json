@@ -1,0 +1,11 @@
+{
+  "id": "0027-clean-front-facade-tiny-preview",
+  "command_file": "0027-clean-front-facade-tiny-preview.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.381,
+  "result": {
+    "executed": true,
+    "result": "CLEAN_FRONT_TINY bytes=1859 base64=2480\n"
+  }
+}
