@@ -1,0 +1,11 @@
+{
+  "id": "0025-measure-upper-entry-local-bounds",
+  "command_file": "0025-measure-upper-entry-local-bounds.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.214,
+  "result": {
+    "executed": true,
+    "result": "OFICIAL | Entrada superior | fachada esquerda\n U=[-0.3708,0.3708] width=0.7416\n V=[-4.8000,-1.6000] width=3.2000\n Z=[40.0000,52.0000] height=12.0000\nOFICIAL | Entrada superior | fachada direita\n U=[-0.3708,0.3708] width=0.7416\n V=[1.6000,4.8000] width=3.2000\n Z=[40.0000,52.0000] height=12.0000\nOFICIAL | Entrada superior | lintel\n U=[-0.3708,0.3708] width=0.7416\n V=[-1.6000,1.6000] width=3.2000\n Z=[44.0000,52.0000] height=8.0000\nOFICIAL | Entrada superior | cobertura\n U=[-19.0030,0.4635] width=19.4665\n V=[-5.1000,5.1000] width=10.2000\n Z=[51.7500,52.2500] height=0.5000\nOFICIAL | Entrada superior | parede lateral A\n U=[-18.5395,0.0000] width=18.5395\n V=[-5.0000,-4.6000] width=0.4000\n Z=[40.0000,52.0000] height=12.0000\nOFICIAL | Entrada superior | parede lateral B\n U=[-18.5395,0.0000] width=18.5395\n V=[4.6000,5.0000] width=0.4000\n Z=[40.0000,52.0000] height=12.0000\nUNION U=[-19.0030,0.4635] V=[-5.1000,5.1000] Z=[40.0000,52.2500]\nTHETA_DEG -43.181067234751325\n"
+  }
+}
