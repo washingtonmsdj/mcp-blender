@@ -1,0 +1,11 @@
+{
+  "id": "0049-publish-v2-color-previews",
+  "command_file": "0049-publish-v2-color-previews.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.16,
+  "result": {
+    "executed": true,
+    "result": "v2perfil bytes=3550 chars=4736 chunks=5\nv2persp bytes=4247 chars=5664 chunks=6\nV2_COLOR_PREVIEWS_OK\n"
+  }
+}
