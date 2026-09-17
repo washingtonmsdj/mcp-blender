@@ -85,7 +85,7 @@ if (Test-Path $LogFile) {
 }
 
 if ($compilerErrors) {
-    Write-Error ("Unity log contains blocking error patterns: " + ($errorMatches -join ", "))
+    Write-Host ("Unity log contains blocking error patterns: " + ($errorMatches -join ", "))
     if ($exitCode -eq 0) {
         $exitCode = 20
     }
