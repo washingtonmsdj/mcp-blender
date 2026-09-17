@@ -1,0 +1,11 @@
+{
+  "id": "0139-audit-osm-building-parts-around-upper-corridor",
+  "command_file": "0139-audit-osm-building-parts-around-upper-corridor.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.161,
+  "result": {
+    "executed": true,
+    "result": "OSM_UPPER_PARTS_BEGIN\n{\"1263035778\":[],\"1263035779\":[{\"name\":\"OSM 1263035779.001\",\"type\":\"MESH\",\"collections\":[\"02 ENTORNO | OSM e patamares\"],\"s_range\":[-9.695,7.074],\"l_range\":[5.942,22.779],\"z_range\":[0.0,0.18],\"dist_tower\":7.687,\"dist_door\":44.447,\"object_props\":{\"osm_id\":\"1263035779\",\"fonte\":\"https://www.openstreetmap.org/way/1263035779\",\"altura_status\":\"altura desconhecida; apenas implantacao, espessura grafica 0.18m\",\"osm_tags\":\"{\\\"building\\\": \\\"yes\\\", \\\"shop\\\": \\\"bakery\\\"}\",\"Z_status\":\"patamares do esboco; nao altimetria medida\"}}],\"1263035780\":[],\"1263035781\":[],\"1263035782\":[{\"name\":\"Praça Tomé de Souza.002\",\"type\":\"MESH\",\"collections\":[\"02 ENTORNO | OSM e patamares\"],\"s_range\":[65.247,110.091],\"l_range\":[-27.806,40.667],\"z_range\":[59.37,59.43],\"dist_tower\":68.009,\"dist_door\":20.223,\"object_props\":{\"osm_id\":\"1263035782\",\"Z_status\":\"patamares do esboco; nao altimetria medida\"}}],\"1455480196\":[{\"name\":\"OSM 1455480196.001\",\"type\":\"CURVE\",\"collections\":[\"02 ENTORNO | OSM e patamares\"],\"s_range\":[55.367,70.569],\"l_range\":[-0.535,1.215],\"z_range\":[59.53,59.53],\"dist_tower\":55.37,\"dist_door\":6.465,\"object_props\":{\"osm_id\":\"1455480196\",\"Z_status\":\"patamares do esboco; nao altimetria medida\"}}],\"1455480197\":[],\"1455480198\":[{\"name\":\"OSM 1455480198.001\",\"type\":\"CURVE\",\"collections\":[\"02 ENTORNO | OSM e patamares\"],\"s_range\":[-3.562,3.737],\"l_range\":[0.988,2.028],\"z_range\":[0.08,0.08],\"dist_tower\":1.528,\"dist_door\":45.199,\"object_props\":{\"osm_id\":\"1455480198\",\"Z_status\":\"patamares do esboco; nao altimetria medida\"}}],\"1429934820\":[{\"name\":\"OSM 1429934820.001\",\"type\":\"CURVE\",\"collections\":[\"02 ENTORNO | OSM e patamares\"],\"s_range\":[70.569,80.847],\"l_range\":[1.215,2.486],\"z_range\":[59.53,59.53],\"dist_tower\":70.579,\"dist_door\":21.678,\"object_props\":{\"osm_id\":\"1429934820\",\"Z_status\":\"patamares do esboco; nao altimetria medida\"}}]}\nOSM_UPPER_PARTS_END\n"
+  }
+}
