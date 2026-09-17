@@ -1,0 +1,11 @@
+{
+  "id": "0113-correct-lower-station-and-apply-official-terrain-qa",
+  "command_file": "0113-correct-lower-station-and-apply-official-terrain-qa.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 5.784,
+  "result": {
+    "executed": true,
+    "result": "LOWER_AFTER_BOUNDS_EX_EY_Z (1.025, 16.686, -11.45, 6.69, 0.455, 4.005)\nLOWER_FACADE_DOT_EY -1.0\nTERRAIN_VERTS 52628 FACES 52170 DIMS (403.746, 401.95, 59.555) ZRANGE -2.20082950592041 61.799171447753906\nBATCH_0113_QA_PASS_NOT_SAVED\n"
+  }
+}
