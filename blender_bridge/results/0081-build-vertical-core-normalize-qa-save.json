@@ -1,0 +1,11 @@
+{
+  "id": "0081-build-vertical-core-normalize-qa-save",
+  "command_file": "0081-build-vertical-core-normalize-qa-save.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 14.33,
+  "result": {
+    "executed": true,
+    "result": "NUCLEO_VERTICAL_V1_OK\nLOW_Z=0.455 HIGH_Z=59.455 TRAVEL=59.000\nNEW_SHAFTS=2 OLD_SHAFTS=2 TOTAL_CABINS=4\nOLD_CORE_LOCAL_X=34.185 TUNNEL_LENGTH=30.010\nOBJECTS=34 TERRAIN_CREATED=0\nQA_ELEVADOR_INTERIOR\nERRORS=[]\nWARNINGS=[]\nOBJECTS=34\nRESULT=PASS\nQA_WORLD_BLOCKOUT\nERRORS=[]\nWARNINGS=[]\nVISIBLE_TERRAIN=['WORLD | TERRENO MASTER | blockout']\nLANDING_DELTA=59.000\nRESULT=PASS\nJanela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nBATCH_0081_VERTICAL_CORE_PASS_AND_SAVED\n"
+  }
+}
