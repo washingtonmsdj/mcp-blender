@@ -1,0 +1,8 @@
+{
+  "id": "0091-search-geosalvador-terrain-items",
+  "type": "execute_code",
+  "params": {
+    "code": "import urllib.request, urllib.parse, json, ssl\nbase='https://geo.salvador.ba.gov.br/portal/sharing/rest/search'\nqueries=['MDT','Modelo Digital de Terreno','LiDAR','LIDAR','Nuvem de Pontos','Modelo Digital de Superficie','MDS','MDE','Cartografia 2017','aerofotogrametria','laser','elevation','DEM','group:6539f9757bb94b0a83d6462c6289bd7d']\nseen={}\nctx=ssl.create_default_context()\nfor q in queries:\n    url=base+'?'+urllib.parse.urlencode({'f':'json','q':q,'num':100,'start':1})\n    try:\n        req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 ChatGPTTerrainResearch/1.0'})\n        with urllib.request.urlopen(req,timeout=30,context=ctx) as r: data=json.loads(r.read().decode('utf-8'))\n        print('QUERY',q,'TOTAL',data.get('total'),'RETURNED',len(data.get('results',[])))\n        for it in data.get('results',[]):\n            text=' '.join(str(it.get(k,'')) for k in ('title','description','snippet','tags','typeKeywords')).lower()\n            if q.startswith('group:') or any(k in text for k in ['mdt','lidar','laser','terreno','digital','cartografia','elev','relevo','nuvem','mde','mds']):\n                seen[it.get('id')]=it\n    except Exception as e: print('QUERY_ERROR',q,type(e).__name__,str(e))\nprint('RELEVANT_UNIQUE='+str(len(seen)))\nfor it in sorted(seen.values(),key=lambda x:(str(x.get('title','')).lower())):\n    print(json.dumps({'id':it.get('id'),'title':it.get('title'),'type':it.get('type'),'owner':it.get('owner'),'url':it.get('url'),'tags':it.get('tags'),'access':it.get('access'),'modified':it.get('modified')},ensure_ascii=False))\nprint('GEOSALVADOR_SEARCH_DONE')"
+  },
+  "enabled": true
+}
