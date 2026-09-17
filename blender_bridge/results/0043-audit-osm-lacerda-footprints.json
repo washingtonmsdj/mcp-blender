@@ -1,0 +1,8 @@
+{
+  "id": "0043-audit-osm-lacerda-footprints",
+  "command_file": "0043-audit-osm-lacerda-footprints.json",
+  "status": "error",
+  "duration_seconds": 1.429,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"ParseError\", \"message\": \"duplicate attribute: line 3332, column 173\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 3, in <module>\\n  File \\\"C:\\\\Program Files\\\\Blender Foundation\\\\Blender 5.2\\\\5.2\\\\python\\\\Lib\\\\xml\\\\etree\\\\ElementTree.py\\\", line 1210, in parse\\n    tree.parse(source, parser)\\n    ~~~~~~~~~~^^^^^^^^^^^^^^^^\\n  File \\\"C:\\\\Program Files\\\\Blender Foundation\\\\Blender 5.2\\\\5.2\\\\python\\\\Lib\\\\xml\\\\etree\\\\ElementTree.py\\\", line 573, in parse\\n    self._root = parser._parse_whole(source)\\n                 ~~~~~~~~~~~~~~~~~~~^^^^^^^^\\nxml.etree.ElementTree.ParseError: duplicate attribute: line 3332, column 173\\n\"}"
+}
