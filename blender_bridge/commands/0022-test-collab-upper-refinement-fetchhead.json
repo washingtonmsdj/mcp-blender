@@ -1,0 +1,8 @@
+{
+  "id": "0022-test-collab-upper-refinement-fetchhead",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, subprocess, pathlib\nrepo = pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda')\nfetch = subprocess.run(['git','-C',str(repo),'fetch','origin','chatgpt/blender-collab'], check=True, capture_output=True, text=True)\nscript = subprocess.run(['git','-C',str(repo),'show','FETCH_HEAD:scripts/refinar_entrada_superior_chatgpt.py'], check=True, capture_output=True, text=True).stdout\nscript = script.replace(\"assert scene.name == SCENE, f'Abrir a cena {SCENE!r}; atual={scene.name!r}'\", \"print('TEST_MODE scene=', scene.name)\")\nexec(compile(script, 'refinar_entrada_superior_chatgpt.py', 'exec'), {'__name__':'__main__'})\nprint('TEST_FETCH_HEAD='+subprocess.run(['git','-C',str(repo),'rev-parse','FETCH_HEAD'], check=True, capture_output=True, text=True).stdout.strip())"
+  },
+  "enabled": true
+}
