@@ -1,0 +1,15 @@
+name: Toolchain smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  detect:
+    runs-on: [self-hosted, Windows, X64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect Blender and Unity
+        shell: pwsh
+        run: .\scripts\windows\toolchain-status.ps1

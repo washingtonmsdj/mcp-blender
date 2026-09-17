@@ -1,0 +1,26 @@
+name: Validate HORDAX in Unity
+
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: [self-hosted, Windows, X64]
+    steps:
+      - name: Checkout tool bridge
+        uses: actions/checkout@v4
+
+      - name: Validate HORDAX path
+        shell: pwsh
+        env:
+          HORDAX_PROJECT_PATH: \${{ vars.HORDAX_PROJECT_PATH }}
+        run: |
+          if (-not $env:HORDAX_PROJECT_PATH) {
+            throw "Set repository variable HORDAX_PROJECT_PATH to the local HORDAX clone."
+          }
+
+      - name: Run Unity validation
+        shell: pwsh
+        env:
+          HORDAX_PROJECT_PATH: \${{ vars.HORDAX_PROJECT_PATH }}
+        run: .\scripts\windows\unity-run.ps1 -ProjectPath "$env:HORDAX_PROJECT_PATH" -ExecuteMethod "HORDAX.EditorTools.CiValidation.Run"
