@@ -1,0 +1,8 @@
+{
+  "id": "0050-inline-v2-perspective-preview",
+  "type": "execute_code",
+  "params": {
+    "code": "import pathlib,base64\np=pathlib.Path(r'C:\\mcp-blender\\blender_bridge\\previews\\v2persp.jpg')\nprint('INLINE_V2_PERSP_BASE64='+base64.b64encode(p.read_bytes()).decode('ascii'))"
+  },
+  "enabled": true
+}
