@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shlex
 from pathlib import Path
 
@@ -10,6 +11,14 @@ from .process import run_process
 
 
 mcp = FastMCP("blender-unity")
+
+_UNITY_ERROR_PATTERNS = (
+    re.compile(r"\berror CS\d{4}\b", re.IGNORECASE),
+    re.compile(r"Scripts have compiler errors", re.IGNORECASE),
+    re.compile(r"Compilation failed", re.IGNORECASE),
+    re.compile(r"Aborting batchmode due to failure", re.IGNORECASE),
+    re.compile(r"executeMethod.*could not be found", re.IGNORECASE),
+)
 
 
 def _required_file(path: Path | None, label: str) -> Path:
@@ -35,11 +44,51 @@ def _required_project(project_path: str | None) -> Path:
     return project
 
 
-def _read_tail(path: Path, max_chars: int = 20000) -> str:
+def _read_tail(path: Path, max_chars: int = 40000) -> str:
     if not path.is_file():
         return ""
     text = path.read_text(encoding="utf-8", errors="replace")
     return text[-max_chars:]
+
+
+def _unity_result(command: list[str], project: Path, log_file: Path, timeout_seconds: int) -> dict:
+    result = run_process(
+        command,
+        cwd=project,
+        timeout_seconds=max(1, timeout_seconds),
+    )
+
+    log_text = _read_tail(log_file)
+    detected_errors: list[str] = []
+
+    for pattern in _UNITY_ERROR_PATTERNS:
+        if pattern.search(log_text):
+            detected_errors.append(pattern.pattern)
+
+    result["log_file"] = str(log_file)
+    result["unity_log"] = log_text
+    result["detected_error_patterns"] = detected_errors
+    result["ok"] = bool(result.get("ok")) and not detected_errors
+    return result
+
+
+def _unity_command(project: Path, log_file: Path, execute_method: str | None = None) -> list[str]:
+    unity = _required_file(find_unity(), "Unity")
+
+    command = [
+        str(unity),
+        "-batchmode",
+        "-quit",
+        "-projectPath",
+        str(project),
+        "-logFile",
+        str(log_file),
+    ]
+
+    if execute_method:
+        command.extend(["-executeMethod", execute_method])
+
+    return command
 
 
 @mcp.tool()
@@ -91,35 +140,37 @@ def blender_run_python(
 
 
 @mcp.tool()
+def unity_compile_project(
+    project_path: str | None = None,
+    timeout_seconds: int = 1800,
+) -> dict:
+    """Open/import a Unity project in batch mode and fail if compiler errors are detected."""
+    project = _required_project(project_path)
+    logs = project / "Logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    log_file = logs / "unity-mcp-compile.log"
+
+    command = _unity_command(project, log_file)
+    return _unity_result(command, project, log_file, timeout_seconds)
+
+
+@mcp.tool()
 def unity_validate_project(
     project_path: str | None = None,
     execute_method: str = "HORDAX.EditorTools.CiValidation.Run",
     timeout_seconds: int = 1800,
 ) -> dict:
-    """Open a Unity project in batch mode and execute a validation method."""
-    unity = _required_file(find_unity(), "Unity")
-    project = _required_project(project_path)
+    """Compile a Unity project and execute its validation entrypoint."""
+    if not execute_method or " " in execute_method:
+        raise ValueError("execute_method must be a fully-qualified static method name.")
 
+    project = _required_project(project_path)
     logs = project / "Logs"
     logs.mkdir(parents=True, exist_ok=True)
     log_file = logs / "unity-mcp-validation.log"
 
-    command = [
-        str(unity),
-        "-batchmode",
-        "-quit",
-        "-projectPath",
-        str(project),
-        "-executeMethod",
-        execute_method,
-        "-logFile",
-        str(log_file),
-    ]
-
-    result = run_process(command, cwd=project, timeout_seconds=max(1, timeout_seconds))
-    result["log_file"] = str(log_file)
-    result["unity_log"] = _read_tail(log_file)
-    return result
+    command = _unity_command(project, log_file, execute_method)
+    return _unity_result(command, project, log_file, timeout_seconds)
 
 
 @mcp.tool()
@@ -133,33 +184,18 @@ def unity_run_method(
     if not execute_method or " " in execute_method:
         raise ValueError("execute_method must be a fully-qualified static method name.")
 
-    unity = _required_file(find_unity(), "Unity")
     project = _required_project(project_path)
-
     logs = project / "Logs"
     logs.mkdir(parents=True, exist_ok=True)
     safe_name = execute_method.replace(".", "_")
     log_file = logs / f"unity-{safe_name}.log"
 
-    command = [
-        str(unity),
-        "-batchmode",
-        "-quit",
-        "-projectPath",
-        str(project),
-        "-executeMethod",
-        execute_method,
-        "-logFile",
-        str(log_file),
-    ]
+    command = _unity_command(project, log_file, execute_method)
 
     if extra_args.strip():
         command.extend(shlex.split(extra_args, posix=False))
 
-    result = run_process(command, cwd=project, timeout_seconds=max(1, timeout_seconds))
-    result["log_file"] = str(log_file)
-    result["unity_log"] = _read_tail(log_file)
-    return result
+    return _unity_result(command, project, log_file, timeout_seconds)
 
 
 def main() -> None:
