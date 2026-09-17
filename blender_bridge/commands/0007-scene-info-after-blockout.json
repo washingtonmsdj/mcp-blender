@@ -1,0 +1,6 @@
+{
+  "id": "0007-scene-info-after-blockout",
+  "type": "get_scene_info",
+  "params": {},
+  "enabled": true
+}
