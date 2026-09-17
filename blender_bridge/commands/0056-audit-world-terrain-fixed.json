@@ -1,0 +1,8 @@
+{
+  "id": "0056-audit-world-terrain-fixed",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os\nfrom mathutils import Vector\nexpected=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nactual=os.path.normcase(os.path.normpath(bpy.data.filepath))\nif actual!=expected: raise RuntimeError(f'ABORTADO arquivo errado {bpy.data.filepath!r}')\nprint('FILE='+bpy.data.filepath)\nprint('--- TERRAIN OBJECTS ---')\nfor o in bpy.data.objects:\n    n=o.name.lower()\n    if 'terreno' in n or 'terrain' in n:\n        if o.type=='MESH' and len(o.bound_box):\n            pts=[o.matrix_world@Vector(c) for c in o.bound_box]\n            xs=[p.x for p in pts]; ys=[p.y for p in pts]; zs=[p.z for p in pts]\n            print(f'{o.name}|coll={[c.name for c in o.users_collection]}|X={min(xs):.2f}..{max(xs):.2f}|Y={min(ys):.2f}..{max(ys):.2f}|Z={min(zs):.2f}..{max(zs):.2f}|hide={o.hide_viewport}')\nprint('--- TERRAIN COLLECTIONS ---')\nfor c in bpy.data.collections:\n    if 'terreno' in c.name.lower() or 'terrain' in c.name.lower(): print(c.name, 'hideV',c.hide_viewport,'hideR',c.hide_render,'objects',len(c.objects))\npts=[]\nfor o in bpy.data.objects:\n    if o.type!='MESH' or 'terreno' in o.name.lower() or 'terrain' in o.name.lower(): continue\n    if o.hide_viewport: continue\n    try: pts += [o.matrix_world@Vector(c) for c in o.bound_box]\n    except: pass\nif pts:\n    xs=[p.x for p in pts];ys=[p.y for p in pts];zs=[p.z for p in pts]\n    print(f'VISIBLE_URBAN_BOUNDS X={min(xs):.2f}..{max(xs):.2f} Y={min(ys):.2f}..{max(ys):.2f} Z={min(zs):.2f}..{max(zs):.2f}')\nprint('AUDIT_WORLD_TERRAIN_OK')"
+  },
+  "enabled": true
+}
