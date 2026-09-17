@@ -1,0 +1,8 @@
+{
+  "id": "0052-run-blockout-jogavel-v3",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, subprocess\nexpected=r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'\nif bpy.data.filepath.lower()!=expected.lower(): raise RuntimeError(f'ABORTADO arquivo errado: {bpy.data.filepath!r}')\nrepo=r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda'\nsubprocess.run(['git','-C',repo,'fetch','origin','chatgpt/blender-collab'],check=True,capture_output=True,text=True)\ncode=subprocess.run(['git','-C',repo,'show','FETCH_HEAD:scripts/blockout_jogavel_v3.py'],check=True,capture_output=True,text=True).stdout\nexec(compile(code,'blockout_jogavel_v3.py','exec'),{'__name__':'__main__'})\nprint('BLOCKOUT_V3_COMMIT=13a197dc34199585a962ef79ff406d4f3dc2b550')"
+  },
+  "enabled": true
+}
