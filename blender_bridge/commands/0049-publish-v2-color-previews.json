@@ -1,0 +1,8 @@
+{
+  "id": "0049-publish-v2-color-previews",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, pathlib, base64, os\nsrcbase=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders')\noutbase=pathlib.Path(r'C:\\mcp-blender\\blender_bridge\\previews')\nfor key,fn in [('v2perfil','chatgpt_real_scale_v2_perfil.png'),('v2persp','chatgpt_real_scale_v2_perspectiva.png')]:\n src=srcbase/fn; out=outbase/f'{key}.jpg'\n img=bpy.data.images.load(str(src),check_existing=False); img.scale(200,150); img.filepath_raw=str(out); img.file_format='JPEG'; img.save(); bpy.data.images.remove(img)\n data=base64.b64encode(out.read_bytes()).decode('ascii'); parts=[data[i:i+1000] for i in range(0,len(data),1000)]\n for i,p in enumerate(parts): (outbase/f'{key}_{i:02d}.txt').write_text(p,encoding='utf-8')\n print(f'{key} bytes={out.stat().st_size} chars={len(data)} chunks={len(parts)}')\nprint('V2_COLOR_PREVIEWS_OK')"
+  },
+  "enabled": true
+}
