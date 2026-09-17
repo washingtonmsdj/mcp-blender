@@ -1,0 +1,8 @@
+{
+  "id": "0039-search-arcgis-salvador-mdt",
+  "type": "execute_code",
+  "params": {
+    "code": "import urllib.request, urllib.parse, json\nqueries=[\n 'Salvador MDT',\n '\"Modelo Digital de Terreno\" Salvador',\n 'Salvador MDE FMLF',\n 'Salvador elevacao FMLF',\n 'Salvador terrain SIRGAS 2000',\n 'Salvador curvas de nivel FMLF',\n]\nfor q in queries:\n    url='https://www.arcgis.com/sharing/rest/search?'+urllib.parse.urlencode({'q':q,'f':'json','num':100})\n    req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'})\n    with urllib.request.urlopen(req,timeout=30) as r: data=json.load(r)\n    print('QUERY',q,'TOTAL',data.get('total'))\n    for it in data.get('results',[]):\n        title=it.get('title',''); typ=it.get('type',''); owner=it.get('owner',''); tags=it.get('tags',[])\n        txt=' '.join([title,owner,' '.join(tags)]).lower()\n        if any(k in txt for k in ['salvador','mdt','terreno','elev','fmlf','mde','curva']):\n            print('ITEM',it.get('id'),typ,owner,repr(title),'URL',it.get('url'))\n"
+  },
+  "enabled": true
+}
