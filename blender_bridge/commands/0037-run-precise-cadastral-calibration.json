@@ -1,0 +1,8 @@
+{
+  "id": "0037-run-precise-cadastral-calibration",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess, pathlib\nrepo=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda')\nsubprocess.run(['git','-C',str(repo),'fetch','origin','chatgpt/blender-collab'],check=True,capture_output=True,text=True)\ncode=subprocess.run(['git','-C',str(repo),'show','FETCH_HEAD:scripts/estudo_calibracao_dimensional.py'],check=True,capture_output=True,text=True).stdout\nexec(compile(code,'estudo_calibracao_dimensional.py','exec'),{'__name__':'__main__'})\nprint('PRECISE_CALIBRATION_COMMIT=00f55b101616dff204af560c007aa2d65ecfdf74')"
+  },
+  "enabled": true
+}
