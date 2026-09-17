@@ -1,0 +1,8 @@
+{
+  "id": "0080-build-vertical-core-qa-save",
+  "command_file": "0080-build-vertical-core-qa-save.json",
+  "status": "error",
+  "duration_seconds": 15.643,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"RuntimeError\", \"message\": \"QA INTERIOR FAIL: nomes duplicados: ['V4 | NUCLEO | NOVO 1 | guia.001', 'V4 | NUCLEO | NOVO 1 | guia.002', 'V4 | NUCLEO | NOVO 1 | guia.003', 'V4 | NUCLEO | NOVO 2 | guia.001', 'V4 | NUCLEO | NOVO 2 | guia.002', 'V4 | NUCLEO | NOVO 2 | guia.003', 'V4 | NUCLEO | ANTIGO 1 | guia.001', 'V4 | NUCLEO | ANTIGO 1 | guia.002', 'V4 | NUCLEO | ANTIGO 1 | guia.003', 'V4 | NUCLEO | ANTIGO 2 | guia.001']\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 12, in <module>\\n  File \\\"<string>\\\", line 10, in run_script\\n  File \\\"scripts/qa_elevador_interior.py\\\", line 64, in <module>\\nRuntimeError: QA INTERIOR FAIL: nomes duplicados: ['V4 | NUCLEO | NOVO 1 | guia.001', 'V4 | NUCLEO | NOVO 1 | guia.002', 'V4 | NUCLEO | NOVO 1 | guia.003', 'V4 | NUCLEO | NOVO 2 | guia.001', 'V4 | NUCLEO | NOVO 2 | guia.002', 'V4 | NUCLEO | NOVO 2 | guia.003', 'V4 | NUCLEO | ANTIGO 1 | guia.001', 'V4 | NUCLEO | ANTIGO 1 | guia.002', 'V4 | NUCLEO | ANTIGO 1 | guia.003', 'V4 | NUCLEO | ANTIGO 2 | guia.001']\\n\"}"
+}
