@@ -1,0 +1,11 @@
+{
+  "id": "0005-create-test-cube-clean",
+  "command_file": "0005-create-test-cube-clean.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.509,
+  "result": {
+    "executed": true,
+    "result": "BRIDGE_OK:Bridge_Test_Cube:(0.0, 0.0, 1.0)\n"
+  }
+}
