@@ -1,0 +1,11 @@
+{
+  "id": "0140-find-and-parse-local-osm-upper-building",
+  "command_file": "0140-find-and-parse-local-osm-upper-building.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 1.017,
+  "result": {
+    "executed": true,
+    "result": "LOCAL_OSM_UPPER_BUILDING_BEGIN\n{\"paths\":[\"C:\\\\mcp-blender\\\\vendor\\\\projeto-salvador-elevador-lacerda\\\\data\\\\osm\\\\salvador_osm_map.xml\"],\"way_id\":\"1263035781\",\"nodes\":[],\"tags\":{},\"error\":\"ParseError: duplicate attribute: line 3332, column 173\"}\nLOCAL_OSM_UPPER_BUILDING_END\n"
+  }
+}
