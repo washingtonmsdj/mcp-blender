@@ -1,0 +1,8 @@
+{
+  "id": "0155-upper-facade-local-role-audit",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, json, math\nfrom mathutils import Vector\nEXPECTED=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=EXPECTED: raise RuntimeError(f'ABORTADO arquivo errado {bpy.data.filepath!r}')\nslab=bpy.data.objects.get('V4 | CA | estacao laje 0'); col=bpy.data.collections.get('E | ESTACAO CIDADE ALTA | blockout v2')\nif not slab or not col: raise RuntimeError('Cidade Alta v2 ausente')\nc=slab.matrix_world.translation.xy.copy(); ang=slab.rotation_euler.z; ax=Vector((math.cos(ang),math.sin(ang))); ay=Vector((-ax.y,ax.x))\nrows=[]\nfor o in col.objects:\n n=o.name.lower()\n if any(k in n for k in ('lateral','fachada','entrada','porta','marquise')):\n  p=o.matrix_world.translation.xy.copy(); r=p-c; rows.append({'name':o.name,'local_xy':[round(r.dot(ax),4),round(r.dot(ay),4)],'z':round(o.matrix_world.translation.z,4),'dims':[round(float(x),4) for x in o.dimensions],'rot_z_deg':round(math.degrees(o.rotation_euler.z),4)})\nprint('UPPER_FACADE_LOCAL_ROLE_BEGIN'); print(json.dumps({'station_center':[round(c.x,4),round(c.y,4)],'station_rot_deg':round(math.degrees(ang),4),'station_dims':[round(slab.dimensions.x,4),round(slab.dimensions.y,4)],'objects':rows},ensure_ascii=False,separators=(',',':'))); print('UPPER_FACADE_LOCAL_ROLE_END')"
+  },
+  "enabled": true
+}
