@@ -17,6 +17,10 @@ if ($currentBranch -ne "blender-bridge") {
     git checkout blender-bridge
 }
 
+# Atualiza o bridge antes de iniciar o Python, evitando executar uma versao antiga
+# que so faria git pull depois de ja estar carregada em memoria.
+git pull --rebase origin blender-bridge
+
 $env:BLENDER_HOST = $HostAddress
 $env:BLENDER_PORT = "$Port"
 $env:BLENDER_BRIDGE_BRANCH = "blender-bridge"
