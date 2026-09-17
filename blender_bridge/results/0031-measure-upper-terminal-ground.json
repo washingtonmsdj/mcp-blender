@@ -1,0 +1,11 @@
+{
+  "id": "0031-measure-upper-terminal-ground",
+  "command_file": "0031-measure-upper-terminal-ground.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.324,
+  "result": {
+    "executed": true,
+    "result": "OFICIAL | Terminal alto | piso de entrada|U=(-22.247,0.000)|V=(-5.500,5.500)|Z=(39.400,40.000)\nOFICIAL | Terminal alto | galeria piso|U=(-23.174,-6.489)|V=(-5.500,5.500)|Z=(39.000,40.000)\nOFICIAL | Terminal alto | galeria cobertura|U=(-23.174,-6.489)|V=(-5.500,5.500)|Z=(43.125,43.475)\nOFICIAL | Terminal alto | apoio junto encosta|U=(-20.393,-5.562)|V=(-4.500,4.500)|Z=(14.000,40.000)\nOFICIAL | Entrada superior | cobertura|U=(-19.003,0.463)|V=(-5.100,5.100)|Z=(51.750,52.250)\nOFICIAL | Passarela | piso continuo|U=(-65.815,-16.686)|V=(-2.800,2.800)|Z=(39.000,40.000)\n"
+  }
+}
