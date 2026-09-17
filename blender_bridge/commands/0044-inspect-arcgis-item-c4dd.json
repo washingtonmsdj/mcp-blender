@@ -1,0 +1,8 @@
+{
+  "id": "0044-inspect-arcgis-item-c4dd",
+  "type": "execute_code",
+  "params": {
+    "code": "import urllib.request, urllib.parse, json\nitem='c4ddf138f84e4446af6caa0f724e8c9f'\ndef load(url):\n req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'})\n try:\n  with urllib.request.urlopen(req,timeout=30) as r:\n   raw=r.read().decode('utf-8','replace');\n   try:return json.loads(raw)\n   except:return {'_raw':raw[:10000]}\n except Exception as e:return {'_error':repr(e)}\nurls={\n 'item':f'https://www.arcgis.com/sharing/rest/content/items/{item}?f=pjson',\n 'data':f'https://www.arcgis.com/sharing/rest/content/items/{item}/data?f=pjson',\n 'resources':f'https://www.arcgis.com/sharing/rest/content/items/{item}/resources?f=pjson&num=100',\n 'related_fwd':f'https://www.arcgis.com/sharing/rest/content/items/{item}/relatedItems?relationshipType=Service2Data&direction=forward&f=pjson',\n 'related_rev':f'https://www.arcgis.com/sharing/rest/content/items/{item}/relatedItems?relationshipType=Service2Data&direction=reverse&f=pjson',\n}\nfor name,url in urls.items():\n d=load(url); print('SECTION',name,json.dumps(d,ensure_ascii=False)[:20000])\n# Search title/id references across public ArcGIS.\nfor q in [item,'mdt_apcp_centro_reclass_10m_r','mdt_apcp_centro_reclass','mdt_apcp_centro']:\n d=load('https://www.arcgis.com/sharing/rest/search?'+urllib.parse.urlencode({'q':q,'f':'json','num':100}))\n print('SEARCH',q,'TOTAL',d.get('total'))\n for it in d.get('results',[]): print('RES',it.get('id'),it.get('type'),it.get('owner'),repr(it.get('title')),it.get('url'),it.get('tags'))"
+  },
+  "enabled": true
+}
