@@ -1,0 +1,11 @@
+{
+  "id": "0162-rebuild-upper-interior-against-v2",
+  "command_file": "0162-rebuild-upper-interior-against-v2.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 8.511,
+  "result": {
+    "executed": true,
+    "result": "Janela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nUPPER_INTERIOR_REBUILD_0162_OK\n{\"old_objects_removed\":29,\"objects\":29,\"parent_collection\":\"E | ESTACAO CIDADE ALTA | blockout v2\",\"station_center_xy\":[46.031,-43.04],\"rotation_deg\":-35.382,\"ground_z\":59.4549,\"levels_z\":{\"B2\":51.4549,\"B1\":55.4549,\"L1\":63.4549,\"L2\":67.4549},\"old_core_local_xy\":[-6.1,0.0],\"tower_unchanged\":true,\"terrain_unchanged\":true,\"core_unchanged\":true,\"upper_shell_unchanged\":true,\"lower_unchanged\":true,\"saved\":true}\nQA=PASS_AND_SAVED\n"
+  }
+}
