@@ -1,0 +1,8 @@
+{
+  "id": "0036-publish-calibration-tiny-previews",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, base64, pathlib\nbase=pathlib.Path(r'C:\\mcp-blender\\blender_bridge\\previews')\nbase.mkdir(parents=True,exist_ok=True)\nsources=[('perfil',pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_calibracao_perfil.png')),('planta',pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_calibracao_planta.png'))]\nfor label,src in sources:\n    if not src.exists(): raise RuntimeError('missing '+str(src))\n    out=base/f'calibracao_{label}_tiny.jpg'\n    img=bpy.data.images.load(str(src),check_existing=False);img.scale(160,96);img.filepath_raw=str(out);img.file_format='JPEG';img.save();bpy.data.images.remove(img)\n    data=base64.b64encode(out.read_bytes()).decode('ascii')\n    chunk=900;parts=[data[i:i+chunk] for i in range(0,len(data),chunk)]\n    for i,p in enumerate(parts):(base/f'calibracao_{label}_tiny_{i:02d}.txt').write_text(p,encoding='utf-8')\n    print(f'{label.upper()}_TINY bytes={out.stat().st_size} chunks={len(parts)} chars={len(data)}')\nprint('CALIBRATION_TINY_PREVIEWS_OK')"
+  },
+  "enabled": true
+}
