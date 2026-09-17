@@ -1,4 +1,7 @@
-param()
+param(
+    [switch]$RequireBlender,
+    [switch]$RequireUnity
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -29,13 +32,35 @@ function Find-Unity {
 $blender = Find-Blender
 $unity = Find-Unity
 
+$python = Get-Command python -ErrorAction SilentlyContinue
+$git = Get-Command git -ErrorAction SilentlyContinue
+
 Write-Host "Blender: $blender"
 Write-Host "Unity:   $unity"
+Write-Host "Python:  $($python.Source)"
+Write-Host "Git:     $($git.Source)"
 
-if (-not $blender) { Write-Warning "Blender was not found." }
-if (-not $unity) { Write-Warning "Unity was not found." }
+$failed = $false
 
-if (-not $blender -or -not $unity) {
+if (-not $blender) {
+    Write-Warning "Blender was not found."
+    if ($RequireBlender) { $failed = $true }
+}
+
+if (-not $unity) {
+    Write-Warning "Unity was not found."
+    if ($RequireUnity) { $failed = $true }
+}
+
+if (-not $python) {
+    Write-Warning "Python was not found."
+}
+
+if (-not $git) {
+    Write-Warning "Git was not found."
+}
+
+if ($failed) {
     exit 1
 }
 
