@@ -1,0 +1,11 @@
+{
+  "id": "0104-profile-official-terrain-along-elevator-axis",
+  "command_file": "0104-profile-official-terrain-along-elevator-axis.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.872,
+  "result": {
+    "executed": true,
+    "result": "TOWER_PROFILE\n[(-30.0, 4.0), (-25.0, 4.0), (-20.0, 4.0), (-15.0, 4.0), (-10.0, 4.0), (-5.0, 7.82), (0.0, 8.66), (5.0, 9.76), (10.0, 10.73), (15.0, 11.15), (20.0, 18.3), (25.0, 25.11), (30.0, 25.84), (35.0, 31.71), (40.0, 46.73)]\nTOWER TARGET 59.45 BEST_S 40.0 Z 46.73 DZ -12.72 XY_ERR 0.91\nTOWER TARGET 60 BEST_S 40.0 Z 46.73 DZ -13.27 XY_ERR 0.91\nTOWER TARGET 62 BEST_S 40.0 Z 46.73 DZ -15.27 XY_ERR 0.91\nUP_DOOR_PROFILE\n[(-30.0, 18.3), (-25.0, 23.99), (-20.0, 25.6), (-15.0, 27.22), (-10.0, 45.1), (-5.0, 49.21), (0.0, 52.32), (5.0, 56.15), (10.0, 56.77), (15.0, 57.58), (20.0, 58.39), (25.0, 59.16), (30.0, 59.7), (35.0, 60.45), (40.0, 61.09)]\nUP_DOOR TARGET 59.45 BEST_S 28.0 Z 59.59 DZ 0.14 XY_ERR 0.72\nUP_DOOR TARGET 60 BEST_S 31.0 Z 60.01 DZ 0.01 XY_ERR 0.67\nUP_DOOR TARGET 62 BEST_S 40.0 Z 61.09 DZ -0.91 XY_ERR 0.85\nLOW_DOOR_PROFILE\n[(-30.0, 4.0), (-25.0, 4.0), (-20.0, 4.0), (-15.0, 4.35), (-10.0, 7.59), (-5.0, 10.78), (0.0, 11.83), (5.0, 11.98), (10.0, 13.63), (15.0, 18.99), (20.0, 26.0), (25.0, 26.0), (30.0, 28.54), (35.0, 49.07), (40.0, 51.49)]\nLOW_DOOR TARGET 4 BEST_S -30.0 Z 4.0 DZ 0.0 XY_ERR 0.85\nLOW_DOOR TARGET 5 BEST_S -15.0 Z 4.35 DZ -0.65 XY_ERR 1.24\nLOW_DOOR TARGET 6 BEST_S -12.0 Z 7.59 DZ 1.59 XY_ERR 1.08\n\n\nAXIS_PROFILE_OK\n"
+  }
+}
