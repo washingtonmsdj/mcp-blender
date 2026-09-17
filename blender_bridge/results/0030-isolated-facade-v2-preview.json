@@ -1,0 +1,11 @@
+{
+  "id": "0030-isolated-facade-v2-preview",
+  "command_file": "0030-isolated-facade-v2-preview.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.326,
+  "result": {
+    "executed": true,
+    "result": "V2_PREVIEW bytes=2526 base64=3368\n"
+  }
+}
