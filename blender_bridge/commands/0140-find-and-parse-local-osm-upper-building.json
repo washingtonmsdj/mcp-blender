@@ -1,0 +1,8 @@
+{
+  "id": "0140-find-and-parse-local-osm-upper-building",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, json, glob, xml.etree.ElementTree as ET\nEXPECTED=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=EXPECTED: raise RuntimeError(f'ABORTADO arquivo errado {bpy.data.filepath!r}')\npatterns=[r'C:\\mcp-blender\\salvador_osm_map.xml',r'C:\\mcp-blender\\data\\osm\\salvador_osm_map.xml',r'C:\\mcp-blender\\**\\salvador_osm_map.xml']\npaths=[]\nfor pat in patterns:\n    if '**' in pat:\n        try: paths.extend(glob.glob(pat,recursive=True))\n        except: pass\n    elif os.path.exists(pat): paths.append(pat)\npaths=list(dict.fromkeys(os.path.normpath(p) for p in paths if os.path.isfile(p)))\nres={'paths':paths,'way_id':'1263035781','nodes':[],'tags':{},'error':None}\nif paths:\n    path=paths[0]\n    try:\n        root=ET.parse(path).getroot(); nodes={n.attrib['id']:(float(n.attrib['lat']),float(n.attrib['lon'])) for n in root.findall('node')}\n        way=next((w for w in root.findall('way') if w.attrib.get('id')=='1263035781'),None)\n        if way is None: res['error']='way 1263035781 not found in local XML'\n        else:\n            refs=[nd.attrib['ref'] for nd in way.findall('nd')]; res['nodes']=[{'id':r,'lat':nodes[r][0],'lon':nodes[r][1]} for r in refs if r in nodes]; res['tags']={t.attrib['k']:t.attrib['v'] for t in way.findall('tag')}; res['source_path']=path\n    except Exception as e: res['error']=type(e).__name__+': '+str(e)\nprint('LOCAL_OSM_UPPER_BUILDING_BEGIN'); print(json.dumps(res,ensure_ascii=False,separators=(',',':'))); print('LOCAL_OSM_UPPER_BUILDING_END')"
+  },
+  "enabled": true
+}
