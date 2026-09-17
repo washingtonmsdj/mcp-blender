@@ -1,0 +1,11 @@
+{
+  "id": "0032-audit-passarela-local-dimensions",
+  "command_file": "0032-audit-passarela-local-dimensions.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.033,
+  "result": {
+    "executed": true,
+    "result": "OFICIAL | Passarela | piso continuo\n LOC (-24.5461, 28.8542, 39.5)\n DIMS_LOCAL (49.1296, 5.6, 1.0)\n ROT_DEG (0.0, 0.0, -43.1811)\nOFICIAL | Passarela | cobertura\n LOC (-24.5461, 28.8542, 43.3)\n DIMS_LOCAL (49.1296, 5.6, 0.35)\n ROT_DEG (0.0, 0.0, -43.1811)\nOFICIAL | Passarela | viga lateral A\n LOC (-26.3595, 26.9219, 38.8)\n DIMS_LOCAL (49.1296, 0.3, 1.4)\n ROT_DEG (0.0, 0.0, -43.1811)\nOFICIAL | Passarela | viga lateral B\n LOC (-22.7327, 30.7866, 38.8)\n DIMS_LOCAL (49.1296, 0.3, 1.4)\n ROT_DEG (0.0, 0.0, -43.1811)\nOFICIAL | Torre | cabecote alargado piso\n LOC (-47.1903, 50.1044, 39.3)\n DIMS_LOCAL (16.6855, 9.0, 1.4)\n ROT_DEG (0.0, 0.0, -43.1811)\nOFICIAL | Terminal alto | galeria piso\n LOC (-5.2817, 10.7757, 39.5)\n DIMS_LOCAL (16.6855, 11.0, 1.0)\n ROT_DEG (0.0, 0.0, -43.1811)\nOFICIAL | Terminal alto | piso de entrada\n LOC (-2.5779, 8.2384, 39.7)\n DIMS_LOCAL (22.2474, 11.0, 0.6)\n ROT_DEG (0.0, 0.0, -43.1811)\nCENTER_DISTANCE_TOWER_TO_TERMINAL 57.4724\nCENTER_DISTANCE_TOWER_TO_ENTRY 61.1803\nLOW_FLOOR_TOP_Z 0.0\nHIGH_FLOOR_TOP_Z 40.0\nFLOOR_TO_FLOOR_DELTA 40.0\n"
+  }
+}
