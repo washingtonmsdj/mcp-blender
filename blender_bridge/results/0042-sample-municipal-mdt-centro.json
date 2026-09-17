@@ -1,0 +1,11 @@
+{
+  "id": "0042-sample-municipal-mdt-centro",
+  "command_file": "0042-sample-municipal-mdt-centro.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 6.352,
+  "result": {
+    "executed": true,
+    "result": "META name Hosted/mdt_apcp_centro_reclass_10m_r\nMETA serviceDescription Hosted/mdt_apcp_centro_reclass_10m_r\nMETA description \nMETA pixelSizeX 0.5\nMETA pixelSizeY 0.5\nMETA bandCount 1\nMETA pixelType U8\nMETA minValues []\nMETA maxValues []\nMETA meanValues []\nMETA stdvValues []\nMETA objectIdField \nMETA capabilities Image, Metadata, Mensuration\nSPATIAL_REFERENCE {'wkid': 31984, 'latestWkid': 31984}\nEXTENT {'xmin': 549661.1354, 'ymin': 8560447.455, 'xmax': 572271.1354, 'ymax': 8573128.955, 'spatialReference': {'wkid': 31984, 'latestWkid': 31984}}\nIDENTIFY ORIGIN_PROJECT XY 552825.064 8565629.266 VALUE 6 NAME Pixel PROPS None\nIDENTIFY LOW_ACCESS_PISO XY 552784.633 8565673.027 VALUE 2 NAME Pixel PROPS None\nIDENTIFY TOWER_HEAD_CENTER XY 552777.874 8565679.37 VALUE 1 NAME Pixel PROPS None\nIDENTIFY HIGH_ENTRY_PISO XY 552822.486 8565637.504 VALUE 3 NAME Pixel PROPS None\nIDENTIFY HIGH_GALLERY XY 552819.782 8565640.042 VALUE 3 NAME Pixel PROPS None\n"
+  }
+}
