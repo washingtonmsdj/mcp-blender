@@ -1,0 +1,8 @@
+{
+  "id": "0063-save-clean-local-blend",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os\nexpected=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=expected: raise RuntimeError('arquivo errado')\nbpy.ops.wm.save_as_mainfile(filepath=bpy.data.filepath)\nprint('SAVED='+bpy.data.filepath)"
+  },
+  "enabled": true
+}
