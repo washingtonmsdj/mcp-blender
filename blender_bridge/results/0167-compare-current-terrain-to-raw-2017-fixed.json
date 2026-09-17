@@ -1,0 +1,11 @@
+{
+  "id": "0167-compare-current-terrain-to-raw-2017-fixed",
+  "command_file": "0167-compare-current-terrain-to-raw-2017-fixed.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.444,
+  "result": {
+    "executed": true,
+    "result": "TERRAIN_RAW_CURRENT_COMPARE_BEGIN\n{\"vertical_offset_m\":3.20082950592041,\"current_mesh\":\"WORLD | TERRENO MASTER | PMS 2017\",\"current_mesh_vertices\":52628,\"raw_candidate\":\"C:\\\\mcp-blender\\\\.geo-work\\\\terrain_2017_candidate.npz\",\"raw_shape\":[236,223,3],\"targets\":[{\"name\":\"tower\",\"xy\":[0.0,0.0],\"utm\":[552825.062,8565629.267],\"raw_official_z\":58.6408,\"expected_local_after_offset_z\":55.44,\"current_mesh_z\":5.6922,\"current_minus_expected_m\":-49.7478,\"raw_cell\":[117,99],\"raw_cell_corners_z\":[58.837,58.789,58.545,58.539]},{\"name\":\"upper_door\",\"xy\":[53.4827,-48.3327],\"utm\":[552878.435,8565580.848],\"raw_official_z\":64.0,\"expected_local_after_offset_z\":60.7992,\"current_mesh_z\":55.4958,\"current_minus_expected_m\":-5.3034,\"raw_cell\":[144,75],\"raw_cell_corners_z\":[64.0,64.0,64.0,64.0]},{\"name\":\"upper_hall\",\"xy\":[46.0308,-43.0404],\"utm\":[552870.996,8565586.153],\"raw_official_z\":63.9777,\"expected_local_after_offset_z\":60.7768,\"current_mesh_z\":54.3234,\"current_minus_expected_m\":-6.4534,\"raw_cell\":[140,78],\"raw_cell_corners_z\":[63.982,63.999,63.774,63.88]},{\"name\":\"lower_door_1\",\"xy\":[-17.7713,-2.2486],\"utm\":[552807.292,8565627.053],\"raw_official_z\":58.444,\"expected_local_after_offset_z\":55.2432,\"current_mesh_z\":1.0047,\"current_minus_expected_m\":-54.2385,\"raw_cell\":[108,98],\"raw_cell_corners_z\":[58.448,58.671,58.172,58.387]},{\"name\":\"lower_door_2\",\"xy\":[-14.6709,1.0551],\"utm\":[552810.398,8565630.35],\"raw_official_z\":58.2729,\"expected_local_after_offset_z\":55.0721,\"current_mesh_z\":0.7992,\"current_minus_expected_m\":-54.2729,\"raw_cell\":[110,100],\"raw_cell_corners_z\":[58.298,58.418,58.021,58.126]},{\"name\":\"lower_door_3\",\"xy\":[-11.5706,4.3589],\"utm\":[552813.504,8565633.646],\"raw_official_z\":57.7585,\"expected_local_after_offset_z\":54.5576,\"current_mesh_z\":0.8303,\"current_minus_expected_m\":-53.7273,\"raw_cell\":[111,101],\"raw_cell_corners_z\":[58.126,58.16,57.537,57.719]}]}\nTERRAIN_RAW_CURRENT_COMPARE_END\n"
+  }
+}
