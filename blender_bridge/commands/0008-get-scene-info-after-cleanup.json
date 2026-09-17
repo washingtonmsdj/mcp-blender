@@ -1,0 +1,6 @@
+{
+  "id": "0008-get-scene-info-after-cleanup",
+  "type": "get_scene_info",
+  "params": {},
+  "enabled": true
+}
