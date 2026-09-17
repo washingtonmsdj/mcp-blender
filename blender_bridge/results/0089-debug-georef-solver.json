@@ -1,0 +1,11 @@
+{
+  "id": "0089-debug-georef-solver",
+  "command_file": "0089-debug-georef-solver.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.664,
+  "result": {
+    "executed": true,
+    "result": "RC=1\nSTDOUT=\nSTDERR=Traceback (most recent call last):\n  File \"C:\\mcp-blender\\.geo-work\\derive_world_georef.py\", line 137, in <module>\n    if __name__=='__main__': main()\n                             ~~~~^^\n  File \"C:\\mcp-blender\\.geo-work\\derive_world_georef.py\", line 71, in main\n    nodes,ways=load_osm(args.osm_xml)\n               ~~~~~~~~^^^^^^^^^^^^^^\n  File \"C:\\mcp-blender\\.geo-work\\derive_world_georef.py\", line 22, in load_osm\n    root = ET.parse(path).getroot()\n           ~~~~~~~~^^^^^^\n  File \"C:\\Users\\TONECOS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\xml\\etree\\ElementTree.py\", line 1223, in parse\n    tree.parse(source, parser)\n    ~~~~~~~~~~^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\TONECOS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\xml\\etree\\ElementTree.py\", line 577, in parse\n    self._root = parser._parse_whole(source)\n                 ~~~~~~~~~~~~~~~~~~~^^^^^^^^\nxml.etree.ElementTree.ParseError: duplicate attribute: line 3332, column 173\n\nFILES={'anchors.json': 12425, 'salvador_osm_map.xml': 1065523, 'derive_world_georef.py': 5668, 'world_georef.json': None}\nGEOREF_DEBUG_DONE\n"
+  }
+}
