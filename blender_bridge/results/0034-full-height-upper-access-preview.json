@@ -1,0 +1,11 @@
+{
+  "id": "0034-full-height-upper-access-preview",
+  "command_file": "0034-full-height-upper-access-preview.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.27,
+  "result": {
+    "executed": true,
+    "result": "FULL_ACCESS_PREVIEW bytes=3667 base64=4892\n"
+  }
+}
