@@ -1,0 +1,8 @@
+{
+  "id": "0108-inspect-existing-cartographic-lacerda-anchors",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, json, math\nexpected=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=expected: raise RuntimeError(f'ABORTADO arquivo errado {bpy.data.filepath!r}')\nterms=['entrada superior lacerda','lacerda | torre externa','praça cairu','praca cairu','praça visconde de cayru','visconde de cayru','tomé de souza','tome de souza','elevador lacerda']\nrows=[]\nfor o in bpy.data.objects:\n    n=o.name.lower()\n    if any(t in n for t in terms):\n        try: cols=[c.name for c in o.users_collection]\n        except: cols=[]\n        props={k:o.get(k) for k in o.keys() if k not in {'_RNA_UI'}}\n        rows.append({'name':o.name,'type':o.type,'loc':[round(float(x),4) for x in o.location],'dims':[round(float(x),4) for x in o.dimensions],'hidden':bool(o.hide_viewport or o.hide_get()),'collections':cols,'props':props})\nprint('ANCHOR_CANDIDATES',len(rows))\nfor r in rows: print(json.dumps(r,ensure_ascii=False,default=str))\n# current structural refs\nt=bpy.data.objects.get('V4 | torre envelope documental') or next((o for o in bpy.data.collections['01 WORLD | ELEVADOR LACERDA | blockout v4'].objects if 'torre documental' in o.name.lower()),None)\nh=bpy.data.objects.get('V4 | hall piso terreo marcador')\nif t and h: print('CURRENT_TOWER_HALL_DISTANCE',round(math.hypot(h.location.x-t.location.x,h.location.y-t.location.y),4))\nprint('CARTOGRAPHIC_ANCHOR_INSPECT_OK')"
+  },
+  "enabled": true
+}
