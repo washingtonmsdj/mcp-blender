@@ -1,0 +1,11 @@
+{
+  "id": "0037-sample-sgb-dem-elevator",
+  "command_file": "0037-sample-sgb-dem-elevator.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 53.86,
+  "result": {
+    "executed": true,
+    "result": "RUN ['C:\\\\Users\\\\TONECOS\\\\.local\\\\bin\\\\uv.EXE', 'run', '--with', 'rasterio', '--with', 'pyproj', 'python', 'C:\\\\mcp-blender\\\\vendor\\\\geodata\\\\sample_sgb_dem.py']\nRETURN 0\nSTDOUT\nDRIVER AIG\nCRS PROJCS[\"unnamed\",GEOGCS[\"Unknown datum based upon the GRS 1980 ellipsoid (deprecated)\",DATUM[\"Not_specified_based_on_GRS_1980_ellipsoid\",SPHEROID[\"GRS 1980\",6378137,298.257222101,AUTHORITY[\"EPSG\",\"7019\"]],AUTHORITY[\"EPSG\",\"6019\"]],PRIMEM[\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY[\"EPSG\",\"4019\"]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",-39],PARAMETER[\"scale_factor\",0.9996],PARAMETER[\"false_easting\",500000],PARAMETER[\"false_northing\",10000000],UNIT[\"METERS\",1],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH]]\nSIZE 9644 9332\nRES (5.0, 5.0)\nBOUNDS (533554.826, 8557777.5, 581774.826, 8604437.5)\nNODATA 255.0\nORIGIN_DATASET_XY 552825.064 8565629.266\nSAMPLE ORIGIN_PROJECT XY 552825.064 8565629.266 Z 61.0\nSAMPLE LOW_ACCESS_PISO XY 552784.633 8565673.027 Z 13.0\nSAMPLE TOWER_HEAD_CENTER XY 552777.873 8565679.37 Z 9.0\nSAMPLE HIGH_ENTRY_PISO XY 552822.486 8565637.504 Z 58.0\nSAMPLE HIGH_GALLERY XY 552819.782 8565640.042 Z 56.0\n\nSTDERR\nDownloading rasterio (29.2MiB)\nDownloading numpy (11.9MiB)\nDownloading pyproj (6.4MiB)\n Downloaded pyproj\n Downloaded rasterio\n Downloaded numpy\nInstalled 8 packages in 6.96s\n\n"
+  }
+}
