@@ -1,0 +1,11 @@
+{
+  "id": "0106-audit-tower-against-osm-lacerda-footprint",
+  "command_file": "0106-audit-tower-against-osm-lacerda-footprint.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 4.495,
+  "result": {
+    "executed": true,
+    "result": "None\n\nCURRENT_TOWER -47.19024658203125 50.10444641113281 CURRENT_HALL -18.17923355102539 22.87932014465332\nOSM_LACERDA_AUDIT_OK\n"
+  }
+}
