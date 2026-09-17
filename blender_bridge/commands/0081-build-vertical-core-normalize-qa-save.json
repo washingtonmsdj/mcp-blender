@@ -1,0 +1,8 @@
+{
+  "id": "0081-build-vertical-core-normalize-qa-save",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, subprocess, os, re\nexpected=r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'\nrepo=r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda'\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=os.path.normcase(os.path.normpath(expected)):\n    raise RuntimeError('arquivo Blender errado')\ntry:\n    subprocess.run(['git','-C',repo,'fetch','origin','chatgpt/blender-collab'],check=True,capture_output=True,text=True)\n    def run_script(path):\n        cp=subprocess.run(['git','-C',repo,'show','FETCH_HEAD:'+path],check=True,capture_output=True,text=True,encoding='utf-8')\n        exec(compile(cp.stdout,path,'exec'),{'__name__':'__main__','__file__':os.path.join(repo,path)})\n    run_script('scripts/blockout_nucleo_vertical_v1.py')\n    c=bpy.data.collections.get('E | NUCLEO VERTICAL 4 ELEVADORES | blockout v1')\n    if not c: raise RuntimeError('nucleo nao criado')\n    groups={}\n    for o in list(c.objects):\n        base=re.sub(r'\\.\\d{3}$','',o.name)\n        groups.setdefault(base,[]).append(o)\n    for base,objs in groups.items():\n        if len(objs)>1:\n            objs=sorted(objs,key=lambda x:x.name)\n            for i,o in enumerate(objs,1): o.name=f'{base} | {i}'\n    run_script('scripts/qa_elevador_interior.py')\n    run_script('scripts/qa_world_blockout.py')\n    bpy.ops.wm.save_as_mainfile(filepath=expected)\n    print('BATCH_0081_VERTICAL_CORE_PASS_AND_SAVED')\nexcept Exception as e:\n    print('BATCH_0081_FAIL_ROLLBACK',repr(e))\n    try: bpy.ops.wm.open_mainfile(filepath=expected)\n    except Exception as r: print('ROLLBACK_OPEN_FAIL',repr(r))\n    raise"
+  },
+  "enabled": true
+}
