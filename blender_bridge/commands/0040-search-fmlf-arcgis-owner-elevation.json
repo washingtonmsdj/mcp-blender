@@ -1,0 +1,8 @@
+{
+  "id": "0040-search-fmlf-arcgis-owner-elevation",
+  "type": "execute_code",
+  "params": {
+    "code": "import urllib.request, urllib.parse, json\ndef get(url):\n req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'});\n with urllib.request.urlopen(req,timeout=30) as r:return json.load(r)\nitem_id='306c580063184ab99bfa2c9e348be039'\ninfo=get('https://www.arcgis.com/sharing/rest/content/items/'+item_id+'?f=json')\nprint('KNOWN_ITEM_OWNER',info.get('owner'),'ORG',info.get('orgId'),'TITLE',info.get('title'),'TYPE',info.get('type'))\nowners=[info.get('owner')]\nterms=['MDT','MDS','LIDAR','elevacao','altimetria','curva nivel','cartografia','terreno','modelo digital']\nfor owner in owners:\n for term in terms:\n  q=f'owner:{owner} {term}'\n  data=get('https://www.arcgis.com/sharing/rest/search?'+urllib.parse.urlencode({'q':q,'f':'json','num':100}))\n  if data.get('total'):\n   print('QUERY',q,'TOTAL',data.get('total'))\n   for it in data.get('results',[]):\n    print('ITEM',it.get('id'),it.get('type'),repr(it.get('title')), 'URL',it.get('url'))\n# org-wide search if orgId available\norg=info.get('orgId')\nif org:\n for term in terms:\n  q=f'orgid:{org} {term}'\n  data=get('https://www.arcgis.com/sharing/rest/search?'+urllib.parse.urlencode({'q':q,'f':'json','num':100}))\n  if data.get('total'):\n   print('ORGQUERY',q,'TOTAL',data.get('total'))\n   for it in data.get('results',[]): print('ORGITEM',it.get('id'),it.get('type'),it.get('owner'),repr(it.get('title')),'URL',it.get('url'))"
+  },
+  "enabled": true
+}
