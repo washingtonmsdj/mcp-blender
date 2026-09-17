@@ -1,0 +1,8 @@
+{
+  "id": "0117-sample-lower-doors-on-official-terrain",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, math\nfrom mathutils import Vector\nEXPECTED=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=EXPECTED: raise RuntimeError(f'ABORTADO arquivo errado {bpy.data.filepath!r}')\nterrain=bpy.data.objects['WORLD | TERRENO MASTER | blockout']; low=bpy.data.collections['D | ESTACAO CIDADE BAIXA | blockout v1']\n# nearest terrain vertex is adequate at 2m grid for QA\nverts=[terrain.matrix_world@v.co for v in terrain.data.vertices]\nfor o in sorted([o for o in low.objects if 'porta ' in o.name.lower()],key=lambda x:x.name):\n    x,y=o.location.x,o.location.y; p=min(verts,key=lambda v:(v.x-x)**2+(v.y-y)**2); z0=min((o.matrix_world@Vector(c)).z for c in o.bound_box) if o.type=='MESH' else o.location.z; print(o.name,'CONTACT_Z',round(z0,3),'TERRAIN_Z',round(p.z,3),'DELTA_FLOOR_MINUS_TERRAIN',round(z0-p.z,3),'GRID_DIST',round(math.hypot(p.x-x,p.y-y),3))\nprint('LOWER_DOOR_TERRAIN_SAMPLE_OK')"
+  },
+  "enabled": true
+}
