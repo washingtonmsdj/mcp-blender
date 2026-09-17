@@ -1,0 +1,11 @@
+{
+  "id": "0040-publish-real-scale-v1-tiny-previews",
+  "command_file": "0040-publish-real-scale-v1-tiny-previews.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.427,
+  "result": {
+    "executed": true,
+    "result": "REALV1_PERFIL bytes=3060 chunks=5 chars=4080\nREALV1_PLANTA bytes=2918 chunks=4 chars=3892\nREAL_SCALE_V1_TINY_PREVIEWS_OK\n"
+  }
+}
