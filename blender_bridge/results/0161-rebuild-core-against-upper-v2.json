@@ -1,0 +1,11 @@
+{
+  "id": "0161-rebuild-core-against-upper-v2",
+  "command_file": "0161-rebuild-core-against-upper-v2.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 10.95,
+  "result": {
+    "executed": true,
+    "result": "Janela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nCORE_REBUILD_0161_OK\n{\"objects\":34,\"travel_m\":59.0,\"old_core_local_x\":-6.1000000000000005,\"old_cabins_local_xy\":[[-6.1,-1.63],[-6.1,1.63]],\"old_core_world_xy\":[41.057,-39.508],\"tunnel_length_m\":52.379,\"new_cabins_max_dist_tower_m\":1.775,\"tower_unchanged\":true,\"terrain_unchanged\":true,\"upper_unchanged\":true,\"lower_unchanged\":true,\"saved\":true}\nQA=PASS_AND_SAVED\n"
+  }
+}
