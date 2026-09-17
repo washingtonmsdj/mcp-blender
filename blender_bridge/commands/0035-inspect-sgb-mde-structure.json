@@ -1,0 +1,8 @@
+{
+  "id": "0035-inspect-sgb-mde-structure",
+  "type": "execute_code",
+  "params": {
+    "code": "import pathlib, zipfile\nzp=pathlib.Path(r'C:\\mcp-blender\\vendor\\geodata\\produtos_mde_salvador_ba.zip')\nwith zipfile.ZipFile(zp,'r') as z:\n    for i in z.infolist():\n        if i.filename.lower().startswith('mde/'):\n            print(i.filename, i.file_size)"
+  },
+  "enabled": true
+}
