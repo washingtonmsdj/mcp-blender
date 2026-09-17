@@ -1,0 +1,11 @@
+{
+  "id": "0136-audit-osm-lacerda-way-59224731",
+  "command_file": "0136-audit-osm-lacerda-way-59224731.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.093,
+  "result": {
+    "executed": true,
+    "result": "OSM_LACERDA_59224731_AUDIT_BEGIN\n{\"axis_EX\":[0.729195,-0.684306],\"axis_EY\":[0.684306,0.729195],\"tower\":{\"name\":\"V4 | torre documental\",\"type\":\"MESH\",\"collections\":[\"01 WORLD | ELEVADOR LACERDA | blockout v4\"],\"center_xy\":[0.0,0.0],\"s_range\":[-1.775,1.775],\"l_range\":[-3.74,3.74],\"z_range\":[0.4499,73.9499],\"center_s_l\":[0.0,0.0],\"dist_center_to_tower\":0.0,\"props\":{\"status_dimensao\":\"DOCUMENTADO 3.55 x 7.48 x 73.50 m\"}},\"hall\":{\"name\":\"V4 | hall piso terreo marcador\",\"type\":\"MESH\",\"collections\":[\"01 WORLD | ELEVADOR LACERDA | blockout v4\"],\"center_xy\":[29.011,-27.2251],\"s_range\":[30.985,48.585],\"l_range\":[-5.0,5.0],\"z_range\":[59.4549,59.5049],\"center_s_l\":[39.785,0.0],\"dist_center_to_tower\":39.785,\"props\":{\"status_dimensao\":\"AREA NAVEGAVEL\"}},\"door\":{\"name\":\"V4 | porta entrada placeholder\",\"type\":\"MESH\",\"collections\":[\"01 WORLD | ELEVADOR LACERDA | blockout v4\"],\"center_xy\":[35.6759,-33.4797],\"s_range\":[48.885,48.965],\"l_range\":[-1.925,1.925],\"z_range\":[59.5249,62.2749],\"center_s_l\":[48.925,0.0],\"dist_center_to_tower\":48.925,\"props\":{\"status_dimensao\":\"GAMEPLAY PLACEHOLDER\"}},\"plaza\":{\"name\":\"Praça Tomé de Souza.002\",\"type\":\"MESH\",\"collections\":[\"02 ENTORNO | OSM e patamares\"],\"center_xy\":[68.4934,-55.5032],\"s_range\":[65.2474,110.0908],\"l_range\":[-27.8064,40.6666],\"z_range\":[59.3699,59.4299],\"center_s_l\":[87.9262,6.3978],\"dist_center_to_tower\":88.1587,\"props\":{\"osm_id\":\"1263035782\",\"Z_status\":\"patamares do esboco; nao altimetria medida\"}},\"candidate_count\":0,\"candidates\":[]}\nOSM_LACERDA_59224731_AUDIT_END\n"
+  }
+}
