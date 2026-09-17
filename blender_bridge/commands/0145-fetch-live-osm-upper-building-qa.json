@@ -1,0 +1,8 @@
+{
+  "id": "0145-fetch-live-osm-upper-building-qa",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, json, urllib.request, xml.etree.ElementTree as ET\nEXPECTED=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=EXPECTED: raise RuntimeError(f'ABORTADO arquivo errado {bpy.data.filepath!r}')\nurl='https://api.openstreetmap.org/api/0.6/way/1263035781/full'\nres={'url':url,'success':False,'nodes':[],'tags':{},'error':None}\ntry:\n    req=urllib.request.Request(url,headers={'User-Agent':'Salvador-Lacerda-QA/1.0'})\n    with urllib.request.urlopen(req,timeout=15) as r: data=r.read()\n    root=ET.fromstring(data); ndict={n.attrib['id']:(float(n.attrib['lat']),float(n.attrib['lon'])) for n in root.findall('node')}\n    way=next((w for w in root.findall('way') if w.attrib.get('id')=='1263035781'),None)\n    if way is None: raise RuntimeError('way ausente na resposta')\n    refs=[nd.attrib['ref'] for nd in way.findall('nd')]; res['nodes']=[{'id':rid,'lat':ndict[rid][0],'lon':ndict[rid][1]} for rid in refs if rid in ndict]; res['tags']={t.attrib['k']:t.attrib['v'] for t in way.findall('tag')}; res['refs']=refs; res['success']=len(res['nodes'])>=3; res['bytes']=len(data)\nexcept Exception as e: res['error']=type(e).__name__+': '+str(e)\nprint('LIVE_OSM_UPPER_BUILDING_BEGIN'); print(json.dumps(res,ensure_ascii=False,separators=(',',':'))); print('LIVE_OSM_UPPER_BUILDING_END')"
+  },
+  "enabled": true
+}
