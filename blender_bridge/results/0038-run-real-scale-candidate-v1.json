@@ -1,0 +1,11 @@
+{
+  "id": "0038-run-real-scale-candidate-v1",
+  "command_file": "0038-run-real-scale-candidate-v1.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 24.923,
+  "result": {
+    "executed": true,
+    "result": "CANDIDATO_ESCALA_REAL_V1_OK\nFILE=C:\\mcp-blender\\salvador_lacerda_do_zero.blend\nTOWER=3.55x7.48x73.50 centerU=-72.3040\nSTOP_Z=59.00\nBRIDGE=28.71x6.00 U=[-70.5290,-41.8190]\nUPPER_PLAN=18.60x11.00 U=[-41.8190,-23.2190] HEIGHT_APPROX=12.00\nFRONT_WINDOWS=6\nOBJECTS=19 FRAMED=1\nREAL_SCALE_CANDIDATE_COMMIT=fcac738bc71891eeb8c850776a41ccd40d66e82f\n"
+  }
+}
