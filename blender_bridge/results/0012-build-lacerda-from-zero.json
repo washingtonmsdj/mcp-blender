@@ -1,0 +1,11 @@
+{
+  "id": "build-lacerda-from-zero",
+  "command_file": "0012-build-lacerda-from-zero.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 15.431,
+  "result": {
+    "executed": true,
+    "result": "Criado Lacerda_Do_Zero do zero com 49 objetos; viewport enquadrada em 1 area(s).\n"
+  }
+}
