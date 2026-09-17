@@ -1,0 +1,8 @@
+{
+  "id": "0060-audit-v4-ground-gap-only",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os\nfrom mathutils import Vector\nfrom mathutils.bvhtree import BVHTree\nexpected=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=expected: raise RuntimeError('arquivo errado')\nterrain=bpy.data.objects.get('WORLD | TERRENO MASTER | blockout')\ncoll=bpy.data.collections.get('01 WORLD | ELEVADOR LACERDA | blockout v4')\nif not terrain or not coll: raise RuntimeError('missing master/v4')\nverts=[terrain.matrix_world@v.co for v in terrain.data.vertices]\npolys=[tuple(p.vertices) for p in terrain.data.polygons]\nbvh=BVHTree.FromPolygons(verts,polys,all_triangles=False)\ndef terrain_z(x,y):\n    hit=bvh.ray_cast(Vector((x,y,200.0)),Vector((0,0,-1)),400.0)\n    return None if hit[0] is None else hit[0].z\nfor key in ('hall piso terreo','porta entrada','passadico'):\n    print('KEY='+key)\n    for o in coll.objects:\n        if key in o.name.lower() and o.type=='MESH':\n            pts=[o.matrix_world@Vector(c) for c in o.bound_box]\n            minz=min(p.z for p in pts); cx=sum(p.x for p in pts)/len(pts); cy=sum(p.y for p in pts)/len(pts)\n            tz=terrain_z(cx,cy)\n            print(f'{o.name}|bottom={minz:.3f}|terrain={tz if tz is not None else "NONE"}|gap={(minz-tz) if tz is not None else 999:.3f}')\nprint('GROUND_GAP_AUDIT_OK')"
+  },
+  "enabled": true
+}
