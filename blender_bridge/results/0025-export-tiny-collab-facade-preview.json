@@ -1,0 +1,11 @@
+{
+  "id": "0025-export-tiny-collab-facade-preview",
+  "command_file": "0025-export-tiny-collab-facade-preview.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.388,
+  "result": {
+    "executed": true,
+    "result": "TINY_PREVIEW bytes=2276 base64=3036\n"
+  }
+}
