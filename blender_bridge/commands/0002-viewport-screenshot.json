@@ -1,0 +1,9 @@
+{
+  "id": "0002-viewport-screenshot",
+  "type": "get_viewport_screenshot",
+  "params": {
+    "max_size": 900,
+    "format": "png"
+  },
+  "enabled": true
+}
