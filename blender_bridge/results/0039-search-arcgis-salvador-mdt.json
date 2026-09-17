@@ -1,0 +1,11 @@
+{
+  "id": "0039-search-arcgis-salvador-mdt",
+  "command_file": "0039-search-arcgis-salvador-mdt.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 2.818,
+  "result": {
+    "executed": true,
+    "result": "QUERY Salvador MDT TOTAL 2\nITEM 92b42df683d74d6cb5a09f9b5351b7aa Image 00117039_UFRGS 'Modelo Digital de Terreno (MDT) - Região Funcional 1 - RS, Brasil' URL None\nITEM f1ecbc06130c4e78bad53d39c3c8633b Image 00117039_UFRGS 'Modelo Digital de Superfície (MDS) - Região Funcional 1 - RS, Brasil' URL None\nQUERY \"Modelo Digital de Terreno\" Salvador TOTAL 1\nITEM 92b42df683d74d6cb5a09f9b5351b7aa Image 00117039_UFRGS 'Modelo Digital de Terreno (MDT) - Região Funcional 1 - RS, Brasil' URL None\nQUERY Salvador MDE FMLF TOTAL 0\nQUERY Salvador elevacao FMLF TOTAL 0\nQUERY Salvador terrain SIRGAS 2000 TOTAL 0\nQUERY Salvador curvas de nivel FMLF TOTAL 0\n"
+  }
+}
