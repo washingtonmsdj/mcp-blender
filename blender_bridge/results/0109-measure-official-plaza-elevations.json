@@ -1,0 +1,11 @@
+{
+  "id": "0109-measure-official-plaza-elevations",
+  "command_file": "0109-measure-official-plaza-elevations.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 17.442,
+  "result": {
+    "executed": true,
+    "result": "RC 0\nTOME POLY_BOUNDS [-15.675, -44.396, 58.283, 33.598] N 680\nTOME Z_STATS {'min': 56.84904479980469, 'p10': 58.212127685546875, 'median': 60.86293029785156, 'p90': 62.92194747924805, 'max': 63.391700744628906, 'mean': 60.69738006591797}\nTOME NEAREST_EDGE_TO_TOWER [6.82, 8.948] DIST 67.904 TERRAIN_Z 57.622 GRID_DIST 0.223\nCAIRU POLY_BOUNDS [-247.459, 25.917, -54.017, 303.552] N 3795\nCAIRU Z_STATS {'min': 1.0, 'p10': 3.0, 'median': 3.20082950592041, 'p90': 3.922786235809326, 'max': 4.0731682777404785, 'mean': 3.3186588287353516}\nCAIRU NEAREST_EDGE_TO_TOWER [-81.934, 87.531] DIST 51.067 TERRAIN_Z 4.0 GRID_DIST 1.146\n\n\nPLAZA_ELEVATION_MEASURE_OK\n"
+  }
+}
