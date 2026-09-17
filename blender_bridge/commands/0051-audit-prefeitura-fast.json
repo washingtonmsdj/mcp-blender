@@ -1,0 +1,8 @@
+{
+  "id": "0051-audit-prefeitura-fast",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess\nrepo=r'C:\\\\mcp-blender\\\\vendor\\\\projeto-salvador-elevador-lacerda'\nsubprocess.run(['git','-C',repo,'fetch','origin','chatgpt/blender-collab'],check=True)\nsrc=subprocess.check_output(['git','-C',repo,'show','FETCH_HEAD:scripts/auditar_prefeitura_fast.py'],text=True,encoding='utf-8')\nexec(compile(src,'auditar_prefeitura_fast.py','exec'),{'__name__':'__main__'})"
+  },
+  "enabled": true
+}
