@@ -1,0 +1,11 @@
+{
+  "id": "0170-proposed-topographic-vertical-reconciliation",
+  "command_file": "0170-proposed-topographic-vertical-reconciliation.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.364,
+  "result": {
+    "executed": true,
+    "result": "PROPOSED_TOPOGRAPHIC_VERTICAL_RECONCILIATION_BEGIN\n{\"current\":{\"lower_nominal_z\":0.4549,\"upper_nominal_z\":59.4549,\"architecture_delta_m\":59.0,\"documented_mechanical_travel_m\":59.0,\"tower_z\":[0.4499,73.9499]},\"terrain\":{\"lower_door_z\":[1.0047,0.7992,0.8303],\"lower_median_z\":0.8303,\"upper_door_z\":55.4958},\"proposed\":{\"lower_rigid_delta_z\":0.3754,\"upper_rigid_delta_z\":-3.9591,\"new_lower_nominal_z\":0.8303,\"new_upper_nominal_z\":55.4958,\"access_level_delta_m\":54.6655,\"bridge_z_after\":[55.4908,59.0908],\"upper_interior_levels_after\":[{\"name\":\"SUBSOLO 2 piso\",\"min_z\":47.4958},{\"name\":\"SUBSOLO 1 piso\",\"min_z\":51.4958},{\"name\":\"PAVIMENTO 2 piso\",\"min_z\":59.4958},{\"name\":\"PAVIMENTO 3 piso\",\"min_z\":63.4958}],\"new_landings_inside_tower\":true},\"interpretation\":{\"59m_role\":\"documented mechanical/elevator travel; not imposed as urban access elevation difference\",\"vertical_basis\":\"PMS 2017 current terrain at active passenger access points\",\"terrain_would_change\":false,\"tower_would_move\":false}}\nPROPOSED_TOPOGRAPHIC_VERTICAL_RECONCILIATION_END\n"
+  }
+}
