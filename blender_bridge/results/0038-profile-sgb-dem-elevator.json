@@ -1,0 +1,11 @@
+{
+  "id": "0038-profile-sgb-dem-elevator",
+  "command_file": "0038-profile-sgb-dem-elevator.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 14.281,
+  "result": {
+    "executed": true,
+    "result": "RETURN 0\nNEIGHBOR LOW n 13 min 8.0 median 13.0 mean 13.15 max 18.0\nNEIGHBOR TOWER n 13 min 5.0 median 9.0 mean 9.0 max 14.0\nNEIGHBOR HIGH n 13 min 52.0 median 57.0 mean 56.77 max 60.0\nNEIGHBOR GALLERY n 13 min 48.0 median 55.0 mean 54.62 max 59.0\nPROFILE_DISTANCE_M 51.911\nPROFILE 0.0 0.0 -40.431 43.761 13.0\nPROFILE 0.0909 4.72 -36.99 40.532 18.0\nPROFILE 0.1818 9.44 -33.549 37.302 23.0\nPROFILE 0.2727 14.16 -30.107 34.073 25.0\nPROFILE 0.3636 18.88 -26.666 30.844 28.0\nPROFILE 0.4545 23.6 -23.225 27.614 34.0\nPROFILE 0.5455 28.31 -19.784 24.385 38.0\nPROFILE 0.6364 33.03 -16.343 21.156 42.0\nPROFILE 0.7273 37.75 -12.901 17.926 49.0\nPROFILE 0.8182 42.47 -9.46 14.697 53.0\nPROFILE 0.9091 47.19 -6.019 11.468 56.0\nPROFILE 1.0 51.91 -2.578 8.238 58.0\nPROFILE_MIN 13.0 MAX 58.0 DELTA_ENDPOINTS 45.0\n\n\n"
+  }
+}
