@@ -1,0 +1,8 @@
+{
+  "id": "0029-run-facade-v2",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\npath=r'C:\\mcp-blender\\blender_bridge\\project_scripts\\estudo_fachada_superior_6_janelas.py'\nwith open(path,'r',encoding='utf-8-sig') as f:\n    code=f.read()\nexec(compile(code,path,'exec'),{'bpy':bpy,'__name__':'__main__'})\nstudy=bpy.data.collections.get('07 CHATGPT | estudo fachada superior 6 janelas')\nprint(f'V2_EXEC_OK objects={len(study.objects) if study else -1}')\n"
+  },
+  "enabled": true
+}
