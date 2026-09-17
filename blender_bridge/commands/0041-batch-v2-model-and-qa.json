@@ -1,0 +1,8 @@
+{
+  "id": "0041-batch-v2-model-and-qa",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess\nrepo=r'C:\\\\mcp-blender\\\\vendor\\\\projeto-salvador-elevador-lacerda'\nsubprocess.run(['git','-C',repo,'fetch','origin','chatgpt/blender-collab'],check=True,capture_output=True,text=True)\nfor path in ['scripts/candidato_escala_real_v2.py','scripts/render_candidato_escala_real_v2.py']:\n    src=subprocess.check_output(['git','-C',repo,'show',f'FETCH_HEAD:{path}'],text=True,encoding='utf-8')\n    exec(compile(src,path,'exec'),{'__name__':'__main__'})\nprint('FAST_BATCH_V2_MODEL_QA_OK')"
+  },
+  "enabled": true
+}
