@@ -1,0 +1,8 @@
+{
+  "id": "0005-create-test-cube-clean",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\n\n# Non-destructive bridge write test\nname = 'Bridge_Test_Cube'\nobj = bpy.data.objects.get(name)\nif obj is None:\n    bpy.ops.mesh.primitive_cube_add(size=2.0, location=(0.0, 0.0, 1.0))\n    obj = bpy.context.active_object\n    obj.name = name\n    obj['created_by'] = 'OpenAI Blender Bridge'\nelse:\n    bpy.context.view_layer.objects.active = obj\n\nfor o in bpy.context.selected_objects:\n    o.select_set(False)\nobj.select_set(True)\nbpy.context.view_layer.objects.active = obj\n\ntry:\n    for area in bpy.context.screen.areas:\n        if area.type == 'VIEW_3D':\n            region = next((r for r in area.regions if r.type == 'WINDOW'), None)\n            if region is not None:\n                with bpy.context.temp_override(window=bpy.context.window, screen=bpy.context.screen, area=area, region=region):\n                    bpy.ops.view3d.view_selected(use_all_regions=False)\n                break\nexcept Exception:\n    pass\n\nprint(f'BRIDGE_OK:{obj.name}:{tuple(round(float(v), 3) for v in obj.location)}')"
+  },
+  "enabled": true
+}
