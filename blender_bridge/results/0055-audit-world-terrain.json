@@ -1,0 +1,8 @@
+{
+  "id": "0055-audit-world-terrain",
+  "command_file": "0055-audit-world-terrain.json",
+  "status": "error",
+  "duration_seconds": 0.333,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"RuntimeError\", \"message\": \"ABORTADO arquivo errado 'C:\\\\\\\\mcp-blender\\\\\\\\salvador_lacerda_do_zero.blend'\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 4, in <module>\\nRuntimeError: ABORTADO arquivo errado 'C:\\\\\\\\mcp-blender\\\\\\\\salvador_lacerda_do_zero.blend'\\n\"}"
+}
