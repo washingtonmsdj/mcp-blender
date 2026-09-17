@@ -1,0 +1,8 @@
+{
+  "id": "0141-parse-local-osm-upper-building-tolerant",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, json, re\nEXPECTED=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=EXPECTED: raise RuntimeError(f'ABORTADO arquivo errado {bpy.data.filepath!r}')\npath=r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\data\\osm\\salvador_osm_map.xml'\nif not os.path.isfile(path): raise RuntimeError('XML local ausente')\ntext=open(path,'r',encoding='utf-8',errors='replace').read()\nm=re.search(r'<way\\s+id=\\\"1263035781\\\"[^>]*>(.*?)</way>',text,re.S)\nif not m: raise RuntimeError('way 1263035781 ausente')\nbody=m.group(1); refs=re.findall(r'<nd\\s+ref=\\\"(\\d+)\\\"\\s*/?>',body); tags=dict(re.findall(r'<tag\\s+k=\\\"([^\\\"]+)\\\"\\s+v=\\\"([^\\\"]*)\\\"\\s*/?>',body))\nnodes=[]\nfor rid in refs:\n    nm=re.search(r'<node\\s+id=\\\"'+re.escape(rid)+r'\\\"[^>]*\\blat=\\\"([^\\\"]+)\\\"[^>]*\\blon=\\\"([^\\\"]+)\\\"[^>]*/?>',text)\n    if not nm:\n        nm=re.search(r'<node\\s+id=\\\"'+re.escape(rid)+r'\\\"[^>]*\\blon=\\\"([^\\\"]+)\\\"[^>]*\\blat=\\\"([^\\\"]+)\\\"[^>]*/?>',text)\n        if nm: nodes.append({'id':rid,'lat':float(nm.group(2)),'lon':float(nm.group(1))}); continue\n    if nm: nodes.append({'id':rid,'lat':float(nm.group(1)),'lon':float(nm.group(2))})\n    else: nodes.append({'id':rid,'missing':True})\nres={'path':path,'way_id':'1263035781','refs':refs,'tags':tags,'nodes':nodes,'node_count':len(nodes)}\nprint('LOCAL_OSM_UPPER_BUILDING_TOLERANT_BEGIN'); print(json.dumps(res,ensure_ascii=False,separators=(',',':'))); print('LOCAL_OSM_UPPER_BUILDING_TOLERANT_END')"
+  },
+  "enabled": true
+}
