@@ -1,0 +1,8 @@
+{
+  "id": "0076-reload-last-saved-after-failed-datum",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\nexpected=r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'\nif bpy.data.filepath.lower()!=expected.lower(): raise RuntimeError('arquivo errado antes do reload: '+repr(bpy.data.filepath))\nbpy.ops.wm.open_mainfile(filepath=expected)\nprint('RELOADED_LAST_SAVED='+bpy.data.filepath)"
+  },
+  "enabled": true
+}
