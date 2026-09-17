@@ -1,0 +1,8 @@
+{
+  "id": "0073-audit-vertical-world-bands",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os\nfrom mathutils import Vector\nexpected=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=expected: raise RuntimeError('arquivo errado')\nbands={'LOW':[],'MID':[],'HIGH':[],'SPAN':[]}\nfor o in bpy.context.scene.objects:\n if o.type not in {'MESH','CURVE','FONT'} or o.hide_viewport: continue\n try:\n  ps=[o.matrix_world@Vector(c) for c in o.bound_box]; z0=min(p.z for p in ps); z1=max(p.z for p in ps)\n except: continue\n rec=(o.name,round(z0,2),round(z1,2),[c.name for c in o.users_collection])\n if z0<8 and z1>32: bands['SPAN'].append(rec)\n elif z0>=32: bands['HIGH'].append(rec)\n elif z1<=12: bands['LOW'].append(rec)\n else: bands['MID'].append(rec)\nfor k in ('LOW','MID','HIGH','SPAN'):\n print(f'[{k}] count={len(bands[k])}')\n for r in bands[k][:40]: print(r)\nprint('VERTICAL_WORLD_BANDS_OK')"
+  },
+  "enabled": true
+}
