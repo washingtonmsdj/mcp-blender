@@ -1,0 +1,11 @@
+{
+  "id": "0045-search-osm-lacerda-raw",
+  "command_file": "0045-search-osm-lacerda-raw.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.043,
+  "result": {
+    "executed": true,
+    "result": "FILE_BYTES 1048606 CHARS 1047954\nNEEDLE '59224731' INDEX -1\nNEEDLE 'Elevador Lacerda' INDEX -1\nNEEDLE 'Lacerda' INDEX -1\nNEEDLE 'height=\"72\"' INDEX -1\nWAY_COUNT 1145 NODE_COUNT 2855\nRAW_OSM_SEARCH_DONE\n"
+  }
+}
