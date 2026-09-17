@@ -1,0 +1,8 @@
+{
+  "id": "0044-audit-osm-lacerda-footprints-regex",
+  "command_file": "0044-audit-osm-lacerda-footprints-regex.json",
+  "status": "error",
+  "duration_seconds": 4.261,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"StopIteration\", \"message\": \"\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 17, in <module>\\nStopIteration\\n\"}"
+}
