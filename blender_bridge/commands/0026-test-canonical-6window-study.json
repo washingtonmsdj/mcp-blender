@@ -1,0 +1,8 @@
+{
+  "id": "0026-test-canonical-6window-study",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, subprocess, pathlib\n# Limpa apenas a colecao duplicada de teste criada localmente; nao toca no oficial.\ndup=bpy.data.collections.get('07 REFINO ENTRADA SUPERIOR | ChatGPT')\nif dup:\n    for o in list(dup.objects): bpy.data.objects.remove(o, do_unlink=True)\n    bpy.data.collections.remove(dup)\nrepo=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda')\nsubprocess.run(['git','-C',str(repo),'fetch','origin','chatgpt/blender-collab'],check=True,capture_output=True,text=True)\nscript=subprocess.run(['git','-C',str(repo),'show','FETCH_HEAD:scripts/estudo_fachada_superior_6_janelas.py'],check=True,capture_output=True,text=True).stdout\nexec(compile(script,'estudo_fachada_superior_6_janelas.py','exec'),{'__name__':'__main__'})\nprint('CANONICAL_STUDY_FETCH_HEAD='+subprocess.run(['git','-C',str(repo),'rev-parse','FETCH_HEAD'],check=True,capture_output=True,text=True).stdout.strip())"
+  },
+  "enabled": true
+}
