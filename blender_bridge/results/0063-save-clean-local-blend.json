@@ -1,0 +1,11 @@
+{
+  "id": "0063-save-clean-local-blend",
+  "command_file": "0063-save-clean-local-blend.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 1.444,
+  "result": {
+    "executed": true,
+    "result": "Janela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nSAVED=C:\\mcp-blender\\salvador_lacerda_do_zero.blend\n"
+  }
+}
