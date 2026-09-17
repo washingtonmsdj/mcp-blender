@@ -1,0 +1,8 @@
+{
+  "id": "0020-measure-official-upper-entry",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\nfrom math import degrees\n\nnames = [\n    'OFICIAL | Entrada superior | cobertura',\n    'OFICIAL | Entrada superior | fachada esquerda',\n    'OFICIAL | Entrada superior | fachada direita',\n    'OFICIAL | Entrada superior | lintel',\n    'OFICIAL | Entrada superior | parede lateral A',\n    'OFICIAL | Entrada superior | parede lateral B',\n    'OFICIAL | Terminal alto | piso de entrada',\n    'OFICIAL | Terminal alto | galeria piso',\n    'OFICIAL | Terminal alto | galeria cobertura'\n]\nfor n in names:\n    o = bpy.data.objects.get(n)\n    if not o:\n        print(f'MISSING {n}')\n        continue\n    loc = tuple(round(v,4) for v in o.location)\n    dims = tuple(round(v,4) for v in o.dimensions)\n    rot = tuple(round(degrees(v),4) for v in o.rotation_euler)\n    print(f'{n}\\n  LOC={loc}\\n  DIMS={dims}\\n  ROT_DEG={rot}')\nprint('FILE='+bpy.data.filepath)\nprint('SCENE='+bpy.context.scene.name)"
+  },
+  "enabled": true
+}
