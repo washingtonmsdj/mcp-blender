@@ -1,0 +1,11 @@
+{
+  "id": "0030-tiny-frontal-qa",
+  "command_file": "0030-tiny-frontal-qa.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.15,
+  "result": {
+    "executed": true,
+    "result": "TINY_FRONT_OK C:\\mcp-blender\\blender_bridge\\previews\\qa_frontal_tiny.jpg 4133\n"
+  }
+}
