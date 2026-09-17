@@ -1,0 +1,11 @@
+{
+  "id": "0152-promote-upper-v5-to-active-v2",
+  "command_file": "0152-promote-upper-v5-to-active-v2.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 1.519,
+  "result": {
+    "executed": true,
+    "result": "Janela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nCIDADE_ALTA_V2_PROMOTED_OK\n{\"active_collection\":\"E | ESTACAO CIDADE ALTA | blockout v2\",\"objects\":27,\"old_upper_deleted\":27,\"bridge_length_m\":51.6529,\"station_dims\":[18.6,11.0],\"hall_xy\":[46.0308,-43.0404],\"tower_unchanged\":true,\"terrain_unchanged\":true,\"lower_collection_preserved\":\"D | ESTACAO CIDADE BAIXA | blockout v1\",\"candidate_removed\":true,\"saved\":true}\nQA=PASS_AND_SAVED\n"
+  }
+}
