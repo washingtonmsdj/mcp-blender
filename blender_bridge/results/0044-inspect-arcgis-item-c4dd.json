@@ -1,0 +1,11 @@
+{
+  "id": "0044-inspect-arcgis-item-c4dd",
+  "command_file": "0044-inspect-arcgis-item-c4dd.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 3.637,
+  "result": {
+    "executed": true,
+    "result": "SECTION item {\"error\": {\"code\": 400, \"messageCode\": \"CONT_0001\", \"message\": \"Item does not exist or is inaccessible.\", \"details\": []}}\nSECTION data {\"error\": {\"code\": 400, \"messageCode\": \"CONT_0001\", \"message\": \"Item does not exist or is inaccessible.\", \"details\": []}}\nSECTION resources {\"error\": {\"code\": 400, \"messageCode\": \"CONT_0001\", \"message\": \"Item does not exist or is inaccessible.\", \"details\": []}}\nSECTION related_fwd {\"error\": {\"code\": 400, \"messageCode\": \"CONT_0001\", \"message\": \"Item does not exist or is inaccessible.\", \"details\": []}}\nSECTION related_rev {\"error\": {\"code\": 400, \"messageCode\": \"CONT_0001\", \"message\": \"Item does not exist or is inaccessible.\", \"details\": []}}\nSEARCH c4ddf138f84e4446af6caa0f724e8c9f TOTAL 0\nSEARCH mdt_apcp_centro_reclass_10m_r TOTAL 0\nSEARCH mdt_apcp_centro_reclass TOTAL 0\nSEARCH mdt_apcp_centro TOTAL 0\n"
+  }
+}
