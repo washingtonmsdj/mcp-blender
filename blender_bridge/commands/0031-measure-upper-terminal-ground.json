@@ -1,0 +1,8 @@
+{
+  "id": "0031-measure-upper-terminal-ground",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, math\nfrom mathutils import Vector\nbase=bpy.data.objects['OFICIAL | Entrada superior | lintel']\ntheta=base.rotation_euler.z\nex=Vector((math.cos(theta),math.sin(theta),0.0))\ney=Vector((-math.sin(theta),math.cos(theta),0.0))\norigin=Vector((base.location.x,base.location.y,0.0))\nnames=['OFICIAL | Terminal alto | piso de entrada','OFICIAL | Terminal alto | galeria piso','OFICIAL | Terminal alto | galeria cobertura','OFICIAL | Terminal alto | apoio junto encosta','OFICIAL | Entrada superior | cobertura','OFICIAL | Passarela | piso continuo']\nfor name in names:\n    o=bpy.data.objects.get(name)\n    if not o:\n        print('MISSING='+name);continue\n    pts=[o.matrix_world@Vector(c) for c in o.bound_box]\n    us=[(p-origin).dot(ex) for p in pts];vs=[(p-origin).dot(ey) for p in pts];zs=[p.z for p in pts]\n    print(f'{name}|U=({min(us):.3f},{max(us):.3f})|V=({min(vs):.3f},{max(vs):.3f})|Z=({min(zs):.3f},{max(zs):.3f})')\n"
+  },
+  "enabled": true
+}
