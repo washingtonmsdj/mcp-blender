@@ -1,0 +1,8 @@
+{
+  "id": "0150-audit-v4-upper-object-set",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, json\nEXPECTED=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=EXPECTED: raise RuntimeError(f'ABORTADO arquivo errado {bpy.data.filepath!r}')\ncol=bpy.data.collections.get('01 WORLD | ELEVADOR LACERDA | blockout v4')\nif not col: raise RuntimeError('V4 ausente')\nkeys=('passadico','estacao','hall','fachada','entrada','marquise','porta')\nrows=[]\nfor o in col.objects:\n    n=o.name.lower()\n    if any(k in n for k in keys):\n        rows.append({'name':o.name,'type':o.type,'loc':[round(x,4) for x in o.matrix_world.translation],'rot_z_deg':round(__import__('math').degrees(o.matrix_world.to_euler().z),4),'dims':[round(x,4) for x in o.dimensions],'props':{k:str(o[k]) for k in o.keys() if k in ('status_dimensao','role','basis')}})\nprint('V4_UPPER_OBJECT_SET_BEGIN'); print(json.dumps({'count':len(rows),'objects':rows},ensure_ascii=False,separators=(',',':'))); print('V4_UPPER_OBJECT_SET_END')"
+  },
+  "enabled": true
+}
