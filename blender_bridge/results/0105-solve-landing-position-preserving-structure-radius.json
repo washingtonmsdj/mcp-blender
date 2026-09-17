@@ -1,0 +1,11 @@
+{
+  "id": "0105-solve-landing-position-preserving-structure-radius",
+  "command_file": "0105-solve-landing-position-preserving-structure-radius.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.611,
+  "result": {
+    "executed": true,
+    "result": "UP CURRENT_RADIUS 48.925 CURRENT_ANGLE -43.181 TARGET_Z 59.45\nUP BEST POINT -15.091 12.709 Z 53.978 R 49.283 ANGLE_DELTA -6.177 MOVE 5.303\nLOW CURRENT_RADIUS 6.831 CURRENT_ANGLE -89.253 TARGET_Z 4.0\nLOW RTOL 3.0 POINT -51.191 58.656 Z 4.478 R 9.441 ANGLE 115.07 ANGLE_DELTA -155.676 MOVE 15.917\nLOW BEST POINT -57.181 52.642 Z 4.353 R 10.308 ANGLE_DELTA -105.0 MOVE 13.761\n\n\nLANDING_RADIUS_SOLVE_OK\n"
+  }
+}
