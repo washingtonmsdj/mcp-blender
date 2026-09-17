@@ -2,14 +2,36 @@ name: Toolchain smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      require_blender:
+        description: Fail if Blender is not installed
+        required: true
+        default: true
+        type: boolean
+      require_unity:
+        description: Fail if Unity is not installed
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
 
 jobs:
   detect:
     runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Detect Blender and Unity
+      - name: Detect tools
         shell: pwsh
-        run: .\scripts\windows\toolchain-status.ps1
+        run: |
+          $args = @()
+          if ("${{ inputs.require_blender }}" -eq "true") { $args += "-RequireBlender" }
+          if ("${{ inputs.require_unity }}" -eq "true") { $args += "-RequireUnity" }
+          & .\scripts\windows\toolchain-status.ps1 @args
