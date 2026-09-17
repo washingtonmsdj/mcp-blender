@@ -1,0 +1,6 @@
+{
+  "id": "0006-get-scene-info-after-write",
+  "type": "get_scene_info",
+  "params": {},
+  "enabled": true
+}
