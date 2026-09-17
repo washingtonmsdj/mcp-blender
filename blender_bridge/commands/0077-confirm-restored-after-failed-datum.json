@@ -1,0 +1,8 @@
+{
+  "id": "0077-confirm-restored-after-failed-datum",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\nfrom mathutils import Vector\nexpected=r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'\nprint('FILE='+bpy.data.filepath)\nprint('EXPECTED='+str(bpy.data.filepath.lower()==expected.lower()))\nprint('DATUM='+str(bpy.context.scene.get('world_vertical_datum','NONE')))\ne=bpy.data.collections.get('01 WORLD | ELEVADOR LACERDA | blockout v4')\nlow=bpy.data.collections.get('D | ESTACAO CIDADE BAIXA | blockout v1')\ndef zmin(o): return min((o.matrix_world@Vector(c)).z for c in o.bound_box)\nh=next((o for o in e.all_objects if 'hall piso terreo' in o.name.lower() and o.type=='MESH'),None) if e else None\nf=next((o for o in low.objects if 'piso saguão' in o.name.lower() and o.type=='MESH'),None) if low else None\nt=next((o for o in e.all_objects if 'torre documental' in o.name.lower() and o.type=='MESH'),None) if e else None\nprint('HALL_ZMIN='+str(round(zmin(h),3) if h else None))\nprint('LOW_ZMIN='+str(round(zmin(f),3) if f else None))\nprint('TOWER_ZMIN='+str(round(zmin(t),3) if t else None))\nprint('CONFIRM_RESTORE_OK')"
+  },
+  "enabled": true
+}
