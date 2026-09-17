@@ -1,0 +1,8 @@
+{
+  "id": "0028-run-collab-qa-package",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess, pathlib\nrepo=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda')\nsubprocess.run(['git','-C',str(repo),'fetch','origin','chatgpt/blender-collab'],check=True,capture_output=True,text=True)\ncommit=subprocess.run(['git','-C',str(repo),'rev-parse','FETCH_HEAD'],check=True,capture_output=True,text=True).stdout.strip()\ndef show(path):\n    return subprocess.run(['git','-C',str(repo),'show',f'FETCH_HEAD:{path}'],check=True,capture_output=True,text=True).stdout\nfor path in ['scripts/estudo_fachada_superior_6_janelas.py','scripts/estudo_acesso_superior_marquis_e_terreo.py']:\n    code=show(path)\n    exec(compile(code,path,'exec'),{'__name__':'__main__','__file__':str(repo/path)})\nrender_path='scripts/render_estudo_fachada_superior.py'\nrender_code=show(render_path)\nexec(compile(render_code,render_path,'exec'),{'__name__':'__main__','__file__':str(repo/render_path)})\nprint('QA_PACKAGE_COMMIT='+commit)"
+  },
+  "enabled": true
+}
