@@ -1,0 +1,11 @@
+{
+  "id": "0077-confirm-restored-after-failed-datum",
+  "command_file": "0077-confirm-restored-after-failed-datum.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.035,
+  "result": {
+    "executed": true,
+    "result": "FILE=C:\\mcp-blender\\salvador_lacerda_do_zero.blend\nEXPECTED=True\nDATUM=NONE\nHALL_ZMIN=40.005\nLOW_ZMIN=0.455\nTOWER_ZMIN=-19.0\nCONFIRM_RESTORE_OK\n"
+  }
+}
