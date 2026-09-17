@@ -1,0 +1,11 @@
+{
+  "id": "0141-parse-local-osm-upper-building-tolerant",
+  "command_file": "0141-parse-local-osm-upper-building-tolerant.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.147,
+  "result": {
+    "executed": true,
+    "result": "LOCAL_OSM_UPPER_BUILDING_TOLERANT_BEGIN\n{\"path\":\"C:\\\\mcp-blender\\\\vendor\\\\projeto-salvador-elevador-lacerda\\\\data\\\\osm\\\\salvador_osm_map.xml\",\"way_id\":\"1263035781\",\"refs\":[\"11734895385\",\"12189974188\",\"13144235879\",\"12189974189\",\"11734895388\",\"11734895381\",\"13144235885\",\"11734895380\",\"11734895385\"],\"tags\":{\"building\":\"yes\",\"building:levels\":\"3\"},\"nodes\":[{\"id\":\"11734895385\",\"missing\":true},{\"id\":\"12189974188\",\"missing\":true},{\"id\":\"13144235879\",\"missing\":true},{\"id\":\"12189974189\",\"missing\":true},{\"id\":\"11734895388\",\"missing\":true},{\"id\":\"11734895381\",\"missing\":true},{\"id\":\"13144235885\",\"missing\":true},{\"id\":\"11734895380\",\"missing\":true},{\"id\":\"11734895385\",\"missing\":true}],\"node_count\":9}\nLOCAL_OSM_UPPER_BUILDING_TOLERANT_END\n"
+  }
+}
