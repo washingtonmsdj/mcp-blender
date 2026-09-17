@@ -1,0 +1,8 @@
+{
+  "id": "0092-inspect-geosalvador-image-services",
+  "type": "execute_code",
+  "params": {
+    "code": "import urllib.request, urllib.parse, json, ssl\nctx=ssl.create_default_context(); ua={'User-Agent':'Mozilla/5.0 ChatGPTTerrainResearch/1.0'}\ndef get(url):\n    sep='&' if '?' in url else '?'\n    req=urllib.request.Request(url+sep+'f=pjson',headers=ua)\n    with urllib.request.urlopen(req,timeout=30,context=ctx) as r: return json.loads(r.read().decode('utf-8'))\nroots=['https://geo.salvador.ba.gov.br/imageserver/rest/services','https://geo.salvador.ba.gov.br/imageserver/rest/services/Hosted']\nfor root in roots:\n    try:\n        d=get(root); print('ROOT',root,'FOLDERS',d.get('folders')); sv=d.get('services',[]); print('SERVICES',len(sv))\n        for s in sv:\n            n=str(s.get('name','')); low=n.lower()\n            if any(k in low for k in ['mdt','mde','lidar','laser','terreno','relevo','topo','2017','altim']): print('MATCH_SERVICE',json.dumps(s,ensure_ascii=False))\n    except Exception as e: print('ROOT_ERROR',root,type(e).__name__,str(e))\nurls=['https://geo.salvador.ba.gov.br/imageserver/rest/services/Hosted/mdt_apcp_centro_reclass_10m_r/ImageServer','https://geo.salvador.ba.gov.br/imageserver/rest/services/Hosted/mdt_itapagipe/ImageServer']\nfor u in urls:\n    try:\n        d=get(u); keep={k:d.get(k) for k in ['name','description','serviceDescription','extent','pixelSizeX','pixelSizeY','bandCount','pixelType','spatialReference','capabilities','allowedMosaicMethods','maxImageHeight','maxImageWidth','copyrightText']}\n        print('IMAGE_META',u,json.dumps(keep,ensure_ascii=False))\n    except Exception as e: print('IMAGE_ERROR',u,type(e).__name__,str(e))\nprint('IMAGE_SERVICE_INSPECT_DONE')"
+  },
+  "enabled": true
+}
