@@ -1,0 +1,8 @@
+{
+  "id": "0018-resplit-compact-visual",
+  "type": "execute_code",
+  "params": {
+    "code": "import os, base64, glob\nroot = r'C:\\mcp-blender\\blender_bridge\\previews'\njpg = os.path.join(root, 'latest_compact.jpg')\nif not os.path.exists(jpg):\n    raise RuntimeError('latest_compact.jpg nao existe')\nfor p in glob.glob(os.path.join(root, 'latest_compact_small_*.txt')):\n    try:\n        os.remove(p)\n    except OSError:\n        pass\nwith open(jpg, 'rb') as f:\n    b64 = base64.b64encode(f.read()).decode('ascii')\nsize = 1000\nchunks = [b64[i:i+size] for i in range(0, len(b64), size)]\nfor i, chunk in enumerate(chunks):\n    with open(os.path.join(root, f'latest_compact_small_{i:02d}.txt'), 'w', encoding='ascii') as f:\n        f.write(chunk)\nprint(f'SMALL_CHUNKS={len(chunks)} BASE64={len(b64)}')"
+  },
+  "enabled": true
+}
