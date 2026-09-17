@@ -1,0 +1,8 @@
+{
+  "id": "0042-inspect-lacerda-anchor-metadata",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, json\nexpected=r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'\nif bpy.data.filepath.lower()!=expected.lower(): raise RuntimeError('arquivo errado')\nfor name in ['Lacerda | torre externa - implantacao OSM','Entrada superior Lacerda | identificacao por confronto fotografico']:\n o=bpy.data.objects.get(name)\n print('ANCHOR',name,'EXISTS',bool(o))\n if not o: continue\n print(' TYPE',o.type,'LOC',tuple(round(x,6) for x in o.location),'DIMS',tuple(round(x,6) for x in o.dimensions),'ROT',tuple(round(x,6) for x in o.rotation_euler))\n print(' COLLECTIONS',[c.name for c in o.users_collection])\n print(' CUSTOM_PROPS',json.dumps({k:o[k] for k in o.keys() if k!='_RNA_UI'},ensure_ascii=False,default=str))\n if o.type=='MESH': print(' VERTS',len(o.data.vertices),'POLYS',len(o.data.polygons))\nprint('ANCHOR_METADATA_DONE')"
+  },
+  "enabled": true
+}
