@@ -1,0 +1,11 @@
+{
+  "id": "0020-measure-official-upper-entry",
+  "command_file": "0020-measure-official-upper-entry.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.052,
+  "result": {
+    "executed": true,
+    "result": "OFICIAL | Entrada superior | cobertura\n  LOC=(-1.226, 6.9697, 52.0)\n  DIMS=(19.4665, 10.2, 0.5)\n  ROT_DEG=(0.0, 0.0, -43.1811)\nOFICIAL | Entrada superior | fachada esquerda\n  LOC=(3.3437, -1.7071, 46.0)\n  DIMS=(0.7416, 3.2, 12.0)\n  ROT_DEG=(0.0, 0.0, -43.1811)\nOFICIAL | Entrada superior | fachada direita\n  LOC=(7.7232, 2.9598, 46.0)\n  DIMS=(0.7416, 3.2, 12.0)\n  ROT_DEG=(0.0, 0.0, -43.1811)\nOFICIAL | Entrada superior | lintel\n  LOC=(5.5334, 0.6264, 48.0)\n  DIMS=(0.7416, 3.2, 8.0)\n  ROT_DEG=(0.0, 0.0, -43.1811)\nOFICIAL | Entrada superior | parede lateral A\n  LOC=(-4.5107, 3.4696, 46.0)\n  DIMS=(18.5395, 0.4, 12.0)\n  ROT_DEG=(0.0, 0.0, -43.1811)\nOFICIAL | Entrada superior | parede lateral B\n  LOC=(2.0587, 10.4698, 46.0)\n  DIMS=(18.5395, 0.4, 12.0)\n  ROT_DEG=(0.0, 0.0, -43.1811)\nOFICIAL | Terminal alto | piso de entrada\n  LOC=(-2.5779, 8.2384, 39.7)\n  DIMS=(22.2474, 11.0, 0.6)\n  ROT_DEG=(0.0, 0.0, -43.1811)\nOFICIAL | Terminal alto | galeria piso\n  LOC=(-5.2817, 10.7757, 39.5)\n  DIMS=(16.6855, 11.0, 1.0)\n  ROT_DEG=(0.0, 0.0, -43.1811)\nOFICIAL | Terminal alto | galeria cobertura\n  LOC=(-5.2817, 10.7757, 43.3)\n  DIMS=(16.6855, 11.0, 0.35)\n  ROT_DEG=(0.0, 0.0, -43.1811)\nFILE=C:\\mcp-blender\\salvador_lacerda_do_zero.blend\nSCENE=Scene\n"
+  }
+}
