@@ -1,0 +1,11 @@
+{
+  "id": "0051-audit-prefeitura-fast",
+  "command_file": "0051-audit-prefeitura-fast.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 5.027,
+  "result": {
+    "executed": true,
+    "result": "AUDITORIA_PREFEITURA_FAST\nOUTLINE_OSM_LOCAL_U=-20.761..20.899 W=41.660\nOUTLINE_OSM_LOCAL_V=-24.584..24.729 D=49.313\nCOLLECTION_LOCAL_U=-19.500..19.500 W=39.000\nCOLLECTION_LOCAL_V=-22.150..21.500 D=43.650\nCOLLECTION_Z=40.180..48.650 H=8.470\nOBJECTS=91\nSTATUS=XY/contorno OSM; corpo/altura/escadas/modulos ainda estimados no script atual\n"
+  }
+}
