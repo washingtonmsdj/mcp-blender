@@ -1,0 +1,8 @@
+{
+  "id": "0066-measure-lower-reference-transform",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, math\nexpected=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=expected: raise RuntimeError('arquivo errado')\nfor n in ('OFICIAL | Cidade Baixa | marquise','OFICIAL | Cidade Baixa | piso desembarque'):\n o=bpy.data.objects.get(n)\n if not o: print(n+'|MISSING'); continue\n print(f'{n}|LOC={tuple(round(v,4) for v in o.location)}|DIMS={tuple(round(v,4) for v in o.dimensions)}|ROT_Z_DEG={math.degrees(o.rotation_euler.z):.4f}|SCALE={tuple(round(v,4) for v in o.scale)}')\nprint('LOWER_REFERENCE_TRANSFORM_OK')"
+  },
+  "enabled": true
+}
