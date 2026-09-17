@@ -1,0 +1,11 @@
+{
+  "id": "0026-test-canonical-6window-study",
+  "command_file": "0026-test-canonical-6window-study.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 29.725,
+  "result": {
+    "executed": true,
+    "result": "ESTUDO_FACHADA_SUPERIOR_OK janelas=6 objetos= 57 theta= -0.753652 largura_oficial=9.6m\nCANONICAL_STUDY_FETCH_HEAD=323b90db0f1bfbd1bbd079feda2b1bd3aa42abda\n"
+  }
+}
