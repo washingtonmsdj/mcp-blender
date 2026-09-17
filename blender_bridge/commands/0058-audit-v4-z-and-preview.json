@@ -1,0 +1,8 @@
+{
+  "id": "0058-audit-v4-z-and-preview",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os\nfrom mathutils import Vector\nexpected=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=expected: raise RuntimeError('arquivo errado')\nc=bpy.data.collections.get('01 WORLD | ELEVADOR LACERDA | blockout v4')\nif not c: raise RuntimeError('v4 ausente')\nfor key in ('torre','passadico','piso terreo','parede frontal','porta entrada','janela frontal'):\n    print('---',key,'---')\n    for o in c.objects:\n        if key in o.name.lower() and o.type=='MESH':\n            pts=[o.matrix_world@Vector(x) for x in o.bound_box]; zs=[p.z for p in pts]\n            print(f'{o.name}|Z={min(zs):.2f}..{max(zs):.2f}|locZ={o.location.z:.2f}')\nprint('VISIBLE TERRAIN:')\nfor o in bpy.data.objects:\n    if o.type=='MESH' and ('terreno' in o.name.lower() or 'terrain' in o.name.lower()):\n        if not o.hide_viewport and any(not uc.hide_viewport for uc in o.users_collection): print(o.name)\nprint('AUDIT_V4_Z_OK')"
+  },
+  "enabled": true
+}
