@@ -1,0 +1,11 @@
+{
+  "id": "0046-compare-tower-osm-anchor",
+  "command_file": "0046-compare-tower-osm-anchor.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.048,
+  "result": {
+    "executed": true,
+    "result": "TOWER_WORLD_CENTER (-47.1902, 50.1044, 20.0)\nUPPER_FRONT_WORLD_CENTER (5.5334, 0.6264, 46.0)\nCURRENT_PLAN_DISTANCE 72.304\nOSM_WAY59224731_PROJECTED_APPROX -47.2203 50.2162\nTOWER_MINUS_OSM 0.03 -0.1118 DIST 0.1157\nANCHOR_COMPARE_DONE\n"
+  }
+}
