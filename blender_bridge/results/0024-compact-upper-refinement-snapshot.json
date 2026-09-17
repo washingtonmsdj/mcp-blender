@@ -1,0 +1,11 @@
+{
+  "id": "0024-compact-upper-refinement-snapshot",
+  "command_file": "0024-compact-upper-refinement-snapshot.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 1.738,
+  "result": {
+    "executed": true,
+    "result": "UPPER_COMPACT chunks=28 base64_chars=27028 file_bytes=20270\n"
+  }
+}
