@@ -1,0 +1,11 @@
+{
+  "id": "0087-setup-local-geo-venv",
+  "command_file": "0087-setup-local-geo-venv.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 81.039,
+  "result": {
+    "executed": true,
+    "result": "PIP_RC=0\nCollecting rasterio\n  Downloading rasterio-1.5.1-cp313-cp313-win_amd64.whl.metadata (8.9 kB)\nCollecting pyproj\n  Downloading pyproj-3.8.0-cp313-cp313-win_amd64.whl.metadata (40 kB)\nCollecting affine (from rasterio)\n  Downloading affine-3.0.1-py3-none-any.whl.metadata (4.5 kB)\nCollecting attrs (from rasterio)\n  Using cached attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)\nCollecting certifi (from rasterio)\n  Using cached certifi-2026.7.22-py3-none-any.whl.metadata (2.5 kB)\nCollecting click!=8.2.*,>=4.0 (from rasterio)\n  Using cached click-8.5.0-py3-none-any.whl.metadata (2.6 kB)\nCollecting numpy>=2 (from rasterio)\n  Downloading numpy-2.5.3-cp313-cp313-win_amd64.whl.metadata (6.6 kB)\nCollecting pyparsing>=3.0 (from rasterio)\n  Using cached pyparsing-3.3.2-py3-none-any.whl.metadata (5.8 kB)\nDownloading rasterio-1.5.1-cp313-cp313-win_amd64.whl (30.6 MB)\n   ---------------------------------------- 30.6/30.6 MB 10.2 MB/s  0:00:03\nDownloading pyproj-3.8.0-cp313-cp313-win_amd64.whl (6.7 MB)\n   ---------------------------------------- 6.7/6.7 MB 15.8 MB/s  0:00:00\nUsing cached click-8.5.0-py3-none-any.whl (125 kB)\nDownloading numpy-2.5.3-cp313-cp313-win_amd64.whl (12.6 MB)\n   ---------------------------------------- 12.6/12.6 MB 21.2 MB/s  0:00:00\nUsing cached pyparsing-3.3.2-py3-none-any.whl (122 kB)\nDownloading affine-3.0.1-py3-none-any.whl (10 kB)\nUsing cached attrs-26.1.0-py3-none-any.whl (67 kB)\nUsing cached certifi-2026.7.22-py3-none-any.whl (136 kB)\nInstalling collected packages: pyparsing, numpy, click, certifi, attrs, pyproj, affine, rasterio\n\nSuccessfully installed affine-3.0.1 attrs-26.1.0 certifi-2026.7.22 click-8.5.0 numpy-2.5.3 pyparsing-3.3.2 pyproj-3.8.0 rasterio-1.5.1\n\nrasterio=1.5.1\npyproj=3.8.0\nnumpy=2.5.3\nGEO_VENV_READY=C:\\mcp-blender\\.venv-geo\\Scripts\\python.exe\n"
+  }
+}
