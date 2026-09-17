@@ -1,0 +1,6 @@
+{
+  "id": "0001-get-scene-info",
+  "type": "get_scene_info",
+  "params": {},
+  "enabled": true
+}
