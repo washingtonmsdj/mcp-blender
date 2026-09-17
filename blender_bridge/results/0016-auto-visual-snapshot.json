@@ -1,0 +1,11 @@
+{
+  "id": "0016-auto-visual-snapshot",
+  "command_file": "0016-auto-visual-snapshot.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.708,
+  "result": {
+    "executed": true,
+    "result": "VISUAL_SNAPSHOT=C:\\mcp-blender\\blender_bridge\\previews\\latest_viewport.png; SIZE=246588; SCENE=Scene; FILE=C:\\mcp-blender\\salvador_lacerda_do_zero.blend\n"
+  }
+}
