@@ -1,0 +1,8 @@
+{
+  "id": "0062-run-world-cleanup-v2",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess, pathlib\nrepo=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda')\nsubprocess.run(['git','fetch','origin','chatgpt/blender-collab'],cwd=repo,check=True,capture_output=True,text=True)\ncode=subprocess.run(['git','show','FETCH_HEAD:scripts/limpar_cena_e_terrain_master_v2.py'],cwd=repo,check=True,capture_output=True,text=True).stdout\nexec(compile(code,'limpar_cena_e_terrain_master_v2.py','exec'),{'__name__':'__main__'})"
+  },
+  "enabled": true
+}
