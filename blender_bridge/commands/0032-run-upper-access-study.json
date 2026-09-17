@@ -1,0 +1,8 @@
+{
+  "id": "0032-run-upper-access-study",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\npath=r'C:\\mcp-blender\\blender_bridge\\project_scripts\\estudo_acesso_superior_marquis_e_terreo.py'\nwith open(path,'r',encoding='utf-8-sig') as f: code=f.read()\nexec(compile(code,path,'exec'),{'bpy':bpy,'__name__':'__main__'})\nstudy=bpy.data.collections.get('08 CHATGPT | estudo acesso superior marquise terreo')\nprint(f'ACCESS_EXEC_OK objects={len(study.objects) if study else -1}')\n"
+  },
+  "enabled": true
+}
