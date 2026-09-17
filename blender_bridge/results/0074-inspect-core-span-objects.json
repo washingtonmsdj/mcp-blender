@@ -1,0 +1,11 @@
+{
+  "id": "0074-inspect-core-span-objects",
+  "command_file": "0074-inspect-core-span-objects.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.081,
+  "result": {
+    "executed": true,
+    "result": "--- Ladeira da Montanha.003 ---\nTYPE CURVE DIMS (285.41, 367.19, 40.08) VERTS NA\nPROPS {'osm_id': '48846625', 'representacao': 'eixo real; espessura grafica, nao largura da rua', 'Z_status': 'patamares do esboco; nao altimetria medida'}\n--- OSM 59409445.001 ---\nTYPE CURVE DIMS (36.66, 36.5, 40.06) VERTS NA\nPROPS {'osm_id': '59409445', 'representacao': 'eixo real; espessura grafica, nao largura da rua', 'Z_status': 'patamares do esboco; nao altimetria medida'}\n--- OSM 574226774.001 ---\nTYPE MESH DIMS (32.33, 30.97, 40.0) VERTS 16\nPROPS {'osm_id': '574226774', 'fonte': 'https://www.openstreetmap.org/way/574226774', 'altura_status': 'height OSM', 'osm_tags': '{\"building\": \"commercial\", \"building:levels\": \"13\", \"height\": \"40\"}', 'Z_status': 'patamares do esboco; nao altimetria medida'}\nCORE_SPAN_INSPECT_OK\n"
+  }
+}
