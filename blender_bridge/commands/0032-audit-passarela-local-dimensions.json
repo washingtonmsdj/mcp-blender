@@ -1,0 +1,8 @@
+{
+  "id": "0032-audit-passarela-local-dimensions",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, math\nfrom mathutils import Vector\n\nnames=[\n'OFICIAL | Passarela | piso continuo',\n'OFICIAL | Passarela | cobertura',\n'OFICIAL | Passarela | viga lateral A',\n'OFICIAL | Passarela | viga lateral B',\n'OFICIAL | Torre | cabecote alargado piso',\n'OFICIAL | Terminal alto | galeria piso',\n'OFICIAL | Terminal alto | piso de entrada',\n]\nfor n in names:\n o=bpy.data.objects.get(n)\n if not o:\n  print(n,'MISSING'); continue\n print(n)\n print(' LOC',tuple(round(v,4) for v in o.location))\n print(' DIMS_LOCAL',tuple(round(v,4) for v in o.dimensions))\n print(' ROT_DEG',tuple(round(math.degrees(v),4) for v in o.rotation_euler))\n\n# Distances between key centers in XY\ndef xy(o): return Vector((o.location.x,o.location.y,0))\ntower=bpy.data.objects['OFICIAL | Torre | cabecote alargado piso']\nterm=bpy.data.objects['OFICIAL | Terminal alto | galeria piso']\nentry=bpy.data.objects['OFICIAL | Terminal alto | piso de entrada']\nprint('CENTER_DISTANCE_TOWER_TO_TERMINAL',round((xy(tower)-xy(term)).length,4))\nprint('CENTER_DISTANCE_TOWER_TO_ENTRY',round((xy(tower)-xy(entry)).length,4))\n# floor elevation delta\nlow=bpy.data.objects['OFICIAL | Cidade Baixa | piso desembarque']\nhigh=bpy.data.objects['OFICIAL | Terminal alto | piso de entrada']\nlow_top=low.location.z+low.dimensions.z/2\nhigh_top=high.location.z+high.dimensions.z/2\nprint('LOW_FLOOR_TOP_Z',round(low_top,4))\nprint('HIGH_FLOOR_TOP_Z',round(high_top,4))\nprint('FLOOR_TO_FLOOR_DELTA',round(high_top-low_top,4))"
+  },
+  "enabled": true
+}
