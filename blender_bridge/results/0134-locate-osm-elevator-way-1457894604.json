@@ -1,0 +1,8 @@
+{
+  "id": "0134-locate-osm-elevator-way-1457894604",
+  "command_file": "0134-locate-osm-elevator-way-1457894604.json",
+  "status": "error",
+  "duration_seconds": 0.163,
+  "error_type": "RuntimeError",
+  "error": "BlenderMCPServer.execute_code() missing 1 required positional argument: 'code'"
+}
