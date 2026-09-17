@@ -1,0 +1,11 @@
+{
+  "id": "0129-proposed-access-fit-audit",
+  "command_file": "0129-proposed-access-fit-audit.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.481,
+  "result": {
+    "executed": true,
+    "result": "PROPOSED_ACCESS_FIT_BEGIN\n{\"proposal_lower_v2\":{\"center_s\":-3.25,\"center_l\":-9.27,\"front_s\":-11.5,\"rear_s\":5.0,\"front_samples\":[{\"s\":-11.5,\"l\":-16.376,\"xy\":[-19.592,-4.072],\"terrain_z\":1.1985},{\"s\":-11.5,\"l\":-13.801,\"xy\":[-17.83,-2.194],\"terrain_z\":0.9751},{\"s\":-11.5,\"l\":-9.27,\"xy\":[-14.729,1.11],\"terrain_z\":0.7992},{\"s\":-11.5,\"l\":-4.739,\"xy\":[-11.629,4.414],\"terrain_z\":0.8207},{\"s\":-11.5,\"l\":-2.164,\"xy\":[-9.867,6.292],\"terrain_z\":0.8481}],\"front_ground_median_z\":0.8481,\"rear_samples\":[{\"s\":5.0,\"l\":-16.686,\"terrain_z\":9.851},{\"s\":5.0,\"l\":-9.27,\"terrain_z\":10.2107},{\"s\":5.0,\"l\":-1.854,\"terrain_z\":7.3099}]},\"upper_floor\":{\"current_z\":59.4499,\"candidate_z_from_low_plus_59\":59.8481,\"bounds_s\":[30.485,49.085],\"bounds_l\":[-5.5,5.5],\"edge_samples\":[{\"edge\":\"LOW_SIDE\",\"s\":30.485,\"l\":-5.5,\"terrain_z\":23.0885},{\"edge\":\"LOW_SIDE\",\"s\":30.485,\"l\":0.0,\"terrain_z\":22.5802},{\"edge\":\"LOW_SIDE\",\"s\":30.485,\"l\":5.5,\"terrain_z\":22.6202},{\"edge\":\"HIGH_SIDE\",\"s\":49.085,\"l\":-5.5,\"terrain_z\":50.8244},{\"edge\":\"HIGH_SIDE\",\"s\":49.085,\"l\":0.0,\"terrain_z\":49.215},{\"edge\":\"HIGH_SIDE\",\"s\":49.085,\"l\":5.5,\"terrain_z\":48.3835}],\"terrain_cross_current_z\":{\"s\":60.0,\"terrain_z\":53.9067,\"error\":5.5432},\"terrain_cross_candidate_z\":{\"s\":60.0,\"terrain_z\":53.9067,\"error\":5.9414}},\"recommended_global_z_delta_if_preserve_59\":0.3932}\nPROPOSED_ACCESS_FIT_END\n"
+  }
+}
