@@ -1,0 +1,11 @@
+{
+  "id": "0034-download-inspect-sgb-mde",
+  "command_file": "0034-download-inspect-sgb-mde.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 42.438,
+  "result": {
+    "executed": true,
+    "result": "DOWNLOADED C:\\mcp-blender\\vendor\\geodata\\produtos_mde_salvador_ba.zip 294541581\nZIP_ENTRIES 103\nRelevo_sombreado/rel_45_315_sirgas_2000.tif 254283109\nRelevo_sombreado/rel_45_315_sirgas_2000.tif.aux.xml 2182\nRelevo_sombreado/rel_45_45_sirgas_2000.tif.xml 599\nRelevo_sombreado/rel_45_315_sirgas_2000.tif.xml 604\nRelevo_sombreado/rel_45_45_sirgas_2000.tif 254283109\nRelevo_sombreado/rel_45_45_sirgas_2000.tif.aux.xml 2182\nDeclividade/decli_sa/metadata.xml 562\nDeclividade/decli_sa.aux.xml 1053\nFusao/Sa_Fusao_Sirgas_2000.prj 425\nHipsometria/hipso_sa/metadata.xml 564\nHipsometria/hipso_sa.aux.xml 1156\nMDE/mde.xml 283\nMDE/mde_20.shp 28055300\nMDE/mde_20_Sirgas2000.prj 418\nMDE/mde_20_Sirgas2000.shp 28055300\nMDE/mds21.aux.xml 251\nMDE/mds21/metadata.xml 749\nMDE/mde_20.prj 410\n"
+  }
+}
