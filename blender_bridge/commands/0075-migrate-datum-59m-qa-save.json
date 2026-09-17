@@ -1,0 +1,8 @@
+{
+  "id": "0075-migrate-datum-59m-qa-save",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, subprocess, pathlib\nEXPECTED=r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'\nif bpy.data.filepath.lower()!=EXPECTED.lower(): raise RuntimeError('ABORTADO arquivo errado: '+repr(bpy.data.filepath))\n# Remove somente artefatos temporarios criados pelo QA visual; nao toca geometria do projeto.\nfor o in list(bpy.data.objects):\n    if o.name.startswith('QA_'):\n        bpy.data.objects.remove(o,do_unlink=True)\nif bpy.context.scene.camera and bpy.context.scene.camera.name.startswith('QA_'):\n    bpy.context.scene.camera=None\nrepo=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda')\nsubprocess.run(['git','fetch','origin','chatgpt/blender-collab'],cwd=repo,check=True,capture_output=True,text=True)\nfor path in ('scripts/migrar_datum_vertical_59m.py','scripts/qa_world_blockout.py'):\n    code=subprocess.run(['git','show','FETCH_HEAD:'+path],cwd=repo,check=True,capture_output=True,text=True).stdout\n    exec(compile(code,path,'exec'),{'__name__':'__main__'})\n# Save somente depois de QA PASS.\nbpy.ops.wm.save_as_mainfile(filepath=bpy.data.filepath)\nprint('BATCH_0075_DATUM_59M_PASS_AND_SAVED')"
+  },
+  "enabled": true
+}
