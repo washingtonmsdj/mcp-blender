@@ -1,0 +1,11 @@
+{
+  "id": "0058-audit-v4-z-and-preview",
+  "command_file": "0058-audit-v4-z-and-preview.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.086,
+  "result": {
+    "executed": true,
+    "result": "--- torre ---\nV3 | torre documental.001|Z=-19.00..54.50|locZ=17.75\n--- passadico ---\nV3 | passadico.001|Z=40.00..43.60|locZ=41.80\nV3 | passadico vidro lateral.002|Z=40.50..43.10|locZ=41.80\nV3 | passadico vidro lateral.003|Z=40.50..43.10|locZ=41.80\n--- piso terreo ---\nV3 | hall piso terreo marcador.001|Z=40.00..40.06|locZ=40.03\n--- parede frontal ---\n--- porta entrada ---\nV3 | porta entrada placeholder.001|Z=40.08..42.83|locZ=41.45\n--- janela frontal ---\nVISIBLE TERRAIN:\nWORLD | TERRENO MASTER | blockout\nAUDIT_V4_Z_OK\n"
+  }
+}
