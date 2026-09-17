@@ -1,0 +1,11 @@
+{
+  "id": "0072-inspect-interior-anchors",
+  "command_file": "0072-inspect-interior-anchors.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.08,
+  "result": {
+    "executed": true,
+    "result": "---torre documental---\nV4 | torre documental|CENTER=(-47.19, 50.104, 17.75)|SIZE=(7.707, 7.884, 73.5)|ROT=(0.0, 0.0, -0.7537)\n---passadico---\nV4 | passadico|CENTER=(-35.428, 39.067, 41.8)|SIZE=(25.041, 24.022, 3.6)|ROT=(0.0, 0.0, -0.7537)\nV4 | passadico vidro lateral A|CENTER=(-37.502, 36.857, 41.8)|SIZE=(20.698, 19.431, 2.6)|ROT=(0.0, 0.0, -0.7537)\nV4 | passadico vidro lateral B|CENTER=(-33.355, 41.276, 41.8)|SIZE=(20.698, 19.431, 2.6)|ROT=(0.0, 0.0, -0.7537)\n---hall piso terreo---\nV4 | hall piso terreo marcador|CENTER=(-18.179, 22.879, 40.03)|SIZE=(19.677, 19.336, 0.05)|ROT=(0.0, 0.0, -0.7537)\n---piso nivel 2---\n---piso nivel 3---\n---parede lateral esquerda---\nV4 | CB | parede lateral esquerda|CENTER=(-45.758, 48.761, 2.13)|SIZE=(7.003, 7.442, 3.35)|ROT=(0.0, 0.0, -0.7537)\n---parede lateral direita---\nV4 | CB | parede lateral direita|CENTER=(-35.103, 38.762, 2.13)|SIZE=(7.003, 7.442, 3.35)|ROT=(0.0, 0.0, -0.7537)\n---porta entrada---\nV4 | porta entrada placeholder|CENTER=(-11.514, 16.625, 41.45)|SIZE=(2.693, 2.862, 2.75)|ROT=(0.0, 0.0, -0.7537)\nV4 | CB | porta entrada|CENTER=(-47.101, 43.274, 1.805)|SIZE=(3.096, 2.912, 2.7)|ROT=(0.0, 0.0, -0.7537)\nLOW_CENTER=(-42.638, 41.409, 2.23) LOW_SIZE=(22.072, 22.145, 3.55)\nINTERIOR_ANCHORS_OK\n"
+  }
+}
