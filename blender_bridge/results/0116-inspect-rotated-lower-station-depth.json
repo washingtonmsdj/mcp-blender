@@ -1,0 +1,11 @@
+{
+  "id": "0116-inspect-rotated-lower-station-depth",
+  "command_file": "0116-inspect-rotated-lower-station-depth.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.032,
+  "result": {
+    "executed": true,
+    "result": "V4 | CB | cobertura direita EX -0.0 EY -13.978 Z 3.905 DIMS (5.416, 10.0, 0.2)\nV4 | CB | cobertura esquerda EX -0.0 EY -4.562 Z 3.905 DIMS (5.416, 10.0, 0.2)\nV4 | CB | cobertura frente EX -3.375 EY -9.27 Z 3.905 DIMS (4.0, 3.25, 0.2)\nV4 | CB | cobertura fundo EX 3.375 EY -9.27 Z 3.905 DIMS (4.0, 3.25, 0.2)\nV4 | CB | pilar fachada 1 EX -4.89 EY -2.164 Z 2.13 DIMS (0.62, 0.22, 3.35)\nV4 | CB | pilar fachada 2 EX -4.89 EY -7.004 Z 2.13 DIMS (0.62, 0.22, 3.35)\nV4 | CB | pilar fachada 3 EX -4.89 EY -11.535 Z 2.13 DIMS (0.62, 0.22, 3.35)\nV4 | CB | pilar fachada 4 EX -4.89 EY -16.376 Z 2.13 DIMS (0.62, 0.22, 3.35)\nV4 | CB | piso saguão EX -0.0 EY -9.27 Z 0.515 DIMS (14.832, 10.0, 0.12)\nV4 | CB | porta entrada EX -4.92 EY -4.739 Z 1.805 DIMS (4.171, 0.08, 2.7)\nV4 | CB | porta lacerda EX -4.92 EY -9.27 Z 1.805 DIMS (4.171, 0.08, 2.7)\nV4 | CB | porta saida EX -4.92 EY -13.8 Z 1.805 DIMS (4.171, 0.08, 2.7)\nROTATED_LOWER_DEPTH_INSPECT_OK\n"
+  }
+}
