@@ -1,0 +1,11 @@
+{
+  "id": "0156-rebuild-upper-plaza-facade-blockout",
+  "command_file": "0156-rebuild-upper-plaza-facade-blockout.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 5.842,
+  "result": {
+    "executed": true,
+    "result": "Janela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nUPPER_PLAZA_FACADE_0156_OK\n{\"collection\":\"E | ESTACAO CIDADE ALTA | blockout v2\",\"removed_old_objects\":18,\"active_objects\":29,\"new_door_local_xy\":[-0.0,-5.54],\"new_door_xy\":[42.823,-47.5572],\"new_door_sill_z\":59.4499,\"terrain_at_new_door_z\":54.9011,\"terrain_minus_sill_z\":-4.5488,\"facade_width_m\":18.6,\"covered_circulation_depth_m\":2.5,\"tower_unchanged\":true,\"terrain_unchanged\":true,\"z_changed\":false,\"saved\":true}\nQA=PASS_AND_SAVED\n"
+  }
+}
