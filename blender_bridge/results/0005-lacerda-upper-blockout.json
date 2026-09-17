@@ -1,0 +1,11 @@
+{
+  "id": "0005-lacerda-upper-blockout",
+  "command_file": "0005-lacerda-upper-blockout.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 17.394,
+  "result": {
+    "executed": true,
+    "result": "Built Lacerda_Upper_Blockout with 47 objects; preserved all non-bridge scene content.\n"
+  }
+}
