@@ -1,0 +1,8 @@
+{
+  "id": "0057-unify-world-terrain-and-rebase-elevator",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess,sys\nrepo=r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda'\nsubprocess.run(['git','-C',repo,'fetch','origin','chatgpt/blender-collab'],check=True)\ncode=subprocess.check_output(['git','-C',repo,'show','FETCH_HEAD:scripts/unificar_world_terrain_e_rebase_elevador.py'],text=True,encoding='utf-8')\nexec(compile(code,'unificar_world_terrain_e_rebase_elevador.py','exec'),{'__name__':'__main__'})"
+  },
+  "enabled": true
+}
