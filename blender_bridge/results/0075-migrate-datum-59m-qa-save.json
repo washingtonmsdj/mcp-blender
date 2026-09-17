@@ -1,0 +1,8 @@
+{
+  "id": "0075-migrate-datum-59m-qa-save",
+  "command_file": "0075-migrate-datum-59m-qa-save.json",
+  "status": "error",
+  "duration_seconds": 3.775,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"AttributeError\", \"message\": \"'Curve' object has no attribute 'update'\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 14, in <module>\\n  File \\\"scripts/migrar_datum_vertical_59m.py\\\", line 97, in <module>\\n  File \\\"scripts/migrar_datum_vertical_59m.py\\\", line 84, in warp_curve\\nAttributeError: 'Curve' object has no attribute 'update'\\n\"}"
+}
