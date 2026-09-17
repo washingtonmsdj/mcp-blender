@@ -1,0 +1,11 @@
+{
+  "id": "0086-check-local-geospatial-stack",
+  "command_file": "0086-check-local-geospatial-stack.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 7.259,
+  "result": {
+    "executed": true,
+    "result": "BLENDER_PY=C:\\Program Files\\Blender Foundation\\Blender 5.2\\5.2\\python\\bin\\python.exe\nBLENDER_rasterio=NO ModuleNotFoundError\nBLENDER_osgeo=NO ModuleNotFoundError\nBLENDER_pyproj=NO ModuleNotFoundError\nBLENDER_numpy=YES 2.3.4\nSYSTEM_PY_RC=0\nSYSTEM_PY={\"rasterio\": false, \"osgeo\": false, \"pyproj\": false, \"numpy\": true}\nSYSTEM_ERR=\nGEO_STACK_CHECK_OK\n"
+  }
+}
