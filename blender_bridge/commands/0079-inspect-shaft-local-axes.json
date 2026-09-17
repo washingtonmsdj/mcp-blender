@@ -1,0 +1,8 @@
+{
+  "id": "0079-inspect-shaft-local-axes",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\nfrom mathutils import Vector\nprint('FILE='+bpy.data.filepath)\nelev=bpy.data.collections.get('01 WORLD | ELEVADOR LACERDA | blockout v4')\nif not elev: raise RuntimeError('elevador ativo ausente')\nkeys=['torre documental','hall piso terreo','parede lateral esquerda','parede lateral direita','passadico']\nfor key in keys:\n    print('---'+key+'---')\n    for o in elev.all_objects:\n        if key in o.name.lower():\n            local=[]\n            if o.type=='MESH':\n                local=[v.co.copy() for v in o.data.vertices]\n            if local:\n                xs=[p.x for p in local];ys=[p.y for p in local];zs=[p.z for p in local]\n                print(o.name,'LOC',tuple(round(v,3) for v in o.location),'ROT',tuple(round(v,5) for v in o.rotation_euler),'LOCAL_BOUNDS',(round(min(xs),3),round(max(xs),3),round(min(ys),3),round(max(ys),3),round(min(zs),3),round(max(zs),3)))\n            else:\n                print(o.name,'LOC',tuple(round(v,3) for v in o.location),'ROT',tuple(round(v,5) for v in o.rotation_euler),'DIMS',tuple(round(v,3) for v in o.dimensions))\nprint('DIRECT_OBJECTS',len(elev.objects),'ALL_OBJECTS',len(elev.all_objects))\nprint('SHAFT_AXES_INSPECT_OK')"
+  },
+  "enabled": true
+}
