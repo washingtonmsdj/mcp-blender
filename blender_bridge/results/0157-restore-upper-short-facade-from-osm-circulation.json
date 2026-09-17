@@ -1,0 +1,11 @@
+{
+  "id": "0157-restore-upper-short-facade-from-osm-circulation",
+  "command_file": "0157-restore-upper-short-facade-from-osm-circulation.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 3.398,
+  "result": {
+    "executed": true,
+    "result": "Janela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nUPPER_FACADE_0157_RESTORED_OK\n{\"collection\":\"E | ESTACAO CIDADE ALTA | blockout v2\",\"removed_0156_objects\":20,\"active_objects\":27,\"corridor_local_x_range\":[-7.6681,7.6301],\"corridor_max_abs_local_y\":0.3953,\"door_local_xy\":[9.14,0.0],\"facade_side\":\"local +X short face\",\"tower_unchanged\":true,\"terrain_unchanged\":true,\"z_changed\":false,\"saved\":true}\nQA=PASS_AND_SAVED\n"
+  }
+}
