@@ -1,0 +1,11 @@
+{
+  "id": "0041-batch-v2-model-and-qa",
+  "command_file": "0041-batch-v2-model-and-qa.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 48.168,
+  "result": {
+    "executed": true,
+    "result": "CANDIDATO_ESCALA_REAL_V2_OK\nFILE=C:\\mcp-blender\\salvador_lacerda_do_zero.blend\nTOWER_CENTER_WORLD=(-47.1902,50.1044)\nTOWER=3.55x7.48x73.50\nLIFT_TRAVEL=59.00\nBRIDGE=28.71x6.00 U=[-70.5290,-41.8190]\nUPPER_PLAN=18.60x11.00 U=[-41.8190,-23.2190] HEIGHT_APPROX=12.00\nOLD_FRONT_U=0.0000 NEW_FRONT_U=-23.2190 SHIFT_TOWARD_TOWER=23.2190\nFRONT_WINDOWS=6\nOBJECTS=98 FRAMED=1\nQA_REAL_SCALE_V2_OK\nC:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_real_scale_v2_perfil.png\nC:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_real_scale_v2_planta.png\nC:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_real_scale_v2_perspectiva.png\nFAST_BATCH_V2_MODEL_QA_OK\n"
+  }
+}
