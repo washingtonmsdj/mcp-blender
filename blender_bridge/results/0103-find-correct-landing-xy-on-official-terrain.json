@@ -1,0 +1,11 @@
+{
+  "id": "0103-find-correct-landing-xy-on-official-terrain",
+  "command_file": "0103-find-correct-landing-xy-on-official-terrain.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.705,
+  "result": {
+    "executed": true,
+    "result": "AXIS_TOWER_TO_UP 0.729195 -0.684306\nUP TOL 0.25 DIST 21.919 FROM -11.514 16.625 TO -11.055 -5.29 Z 59.273 ALONG_AXIS 15.331 CROSS_AXIS -15.666\nUP BALANCED DIST 10.202 Z 57.319 DZ -2.131 ALONG_AXIS 8.556 CROSS_AXIS -5.556\nLOW TOL 0.25 DIST 15.197 FROM -47.101 43.274 TO -57.185 54.643 Z 4.0 ALONG_AXIS -15.133 CROSS_AXIS 1.39\nLOW BALANCED DIST 13.761 Z 4.353 DZ 0.353 ALONG_AXIS -13.761 CROSS_AXIS -0.066\n\n\nLANDING_XY_SEARCH_OK\n"
+  }
+}
