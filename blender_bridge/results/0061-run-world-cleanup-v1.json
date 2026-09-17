@@ -1,0 +1,8 @@
+{
+  "id": "0061-run-world-cleanup-v1",
+  "command_file": "0061-run-world-cleanup-v1.json",
+  "status": "error",
+  "duration_seconds": 7.73,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"AttributeError\", \"message\": \"'NoneType' object has no attribute 'hide_viewport' and no __dict__ for setting new attributes\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 5, in <module>\\n  File \\\"limpar_cena_e_terrain_master_v1.py\\\", line 54, in <module>\\nAttributeError: 'NoneType' object has no attribute 'hide_viewport' and no __dict__ for setting new attributes\\n\"}"
+}
