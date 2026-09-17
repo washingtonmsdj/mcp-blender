@@ -1,0 +1,11 @@
+{
+  "id": "0079-inspect-shaft-local-axes",
+  "command_file": "0079-inspect-shaft-local-axes.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.056,
+  "result": {
+    "executed": true,
+    "result": "FILE=C:\\mcp-blender\\salvador_lacerda_do_zero.blend\n---torre documental---\nV4 | torre documental LOC (-47.19, 50.104, 37.2) ROT (0.0, 0.0, -0.75365) LOCAL_BOUNDS (-1.775, 1.775, -3.74, 3.74, -36.75, 36.75)\n---hall piso terreo---\nV4 | hall piso terreo marcador LOC (-18.179, 22.879, 59.48) ROT (0.0, 0.0, -0.75365) LOCAL_BOUNDS (-8.8, 8.8, -5.0, 5.0, -0.025, 0.025)\n---parede lateral esquerda---\nV4 | CB | parede lateral esquerda LOC (-45.758, 48.761, 2.13) ROT (0.0, 0.0, -0.75365) LOCAL_BOUNDS (-0.11, 0.11, -5.0, 5.0, -1.675, 1.675)\n---parede lateral direita---\nV4 | CB | parede lateral direita LOC (-35.103, 38.762, 2.13) ROT (0.0, 0.0, -0.75365) LOCAL_BOUNDS (-0.11, 0.11, -5.0, 5.0, -1.675, 1.675)\n---passadico---\nV4 | passadico LOC (-35.428, 39.067, 61.25) ROT (0.0, 0.0, -0.75365) LOCAL_BOUNDS (-14.355, 14.355, -3.0, 3.0, -1.8, 1.8)\nV4 | passadico vidro lateral A LOC (-37.502, 36.857, 61.25) ROT (0.0, 0.0, -0.75365) LOCAL_BOUNDS (-14.155, 14.155, -0.04, 0.04, -1.3, 1.3)\nV4 | passadico vidro lateral B LOC (-33.355, 41.276, 61.25) ROT (0.0, 0.0, -0.75365) LOCAL_BOUNDS (-14.155, 14.155, -0.04, 0.04, -1.3, 1.3)\nDIRECT_OBJECTS 40 ALL_OBJECTS 66\nSHAFT_AXES_INSPECT_OK\n"
+  }
+}
