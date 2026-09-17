@@ -1,0 +1,8 @@
+{
+  "id": "0088-derive-world-georef",
+  "command_file": "0088-derive-world-georef.json",
+  "status": "error",
+  "duration_seconds": 4.177,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"RuntimeError\", \"message\": \"georef solver failed\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 33, in <module>\\nRuntimeError: georef solver failed\\n\"}"
+}
