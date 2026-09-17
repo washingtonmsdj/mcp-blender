@@ -1,0 +1,8 @@
+{
+  "id": "0040-publish-real-scale-v1-tiny-previews",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, pathlib, base64, os\nbase=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders')\noutbase=pathlib.Path(r'C:\\mcp-blender\\blender_bridge\\previews')\nfor key,srcname in [('realv1_perfil','chatgpt_real_scale_v1_perfil.png'),('realv1_planta','chatgpt_real_scale_v1_planta.png')]:\n src=base/srcname; out=outbase/f'{key}_tiny.jpg'\n img=bpy.data.images.load(str(src),check_existing=False); img.scale(160,120); img.filepath_raw=str(out); img.file_format='JPEG'; img.save(); bpy.data.images.remove(img)\n data=base64.b64encode(out.read_bytes()).decode('ascii'); parts=[data[i:i+1000] for i in range(0,len(data),1000)]\n for i,p in enumerate(parts): (outbase/f'{key}_tiny_{i:02d}.txt').write_text(p,encoding='utf-8')\n print(f'{key.upper()} bytes={out.stat().st_size} chunks={len(parts)} chars={len(data)}')\nprint('REAL_SCALE_V1_TINY_PREVIEWS_OK')"
+  },
+  "enabled": true
+}
