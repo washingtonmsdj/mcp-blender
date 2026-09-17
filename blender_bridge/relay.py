@@ -92,7 +92,6 @@ def git_publish(message: str) -> None:
     if not status:
         return
     run_git("commit", "-m", message)
-    # Commands may arrive between execution and push. Rebase once before pushing.
     run_git("pull", "--rebase", "origin", BRANCH)
     run_git("push", "origin", BRANCH)
 
@@ -166,7 +165,8 @@ def process_command(command_file: Path) -> None:
     started = time.time()
     command_id = command_file.stem
     try:
-        command = json.loads(command_file.read_text(encoding="utf-8"))
+        # utf-8-sig transparently accepts both plain UTF-8 and PowerShell's UTF-8 BOM.
+        command = json.loads(command_file.read_text(encoding="utf-8-sig"))
         if command.get("enabled", True) is False:
             return
         command_type, params = validate_command(command)
