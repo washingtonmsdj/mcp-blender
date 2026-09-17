@@ -1,0 +1,11 @@
+{
+  "id": "0036-publish-calibration-tiny-previews",
+  "command_file": "0036-publish-calibration-tiny-previews.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.172,
+  "result": {
+    "executed": true,
+    "result": "PERFIL_TINY bytes=2902 chunks=5 chars=3872\nPLANTA_TINY bytes=2915 chunks=5 chars=3888\nCALIBRATION_TINY_PREVIEWS_OK\n"
+  }
+}
