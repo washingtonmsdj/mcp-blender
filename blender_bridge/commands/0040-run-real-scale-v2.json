@@ -1,0 +1,8 @@
+{
+  "id": "0040-run-real-scale-v2",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess\nrepo=r'C:\\\\mcp-blender\\\\vendor\\\\projeto-salvador-elevador-lacerda'\nsubprocess.run(['git','-C',repo,'fetch','origin','chatgpt/blender-collab'],check=True,capture_output=True,text=True)\nsrc=subprocess.check_output(['git','-C',repo,'show','FETCH_HEAD:scripts/candidato_escala_real_v2.py'],text=True,encoding='utf-8')\nexec(compile(src,'candidato_escala_real_v2.py','exec'),{'__name__':'__main__'})\nprint('PIPELINE_V2_FETCH_HEAD_OK')"
+  },
+  "enabled": true
+}
