@@ -1,0 +1,11 @@
+{
+  "id": "0057-unify-world-terrain-and-rebase-elevator",
+  "command_file": "0057-unify-world-terrain-and-rebase-elevator.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 6.843,
+  "result": {
+    "executed": true,
+    "result": "WORLD_UNIFICADO_V1_OK\nFILE=C:\\mcp-blender\\salvador_lacerda_do_zero.blend\nVISIBLE_TERRAIN=['WORLD | TERRENO MASTER | blockout']\nMASTER_BOUNDS X=-216.59..187.16 Y=-171.06..230.89 Z=-3.00..39.90\nWORLD_DATUM=0/40m PROVISORIO\nLIFT_TRAVEL_DOCUMENTED=59m NOT_TERRAIN_ELEVATION\nELEVATOR_V4_Z=0.00..73.50 REBASE=-19.00m\nMASTER_VERTS=16 MASTER_FACES=16 V4_OBJECTS=40 FRAMED=1\n"
+  }
+}
