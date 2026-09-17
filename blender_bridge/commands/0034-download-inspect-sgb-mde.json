@@ -1,0 +1,8 @@
+{
+  "id": "0034-download-inspect-sgb-mde",
+  "type": "execute_code",
+  "params": {
+    "code": "import os, pathlib, urllib.request, zipfile\nurl='https://rigeo.sgb.gov.br/bitstreams/48206607-8c4f-4890-80c2-edfae1b4e098/download'\nout=pathlib.Path(r'C:\\mcp-blender\\vendor\\geodata\\produtos_mde_salvador_ba.zip')\nout.parent.mkdir(parents=True, exist_ok=True)\nif not out.exists() or out.stat().st_size < 100_000_000:\n    part=out.with_suffix('.zip.part')\n    req=urllib.request.Request(url, headers={'User-Agent':'Mozilla/5.0'})\n    with urllib.request.urlopen(req, timeout=120) as r, open(part,'wb') as f:\n        total=int(r.headers.get('Content-Length') or 0)\n        done=0\n        while True:\n            chunk=r.read(8*1024*1024)\n            if not chunk: break\n            f.write(chunk); done += len(chunk)\n    os.replace(part,out)\nprint('DOWNLOADED',out, out.stat().st_size)\nwith zipfile.ZipFile(out,'r') as z:\n    infos=z.infolist()\n    print('ZIP_ENTRIES',len(infos))\n    for i in infos:\n        n=i.filename\n        if n.lower().endswith(('.tif','.tiff','.asc','.xyz','.img','.grd','.shp','.prj','.xml','.txt')):\n            print(n, i.file_size)"
+  },
+  "enabled": true
+}
