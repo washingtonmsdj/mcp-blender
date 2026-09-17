@@ -1,0 +1,8 @@
+{
+  "id": "0008-diagnose-scenes-windows",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\n\nlines=[]\nlines.append(f'FILEPATH={bpy.data.filepath!r}')\nlines.append('SCENES:')\nfor s in bpy.data.scenes:\n    try:\n        lines.append(f'- {s.name}: objects={len(s.objects)} children={[c.name for c in s.collection.children]}')\n    except Exception as e:\n        lines.append(f'- {s.name}: error={e}')\nlines.append('WINDOWS:')\nwm=bpy.context.window_manager\nfor i,w in enumerate(wm.windows):\n    try:\n        lines.append(f'- window[{i}] scene={w.scene.name} workspace={w.workspace.name} screen={w.screen.name}')\n    except Exception as e:\n        lines.append(f'- window[{i}] error={e}')\nlines.append(f'CONTEXT_SCENE={bpy.context.scene.name}')\nlines.append(f'CONTEXT_WINDOW_SCENE={getattr(getattr(bpy.context, \"window\", None), \"scene\", None).name if getattr(bpy.context, \"window\", None) else None}')\nprint('\\n'.join(lines))"
+  },
+  "enabled": true
+}
