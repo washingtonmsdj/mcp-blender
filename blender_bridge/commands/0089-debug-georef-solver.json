@@ -1,0 +1,8 @@
+{
+  "id": "0089-debug-georef-solver",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess, os\nvenv=r'C:\\mcp-blender\\.venv-geo\\Scripts\\python.exe'; tmp=r'C:\\mcp-blender\\.geo-work'\ncmd=[venv,os.path.join(tmp,'derive_world_georef.py'),os.path.join(tmp,'anchors.json'),os.path.join(tmp,'salvador_osm_map.xml'),os.path.join(tmp,'world_georef.json')]\ncp=subprocess.run(cmd,capture_output=True,text=True,encoding='utf-8',timeout=180)\nprint('RC='+str(cp.returncode))\nprint('STDOUT='+cp.stdout[-12000:])\nprint('STDERR='+cp.stderr[-12000:])\nprint('FILES='+repr({f:os.path.getsize(os.path.join(tmp,f)) if os.path.exists(os.path.join(tmp,f)) else None for f in ['anchors.json','salvador_osm_map.xml','derive_world_georef.py','world_georef.json']}))\nprint('GEOREF_DEBUG_DONE')"
+  },
+  "enabled": true
+}
