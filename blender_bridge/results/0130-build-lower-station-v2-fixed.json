@@ -1,0 +1,11 @@
+{
+  "id": "0130-build-lower-station-v2-fixed",
+  "command_file": "0130-build-lower-station-v2-fixed.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 5.719,
+  "result": {
+    "executed": true,
+    "result": "Janela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nCIDADE_BAIXA_V2_FIXED_OK\n{\"front_s\":-11.5,\"rear_s\":5.0,\"center_s\":-3.25,\"lateral_center\":-9.27,\"ground_z_preserved\":0.4549102783203125,\"door_terrain_z\":[1.0047,0.7992,0.8303],\"median\":0.8303,\"objects\":26,\"terrain_created\":0}\nQA=PASS_AND_SAVED\n"
+  }
+}
