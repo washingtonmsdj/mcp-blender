@@ -1,0 +1,8 @@
+{
+  "id": "0086-check-local-geospatial-stack",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, subprocess, json, sys\nmods=['rasterio','osgeo','pyproj','numpy']\nprint('BLENDER_PY='+sys.executable)\nfor m in mods:\n    try:\n        mod=__import__(m); print('BLENDER_'+m+'=YES '+str(getattr(mod,'__version__','')))\n    except Exception as e: print('BLENDER_'+m+'=NO '+type(e).__name__)\ncp=subprocess.run(['python','-c',\"import importlib.util, json; mods=['rasterio','osgeo','pyproj','numpy']; print(json.dumps({m: bool(importlib.util.find_spec(m)) for m in mods}))\"],capture_output=True,text=True)\nprint('SYSTEM_PY_RC='+str(cp.returncode))\nprint('SYSTEM_PY='+cp.stdout.strip())\nprint('SYSTEM_ERR='+cp.stderr.strip())\nprint('GEO_STACK_CHECK_OK')"
+  },
+  "enabled": true
+}
