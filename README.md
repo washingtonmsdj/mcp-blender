@@ -1,14 +1,14 @@
 # MCP Blender + Unity CLI
 
-Este repositório foi reduzido para uma única função: ponte local MCP + automação de Blender e Unity por CLI.
+Ponte local para controlar **Blender CLI** e **Unity CLI** por MCP e para executar validações pelo GitHub em um self-hosted runner.
 
-O antigo conteúdo do Ordax Engine foi removido da main. Uma cópia histórica ficou preservada na branch:
+O antigo Ordax Engine foi removido da `main`. O snapshot anterior está preservado em:
 
-archive/ordax-engine-before-cleanup-2026-09-17
+`archive/ordax-engine-before-cleanup-2026-09-17`
 
-## Objetivo
+## Arquitetura
 
-~~~text
+```text
 ChatGPT / cliente MCP
         |
         v
@@ -19,13 +19,13 @@ mcp-blender-unity
         +--> Unity CLI
                  |
                  +--> HORDAX-game
-~~~
+```
 
-Este repositório não contém o jogo HORDAX. O HORDAX continua no repositório próprio.
+O HORDAX permanece no repositório `washingtonmsdj/HORDAX-game`.
 
 ## Estrutura
 
-~~~text
+```text
 mcp_blender_unity/
   config.py
   process.py
@@ -33,6 +33,7 @@ mcp_blender_unity/
 
 scripts/windows/
   blender-run.ps1
+  mcp-start.ps1
   toolchain-status.ps1
   unity-run.ps1
 
@@ -40,70 +41,80 @@ scripts/windows/
   toolchain-smoke.yml
   unity-hordax-validate.yml
 
-.env.example
-pyproject.toml
-~~~
+docs/
+  SELF_HOSTED_RUNNER.md
+```
 
-## Instalação local
+## MCP local
 
 Requer Python 3.11+.
 
-~~~powershell
+```powershell
+.\scripts\windows\mcp-start.ps1
+```
+
+Na primeira execução o script cria `.venv` e instala o pacote em modo editável.
+
+Instalação manual:
+
+```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .
-~~~
-
-Variáveis suportadas:
-
-- BLENDER_EXE
-- UNITY_EXE
-- DEFAULT_UNITY_PROJECT
-
-Se BLENDER_EXE e UNITY_EXE não forem definidos, o servidor tenta localizar instalações comuns automaticamente.
-
-## Executar o MCP por stdio
-
-~~~powershell
 python -m mcp_blender_unity.server
-~~~
+```
+
+Variáveis opcionais:
+
+- `BLENDER_EXE`
+- `UNITY_EXE`
+- `DEFAULT_UNITY_PROJECT`
 
 ## Tools MCP
 
-O servidor expõe:
+- `toolchain_status`
+- `blender_version`
+- `blender_run_python`
+- `unity_compile_project`
+- `unity_validate_project`
+- `unity_run_method`
 
-- toolchain_status
-- blender_version
-- blender_run_python
-- unity_validate_project
-- unity_run_method
+`unity_compile_project` abre/importa o projeto em batch mode e inspeciona o log por erros de compilação.
 
-Os processos são executados diretamente, sem shell=True.
+`unity_validate_project` também executa, por padrão:
 
-## Unity CLI
+`HORDAX.EditorTools.CiValidation.Run`
 
-~~~powershell
-.\scripts\windows\unity-run.ps1 -ProjectPath "C:\dev\HORDAX-game" -ExecuteMethod "HORDAX.EditorTools.CiValidation.Run"
-~~~
+## CLI direto
 
-O wrapper usa -batchmode -quit -projectPath -executeMethod -logFile.
+Unity:
 
-## Blender CLI
+```powershell
+.\scripts\windows\unity-run.ps1 `
+  -ProjectPath "C:\dev\HORDAX-game" `
+  -ExecuteMethod "HORDAX.EditorTools.CiValidation.Run"
+```
 
-~~~powershell
+Somente compilação/import:
+
+```powershell
+.\scripts\windows\unity-run.ps1 -ProjectPath "C:\dev\HORDAX-game"
+```
+
+Blender:
+
+```powershell
 .\scripts\windows\blender-run.ps1 -PythonScript "C:\dev\scripts\generate_asset.py"
-~~~
+```
 
-## Self-hosted runner
+## GitHub self-hosted runner
 
-Os workflows deste repositório são deliberadamente limitados a workflow_dispatch. Não execute código de pull requests não confiáveis em uma máquina self-hosted com Blender/Unity instalados.
+Veja `docs/SELF_HOSTED_RUNNER.md`.
 
-toolchain-smoke.yml confirma que Blender e Unity podem ser localizados.
+O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório isolado, roda o Unity em batch mode e publica o log como artifact.
 
-unity-hordax-validate.yml executa o Unity em batch mode em uma máquina self-hosted. Configure a variável de repositório HORDAX_PROJECT_PATH com o caminho local do clone do HORDAX nessa máquina.
+Os workflows são manuais por segurança.
 
 ## Segurança
 
-Não versione tokens, chaves, licenças ou credenciais. O antigo .env versionado foi removido da main.
-
-Use GitHub Secrets, variáveis do runner ou variáveis de ambiente locais.
+Não versione tokens, segredos ou dados de licença. Use variáveis de ambiente locais e GitHub Secrets quando necessário.
