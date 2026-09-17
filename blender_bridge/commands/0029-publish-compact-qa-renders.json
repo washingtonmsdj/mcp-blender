@@ -1,0 +1,8 @@
+{
+  "id": "0029-publish-compact-qa-renders",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, pathlib, os\nsrc_dir=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders')\nout_dir=pathlib.Path(r'C:\\mcp-blender\\blender_bridge\\previews'); out_dir.mkdir(parents=True,exist_ok=True)\nitems=[('chatgpt_entrada_superior_frontal.png','qa_frontal_small.jpg'),('chatgpt_entrada_superior_perspectiva.png','qa_perspectiva_small.jpg'),('chatgpt_entrada_superior_acesso_baixo.png','qa_acesso_small.jpg')]\nfor src_name,out_name in items:\n src=src_dir/src_name; out=out_dir/out_name\n if not src.exists(): raise RuntimeError(f'missing render {src}')\n img=bpy.data.images.load(str(src),check_existing=False); img.scale(240,180); img.filepath_raw=str(out); img.file_format='JPEG'; img.save(); bpy.data.images.remove(img)\n print(out_name,os.path.getsize(out))\nprint('COMPACT_QA_RENDERS_OK')"
+  },
+  "enabled": true
+}
