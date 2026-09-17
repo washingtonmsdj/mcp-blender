@@ -1,0 +1,11 @@
+{
+  "id": "0068-fix-names-rebuild-lower-qa-save",
+  "command_file": "0068-fix-names-rebuild-lower-qa-save.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 13.293,
+  "result": {
+    "executed": true,
+    "result": "NORMALIZE_ACTIVE_NAMES_OK\nOBJECTS=66 RENAMED=2\nV4 | passadico vidro lateral.002 -> V4 | passadico vidro lateral A\nV4 | passadico vidro lateral.003 -> V4 | passadico vidro lateral B\nCIDADE_BAIXA_V1_OK\nGROUND=0.455 WIDTH_REF=14.832 DEPTH_REF=10.000 ROT_DEG=-43.1811\nOBJECTS=26 DOORS=3 PILLARS=4 TUNNEL=yes SKYLIGHT=yes\nTERRAIN_CREATED=0\nQA_WORLD_BLOCKOUT\nERRORS=[]\nWARNINGS=[]\nVISIBLE_TERRAIN=['WORLD | TERRENO MASTER | blockout']\nRESULT=PASS\nJanela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nBATCH_0068_PASS_AND_SAVED\n"
+  }
+}
