@@ -1,0 +1,8 @@
+{
+  "id": "0122-rebase-elevador-origin-and-isolate-legacy",
+  "command_file": "0122-rebase-elevador-origin-and-isolate-legacy.json",
+  "status": "error",
+  "duration_seconds": 0.395,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"TypeError\", \"message\": \"bpy_struct: item.attr = val: enum \\\"AXES\\\" not found in ('PLAIN_AXES', 'ARROWS', 'SINGLE_ARROW', 'CIRCLE', 'CUBE', 'SPHERE', 'CONE', 'IMAGE')\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 46, in <module>\\nTypeError: bpy_struct: item.attr = val: enum \\\"AXES\\\" not found in ('PLAIN_AXES', 'ARROWS', 'SINGLE_ARROW', 'CIRCLE', 'CUBE', 'SPHERE', 'CONE', 'IMAGE')\\n\"}"
+}
