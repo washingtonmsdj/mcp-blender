@@ -1,0 +1,11 @@
+{
+  "id": "create-test-cube",
+  "command_file": "0003-create-test-cube.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.211,
+  "result": {
+    "executed": true,
+    "result": "Created Bridge_Test_Cube at (0.0, 0.0, 1.0)\n"
+  }
+}
