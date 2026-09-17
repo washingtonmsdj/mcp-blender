@@ -1,0 +1,8 @@
+{
+  "id": "0036-check-gdal-and-pyproj",
+  "type": "execute_code",
+  "params": {
+    "code": "import shutil, importlib.util, sys\nprint('gdalinfo=',shutil.which('gdalinfo'))\nprint('gdallocationinfo=',shutil.which('gdallocationinfo'))\nprint('ogrinfo=',shutil.which('ogrinfo'))\nprint('python=',sys.executable)\nfor m in ['osgeo','pyproj','rasterio','fiona','shapefile']:\n    print(m, bool(importlib.util.find_spec(m)))"
+  },
+  "enabled": true
+}
