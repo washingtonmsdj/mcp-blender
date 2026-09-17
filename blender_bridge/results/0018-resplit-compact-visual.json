@@ -1,0 +1,11 @@
+{
+  "id": "0018-resplit-compact-visual",
+  "command_file": "0018-resplit-compact-visual.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.086,
+  "result": {
+    "executed": true,
+    "result": "SMALL_CHUNKS=9 BASE64=8788\n"
+  }
+}
