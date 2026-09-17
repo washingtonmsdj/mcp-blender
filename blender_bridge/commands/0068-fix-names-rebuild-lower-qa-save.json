@@ -1,0 +1,8 @@
+{
+  "id": "0068-fix-names-rebuild-lower-qa-save",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess, pathlib, bpy\nrepo=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda')\nsubprocess.run(['git','fetch','origin','chatgpt/blender-collab'],cwd=repo,check=True,capture_output=True,text=True)\nfor path in ('scripts/normalizar_nomes_ativos.py','scripts/blockout_estacao_cidade_baixa_v1.py','scripts/qa_world_blockout.py'):\n code=subprocess.run(['git','show','FETCH_HEAD:'+path],cwd=repo,check=True,capture_output=True,text=True).stdout\n exec(compile(code,path,'exec'),{'__name__':'__main__'})\nbpy.ops.wm.save_as_mainfile(filepath=bpy.data.filepath)\nprint('BATCH_0068_PASS_AND_SAVED')"
+  },
+  "enabled": true
+}
