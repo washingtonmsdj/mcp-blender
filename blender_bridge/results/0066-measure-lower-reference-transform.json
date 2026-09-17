@@ -1,0 +1,11 @@
+{
+  "id": "0066-measure-lower-reference-transform",
+  "command_file": "0066-measure-lower-reference-transform.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.085,
+  "result": {
+    "executed": true,
+    "result": "OFICIAL | Cidade Baixa | marquise|LOC=(-40.4308, 43.7611, 3.1)|DIMS=(14.8316, 7.0, 0.3)|ROT_Z_DEG=-43.1811|SCALE=(7.4158, 3.5, 0.15)\nOFICIAL | Cidade Baixa | piso desembarque|LOC=(-40.4308, 43.7611, -0.1)|DIMS=(27.8092, 10.0, 0.2)|ROT_Z_DEG=-43.1811|SCALE=(13.9046, 5.0, 0.1)\nLOWER_REFERENCE_TRANSFORM_OK\n"
+  }
+}
