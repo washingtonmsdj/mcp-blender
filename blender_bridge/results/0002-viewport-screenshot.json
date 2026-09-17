@@ -1,0 +1,10 @@
+{
+  "id": "0002-viewport-screenshot",
+  "command_file": "0002-viewport-screenshot.json",
+  "type": "get_viewport_screenshot",
+  "status": "success",
+  "duration_seconds": 1.553,
+  "result": {
+    "error": "Erro: Não foi possível escrever imagem: No error\n"
+  }
+}
