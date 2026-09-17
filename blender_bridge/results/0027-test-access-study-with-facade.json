@@ -1,0 +1,11 @@
+{
+  "id": "0027-test-access-study-with-facade",
+  "command_file": "0027-test-access-study-with-facade.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 13.231,
+  "result": {
+    "executed": true,
+    "result": "ESTUDO_ACESSO_SUPERIOR_OK pilares=4 largura_marquise=20.8m objetos= 23 theta= -0.753652\nACCESS_STUDY_FETCH_HEAD=323b90db0f1bfbd1bbd079feda2b1bd3aa42abda\n"
+  }
+}
