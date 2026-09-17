@@ -1,0 +1,11 @@
+{
+  "id": "0033-preview-facade-and-ground-study",
+  "command_file": "0033-preview-facade-and-ground-study.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 4.105,
+  "result": {
+    "executed": true,
+    "result": "FACADE_GROUND_PREVIEW bytes=3742 base64=4992\n"
+  }
+}
