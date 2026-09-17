@@ -1,0 +1,11 @@
+{
+  "id": "0032-audit-official-real-scale-imported",
+  "command_file": "0032-audit-official-real-scale-imported.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 3.951,
+  "result": {
+    "executed": true,
+    "result": "AUDITORIA_ESCALA_REAL\nSCENE=Scene\nOFFICIAL_OBJECTS=37\nTORRE_CURRENT_H=50.5000\nTORRE_TARGET_H=73.5000\nTORRE_DELTA=-23.0000\nTORRE_RATIO=0.687075\nTORRE_Z=[0.0000,50.5000]\nBRIDGE_CANDIDATE=OFICIAL | Passarela | piso continuo\nBRIDGE_CURRENT_HORIZONTAL=39.6572\nBRIDGE_DX=39.6572 BRIDGE_DY=37.7032\nBRIDGE_TARGET_FREE_SPAN=28.7100\nBRIDGE_DELTA=+10.9472\nBRIDGE_RATIO=1.381302\nBRIDGE_CANDIDATES_TOP5=\n  OFICIAL | Passarela | piso continuo: horizontal=39.6572 dx=39.6572 dy=37.7032\n  OFICIAL | Passarela | cobertura: horizontal=39.6572 dx=39.6572 dy=37.7032\n  OFICIAL | Passarela | viga lateral B: horizontal=36.0304 dx=36.0304 dy=33.8385\n  OFICIAL | Passarela | viga lateral A: horizontal=36.0304 dx=36.0304 dy=33.8385\n  OFICIAL | Terminal alto | galeria piso: horizontal=19.6944 dx=19.6944 dy=19.4392\nNOTE=73.5m e 28.71m sao alvos patrimoniais; o vao livre deve ser associado ao objeto estrutural correto antes de redimensionar.\n"
+  }
+}
