@@ -1,0 +1,11 @@
+{
+  "id": "0158-upper-passenger-path-terrain-audit",
+  "command_file": "0158-upper-passenger-path-terrain-audit.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 1.977,
+  "result": {
+    "executed": true,
+    "result": "UPPER_PASSENGER_PATH_TERRAIN_AUDIT_BEGIN\n{\"corridor\":{\"id\":\"1455480196\",\"tags\":{\"highway\":\"corridor\",\"indoor\":\"yes\",\"layer\":\"1\"},\"nodes\":[{\"id\":\"13144235879\",\"xy\":[52.2907,-47.405],\"local_xy\":[7.631,0.0661],\"terrain_z\":55.2957,\"terrain_minus_hall_z\":-4.1842},{\"id\":\"13144235885\",\"xy\":[40.0095,-38.2783],\"local_xy\":[-7.6666,0.396],\"terrain_z\":53.0927,\"terrain_minus_hall_z\":-6.3872}]},\"footway\":{\"id\":\"1429934820\",\"tags\":{\"highway\":\"footway\"},\"nodes\":[{\"id\":\"13144235879\",\"xy\":[52.2907,-47.405],\"local_xy\":[7.631,0.0661],\"terrain_z\":55.2957,\"terrain_minus_hall_z\":-4.1842},{\"id\":\"13144235881\",\"xy\":[53.5817,-48.3454],\"local_xy\":[9.228,0.047],\"terrain_z\":55.5023,\"terrain_minus_hall_z\":-3.9776},{\"id\":\"13144235880\",\"xy\":[60.6553,-53.5116],\"local_xy\":[17.9866,-0.0693],\"terrain_z\":56.6374,\"terrain_minus_hall_z\":-2.8425}],\"first_segment_terrain_transect\":[{\"d_m\":0.0,\"xy\":[52.2907,-47.405],\"terrain_z\":55.2957},{\"d_m\":1.0,\"xy\":[53.099,-47.9938],\"terrain_z\":55.425},{\"d_m\":1.597,\"xy\":[53.5817,-48.3454],\"terrain_z\":55.5023}]},\"architecture\":{\"hall_z\":59.4799,\"door_sill_z\":59.5249,\"door_xy\":[53.4827,-48.3327],\"door_to_osm_path_exit_m\":1.5105},\"interpretation_checks\":{\"shared_node\":\"13144235879\",\"corridor_connects_bridge_to_footway\":true}}\nUPPER_PASSENGER_PATH_TERRAIN_AUDIT_END\n"
+  }
+}
