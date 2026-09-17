@@ -1,0 +1,11 @@
+{
+  "id": "0036-check-gdal-and-pyproj",
+  "command_file": "0036-check-gdal-and-pyproj.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.183,
+  "result": {
+    "executed": true,
+    "result": "gdalinfo= None\ngdallocationinfo= None\nogrinfo= None\npython= C:\\Program Files\\Blender Foundation\\Blender 5.2\\5.2\\python\\bin\\python.exe\nosgeo False\npyproj False\nrasterio False\nfiona False\nshapefile False\n"
+  }
+}
