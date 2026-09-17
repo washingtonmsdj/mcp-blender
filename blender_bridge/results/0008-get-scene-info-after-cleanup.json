@@ -1,0 +1,104 @@
+{
+  "id": "0008-get-scene-info-after-cleanup",
+  "command_file": "0008-get-scene-info-after-cleanup.json",
+  "type": "get_scene_info",
+  "status": "success",
+  "duration_seconds": 0.015,
+  "result": {
+    "name": "SALVADOR | ESBOCO OFICIAL",
+    "object_count": 1409,
+    "objects": [
+      {
+        "name": "OFICIAL | Terminal alto | apoio junto encosta",
+        "type": "MESH",
+        "location": [
+          -3.93,
+          9.51,
+          27.0
+        ]
+      },
+      {
+        "name": "OFICIAL | Terminal alto | piso de entrada",
+        "type": "MESH",
+        "location": [
+          -2.58,
+          8.24,
+          39.7
+        ]
+      },
+      {
+        "name": "OFICIAL | Entrada superior | parede lateral A",
+        "type": "MESH",
+        "location": [
+          -4.51,
+          3.47,
+          46.0
+        ]
+      },
+      {
+        "name": "OFICIAL | Entrada superior | parede lateral B",
+        "type": "MESH",
+        "location": [
+          2.06,
+          10.47,
+          46.0
+        ]
+      },
+      {
+        "name": "OFICIAL | Entrada superior | fachada esquerda",
+        "type": "MESH",
+        "location": [
+          3.34,
+          -1.71,
+          46.0
+        ]
+      },
+      {
+        "name": "OFICIAL | Entrada superior | fachada direita",
+        "type": "MESH",
+        "location": [
+          7.72,
+          2.96,
+          46.0
+        ]
+      },
+      {
+        "name": "OFICIAL | Entrada superior | lintel",
+        "type": "MESH",
+        "location": [
+          5.53,
+          0.63,
+          48.0
+        ]
+      },
+      {
+        "name": "OFICIAL | Entrada superior | cobertura",
+        "type": "MESH",
+        "location": [
+          -1.23,
+          6.97,
+          52.0
+        ]
+      },
+      {
+        "name": "OFICIAL | Torre externa | parede frontal",
+        "type": "MESH",
+        "location": [
+          -49.11,
+          48.06,
+          20.0
+        ]
+      },
+      {
+        "name": "OFICIAL | Torre externa | parede posterior",
+        "type": "MESH",
+        "location": [
+          -45.27,
+          52.15,
+          20.0
+        ]
+      }
+    ],
+    "materials_count": 18
+  }
+}
