@@ -1,0 +1,11 @@
+{
+  "id": "0035-render-cadastral-calibration",
+  "command_file": "0035-render-cadastral-calibration.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 7.011,
+  "result": {
+    "executed": true,
+    "result": "CALIBRACAO_CADASTRO_2000_OK\nTOWER_CURRENT_CENTER_U=-72.3040 V=0.0000\nTOWER_TARGET=3.50x7.50x73.00\nUPPER_STOP_TARGET_Z=59.00\nBRIDGE_TARGET_U=[-70.5540,-41.8540] L=28.70 W=6.00\nUPPER_BUILDING_TARGET_U=[-41.8540,-23.2540] L=18.60 W=11.00\nPREDICTED_FRONT_U=-23.2540\nCURRENT_FRONT_U=0.0000\nFRONT_LONGITUDINAL_DELTA=-23.2540\nGUIDE_OBJECTS=7 FRAMED=1\nQA_CALIBRACAO_OK\nC:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_calibracao_perfil.png\nC:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_calibracao_planta.png\nCALIBRATION_QA_FETCH_HEAD=dc67a0b00299f5dd57c01f63dc065bab496ccdf2\n"
+  }
+}
