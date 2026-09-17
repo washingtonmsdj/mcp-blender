@@ -1,0 +1,8 @@
+{
+  "id": "0031-audit-official-real-scale",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, subprocess\nrepo=r'C:\\\\mcp-blender\\\\vendor\\\\projeto-salvador-elevador-lacerda'\nsubprocess.run(['git','-C',repo,'fetch','origin','chatgpt/blender-collab'],check=True,capture_output=True,text=True)\ncode=subprocess.run(['git','-C',repo,'show','FETCH_HEAD:scripts/auditar_escala_real.py'],check=True,capture_output=True,text=True).stdout\n# executar contra a cena oficial importada dentro do arquivo local\nold_scene=bpy.context.window.scene\n# localizar cena oficial se existir; senao usar cena atual\nscene=bpy.data.scenes.get('SALVADOR | ESBOCO OFICIAL') or old_scene\nbpy.context.window.scene=scene\ntry:\n    exec(compile(code,'auditar_escala_real.py','exec'),{'bpy':bpy,'__name__':'__main__'})\nfinally:\n    bpy.context.window.scene=old_scene\n"
+  },
+  "enabled": true
+}
