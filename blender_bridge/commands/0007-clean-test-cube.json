@@ -1,0 +1,8 @@
+{
+  "id": "0007-clean-test-cube",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\nobj = bpy.data.objects.get('Bridge_Test_Cube')\nif obj is not None:\n    bpy.data.objects.remove(obj, do_unlink=True)\n    print('REMOVED:Bridge_Test_Cube')\nelse:\n    print('ALREADY_CLEAN')"
+  },
+  "enabled": true
+}
