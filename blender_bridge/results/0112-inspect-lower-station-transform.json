@@ -1,0 +1,11 @@
+{
+  "id": "0112-inspect-lower-station-transform",
+  "command_file": "0112-inspect-lower-station-transform.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.068,
+  "result": {
+    "executed": true,
+    "result": "OBJECTS 26 MESHES 23\nLOCAL_BOUNDS relative tower EX/EY/Z (1.025, 16.686, -11.45, 6.69, 0.455, 4.005)\nPILLAR V4 | CB | pilar fachada 1 (-48.959, 45.058, 2.13)\nPILLAR V4 | CB | pilar fachada 2 (-45.429, 41.745, 2.13)\nPILLAR V4 | CB | pilar fachada 3 (-42.125, 38.645, 2.13)\nPILLAR V4 | CB | pilar fachada 4 (-38.596, 35.333, 2.13)\nFACADE_DIR 0.729195 -0.684306 dot_EX 1.0 dot_EY -0.0 ANGLE_TO_EX 0.031\nFACADE_CENTER -43.777 40.195 LOCAL_EX 9.27 LOCAL_EY -4.89\nLOWER_STATION_TRANSFORM_INSPECT_OK\n"
+  }
+}
