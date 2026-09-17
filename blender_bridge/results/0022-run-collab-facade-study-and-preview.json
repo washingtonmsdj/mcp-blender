@@ -1,0 +1,8 @@
+{
+  "id": "0022-run-collab-facade-study-and-preview",
+  "command_file": "0022-run-collab-facade-study-and-preview.json",
+  "status": "error",
+  "duration_seconds": 3.931,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"CalledProcessError\", \"message\": \"Command '['git', '-C', 'C:\\\\\\\\mcp-blender\\\\\\\\vendor\\\\\\\\projeto-salvador-elevador-lacerda', 'show', 'origin/chatgpt/blender-collab:scripts/estudo_fachada_superior_6_janelas.py']' returned non-zero exit status 128.\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 5, in <module>\\n  File \\\"C:\\\\Program Files\\\\Blender Foundation\\\\Blender 5.2\\\\5.2\\\\python\\\\Lib\\\\subprocess.py\\\", line 577, in run\\n    raise CalledProcessError(retcode, process.args,\\n                             output=stdout, stderr=stderr)\\nsubprocess.CalledProcessError: Command '['git', '-C', 'C:\\\\\\\\mcp-blender\\\\\\\\vendor\\\\\\\\projeto-salvador-elevador-lacerda', 'show', 'origin/chatgpt/blender-collab:scripts/estudo_fachada_superior_6_janelas.py']' returned non-zero exit status 128.\\n\"}"
+}
