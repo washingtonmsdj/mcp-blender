@@ -1,0 +1,11 @@
+{
+  "id": "0024-run-mirrored-facade-study-and-preview",
+  "command_file": "0024-run-mirrored-facade-study-and-preview.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 16.094,
+  "result": {
+    "executed": true,
+    "result": "ESTUDO_FACHADA_SUPERIOR_OK janelas=6 objetos= 45 theta= -0.753652 largura_oficial=9.6m\nCOLLAB_STUDY_OK objects=45 preview_bytes=9649 chunks=3\n"
+  }
+}
