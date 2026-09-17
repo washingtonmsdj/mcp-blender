@@ -1,0 +1,8 @@
+{
+  "id": "0048-render-real-scale-v2-color-qa",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess, pathlib\nrepo=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda')\nsubprocess.run(['git','-C',str(repo),'fetch','origin','chatgpt/blender-collab'],check=True,capture_output=True,text=True)\ncode=subprocess.run(['git','-C',str(repo),'show','FETCH_HEAD:scripts/render_candidato_escala_real_v2.py'],check=True,capture_output=True,text=True).stdout\nexec(compile(code,'render_candidato_escala_real_v2.py','exec'),{'__name__':'__main__'})\nprint('REAL_SCALE_V2_QA_COMMIT=b7cdb2988ba1837be69992b2f9a954e2ce61b5a8')"
+  },
+  "enabled": true
+}
