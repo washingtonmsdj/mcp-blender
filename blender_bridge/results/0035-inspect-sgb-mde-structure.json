@@ -1,0 +1,11 @@
+{
+  "id": "0035-inspect-sgb-mde-structure",
+  "command_file": "0035-inspect-sgb-mde-structure.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.019,
+  "result": {
+    "executed": true,
+    "result": "MDE/ 0\nMDE/info/ 0\nMDE/info/arc0000.nit 576\nMDE/info/arc0001.dat 80\nMDE/info/arc0001.nit 576\nMDE/info/arc0002.dat 80\nMDE/info/arc0002.nit 288\nMDE/info/arc0003.dat 80\nMDE/info/arc0003.nit 576\nMDE/info/arc0004.dat 80\nMDE/info/arc0004.nit 576\nMDE/info/arc.dir 1900\nMDE/info/arc0000.dat 80\nMDE/mde/ 0\nMDE/mde/hdr.adf 308\nMDE/mde/prj.adf 159\nMDE/mde/sta.adf 32\nMDE/mde/vat.adf 1296\nMDE/mde/w001001x.adf 177636\nMDE/mde/dblbnd.adf 32\nMDE/mde/w001001.adf 363638212\nMDE/mde.ovr 4723064\nMDE/mde.xml 283\nMDE/mde_20.shp 28055300\nMDE/mde_20.shx 12804\nMDE/mde_20_Sirgas2000.dbf 135206\nMDE/mde_20_Sirgas2000.prj 418\nMDE/mde_20_Sirgas2000.sbx 1004\nMDE/mde_20_Sirgas2000.sbn 15612\nMDE/mde_20_Sirgas2000.shx 12804\nMDE/mde_20_Sirgas2000.shp 28055300\nMDE/mds21.aux.xml 251\nMDE/mds21/ 0\nMDE/mds21/hdr.adf 308\nMDE/mds21/prj.adf 153\nMDE/mds21/sta.adf 32\nMDE/mds21/w001001.adf 202924324\nMDE/mds21/w001001x.adf 99172\nMDE/mds21/dblbnd.adf 32\nMDE/mds21/metadata.xml 749\nMDE/mds21.ovr 23201091\nMDE/mde_20.dbf 90678\nMDE/mde_20.prj 410\nMDE/mde_20.sbn 15612\nMDE/mde_20.sbx 1004\n"
+  }
+}
