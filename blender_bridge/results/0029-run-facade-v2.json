@@ -1,0 +1,11 @@
+{
+  "id": "0029-run-facade-v2",
+  "command_file": "0029-run-facade-v2.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 25.489,
+  "result": {
+    "executed": true,
+    "result": "ESTUDO_FACHADA_SUPERIOR_OK janelas=6 objetos= 57 theta= -0.753652 largura_oficial=9.6m\nV2_EXEC_OK objects=57\n"
+  }
+}
