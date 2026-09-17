@@ -1,0 +1,11 @@
+{
+  "id": "0015-auto-faithful-6-front-windows",
+  "command_file": "0015-auto-faithful-6-front-windows.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 1.527,
+  "result": {
+    "executed": true,
+    "result": "Rebuilt from real facade reference: FRONT_WINDOWS=6; SIDE_WINDOWS=6; OBJECTS=133; FRAMED=1\n"
+  }
+}
