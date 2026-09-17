@@ -1,0 +1,8 @@
+{
+  "id": "0030-tiny-frontal-qa",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, pathlib, os\nsrc=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_entrada_superior_frontal.png')\nout=pathlib.Path(r'C:\\mcp-blender\\blender_bridge\\previews\\qa_frontal_tiny.jpg')\nimg=bpy.data.images.load(str(src),check_existing=False); img.scale(120,90); img.filepath_raw=str(out); img.file_format='JPEG'; img.save(); bpy.data.images.remove(img)\nprint('TINY_FRONT_OK',out,os.path.getsize(out))"
+  },
+  "enabled": true
+}
