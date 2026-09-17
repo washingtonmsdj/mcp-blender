@@ -1,0 +1,11 @@
+{
+  "id": "0008-diagnose-scenes-windows",
+  "command_file": "0008-diagnose-scenes-windows.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.02,
+  "result": {
+    "executed": true,
+    "result": "FILEPATH='C:\\\\Users\\\\TONECOS\\\\Documents\\\\github\\\\Tom Oliver\\\\projeto-salvador-elevador-lacerda\\\\blender\\\\salvador_lacerda_oficial.blend'\nSCENES:\n- SALVADOR | ESBOCO OFICIAL: objects=1456 children=['01 ELEVADOR OFICIAL | esboco original', '02 ENTORNO | OSM e patamares', '03 TERRENO | aproximacao volumetrica pendente de levantamento', '04 MAPA AMPLIADO | referencia fora do recorte', '05 CAMERAS', 'Lacerda_Upper_Blockout']\nWINDOWS:\n- window[0] scene=SALVADOR | ESBOCO OFICIAL workspace=Layout screen=Layout\nCONTEXT_SCENE=SALVADOR | ESBOCO OFICIAL\nCONTEXT_WINDOW_SCENE=SALVADOR | ESBOCO OFICIAL\n"
+  }
+}
