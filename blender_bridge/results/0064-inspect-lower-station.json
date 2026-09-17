@@ -1,0 +1,8 @@
+{
+  "id": "0064-inspect-lower-station",
+  "command_file": "0064-inspect-lower-station.json",
+  "status": "error",
+  "duration_seconds": 0.1,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"TypeError\", \"message\": \"bpy_prop_collection.__contains__: expected a string or a tuple of strings\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 26, in <module>\\nTypeError: bpy_prop_collection.__contains__: expected a string or a tuple of strings\\n\"}"
+}
