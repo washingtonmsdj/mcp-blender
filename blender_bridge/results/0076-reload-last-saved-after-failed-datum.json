@@ -1,0 +1,11 @@
+{
+  "id": "0076-reload-last-saved-after-failed-datum",
+  "command_file": "0076-reload-last-saved-after-failed-datum.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 4.907,
+  "result": {
+    "executed": true,
+    "result": "RELOADED_LAST_SAVED=C:\\mcp-blender\\salvador_lacerda_do_zero.blend\n"
+  }
+}
