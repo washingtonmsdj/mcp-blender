@@ -1,0 +1,11 @@
+{
+  "id": "0142-parse-local-osm-nodes-linewise",
+  "command_file": "0142-parse-local-osm-nodes-linewise.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.084,
+  "result": {
+    "executed": true,
+    "result": "LOCAL_OSM_NODES_LINEWISE_BEGIN\n{\"path\":\"C:\\\\mcp-blender\\\\vendor\\\\projeto-salvador-elevador-lacerda\\\\data\\\\osm\\\\salvador_osm_map.xml\",\"nodes\":[{\"id\":\"11734895385\",\"missing\":true},{\"id\":\"12189974188\",\"missing\":true},{\"id\":\"13144235879\",\"missing\":true},{\"id\":\"12189974189\",\"missing\":true},{\"id\":\"11734895388\",\"missing\":true},{\"id\":\"11734895381\",\"missing\":true},{\"id\":\"13144235885\",\"missing\":true},{\"id\":\"11734895380\",\"missing\":true}],\"found_count\":0}\nLOCAL_OSM_NODES_LINEWISE_END\n"
+  }
+}
