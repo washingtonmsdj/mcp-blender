@@ -1,0 +1,11 @@
+{
+  "id": "0006-force-show-lacerda",
+  "command_file": "0006-force-show-lacerda.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.359,
+  "result": {
+    "executed": true,
+    "result": "Visible objects: 47; framed VIEW_3D areas: 1; bounds approx X[-24,24] Y[-17,17] Z[-0.36,19.85]\n"
+  }
+}
