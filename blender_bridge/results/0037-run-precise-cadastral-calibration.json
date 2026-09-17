@@ -1,0 +1,11 @@
+{
+  "id": "0037-run-precise-cadastral-calibration",
+  "command_file": "0037-run-precise-cadastral-calibration.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 7.703,
+  "result": {
+    "executed": true,
+    "result": "CALIBRACAO_CADASTRO_2000_PRECISA_OK\nTOWER_CURRENT_CENTER_U=-72.3040 V=0.0000\nTOWER_TARGET=3.55x7.48x73.50\nUPPER_STOP_TARGET_Z=59.00\nBRIDGE_TARGET_U=[-70.5290,-41.8190] L=28.71 W=6.00\nUPPER_BUILDING_TARGET_U=[-41.8190,-23.2190] L=18.60 W=11.00\nPREDICTED_FRONT_U=-23.2190\nCURRENT_FRONT_U=0.0000\nFRONT_LONGITUDINAL_DELTA=-23.2190\nGUIDE_OBJECTS=7 FRAMED=1\nPRECISE_CALIBRATION_COMMIT=00f55b101616dff204af560c007aa2d65ecfdf74\n"
+  }
+}
