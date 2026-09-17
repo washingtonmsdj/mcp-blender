@@ -1,0 +1,8 @@
+{
+  "id": "0054-inline-v3-tiny",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy,base64,pathlib,os\nsrc=pathlib.Path(r'C:\\mcp-blender\\blender_bridge\\previews\\v3_front_terrain.jpg')\nout=pathlib.Path(r'C:\\mcp-blender\\blender_bridge\\previews\\v3_front_terrain_tiny.jpg')\nimg=bpy.data.images.load(str(src),check_existing=False); img.scale(120,90); img.filepath_raw=str(out); img.file_format='JPEG'; img.save(); bpy.data.images.remove(img)\ndata=base64.b64encode(out.read_bytes()).decode('ascii'); print('V3_TINY_BASE64='+data); print('BYTES='+str(out.stat().st_size))"
+  },
+  "enabled": true
+}
