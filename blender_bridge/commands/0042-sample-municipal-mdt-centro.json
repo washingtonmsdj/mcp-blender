@@ -1,0 +1,8 @@
+{
+  "id": "0042-sample-municipal-mdt-centro",
+  "type": "execute_code",
+  "params": {
+    "code": "import urllib.request, urllib.parse, json\nbase='https://geo.salvador.ba.gov.br/imageserver/rest/services/Hosted/mdt_apcp_centro_reclass_10m_r/ImageServer'\ndef get(url):\n req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'})\n with urllib.request.urlopen(req,timeout=30) as r:return json.load(r)\nmeta=get(base+'?f=pjson')\nfor k in ['name','serviceDescription','description','pixelSizeX','pixelSizeY','bandCount','pixelType','minValues','maxValues','meanValues','stdvValues','objectIdField','capabilities']:\n print('META',k,meta.get(k))\nprint('SPATIAL_REFERENCE',meta.get('spatialReference'))\nprint('EXTENT',meta.get('extent'))\n# Origin UTM24S obtained by transforming the project's recorded WGS84 origin.\nox=552825.064; oy=8565629.266\npoints={\n 'ORIGIN_PROJECT':(0.0,0.0),\n 'LOW_ACCESS_PISO':(-40.431,43.761),\n 'TOWER_HEAD_CENTER':(-47.1903,50.1044),\n 'HIGH_ENTRY_PISO':(-2.5779,8.2384),\n 'HIGH_GALLERY':(-5.2817,10.7757),\n}\nfor name,(x,y) in points.items():\n geom={'x':ox+x,'y':oy+y,'spatialReference':{'wkid':31984}}\n params={'geometry':json.dumps(geom,separators=(',',':')),'geometryType':'esriGeometryPoint','returnGeometry':'false','returnCatalogItems':'false','f':'json'}\n url=base+'/identify?'+urllib.parse.urlencode(params)\n try:\n  d=get(url)\n  print('IDENTIFY',name,'XY',round(ox+x,3),round(oy+y,3),'VALUE',d.get('value'),'NAME',d.get('name'),'PROPS',d.get('properties'))\n except Exception as e: print('IDENTIFY_ERROR',name,repr(e))"
+  },
+  "enabled": true
+}
