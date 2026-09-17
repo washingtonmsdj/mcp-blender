@@ -1,0 +1,11 @@
+{
+  "id": "0042-inspect-lacerda-anchor-metadata",
+  "command_file": "0042-inspect-lacerda-anchor-metadata.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.157,
+  "result": {
+    "executed": true,
+    "result": "ANCHOR Lacerda | torre externa - implantacao OSM EXISTS False\nANCHOR Entrada superior Lacerda | identificacao por confronto fotografico EXISTS False\nANCHOR_METADATA_DONE\n"
+  }
+}
