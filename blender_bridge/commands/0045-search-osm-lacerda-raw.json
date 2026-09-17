@@ -1,0 +1,8 @@
+{
+  "id": "0045-search-osm-lacerda-raw",
+  "type": "execute_code",
+  "params": {
+    "code": "import pathlib,re\np=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\data\\osm\\salvador_osm_map.xml')\ns=p.read_text(encoding='utf-8',errors='ignore')\nprint('FILE_BYTES',p.stat().st_size,'CHARS',len(s))\nfor needle in ['59224731','Elevador Lacerda','Lacerda','height=\\\"72\\\"']:\n idx=s.find(needle); print('NEEDLE',repr(needle),'INDEX',idx)\n if idx>=0: print('CONTEXT',s[max(0,idx-700):idx+1400].replace('\\n',' '))\nprint('WAY_COUNT',len(re.findall(r'<way\\b',s)),'NODE_COUNT',len(re.findall(r'<node\\b',s)))\nprint('RAW_OSM_SEARCH_DONE')"
+  },
+  "enabled": true
+}
