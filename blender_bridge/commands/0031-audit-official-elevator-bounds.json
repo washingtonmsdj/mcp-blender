@@ -1,0 +1,8 @@
+{
+  "id": "0031-audit-official-elevator-bounds",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, math\nfrom mathutils import Vector\n\ncoll = bpy.data.collections.get('01 ELEVADOR OFICIAL | esboco original')\nif coll is None:\n    raise RuntimeError('Colecao oficial nao encontrada')\n\n# World-space bounds per object and union.\ndef wb(o):\n    pts = [o.matrix_world @ Vector(c) for c in o.bound_box]\n    mins = [min(p[i] for p in pts) for i in range(3)]\n    maxs = [max(p[i] for p in pts) for i in range(3)]\n    return mins, maxs\n\nitems=[]\nunion_min=[float('inf')]*3\nunion_max=[float('-inf')]*3\nfor o in coll.all_objects:\n    if o.type not in {'MESH','CURVE','FONT'}:\n        continue\n    mn,mx=wb(o)\n    for i in range(3):\n        union_min[i]=min(union_min[i],mn[i]); union_max[i]=max(union_max[i],mx[i])\n    dims=[mx[i]-mn[i] for i in range(3)]\n    items.append((o.name, tuple(round(v,3) for v in o.location), tuple(round(v,3) for v in dims), round(mn[2],3), round(mx[2],3)))\n\nprint('FILE='+bpy.data.filepath)\nprint('SCENE='+bpy.context.scene.name)\nprint('COLLECTION_OBJECTS='+str(len(items)))\nprint('UNION_MIN='+str(tuple(round(v,3) for v in union_min)))\nprint('UNION_MAX='+str(tuple(round(v,3) for v in union_max)))\nprint('UNION_DIMS='+str(tuple(round(union_max[i]-union_min[i],3) for i in range(3))))\nfor row in sorted(items):\n    n=row[0].lower()\n    if any(k in n for k in ['torre','passarela','entrada superior','terminal alto','cidade baixa','desembarque','galeria','acesso inferior']):\n        print(row)"
+  },
+  "enabled": true
+}
