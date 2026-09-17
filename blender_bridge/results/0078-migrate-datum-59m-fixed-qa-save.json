@@ -1,0 +1,11 @@
+{
+  "id": "0078-migrate-datum-59m-fixed-qa-save",
+  "command_file": "0078-migrate-datum-59m-fixed-qa-save.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 5.864,
+  "result": {
+    "executed": true,
+    "result": "DATUM_59M_MIGRATION_OK\nLOW_Z=0.455 OLD_HIGH=40.005 TARGET_HIGH=59.455 DELTA=19.450\nTOWER_AFTER_MIN=0.450 TOWER_AFTER_MAX=73.950 TOWER_HEIGHT=73.500\nMOVED_HIGH=996 MOVED_MID=11 WARPED_CURVES=11 LEFT_LOW=346\nQA_WORLD_BLOCKOUT\nERRORS=[]\nWARNINGS=[]\nVISIBLE_TERRAIN=['WORLD | TERRENO MASTER | blockout']\nLANDING_DELTA=59.000\nRESULT=PASS\nJanela de informações: Saved as \"salvador_lacerda_do_zero.blend\"\nBATCH_0078_DATUM_59M_PASS_AND_SAVED\n"
+  }
+}
