@@ -1,0 +1,10 @@
+{
+  "id": "post-write-screenshot",
+  "command_file": "0004-post-write-screenshot.json",
+  "type": "get_viewport_screenshot",
+  "status": "success",
+  "duration_seconds": 0.109,
+  "result": {
+    "error": "Erro: Não foi possível escrever imagem: No error\n"
+  }
+}
