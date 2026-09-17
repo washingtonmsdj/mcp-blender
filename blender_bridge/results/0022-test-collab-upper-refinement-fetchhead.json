@@ -1,0 +1,11 @@
+{
+  "id": "0022-test-collab-upper-refinement-fetchhead",
+  "command_file": "0022-test-collab-upper-refinement-fetchhead.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 4.116,
+  "result": {
+    "executed": true,
+    "result": "TEST_MODE scene= Scene\nREFINO_ENTRADA_SUPERIOR_OK objetos= 33 janelas=6 span= 6.4 framed= 1\nTEST_FETCH_HEAD=311a0f5fad8a13672345395097dc9c24cf3d230e\n"
+  }
+}
