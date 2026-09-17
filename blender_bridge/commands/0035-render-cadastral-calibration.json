@@ -1,0 +1,8 @@
+{
+  "id": "0035-render-cadastral-calibration",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess, pathlib\nrepo=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda')\nsubprocess.run(['git','-C',str(repo),'fetch','origin','chatgpt/blender-collab'],check=True,capture_output=True,text=True)\n# garante estudo presente na memoria\ncode1=subprocess.run(['git','-C',str(repo),'show','FETCH_HEAD:scripts/estudo_calibracao_dimensional.py'],check=True,capture_output=True,text=True).stdout\nexec(compile(code1,'estudo_calibracao_dimensional.py','exec'),{'__name__':'__main__'})\ncode2=subprocess.run(['git','-C',str(repo),'show','FETCH_HEAD:scripts/render_calibracao_dimensional.py'],check=True,capture_output=True,text=True).stdout\nexec(compile(code2,'render_calibracao_dimensional.py','exec'),{'__name__':'__main__'})\nprint('CALIBRATION_QA_FETCH_HEAD='+subprocess.run(['git','-C',str(repo),'rev-parse','FETCH_HEAD'],check=True,capture_output=True,text=True).stdout.strip())"
+  },
+  "enabled": true
+}
