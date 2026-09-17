@@ -1,0 +1,8 @@
+{
+  "id": "0033-run-scale-audit-script",
+  "type": "execute_code",
+  "params": {
+    "code": "import subprocess, pathlib\nrepo = pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda')\nsubprocess.run(['git','-C',str(repo),'fetch','origin','chatgpt/blender-collab'], check=True, capture_output=True, text=True)\ncode = subprocess.run(['git','-C',str(repo),'show','FETCH_HEAD:scripts/auditar_escala_elevador.py'], check=True, capture_output=True, text=True).stdout\nexec(compile(code, 'auditar_escala_elevador.py', 'exec'), {'__name__':'__main__'})"
+  },
+  "enabled": true
+}
