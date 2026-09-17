@@ -91,9 +91,28 @@ def git_publish(message: str) -> None:
     status = run_git("status", "--porcelain").stdout.strip()
     if not status:
         return
+
     run_git("commit", "-m", message)
-    run_git("pull", "--rebase", "origin", BRANCH)
-    run_git("push", "origin", BRANCH)
+
+    last_error = ""
+    for attempt in range(1, 5):
+        pull = run_git("pull", "--rebase", "origin", BRANCH, check=False)
+        if pull.returncode != 0:
+            last_error = pull.stderr.strip() or pull.stdout.strip()
+            run_git("rebase", "--abort", check=False)
+            log(f"git pull/rebase retry {attempt}/4: {last_error}")
+            time.sleep(1.0)
+            continue
+
+        push = run_git("push", "origin", BRANCH, check=False)
+        if push.returncode == 0:
+            return
+
+        last_error = push.stderr.strip() or push.stdout.strip()
+        log(f"git push race; retry {attempt}/4: {last_error}")
+        time.sleep(1.0)
+
+    raise RuntimeError(f"Unable to publish result after retries: {last_error}")
 
 
 def receive_json(sock: socket.socket, timeout: float = 180.0) -> dict[str, Any]:
