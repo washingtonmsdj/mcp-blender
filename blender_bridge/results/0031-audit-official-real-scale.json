@@ -1,0 +1,8 @@
+{
+  "id": "0031-audit-official-real-scale",
+  "command_file": "0031-audit-official-real-scale.json",
+  "status": "error",
+  "duration_seconds": 4.975,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"AssertionError\", \"message\": \"Abrir a cena 'SALVADOR | ESBOCO OFICIAL'; atual='Scene'\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 11, in <module>\\n  File \\\"auditar_escala_real.py\\\", line 15, in <module>\\nAssertionError: Abrir a cena 'SALVADOR | ESBOCO OFICIAL'; atual='Scene'\\n\"}"
+}
