@@ -1,0 +1,11 @@
+{
+  "id": "0099-build-validate-official-terrain-candidate",
+  "command_file": "0099-build-validate-official-terrain-candidate.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 126.516,
+  "result": {
+    "executed": true,
+    "result": "SCIPY_INSTALL_RC 0\nBUILD_RC 0\nBUILD_OUT {\"source\": \"PMS MAPA_BASE layer 111 Curva de nivel 2017 + layer 109 Ponto cotado altimetrico\", \"crs\": \"EPSG:31984\", \"grid_step_m\": 2.0, \"control_total\": 91028, \"official_spot_points\": 45, \"validation_against_spot_points\": {\"rmse_m\": 0.22064422522364485, \"mae_m\": 0.17323087685308652, \"median_abs_m\": 0.145599835382356, \"max_abs_m\": 0.6502103297820341}, \"z_range_m\": [0.9999999999999999, 65.00000000000001], \"grid_shape\": [236, 223], \"npz\": \"C:\\\\mcp-blender\\\\.geo-work\\\\terrain_2017_candidate.npz\"}\n\nBUILD_ERR \nOFFICIAL_TERRAIN_CANDIDATE_VALIDATED\n{\"source\": \"PMS MAPA_BASE layer 111 Curva de nivel 2017 + layer 109 Ponto cotado altimetrico\", \"crs\": \"EPSG:31984\", \"grid_step_m\": 2.0, \"control_total\": 91028, \"official_spot_points\": 45, \"validation_against_spot_points\": {\"rmse_m\": 0.22064422522364485, \"mae_m\": 0.17323087685308652, \"median_abs_m\": 0.145599835382356, \"max_abs_m\": 0.6502103297820341}, \"z_range_m\": [0.9999999999999999, 65.00000000000001], \"grid_shape\": [236, 223], \"npz\": \"C:\\\\mcp-blender\\\\.geo-work\\\\terrain_2017_candidate.npz\"}\n"
+  }
+}
