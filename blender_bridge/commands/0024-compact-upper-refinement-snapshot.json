@@ -1,0 +1,8 @@
+{
+  "id": "0024-compact-upper-refinement-snapshot",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, base64, pathlib\nsrc=r'C:\\mcp-blender\\blender_bridge\\previews\\upper_refinement_test.png'\nout=r'C:\\mcp-blender\\blender_bridge\\previews\\upper_refinement_compact.jpg'\nif not os.path.exists(src): raise RuntimeError('snapshot source missing')\nimg=bpy.data.images.load(src, check_existing=False)\nimg.scale(320,240)\nscene=bpy.context.scene\nold_format=scene.render.image_settings.file_format\nold_quality=scene.render.image_settings.quality\ntry:\n    scene.render.image_settings.file_format='JPEG'\n    scene.render.image_settings.quality=45\n    img.filepath_raw=out\n    img.file_format='JPEG'\n    img.save()\nfinally:\n    scene.render.image_settings.file_format=old_format\n    scene.render.image_settings.quality=old_quality\ntry: bpy.data.images.remove(img)\nexcept Exception: pass\ndata=base64.b64encode(open(out,'rb').read()).decode('ascii')\nbase=pathlib.Path(r'C:\\mcp-blender\\blender_bridge\\previews')\nchunk=1000\nparts=[data[i:i+chunk] for i in range(0,len(data),chunk)]\nfor i,p in enumerate(parts):\n    (base/f'upper_refinement_compact_{i:02d}.txt').write_text(p,encoding='utf-8')\nprint(f'UPPER_COMPACT chunks={len(parts)} base64_chars={len(data)} file_bytes={os.path.getsize(out)}')"
+  },
+  "enabled": true
+}
