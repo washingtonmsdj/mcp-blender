@@ -1,0 +1,11 @@
+{
+  "id": "0095-query-municipal-geoservices-catalog",
+  "command_file": "0095-query-municipal-geoservices-catalog.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.958,
+  "result": {
+    "executed": true,
+    "result": "CATALOG_LAYERS [(0, 'catalogo_geoservicos')]\nLAYER 0 catalogo_geoservicos FIELDS [('fid', 'fid'), ('id', 'id'), ('nome', 'nome'), ('wfs', 'wfs'), ('shapefile', 'shapefile'), ('geopackage', 'GeoPackage'), ('kml', 'Kml'), ('metadado', 'Metadados'), ('categoria', 'categoria'), ('tipo_fonte', 'Tipo da fonte'), ('item_fonte', 'Item ID da fonte'), ('layer_id', 'Layer ID da fonte'), ('url_fonte', 'URL da fonte externa'), ('layer_wfs', 'Camada WFS externa'), ('status_etl', 'Status ETL'), ('dt_atualizacao', 'Data da atualização ETL'), ('qtd_feicoes', 'Quantidade de feições'), ('etl_ativo', 'ETL Ativo'), ('erro_etl', 'Erro ETL'), ('campos_publicos', 'Campos Públicos')]\nFEATURES 28\nHITS 0\nCATALOG_QUERY_DONE\n"
+  }
+}
