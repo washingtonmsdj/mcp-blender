@@ -1,0 +1,8 @@
+{
+  "id": "0009-switch-visible-window-to-salvador",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy\n\ntarget=bpy.data.scenes.get('SALVADOR | ESBOCO OFICIAL')\nif target is None:\n    raise RuntimeError('Target scene SALVADOR | ESBOCO OFICIAL not found')\nwm=bpy.context.window_manager\ncount=0\nfor w in wm.windows:\n    w.scene=target\n    count+=1\ncoll=bpy.data.collections.get('Lacerda_Upper_Blockout')\nif coll:\n    for o in bpy.context.selected_objects:\n        o.select_set(False)\n    for o in coll.objects:\n        if o.name in target.objects:\n            o.hide_set(False)\n            o.hide_viewport=False\n            o.select_set(True)\n    active=next((o for o in coll.objects if o.name in target.objects), None)\n    if active:\n        target.view_layers[0].objects.active=active\n# Frame all 3D views in all windows\nframed=0\nfor w in wm.windows:\n    try:\n        for area in w.screen.areas:\n            if area.type=='VIEW_3D':\n                region=next((r for r in area.regions if r.type=='WINDOW'), None)\n                if region:\n                    with bpy.context.temp_override(window=w, screen=w.screen, area=area, region=region, scene=target):\n                        bpy.ops.view3d.view_selected(use_all_regions=False)\n                    framed+=1\n    except Exception:\n        pass\nprint(f'Switched {count} window(s) to scene {target.name}; framed {framed} VIEW_3D area(s); scene_objects={len(target.objects)}')"
+  },
+  "enabled": true
+}
