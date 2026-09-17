@@ -1,0 +1,8 @@
+{
+  "id": "0060-audit-v4-ground-gap-only",
+  "command_file": "0060-audit-v4-ground-gap-only.json",
+  "status": "error",
+  "duration_seconds": 0.036,
+  "error_type": "JSONDecodeError",
+  "error": "Expecting ',' delimiter: line 5 column 1291 (char 1373)"
+}
