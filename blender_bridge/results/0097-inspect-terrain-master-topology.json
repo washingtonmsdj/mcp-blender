@@ -1,0 +1,11 @@
+{
+  "id": "0097-inspect-terrain-master-topology",
+  "command_file": "0097-inspect-terrain-master-topology.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.071,
+  "result": {
+    "executed": true,
+    "result": "OBJECT WORLD | TERRENO MASTER | blockout TYPE MESH\nCOLLECTIONS ['00 WORLD | TERRENO MASTER']\nLOCATION (0.0, 0.0, 0.0) ROT (0.0, 0.0, 0.0) SCALE (1.0, 1.0, 1.0)\nDIMS (403.745544, 401.950012, 59.554947)\nBOUNDS (-216.585922, -171.06308, -0.100037) (187.159637, 230.886932, 59.45491)\nMESH WORLD | TERRENO MASTER | continuous grid v2 VERTS 6724 EDGES 13284 POLYS 6561 UVS 0\nVERT_Z_RANGE -0.100037 59.45491 UNIQUE_Z_ROUNDED [-0.1, -0.004, 0.061, 0.303, 0.369, 0.611, 0.677, 0.743, 0.919, 1.051, 1.227, 1.359, 1.53, 1.535, 1.667, 1.843, 1.974, 2.151, 2.217, 2.282, 2.459, 2.525, 2.59, 2.767, 2.833, 2.898, 3.141, 3.206, 3.449, 3.514, 3.756, 3.822, 4.064, 4.13, 4.372, 4.438, 4.68, 4.746, 4.988, 5.054, 5.12, 5.302, 5.439, 5.627, 5.77, 5.965, 6.112, 6.314, 6.466, 6.674, 6.831, 7.045, 7.126, 7.207, 7.428, 7.51, 7.594, 7.82, 7.905, 7.991, 8.196, 8.218, 8.31, 8.349, 8.372, 8.398, 8.505, 8.528, 8.661, 8.684, 8.725, 8.815, 8.819, 8.842, 8.978, 9.002, 9.139, 9.15, 9.163, 9.242]\nMATERIALS ['WORLD | terreno master']\nPROPS {\"status\":\"BLOCKOUT TERRAIN MASTER; forma provisoria, estrutura definitiva de ownership\",\"world_datum\":\"0/40m provisório\",\"future_replacement\":\"MDT/LiDAR -> atualizar ESTE objeto, nunca criar terreno paralelo\",\"topology\":\"CONTINUOUS_GRID_SINGLE_OBJECT\",\"precision\":\"BLOCKOUT_PROVISORIO; 59m = percurso arquitetonico documentado; perfil substituir por MDT/LiDAR/cotas\",\"hall_support_z_m\":40.005,\"vertical_datum\":\"ARCH_BLOCKOUT_59M\",\"lower_landing_z_m\":0.455,\"upper_landing_target_z_m\":59.455}\nMODIFIERS []\nTERRAIN_MASTER_INSPECT_OK\n"
+  }
+}
