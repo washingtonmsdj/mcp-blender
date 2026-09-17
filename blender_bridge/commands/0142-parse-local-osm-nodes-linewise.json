@@ -1,0 +1,8 @@
+{
+  "id": "0142-parse-local-osm-nodes-linewise",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, os, json, re\nEXPECTED=os.path.normcase(os.path.normpath(r'C:\\mcp-blender\\salvador_lacerda_do_zero.blend'))\nif os.path.normcase(os.path.normpath(bpy.data.filepath))!=EXPECTED: raise RuntimeError(f'ABORTADO arquivo errado {bpy.data.filepath!r}')\npath=r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\data\\osm\\salvador_osm_map.xml'\nrefs=['11734895385','12189974188','13144235879','12189974189','11734895388','11734895381','13144235885','11734895380']\nwant=set(refs); found={}\nwith open(path,'r',encoding='utf-8',errors='replace') as f:\n    for lineno,line in enumerate(f,1):\n        if not line.lstrip().startswith('<node '): continue\n        mid=re.search(r'\\bid=\\\"(\\d+)\\\"',line)\n        if not mid or mid.group(1) not in want: continue\n        rid=mid.group(1); mla=re.search(r'\\blat=\\\"([^\\\"]+)\\\"',line); mlo=re.search(r'\\blon=\\\"([^\\\"]+)\\\"',line)\n        found[rid]={'id':rid,'lat':float(mla.group(1)) if mla else None,'lon':float(mlo.group(1)) if mlo else None,'line':lineno,'raw':line.strip()[:500]}\nres={'path':path,'nodes':[found.get(r,{'id':r,'missing':True}) for r in refs],'found_count':len(found)}\nprint('LOCAL_OSM_NODES_LINEWISE_BEGIN'); print(json.dumps(res,ensure_ascii=False,separators=(',',':'))); print('LOCAL_OSM_NODES_LINEWISE_END')"
+  },
+  "enabled": true
+}
