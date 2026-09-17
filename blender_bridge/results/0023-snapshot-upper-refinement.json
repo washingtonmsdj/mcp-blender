@@ -1,0 +1,11 @@
+{
+  "id": "0023-snapshot-upper-refinement",
+  "command_file": "0023-snapshot-upper-refinement.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 1.431,
+  "result": {
+    "executed": true,
+    "result": "UPPER_REFINEMENT_SNAPSHOT=C:\\mcp-blender\\blender_bridge\\previews\\upper_refinement_test.png; SIZE=395272\n"
+  }
+}
