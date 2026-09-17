@@ -1,0 +1,11 @@
+{
+  "id": "0019-import-official-github-into-local",
+  "command_file": "0019-import-official-github-into-local.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 16.549,
+  "result": {
+    "executed": true,
+    "result": "IMPORT_OK\nSOURCE_COMMIT=2da893b84754408b70ada4e09f2adf7f0fa56743\nTOP_COLLECTIONS=['01 ELEVADOR OFICIAL | esboco original', '02 ENTORNO | OSM e patamares', '03 TERRENO | aproximacao volumetrica pendente de levantamento', '04 MAPA AMPLIADO | referencia fora do recorte', '05 CAMERAS', 'Lacerda_Upper_Blockout', 'ChatGPT_Visible_Test', '06 PREFEITURA | Palacio Thome de Souza']\nROOT_OBJECTS=0\nIMPORTED_OBJECTS=1550\nCURRENT_LOCAL=C:\\mcp-blender\\salvador_lacerda_do_zero.blend\nFRAMED=1\n"
+  }
+}
