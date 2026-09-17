@@ -1,0 +1,11 @@
+{
+  "id": "0092-inspect-geosalvador-image-services",
+  "command_file": "0092-inspect-geosalvador-image-services.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.517,
+  "result": {
+    "executed": true,
+    "result": "ROOT https://geo.salvador.ba.gov.br/imageserver/rest/services FOLDERS ['Cartografico', 'Hosted', 'Ortofotos', 'Satelite', 'Topografico', 'Utilities']\nSERVICES 1\nROOT https://geo.salvador.ba.gov.br/imageserver/rest/services/Hosted FOLDERS []\nSERVICES 2\nMATCH_SERVICE {\"name\": \"Hosted/mdt_apcp_centro_reclass_10m_r\", \"type\": \"ImageServer\"}\nMATCH_SERVICE {\"name\": \"Hosted/mdt_itapagipe\", \"type\": \"ImageServer\"}\nIMAGE_META https://geo.salvador.ba.gov.br/imageserver/rest/services/Hosted/mdt_apcp_centro_reclass_10m_r/ImageServer {\"name\": \"Hosted/mdt_apcp_centro_reclass_10m_r\", \"description\": \"\", \"serviceDescription\": \"Hosted/mdt_apcp_centro_reclass_10m_r\", \"extent\": {\"xmin\": 549661.1354, \"ymin\": 8560447.455, \"xmax\": 572271.1354, \"ymax\": 8573128.955, \"spatialReference\": {\"wkid\": 31984, \"latestWkid\": 31984}}, \"pixelSizeX\": 0.5, \"pixelSizeY\": 0.5, \"bandCount\": 1, \"pixelType\": \"U8\", \"spatialReference\": {\"wkid\": 31984, \"latestWkid\": 31984}, \"capabilities\": \"Image, Metadata, Mensuration\", \"allowedMosaicMethods\": \"\", \"maxImageHeight\": 4100, \"maxImageWidth\": 15000, \"copyrightText\": \"\"}\nIMAGE_META https://geo.salvador.ba.gov.br/imageserver/rest/services/Hosted/mdt_itapagipe/ImageServer {\"name\": \"Hosted/mdt_itapagipe\", \"description\": \"\", \"serviceDescription\": \"Hosted/mdt_itapagipe\", \"extent\": {\"xmin\": 552101.9451, \"ymin\": 8568329.955, \"xmax\": 556130.9451, \"ymax\": 8572854.455, \"spatialReference\": {\"wkid\": 31984, \"latestWkid\": 31984}}, \"pixelSizeX\": 0.5, \"pixelSizeY\": 0.5, \"bandCount\": 1, \"pixelType\": \"U8\", \"spatialReference\": {\"wkid\": 31984, \"latestWkid\": 31984}, \"capabilities\": \"Image,Mensuration\", \"allowedMosaicMethods\": \"\", \"maxImageHeight\": 4000, \"maxImageWidth\": 4000, \"copyrightText\": \"\"}\nIMAGE_SERVICE_INSPECT_DONE\n"
+  }
+}
