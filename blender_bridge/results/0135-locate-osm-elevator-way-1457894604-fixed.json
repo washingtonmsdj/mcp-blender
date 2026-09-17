@@ -1,0 +1,11 @@
+{
+  "id": "0135-locate-osm-elevator-way-1457894604-fixed",
+  "command_file": "0135-locate-osm-elevator-way-1457894604-fixed.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.548,
+  "result": {
+    "executed": true,
+    "result": "OSM_ELEVATOR_1457894604_AUDIT_BEGIN\n{\"file\":\"c:\\\\mcp-blender\\\\salvador_lacerda_do_zero.blend\",\"axis_EX\":[0.729195,-0.684306],\"axis_EY\":[0.684306,0.729195],\"v4_tower\":{\"name\":\"V4 | torre documental\",\"type\":\"MESH\",\"collections\":[\"01 WORLD | ELEVADOR LACERDA | blockout v4\"],\"center_xy\":[0.0,0.0],\"s_range\":[-1.775,1.775],\"l_range\":[-3.74,3.74],\"z_range\":[0.4499,73.9499],\"dist_center_to_tower_xy\":0.0,\"props\":{}},\"v4_hall\":{\"name\":\"V4 | hall piso terreo marcador\",\"type\":\"MESH\",\"collections\":[\"01 WORLD | ELEVADOR LACERDA | blockout v4\"],\"center_xy\":[29.011,-27.2251],\"s_range\":[30.985,48.585],\"l_range\":[-5.0,5.0],\"z_range\":[59.4549,59.5049],\"dist_center_to_tower_xy\":39.785,\"props\":{}},\"counts\":{\"exact_osm_id\":1,\"tagged_highway_elevator\":1,\"name_contains_id\":1,\"unique_candidates\":1},\"candidates\":[{\"name\":\"OSM 1457894604.001\",\"type\":\"MESH\",\"collections\":[\"04 MAPA AMPLIADO | referencia fora do recorte\"],\"center_xy\":[399.1127,367.9286],\"s_range\":[37.0238,41.4703],\"l_range\":[537.8224,544.9993],\"z_range\":[34.127,34.307],\"dist_center_to_tower_xy\":542.8281,\"props\":{\"osm_id\":\"1457894604\",\"osm_tags\":\"{\\\"building\\\": \\\"yes\\\", \\\"highway\\\": \\\"elevator\\\"}\",\"fonte\":\"https://www.openstreetmap.org/way/1457894604\",\"Z_status\":\"patamares do esboco; nao altimetria medida\"}}]}\nOSM_ELEVATOR_1457894604_AUDIT_END\n"
+  }
+}
