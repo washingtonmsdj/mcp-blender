@@ -1,0 +1,11 @@
+{
+  "id": "0149-measure-live-bridge-and-upper-building",
+  "command_file": "0149-measure-live-bridge-and-upper-building.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 1.658,
+  "result": {
+    "executed": true,
+    "result": "LIVE_BRIDGE_BUILDING_MEASURE_BEGIN\n{\"bridge_osm\":{\"tags\":{\"bridge\":\"yes\",\"highway\":\"corridor\",\"indoor\":\"yes\",\"layer\":\"1\"},\"refs\":[\"13144235885\",\"34592723\"],\"length_m\":51.6514,\"angle_to_v4_axis_deg\":1.6902,\"s\":[55.3688,3.7399],\"l\":[-0.5336,0.9897]},\"upper_building_osm\":{\"tags\":{\"building\":\"yes\",\"building:levels\":\"3\"},\"centroid_xy\":[44.5268,-41.77],\"centroid_s_l\":[61.0521,0.0115],\"s_range\":[54.9514,71.2221],\"l_range\":[-6.0152,6.4445],\"pca_extents_m\":[15.7252,10.5232],\"principal_angle_to_v4_axis_deg\":7.7987},\"documentary_targets\":{\"bridge_or_clear_span_m\":28.71,\"upper_building_m\":[18.6,11.0]},\"current_v4\":{\"tower_face_s\":1.775,\"bridge_s_range\":[1.775,30.485],\"station_s_range\":[30.485,49.085],\"station_center_s\":39.785}}\nLIVE_BRIDGE_BUILDING_MEASURE_END\n"
+  }
+}
