@@ -1,0 +1,11 @@
+{
+  "id": "0033-run-scale-audit-script",
+  "command_file": "0033-run-scale-audit-script.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 3.76,
+  "result": {
+    "executed": true,
+    "result": "=== AUDITORIA ESCALA ELEVADOR LACERDA ===\narquivo: C:\\mcp-blender\\salvador_lacerda_do_zero.blend\ncena: Scene\nobjetos medidos: 37\nenvelope global XYZ: (65.715, 62.505, 52.45)\nZ min/max: -0.2 52.25\naltura modelada: 52.45 m\naltura confirmada externa: 72.0 m\ndiferenca vertical: 19.55 m\nfator vertical hipotetico: 1.372736\n\npassarela comprimento local modelado: 49.13 m\npassarela referencia secundaria: 71.0 m [NAO CONFIRMADO]\ndiferenca contra referencia secundaria: 21.87 m\nfator longitudinal hipotetico: 1.445156\n\ncentro torre -> centro galeria alta: 57.472 m\ncentro torre -> centro piso entrada alta: 61.18 m\npiso baixo topo Z: 0.0 m\npiso alto topo Z: 40.0 m\ndelta piso-a-piso atual: 40.0 m [PROVISORIO]\n\nCONCLUSAO: nao aplicar escala global. XY segue OSM; Z/passarela exigem correcao independente e fontes melhores.\n"
+  }
+}
