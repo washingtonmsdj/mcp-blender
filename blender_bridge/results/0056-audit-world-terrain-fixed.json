@@ -1,0 +1,11 @@
+{
+  "id": "0056-audit-world-terrain-fixed",
+  "command_file": "0056-audit-world-terrain-fixed.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.113,
+  "result": {
+    "executed": true,
+    "result": "FILE=C:\\mcp-blender\\salvador_lacerda_do_zero.blend\n--- TERRAIN OBJECTS ---\nTERRENO | Alto|coll=['03 TERRENO | aproximacao volumetrica pendente de levantamento']|X=-94.06..187.16|Y=-171.06..115.90|Z=-3.00..39.90|hide=False\nTERRENO | Baixo|coll=['03 TERRENO | aproximacao volumetrica pendente de levantamento']|X=-216.59..64.65|Y=-56.10..230.89|Z=-3.00..-0.10|hide=False\nTERRENO | Encosta|coll=['03 TERRENO | aproximacao volumetrica pendente de levantamento']|X=-116.69..87.28|Y=-77.34..137.14|Z=-3.00..39.90|hide=False\nV3 | TERRENO continuo blockout|coll=['13 CHATGPT | terreno jogavel v1']|X=-194.93..143.64|Y=-139.42..199.20|Z=0.00..59.00|hide=False\n--- TERRAIN COLLECTIONS ---\n03 TERRENO | aproximacao volumetrica pendente de levantamento hideV True hideR True objects 3\n13 CHATGPT | terreno jogavel v1 hideV False hideR False objects 1\nVISIBLE_URBAN_BOUNDS X=-281.16..564.93 Y=-316.27..728.16 Z=-0.36..82.90\nAUDIT_WORLD_TERRAIN_OK\n"
+  }
+}
