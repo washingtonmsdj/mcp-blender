@@ -1,0 +1,8 @@
+{
+  "id": "0041-inline-realv1-profile-preview",
+  "type": "execute_code",
+  "params": {
+    "code": "import bpy, pathlib, base64\nsrc=pathlib.Path(r'C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_real_scale_v1_perfil.png')\nout=pathlib.Path(r'C:\\mcp-blender\\blender_bridge\\previews\\realv1_profile_inline.jpg')\nimg=bpy.data.images.load(str(src),check_existing=False); img.scale(80,60); img.filepath_raw=str(out); img.file_format='JPEG'; img.save(); bpy.data.images.remove(img)\ndata=base64.b64encode(out.read_bytes()).decode('ascii')\nprint('INLINE_PROFILE_BASE64='+data)"
+  },
+  "enabled": true
+}
