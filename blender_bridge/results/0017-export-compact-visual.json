@@ -1,0 +1,11 @@
+{
+  "id": "0017-export-compact-visual",
+  "command_file": "0017-export-compact-visual.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 0.304,
+  "result": {
+    "executed": true,
+    "result": "COMPACT_VISUAL chunks=2 base64_chars=8788 file_bytes=6590\n"
+  }
+}

@@ -1,0 +1,3 @@
+chunks=2
+base64_chars=8788
+file_bytes=6590
