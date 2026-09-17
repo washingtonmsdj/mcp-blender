@@ -1,0 +1,8 @@
+{
+  "id": "0146-transform-live-upper-building-to-blender",
+  "command_file": "0146-transform-live-upper-building-to-blender.json",
+  "status": "error",
+  "duration_seconds": 0.322,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"RuntimeError\", \"message\": \"PYPROJ_AUSENTE ModuleNotFoundError(\\\"No module named 'pyproj'\\\")\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"<string>\\\", line 8, in <module>\\nModuleNotFoundError: No module named 'pyproj'\\n\\nDuring handling of the above exception, another exception occurred:\\n\\nTraceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 10, in <module>\\nRuntimeError: PYPROJ_AUSENTE ModuleNotFoundError(\\\"No module named 'pyproj'\\\")\\n\"}"
+}
