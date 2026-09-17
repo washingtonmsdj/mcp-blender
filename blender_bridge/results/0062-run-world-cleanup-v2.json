@@ -1,0 +1,11 @@
+{
+  "id": "0062-run-world-cleanup-v2",
+  "command_file": "0062-run-world-cleanup-v2.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 6.332,
+  "result": {
+    "executed": true,
+    "result": "WORLD_CLEANUP_V2_OK\nLEGACY_HIDDEN=11 VISIBLE_LEGACY=[]\nACTIVE_TERRAIN=WORLD | TERRENO MASTER | blockout GRID=82x82 VERTS=6724 FACES=6561\nHALL_Z=40.005 TERRAIN_Z=40.0050048828125 GAP=-7.62939453125e-06\nACTIVE_ELEVATOR=01 WORLD | ELEVADOR LACERDA | blockout v4 OBJECTS=40 RENAMED=40\n"
+  }
+}
