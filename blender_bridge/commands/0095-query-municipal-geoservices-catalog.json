@@ -1,0 +1,8 @@
+{
+  "id": "0095-query-municipal-geoservices-catalog",
+  "type": "execute_code",
+  "params": {
+    "code": "import urllib.request, urllib.parse, json\nbase='https://geo.salvador.ba.gov.br/arcgis/rest/services/Hosted/catalogo_geoservicos/FeatureServer'\ndef get(url,params=None):\n    if params: url += ('&' if '?' in url else '?') + urllib.parse.urlencode(params)\n    with urllib.request.urlopen(url,timeout=30) as r: return json.loads(r.read().decode('utf-8'))\nmeta=get(base,{'f':'json'})\nprint('CATALOG_LAYERS',[(x.get('id'),x.get('name')) for x in meta.get('layers',[])])\nfor lyr in meta.get('layers',[]):\n    lm=get(base+'/'+str(lyr['id']),{'f':'json'})\n    print('LAYER',lyr['id'],lyr.get('name'),'FIELDS',[(f.get('name'),f.get('alias')) for f in lm.get('fields',[])])\n    q=get(base+'/'+str(lyr['id'])+'/query',{'f':'json','where':'1=1','outFields':'*','returnGeometry':'false','resultRecordCount':2000})\n    feats=q.get('features',[])\n    print('FEATURES',len(feats))\n    terms=('altim','curva','nivel','nível','mdt','mde','lidar','laser','relevo','cota','sicad','topograf','elev')\n    hits=[]\n    for ft in feats:\n        a=ft.get('attributes',{})\n        s=' | '.join(str(v) for v in a.values() if v is not None).lower()\n        if any(t in s for t in terms): hits.append(a)\n    print('HITS',len(hits))\n    for a in hits[:120]: print('CAT_HIT',json.dumps(a,ensure_ascii=False,default=str))\nprint('CATALOG_QUERY_DONE')"
+  },
+  "enabled": true
+}
