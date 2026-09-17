@@ -1,0 +1,8 @@
+{
+  "id": "0067-build-lower-station-and-qa",
+  "command_file": "0067-build-lower-station-and-qa.json",
+  "status": "error",
+  "duration_seconds": 11.644,
+  "error_type": "RuntimeError",
+  "error": "{\"exception_type\": \"RuntimeError\", \"message\": \"QA FAIL: nomes duplicados ativos: ['V4 | passadico vidro lateral.002']\", \"traceback\": \"Traceback (most recent call last):\\n  File \\\"C:\\\\Users\\\\TONECOS\\\\AppData\\\\Roaming\\\\Blender Foundation\\\\Blender\\\\5.2\\\\scripts\\\\addons\\\\blender_mcp.py\\\", line 1500, in execute_code\\n    exec(code, namespace)\\n    ~~~~^^^^^^^^^^^^^^^^^\\n  File \\\"<string>\\\", line 6, in <module>\\n  File \\\"scripts/qa_world_blockout.py\\\", line 88, in <module>\\nRuntimeError: QA FAIL: nomes duplicados ativos: ['V4 | passadico vidro lateral.002']\\n\"}"
+}
