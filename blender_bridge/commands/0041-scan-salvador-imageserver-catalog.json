@@ -1,0 +1,8 @@
+{
+  "id": "0041-scan-salvador-imageserver-catalog",
+  "type": "execute_code",
+  "params": {
+    "code": "import urllib.request, urllib.parse, json\nbase='https://geo.salvador.ba.gov.br/imageserver/rest/services'\ndef get(url):\n req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'})\n with urllib.request.urlopen(req,timeout=30) as r:return json.load(r)\nroot=get(base+'?f=pjson')\nprint('ROOT_FOLDERS',root.get('folders'))\nprint('ROOT_SERVICES',len(root.get('services',[])))\nkeys=('mdt','mds','mde','terrain','terreno','elev','lidar','curva','orto','maquete')\ndef dump(prefix,data):\n for s in data.get('services',[]):\n  name=s.get('name',''); typ=s.get('type','')\n  if any(k in name.lower() for k in keys): print('MATCH',prefix,name,typ)\n for s in data.get('services',[]): print('SERVICE',prefix,s.get('name'),s.get('type'))\ndump('',root)\nfor folder in root.get('folders',[]):\n try:\n  data=get(base+'/'+urllib.parse.quote(folder,safe='')+'?f=pjson')\n  print('FOLDER',folder,'SERVICES',len(data.get('services',[])))\n  dump(folder,data)\n except Exception as e: print('FOLDER_ERROR',folder,repr(e))"
+  },
+  "enabled": true
+}
