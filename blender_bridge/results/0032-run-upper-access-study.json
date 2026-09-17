@@ -1,0 +1,11 @@
+{
+  "id": "0032-run-upper-access-study",
+  "command_file": "0032-run-upper-access-study.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 9.587,
+  "result": {
+    "executed": true,
+    "result": "ESTUDO_ACESSO_SUPERIOR_OK pilares=4 largura_marquise=20.8m objetos= 23 theta= -0.753652\nACCESS_EXEC_OK objects=23\n"
+  }
+}
