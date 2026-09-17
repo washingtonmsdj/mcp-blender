@@ -1,0 +1,11 @@
+{
+  "id": "0028-run-collab-qa-package",
+  "command_file": "0028-run-collab-qa-package.json",
+  "type": "execute_code",
+  "status": "success",
+  "duration_seconds": 51.205,
+  "result": {
+    "executed": true,
+    "result": "ESTUDO_FACHADA_SUPERIOR_OK janelas=6 objetos= 57 theta= -0.753652 largura_oficial=9.6m\nESTUDO_ACESSO_SUPERIOR_OK pilares=4 largura_marquise=20.8m objetos= 23 theta= -0.753652\nQA_ENTRADA_SUPERIOR_OK facade_windows=6 renders=3 C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_entrada_superior_frontal.png C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_entrada_superior_perspectiva.png C:\\mcp-blender\\vendor\\projeto-salvador-elevador-lacerda\\renders\\chatgpt_entrada_superior_acesso_baixo.png\nQA_PACKAGE_COMMIT=bae4b77262a0d01f20dcccc24a79dea5c4eb9513\n"
+  }
+}
