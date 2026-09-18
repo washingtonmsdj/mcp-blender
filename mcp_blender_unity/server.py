@@ -18,6 +18,8 @@ _UNITY_ERROR_PATTERNS = (
     re.compile(r"Compilation failed", re.IGNORECASE),
     re.compile(r"Aborting batchmode due to failure", re.IGNORECASE),
     re.compile(r"executeMethod.*could not be found", re.IGNORECASE),
+    re.compile(r"\[Package Manager\].*Failed to start.*local server process", re.IGNORECASE),
+    re.compile(r"\[Package Manager\].*Could not connect to IPC stream", re.IGNORECASE),
 )
 
 
