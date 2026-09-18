@@ -96,7 +96,7 @@ def _run_with_managed_upm(
             "command": command,
         }
 
-    token = f"McpUpm-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    token = f"Upm-{os.getpid()}-{uuid.uuid4().hex[:8]}"
     server_path = f"Unity-{token}"
     managed_log = upm_log_file.with_name(upm_log_file.stem + "-managed.log")
 
@@ -154,6 +154,9 @@ def _run_with_managed_upm(
                 "stdout": "",
                 "stderr": "Managed UPM server did not become ready.\n" + stderr,
                 "command": upm_command,
+                "managed_upm": True,
+                "managed_upm_command": upm_command,
+                "managed_upm_log_file": str(managed_log),
                 "managed_upm_log": _read_tail(managed_log),
             }
 
