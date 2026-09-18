@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
@@ -26,6 +27,9 @@ async def run(project_path: str, timeout_seconds: int) -> int:
         command=str(python),
         args=["-m", "mcp_blender_unity.server"],
         cwd=str(repo_root),
+        # This is our own trusted local bridge. Unity/UPM needs the normal
+        # Windows user environment (USERPROFILE/APPDATA/LOCALAPPDATA/etc.).
+        env=dict(os.environ),
     )
 
     async with stdio_client(server) as (read_stream, write_stream):
