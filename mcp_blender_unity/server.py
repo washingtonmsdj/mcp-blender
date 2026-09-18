@@ -95,7 +95,6 @@ def _unity_command(project: Path, log_file: Path, execute_method: str | None = N
 def toolchain_status() -> dict:
     """Return detected Blender, Unity and default Unity project paths."""
     blender = find_blender()
-    unity = find_unity()
     project = default_unity_project()
     unity = find_unity(project)
     required_version = read_unity_project_version(project)
