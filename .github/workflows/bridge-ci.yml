@@ -1,0 +1,90 @@
+name: Bridge CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile Python sources
+        run: python -m compileall -q mcp_blender_unity
+
+      - name: Validate package metadata
+        run: |
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          project = data["project"]
+          assert project["name"] == "mcp-blender-unity"
+          assert project["requires-python"] == ">=3.11"
+          print("pyproject.toml OK")
+          PY
+
+  powershell:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse PowerShell scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -Path .\scripts\windows -Filter *.ps1 -Recurse | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+
+            if ($errors.Count -gt 0) {
+              $failed = $true
+              Write-Host "Syntax errors in $($_.FullName):"
+              $errors | ForEach-Object { Write-Host $_.Message }
+            } else {
+              Write-Host "OK $($_.FullName)"
+            }
+          }
+
+          if ($failed) { exit 1 }
+
+      - name: Ensure old app files are gone
+        shell: pwsh
+        run: |
+          $forbidden = @(
+            "package.json",
+            "src",
+            "supabase",
+            "vite.config.ts",
+            "bun.lockb"
+          )
+
+          foreach ($path in $forbidden) {
+            if (Test-Path $path) {
+              throw "Legacy Ordax file/directory still present: $path"
+            }
+          }
+
+          Write-Host "Repository cleanup invariant OK."
