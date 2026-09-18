@@ -30,7 +30,7 @@ function Invoke-UpmProbe {
     Write-Host ""
     Write-Host "=== $Name ==="
     Write-Host "Executable: $upm"
-    if ($Arguments.Count -gt 0) {
+    if ($Arguments -and $Arguments.Count -gt 0) {
         Write-Host ("Arguments:  " + ($Arguments -join " "))
     } else {
         Write-Host "Arguments:  <none>"
@@ -39,14 +39,17 @@ function Invoke-UpmProbe {
     try {
         $startArgs = @{
             FilePath = $upm
-            ArgumentList = $Arguments
             PassThru = $true
             WindowStyle = "Hidden"
             RedirectStandardOutput = $stdout
             RedirectStandardError = $stderr
         }
-        $p = Start-Process @startArgs
 
+        if ($Arguments -and $Arguments.Count -gt 0) {
+            $startArgs["ArgumentList"] = $Arguments
+        }
+
+        $p = Start-Process @startArgs
         Write-Host "PID:        $($p.Id)"
 
         $deadline = (Get-Date).AddSeconds([Math]::Max(1, $WaitSeconds))
@@ -56,6 +59,7 @@ function Invoke-UpmProbe {
         }
 
         if ($p.HasExited) {
+            $p.WaitForExit()
             Write-Host "Result:     exited"
             Write-Host "Exit code:  $($p.ExitCode)"
         } else {
@@ -85,15 +89,9 @@ function Invoke-UpmProbe {
     }
 }
 
+Invoke-UpmProbe -Name "version" -Arguments @("--version")
+Invoke-UpmProbe -Name "help" -Arguments @("--help")
 Invoke-UpmProbe -Name "plain-launch" -Arguments @()
-
-$ipcName = "McpUpmProbe-$PID"
-Invoke-UpmProbe -Name "ipc-launch" -Arguments @(
-    "-s", "$PID",
-    "-ipc",
-    "-ipc-path", $ipcName,
-    "-l", "4"
-)
 
 Write-Host ""
 Write-Host "Probe files: $probeRoot"
