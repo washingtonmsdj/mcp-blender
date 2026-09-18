@@ -50,7 +50,11 @@ foreach ($name in $dnsNames) {
         $answer = Resolve-DnsName $name -Type A -ErrorAction Stop |
             Where-Object { $_.IPAddress } |
             Select-Object -First 2 -ExpandProperty IPAddress
-        Write-Host ("  {0,-36} {1}" -f $name, (($answer -join ", ") ?? "no A record"))
+        $answerText = $answer -join ", "
+        if ([string]::IsNullOrWhiteSpace($answerText)) {
+            $answerText = "no A record"
+        }
+        Write-Host ("  {0,-36} {1}" -f $name, $answerText)
     } catch {
         Write-Host ("  {0,-36} FAIL: {1}" -f $name, $_.Exception.Message)
     }
