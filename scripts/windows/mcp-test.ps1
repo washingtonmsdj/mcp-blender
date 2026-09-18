@@ -1,4 +1,6 @@
-param()
+param(
+    [string]$ProjectPath = ""
+)
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
@@ -9,5 +11,7 @@ if (-not (Test-Path $python)) {
     throw ".venv Python not found. Run .\scripts\windows\mcp-start.ps1 first."
 }
 
-& $python $script
+$scriptArgs = @()
+if ($ProjectPath) { $scriptArgs += $ProjectPath }
+& $python $script @scriptArgs
 exit $LASTEXITCODE

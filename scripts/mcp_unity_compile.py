@@ -67,6 +67,13 @@ async def run(project_path: str, timeout_seconds: int) -> int:
                 print(f"First attempt exit code: {payload['first_attempt_returncode']}")
             if payload.get("returncode") is not None:
                 print(f"Exit code: {payload['returncode']}")
+            if payload.get("failure_classification"):
+                print(f"Failure classification: {payload['failure_classification']}")
+            installation = payload.get("installation") or {}
+            if installation.get("missing_components"):
+                print("Missing Unity installation components:")
+                for component in installation["missing_components"]:
+                    print(f"  - {component}")
             if payload.get("managed_upm_log_file"):
                 print(f"Managed UPM log: {payload['managed_upm_log_file']}")
             if payload.get("stderr"):

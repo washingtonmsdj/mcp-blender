@@ -8,6 +8,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "unity-discovery.ps1")
 
 $ProjectPath = (Resolve-Path $ProjectPath).Path
 
@@ -15,52 +16,11 @@ if (-not (Test-Path (Join-Path $ProjectPath "Assets"))) {
     throw "ProjectPath does not contain Assets/: $ProjectPath"
 }
 
-function Get-RequiredUnityVersion {
-    param([string]$Root)
-
-    $versionFile = Join-Path $Root "ProjectSettings\ProjectVersion.txt"
-    if (-not (Test-Path $versionFile)) {
-        return $null
-    }
-
-    $match = Select-String -Path $versionFile -Pattern '^m_EditorVersion:\s*(\S+)\s*$' | Select-Object -First 1
-    if ($match) {
-        return $match.Matches[0].Groups[1].Value
-    }
-
-    return $null
-}
-
-function Find-Unity {
-    param([string]$Root)
-
-    if ($env:UNITY_EXE -and (Test-Path $env:UNITY_EXE)) {
-        return $env:UNITY_EXE
-    }
-
-    $requiredVersion = Get-RequiredUnityVersion -Root $Root
-    if ($requiredVersion) {
-        $exact = "C:\Program Files\Unity\Hub\Editor\$requiredVersion\Editor\Unity.exe"
-        if (Test-Path $exact) {
-            return $exact
-        }
-
-        throw "Unity $requiredVersion is required by the project but was not found at $exact. Install that editor version or set UNITY_EXE explicitly."
-    }
-
-    $candidate = Get-ChildItem "C:\Program Files\Unity\Hub\Editor\*\Editor\Unity.exe" -ErrorAction SilentlyContinue |
-        Sort-Object FullName -Descending |
-        Select-Object -First 1
-
-    if ($candidate) { return $candidate.FullName }
-    return $null
-}
-
 $requiredVersion = Get-RequiredUnityVersion -Root $ProjectPath
 $unity = Find-Unity -Root $ProjectPath
 
 if (-not $unity -or -not (Test-Path $unity)) {
-    throw "Unity executable not found. Set UNITY_EXE or install the project editor version."
+    throw "Unity $requiredVersion executable not found. Install the project editor version or set UNITY_EXE explicitly."
 }
 
 if (-not $LogFile) {

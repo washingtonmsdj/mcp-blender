@@ -68,6 +68,7 @@ Variáveis opcionais:
 
 - `BLENDER_EXE`
 - `UNITY_EXE`
+- `UNITY_EDITOR_ROOTS` (optional, `;`-separated extra Unity Hub roots on Windows)
 - `DEFAULT_UNITY_PROJECT`
 
 ## Tools MCP
@@ -84,6 +85,12 @@ Variáveis opcionais:
 `unity_validate_project` também executa, por padrão:
 
 `HORDAX.EditorTools.CiValidation.Run`
+
+For a project-specific toolchain report, pass its path to the Windows smoke test:
+
+```powershell
+.\scripts\windows\mcp-test.ps1 -ProjectPath "C:\dev\HORDAX-game"
+```
 
 ## CLI direto
 

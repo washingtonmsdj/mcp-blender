@@ -5,22 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-
-function Get-RequiredUnityVersion {
-    param([string]$Root)
-
-    if (-not $Root) { return $null }
-
-    $versionFile = Join-Path $Root "ProjectSettings\ProjectVersion.txt"
-    if (-not (Test-Path $versionFile)) { return $null }
-
-    $match = Select-String -Path $versionFile -Pattern '^m_EditorVersion:\s*(\S+)\s*$' | Select-Object -First 1
-    if ($match) {
-        return $match.Matches[0].Groups[1].Value
-    }
-
-    return $null
-}
+. (Join-Path $PSScriptRoot "unity-discovery.ps1")
 
 function Find-Blender {
     if ($env:BLENDER_EXE -and (Test-Path $env:BLENDER_EXE)) {
@@ -28,27 +13,6 @@ function Find-Blender {
     }
 
     $items = Get-ChildItem "C:\Program Files\Blender Foundation\Blender *\blender.exe" -ErrorAction SilentlyContinue |
-        Sort-Object FullName -Descending
-
-    if ($items) { return $items[0].FullName }
-    return $null
-}
-
-function Find-Unity {
-    param([string]$Root)
-
-    if ($env:UNITY_EXE -and (Test-Path $env:UNITY_EXE)) {
-        return $env:UNITY_EXE
-    }
-
-    $requiredVersion = Get-RequiredUnityVersion -Root $Root
-    if ($requiredVersion) {
-        $exact = "C:\Program Files\Unity\Hub\Editor\$requiredVersion\Editor\Unity.exe"
-        if (Test-Path $exact) { return $exact }
-        return $null
-    }
-
-    $items = Get-ChildItem "C:\Program Files\Unity\Hub\Editor\*\Editor\Unity.exe" -ErrorAction SilentlyContinue |
         Sort-Object FullName -Descending
 
     if ($items) { return $items[0].FullName }
@@ -65,21 +29,22 @@ $unity = Find-Unity -Root $ProjectPath
 $python = Get-Command python -ErrorAction SilentlyContinue
 $git = Get-Command git -ErrorAction SilentlyContinue
 
-$unityReferenceAssemblies = $null
-$unityReferenceAssembliesOk = $null
+$unityDiagnostics = $null
 if ($unity) {
-    $unityEditorDir = Split-Path -Parent $unity
-    $unityReferenceAssemblies = Join-Path $unityEditorDir "Data\UnityReferenceAssemblies\unity-4.8-api\Facades"
-    $unityReferenceAssembliesOk = Test-Path $unityReferenceAssemblies
+    $unityDiagnostics = Get-UnityInstallationDiagnostics -Unity $unity -ProjectRoot $ProjectPath
 }
 
 Write-Host "Blender:          $blender"
 Write-Host "Unity:            $unity"
 Write-Host "Required Unity:   $requiredVersion"
 if ($unity) {
-    Write-Host "Unity refs:       $unityReferenceAssembliesOk"
-    if (-not $unityReferenceAssembliesOk) {
-        Write-Host "Missing refs:     $unityReferenceAssemblies"
+    Write-Host "API compatibility: $($unityDiagnostics.ApiCompatibilityLevel)"
+    Write-Host "Unity refs required: $($unityDiagnostics.ReferenceAssembliesRequired)"
+    Write-Host "Unity refs:       $($unityDiagnostics.ReferenceAssembliesAvailable)"
+    Write-Host "UPM:              $($unityDiagnostics.PackageManagerAvailable)"
+    if ($unityDiagnostics.MissingComponents.Count -gt 0) {
+        Write-Host "Missing components:"
+        $unityDiagnostics.MissingComponents | ForEach-Object { Write-Host "  $_" }
     }
 }
 Write-Host "Python:           $($python.Source)"
@@ -102,8 +67,8 @@ if (-not $unity) {
 
     if ($RequireUnity) { $failed = $true }
 }
-elseif ($unityReferenceAssembliesOk -eq $false) {
-    Write-Warning "Unity Editor installation is incomplete: required reference assemblies are missing."
+elseif ($unityDiagnostics -and -not $unityDiagnostics.InstallationHealthy) {
+    Write-Warning "Unity Editor installation is incomplete: required files are missing."
     if ($RequireUnity) { $failed = $true }
 }
 

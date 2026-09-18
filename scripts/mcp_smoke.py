@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import argparse
 import json
 import os
 import sys
@@ -10,7 +11,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 
-async def main() -> int:
+async def main(project_path: str | None = None) -> int:
     repo_root = Path(__file__).resolve().parents[1]
     python = repo_root / ".venv" / "Scripts" / "python.exe"
 
@@ -37,7 +38,8 @@ async def main() -> int:
             print("MCP CONNECTED")
             print("Tools:", ", ".join(tool_names))
 
-            result = await session.call_tool("toolchain_status", arguments={})
+            arguments = {"project_path": project_path} if project_path else {}
+            result = await session.call_tool("toolchain_status", arguments=arguments)
             print("toolchain_status:")
 
             for item in result.content:
@@ -57,4 +59,7 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("project_path", nargs="?")
+    args = parser.parse_args()
+    raise SystemExit(asyncio.run(main(args.project_path)))

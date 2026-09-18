@@ -10,7 +10,14 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from .config import default_unity_project, find_blender, find_unity, read_unity_project_version
+from .config import (
+    default_unity_project,
+    find_blender,
+    find_unity,
+    read_unity_api_compatibility_level,
+    read_unity_project_version,
+    unity_installation_diagnostics,
+)
 from .process import run_process
 
 
@@ -24,6 +31,7 @@ _UNITY_ERROR_PATTERNS = (
     re.compile(r"executeMethod.*could not be found", re.IGNORECASE),
     re.compile(r"\[Package Manager\].*Failed to start.*local server process", re.IGNORECASE),
     re.compile(r"\[Package Manager\].*Could not connect to IPC stream", re.IGNORECASE),
+    re.compile(r"DirectoryNotFoundException:.*UnityReferenceAssemblies", re.IGNORECASE),
 )
 
 
@@ -64,6 +72,29 @@ def _has_upm_startup_failure(log_text: str) -> bool:
         or re.search(r"\[Package Manager\].*Could not connect to IPC stream", log_text, re.IGNORECASE)
         or re.search(r"\[Package Manager\].*Could not establish a connection", log_text, re.IGNORECASE)
     )
+
+
+def _classify_failure(
+    unity_log: str,
+    upm_log: str,
+    installation: dict,
+    returncode: int | None,
+) -> str:
+    if installation.get("missing_components"):
+        return "unity_installation"
+    if re.search(r"UnityReferenceAssemblies|unity-4\.8-api[\\/]Facades", unity_log, re.IGNORECASE):
+        return "unity_installation"
+    if _has_upm_startup_failure(unity_log) or re.search(r"IPC server failed|IPC.*failed", upm_log, re.IGNORECASE):
+        return "package_manager"
+    if re.search(r"error CS\d{4}|Scripts have compiler errors|Compilation failed", unity_log, re.IGNORECASE):
+        return "project_compilation"
+    if re.search(r"HORDAX CI.*(?:failed|crashed)|Validation failed", unity_log, re.IGNORECASE):
+        return "project_validation"
+    if re.search(r"executeMethod.*could not be found", unity_log, re.IGNORECASE):
+        return "execute_method"
+    if returncode not in (None, 0):
+        return "unity_process"
+    return "none"
 
 
 def _managed_upm_executable(unity: Path) -> Path:
@@ -196,9 +227,11 @@ def _unity_result(
 
     log_text = _read_tail(log_file)
     upm_log_text = _read_tail(upm_log_file)
+    installation = unity_installation_diagnostics(command[0], project)
 
-    if _has_upm_startup_failure(log_text):
+    if _has_upm_startup_failure(log_text) and installation.get("installation_healthy"):
         first_result = dict(result)
+        first_log_text = log_text
         result = _run_with_managed_upm(
             command,
             project,
@@ -208,6 +241,7 @@ def _unity_result(
         )
         result["retried_after_upm_startup_failure"] = True
         result["first_attempt_returncode"] = first_result.get("returncode")
+        result["first_attempt_unity_log"] = first_log_text
         log_text = _read_tail(log_file)
         upm_log_text = _read_tail(upm_log_file)
 
@@ -217,11 +251,21 @@ def _unity_result(
         if pattern.search(log_text):
             detected_errors.append(pattern.pattern)
 
+    if installation.get("missing_components"):
+        detected_errors.append("missing_unity_installation_component")
+
     result["log_file"] = str(log_file)
     result["upm_log_file"] = str(upm_log_file)
     result["unity_log"] = log_text
     result["upm_log"] = upm_log_text
     result["detected_error_patterns"] = detected_errors
+    result["installation"] = installation
+    result["failure_classification"] = _classify_failure(
+        log_text,
+        upm_log_text,
+        installation,
+        result.get("returncode"),
+    )
     result["ok"] = bool(result.get("ok")) and not detected_errors
     return result
 
@@ -253,12 +297,13 @@ def _unity_command(
 
 
 @mcp.tool()
-def toolchain_status() -> dict:
-    """Return detected Blender, Unity and default Unity project paths."""
+def toolchain_status(project_path: str | None = None) -> dict:
+    """Return detected tools plus version, API profile, and editor health."""
     blender = find_blender()
-    project = default_unity_project()
+    project = _required_project(project_path) if project_path else default_unity_project()
     unity = find_unity(project)
     required_version = read_unity_project_version(project)
+    installation = unity_installation_diagnostics(unity, project)
 
     return {
         "blender": str(blender) if blender else None,
@@ -267,6 +312,8 @@ def toolchain_status() -> dict:
         "default_unity_project": str(project) if project else None,
         "blender_available": blender is not None,
         "unity_available": unity is not None,
+        "api_compatibility_level": read_unity_api_compatibility_level(project),
+        "installation": installation,
     }
 
 
