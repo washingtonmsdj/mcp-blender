@@ -65,6 +65,12 @@ async def run(project_path: str, timeout_seconds: int) -> int:
                 print(f"Exit code: {payload['returncode']}")
             if payload.get("managed_upm_log_file"):
                 print(f"Managed UPM log: {payload['managed_upm_log_file']}")
+            if payload.get("stderr"):
+                print("Bridge stderr:")
+                print(payload["stderr"])
+            if payload.get("managed_upm_log") and not payload.get("ok"):
+                print("\n--- Managed UPM log tail ---")
+                print(payload["managed_upm_log"][-12000:])
             if payload.get("log_file"):
                 print(f"Log: {payload['log_file']}")
 
