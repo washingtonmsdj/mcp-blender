@@ -39,7 +39,7 @@ jobs:
 
       - name: Detect Unity
         shell: pwsh
-        run: .\toolbridge\scripts\windows\toolchain-status.ps1 -RequireUnity
+        run: .\toolbridge\scripts\windows\toolchain-status.ps1 -RequireUnity -ProjectPath "$env:GITHUB_WORKSPACE\hordax"
 
       - name: Run HORDAX Unity validation
         shell: pwsh
