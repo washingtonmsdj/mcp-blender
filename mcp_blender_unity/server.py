@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import os
 import re
 import shlex
+import subprocess
+import time
+import uuid
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -53,6 +57,127 @@ def _read_tail(path: Path, max_chars: int = 40000) -> str:
     return text[-max_chars:]
 
 
+
+def _has_upm_startup_failure(log_text: str) -> bool:
+    return bool(
+        re.search(r"\[Package Manager\].*Failed to start.*local server process", log_text, re.IGNORECASE)
+        or re.search(r"\[Package Manager\].*Could not connect to IPC stream", log_text, re.IGNORECASE)
+        or re.search(r"\[Package Manager\].*Could not establish a connection", log_text, re.IGNORECASE)
+    )
+
+
+def _managed_upm_executable(unity: Path) -> Path:
+    return (
+        unity.parent
+        / "Data"
+        / "Resources"
+        / "PackageManager"
+        / "Server"
+        / "UnityPackageManager.exe"
+    )
+
+
+def _run_with_managed_upm(
+    command: list[str],
+    project: Path,
+    unity_log_file: Path,
+    upm_log_file: Path,
+    timeout_seconds: int,
+) -> dict:
+    unity = Path(command[0])
+    upm = _managed_upm_executable(unity)
+
+    if os.name != "nt" or not upm.is_file():
+        return {
+            "ok": False,
+            "returncode": None,
+            "stdout": "",
+            "stderr": f"Managed UPM fallback unavailable: {upm}",
+            "command": command,
+        }
+
+    token = f"McpUpm-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    server_path = f"Unity-{token}"
+    managed_log = upm_log_file.with_name(upm_log_file.stem + "-managed.log")
+
+    managed_log.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        managed_log.unlink(missing_ok=True)
+    except TypeError:
+        if managed_log.exists():
+            managed_log.unlink()
+
+    upm_command = [
+        str(upm),
+        "server",
+        "-s",
+        str(os.getpid()),
+        "--ipc-path",
+        server_path,
+        "-l",
+        "2",
+        "--log-file",
+        str(managed_log),
+    ]
+
+    upm_process = subprocess.Popen(
+        upm_command,
+        cwd=str(project),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        shell=False,
+    )
+
+    try:
+        deadline = time.monotonic() + 12.0
+        ready = False
+        while time.monotonic() < deadline:
+            if upm_process.poll() is not None:
+                break
+            text = _read_tail(managed_log, max_chars=12000)
+            if "IPC server started" in text:
+                ready = True
+                break
+            time.sleep(0.2)
+
+        if not ready:
+            stderr = ""
+            if upm_process.poll() is not None and upm_process.stderr is not None:
+                try:
+                    stderr = upm_process.stderr.read()[-8000:]
+                except Exception:
+                    stderr = ""
+            return {
+                "ok": False,
+                "returncode": upm_process.poll(),
+                "stdout": "",
+                "stderr": "Managed UPM server did not become ready.\n" + stderr,
+                "command": upm_command,
+                "managed_upm_log": _read_tail(managed_log),
+            }
+
+        retry_command = list(command) + ["-upmIpcPath", token]
+        result = run_process(
+            retry_command,
+            cwd=project,
+            timeout_seconds=max(1, timeout_seconds),
+        )
+        result["managed_upm"] = True
+        result["managed_upm_command"] = upm_command
+        result["managed_upm_log_file"] = str(managed_log)
+        result["managed_upm_log"] = _read_tail(managed_log)
+        return result
+    finally:
+        if upm_process.poll() is None:
+            upm_process.terminate()
+            try:
+                upm_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                upm_process.kill()
+                upm_process.wait(timeout=5)
+
+
 def _unity_result(
     command: list[str],
     project: Path,
@@ -68,6 +193,21 @@ def _unity_result(
 
     log_text = _read_tail(log_file)
     upm_log_text = _read_tail(upm_log_file)
+
+    if _has_upm_startup_failure(log_text):
+        first_result = dict(result)
+        result = _run_with_managed_upm(
+            command,
+            project,
+            log_file,
+            upm_log_file,
+            timeout_seconds,
+        )
+        result["retried_after_upm_startup_failure"] = True
+        result["first_attempt_returncode"] = first_result.get("returncode")
+        log_text = _read_tail(log_file)
+        upm_log_text = _read_tail(upm_log_file)
+
     detected_errors: list[str] = []
 
     for pattern in _UNITY_ERROR_PATTERNS:
