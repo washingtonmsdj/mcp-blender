@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 from pathlib import Path
+
+
+_VERSION_RE = re.compile(r"^m_EditorVersion:\s*(\S+)\s*$", re.MULTILINE)
 
 
 def _existing(path: str | None) -> Path | None:
@@ -17,6 +21,20 @@ def _newest(candidates: list[Path]) -> Path | None:
     if not existing:
         return None
     return sorted(existing, key=lambda path: str(path).lower(), reverse=True)[0]
+
+
+def read_unity_project_version(project: str | Path | None) -> str | None:
+    if project is None:
+        return None
+
+    root = Path(project).expanduser().resolve()
+    version_file = root / "ProjectSettings" / "ProjectVersion.txt"
+    if not version_file.is_file():
+        return None
+
+    text = version_file.read_text(encoding="utf-8", errors="replace")
+    match = _VERSION_RE.search(text)
+    return match.group(1) if match else None
 
 
 def find_blender() -> Path | None:
@@ -40,18 +58,26 @@ def find_blender() -> Path | None:
     return None
 
 
-def find_unity() -> Path | None:
+def find_unity(project: str | Path | None = None) -> Path | None:
     explicit = _existing(os.getenv("UNITY_EXE"))
     if explicit:
         return explicit
 
+    required_version = read_unity_project_version(project)
     system = platform.system()
+
     if system == "Windows":
         root = Path("C:/Program Files/Unity/Hub/Editor")
+        if required_version:
+            exact = root / required_version / "Editor" / "Unity.exe"
+            return exact if exact.is_file() else None
         return _newest(list(root.glob("*/Editor/Unity.exe"))) if root.exists() else None
 
     if system == "Darwin":
         root = Path("/Applications/Unity/Hub/Editor")
+        if required_version:
+            exact = root / required_version / "Unity.app" / "Contents" / "MacOS" / "Unity"
+            return exact if exact.is_file() else None
         return _newest(list(root.glob("*/Unity.app/Contents/MacOS/Unity"))) if root.exists() else None
 
     roots = [
@@ -61,10 +87,18 @@ def find_unity() -> Path | None:
     ]
 
     for root in roots:
-        if root.exists():
-            found = _newest(list(root.glob("*/Editor/Unity")))
-            if found:
-                return found
+        if not root.exists():
+            continue
+
+        if required_version:
+            exact = root / required_version / "Editor" / "Unity"
+            if exact.is_file():
+                return exact
+            continue
+
+        found = _newest(list(root.glob("*/Editor/Unity")))
+        if found:
+            return found
 
     return None
 
