@@ -65,9 +65,23 @@ $unity = Find-Unity -Root $ProjectPath
 $python = Get-Command python -ErrorAction SilentlyContinue
 $git = Get-Command git -ErrorAction SilentlyContinue
 
+$unityReferenceAssemblies = $null
+$unityReferenceAssembliesOk = $null
+if ($unity) {
+    $unityEditorDir = Split-Path -Parent $unity
+    $unityReferenceAssemblies = Join-Path $unityEditorDir "Data\UnityReferenceAssemblies\unity-4.8-api\Facades"
+    $unityReferenceAssembliesOk = Test-Path $unityReferenceAssemblies
+}
+
 Write-Host "Blender:          $blender"
 Write-Host "Unity:            $unity"
 Write-Host "Required Unity:   $requiredVersion"
+if ($unity) {
+    Write-Host "Unity refs:       $unityReferenceAssembliesOk"
+    if (-not $unityReferenceAssembliesOk) {
+        Write-Host "Missing refs:     $unityReferenceAssemblies"
+    }
+}
 Write-Host "Python:           $($python.Source)"
 Write-Host "Git:              $($git.Source)"
 
@@ -86,6 +100,10 @@ if (-not $unity) {
         Write-Warning "Unity was not found."
     }
 
+    if ($RequireUnity) { $failed = $true }
+}
+elseif ($unityReferenceAssembliesOk -eq $false) {
+    Write-Warning "Unity Editor installation is incomplete: required reference assemblies are missing."
     if ($RequireUnity) { $failed = $true }
 }
 
