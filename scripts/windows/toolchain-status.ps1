@@ -1,9 +1,26 @@
 param(
     [switch]$RequireBlender,
-    [switch]$RequireUnity
+    [switch]$RequireUnity,
+    [string]$ProjectPath = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+function Get-RequiredUnityVersion {
+    param([string]$Root)
+
+    if (-not $Root) { return $null }
+
+    $versionFile = Join-Path $Root "ProjectSettings\ProjectVersion.txt"
+    if (-not (Test-Path $versionFile)) { return $null }
+
+    $match = Select-String -Path $versionFile -Pattern '^m_EditorVersion:\s*(\S+)\s*$' | Select-Object -First 1
+    if ($match) {
+        return $match.Matches[0].Groups[1].Value
+    }
+
+    return $null
+}
 
 function Find-Blender {
     if ($env:BLENDER_EXE -and (Test-Path $env:BLENDER_EXE)) {
@@ -18,8 +35,17 @@ function Find-Blender {
 }
 
 function Find-Unity {
+    param([string]$Root)
+
     if ($env:UNITY_EXE -and (Test-Path $env:UNITY_EXE)) {
         return $env:UNITY_EXE
+    }
+
+    $requiredVersion = Get-RequiredUnityVersion -Root $Root
+    if ($requiredVersion) {
+        $exact = "C:\Program Files\Unity\Hub\Editor\$requiredVersion\Editor\Unity.exe"
+        if (Test-Path $exact) { return $exact }
+        return $null
     }
 
     $items = Get-ChildItem "C:\Program Files\Unity\Hub\Editor\*\Editor\Unity.exe" -ErrorAction SilentlyContinue |
@@ -29,16 +55,21 @@ function Find-Unity {
     return $null
 }
 
-$blender = Find-Blender
-$unity = Find-Unity
+if ($ProjectPath) {
+    $ProjectPath = (Resolve-Path $ProjectPath).Path
+}
 
+$requiredVersion = Get-RequiredUnityVersion -Root $ProjectPath
+$blender = Find-Blender
+$unity = Find-Unity -Root $ProjectPath
 $python = Get-Command python -ErrorAction SilentlyContinue
 $git = Get-Command git -ErrorAction SilentlyContinue
 
-Write-Host "Blender: $blender"
-Write-Host "Unity:   $unity"
-Write-Host "Python:  $($python.Source)"
-Write-Host "Git:     $($git.Source)"
+Write-Host "Blender:          $blender"
+Write-Host "Unity:            $unity"
+Write-Host "Required Unity:   $requiredVersion"
+Write-Host "Python:           $($python.Source)"
+Write-Host "Git:              $($git.Source)"
 
 $failed = $false
 
@@ -48,7 +79,13 @@ if (-not $blender) {
 }
 
 if (-not $unity) {
-    Write-Warning "Unity was not found."
+    if ($requiredVersion) {
+        Write-Warning "Unity $requiredVersion required by project was not found."
+    }
+    else {
+        Write-Warning "Unity was not found."
+    }
+
     if ($RequireUnity) { $failed = $true }
 }
 
