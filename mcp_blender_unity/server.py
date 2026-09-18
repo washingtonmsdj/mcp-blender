@@ -6,7 +6,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from .config import default_unity_project, find_blender, find_unity
+from .config import default_unity_project, find_blender, find_unity, read_unity_project_version
 from .process import run_process
 
 
@@ -73,7 +73,7 @@ def _unity_result(command: list[str], project: Path, log_file: Path, timeout_sec
 
 
 def _unity_command(project: Path, log_file: Path, execute_method: str | None = None) -> list[str]:
-    unity = _required_file(find_unity(), "Unity")
+    unity = _required_file(find_unity(project), "Unity")
 
     command = [
         str(unity),
@@ -97,10 +97,13 @@ def toolchain_status() -> dict:
     blender = find_blender()
     unity = find_unity()
     project = default_unity_project()
+    unity = find_unity(project)
+    required_version = read_unity_project_version(project)
 
     return {
         "blender": str(blender) if blender else None,
         "unity": str(unity) if unity else None,
+        "required_unity_version": required_version,
         "default_unity_project": str(project) if project else None,
         "blender_available": blender is not None,
         "unity_available": unity is not None,
