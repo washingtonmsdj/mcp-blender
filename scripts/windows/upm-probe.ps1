@@ -4,9 +4,16 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "unity-discovery.ps1")
 
-$unityRoot = "C:\Program Files\Unity\Hub\Editor\$UnityVersion\Editor"
-$upm = Join-Path $unityRoot "Data\Resources\PackageManager\Server\UnityPackageManager.exe"
+$unityResolution = Get-UnityResolution -RequiredVersion $UnityVersion
+$unity = $unityResolution.SelectedPath
+$unityRoot = if ($unity) { Split-Path -Parent $unity } else { $null }
+$upm = if ($unityRoot) {
+    Join-Path $unityRoot "Data\Resources\PackageManager\Server\UnityPackageManager.exe"
+} else {
+    $null
+}
 
 if (-not (Test-Path $upm)) {
     Write-Host "FAIL: UnityPackageManager.exe not found:"

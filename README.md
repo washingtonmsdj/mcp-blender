@@ -71,6 +71,12 @@ Variáveis opcionais:
 - `UNITY_EDITOR_ROOTS` (optional, `;`-separated extra Unity Hub roots on Windows)
 - `DEFAULT_UNITY_PROJECT`
 
+Unity discovery enumerates all Hub directories matching the project's required
+version, including official suffix variants such as `-x86_64`, and validates
+the Editor, API reference assemblies, and UPM before selecting one. Healthy
+installations are preferred; `UNITY_EXE` remains an explicit override and is
+reported as invalid instead of silently falling back when its installation is incomplete.
+
 ## Tools MCP
 
 - `toolchain_status`

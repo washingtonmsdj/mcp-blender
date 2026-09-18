@@ -4,12 +4,20 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
+. (Join-Path $PSScriptRoot "unity-discovery.ps1")
 
-$unityRoot = "C:\Program Files\Unity\Hub\Editor\$UnityVersion\Editor"
-$upm = Join-Path $unityRoot "Data\Resources\PackageManager\Server\UnityPackageManager.exe"
+$unityResolution = Get-UnityResolution -RequiredVersion $UnityVersion
+$unity = $unityResolution.SelectedPath
+$unityRoot = if ($unity) { Split-Path -Parent $unity } else { $null }
+$upm = if ($unityRoot) {
+    Join-Path $unityRoot "Data\Resources\PackageManager\Server\UnityPackageManager.exe"
+} else {
+    $null
+}
 
 Write-Host "=== Unity Package Manager local diagnostics ==="
 Write-Host "Unity version: $UnityVersion"
+Write-Host "Unity:         $unity"
 Write-Host "UPM path:      $upm"
 Write-Host ""
 

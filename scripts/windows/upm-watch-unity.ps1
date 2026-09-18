@@ -8,12 +8,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "unity-discovery.ps1")
 
 $project = (Resolve-Path $ProjectPath).Path
-$unity = "C:\Program Files\Unity\Hub\Editor\$UnityVersion\Editor\Unity.exe"
+$unityResolution = Get-UnityResolution -ProjectRoot $project -RequiredVersion $UnityVersion
+$unity = $unityResolution.SelectedPath
 
 if (-not (Test-Path $unity)) {
     throw "Unity.exe not found: $unity"
+}
+
+if (-not $unityResolution.InstallationHealthy) {
+    throw ("Unity installation is incomplete: " + ($unityResolution.SelectedDiagnostics.MissingComponents -join "; "))
 }
 
 $logs = Join-Path $project "Logs"

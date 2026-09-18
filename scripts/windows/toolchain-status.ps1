@@ -25,14 +25,12 @@ if ($ProjectPath) {
 
 $requiredVersion = Get-RequiredUnityVersion -Root $ProjectPath
 $blender = Find-Blender
-$unity = Find-Unity -Root $ProjectPath
+$unityResolution = Get-UnityResolution -ProjectRoot $ProjectPath -RequiredVersion $requiredVersion
+$unity = $unityResolution.SelectedPath
 $python = Get-Command python -ErrorAction SilentlyContinue
 $git = Get-Command git -ErrorAction SilentlyContinue
 
-$unityDiagnostics = $null
-if ($unity) {
-    $unityDiagnostics = Get-UnityInstallationDiagnostics -Unity $unity -ProjectRoot $ProjectPath
-}
+$unityDiagnostics = $unityResolution.SelectedDiagnostics
 
 Write-Host "Blender:          $blender"
 Write-Host "Unity:            $unity"
@@ -68,7 +66,12 @@ if (-not $unity) {
     if ($RequireUnity) { $failed = $true }
 }
 elseif ($unityDiagnostics -and -not $unityDiagnostics.InstallationHealthy) {
-    Write-Warning "Unity Editor installation is incomplete: required files are missing."
+    if ($unityResolution.ExplicitInvalid) {
+        Write-Warning $unityResolution.ExplicitError
+    }
+    else {
+        Write-Warning "Unity Editor installation is incomplete: required files are missing."
+    }
     if ($RequireUnity) { $failed = $true }
 }
 

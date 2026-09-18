@@ -17,10 +17,21 @@ if (-not (Test-Path (Join-Path $ProjectPath "Assets"))) {
 }
 
 $requiredVersion = Get-RequiredUnityVersion -Root $ProjectPath
-$unity = Find-Unity -Root $ProjectPath
+$unityResolution = Get-UnityResolution -ProjectRoot $ProjectPath -RequiredVersion $requiredVersion
+$unity = $unityResolution.SelectedPath
 
 if (-not $unity -or -not (Test-Path $unity)) {
+    if ($unityResolution.ExplicitInvalid) {
+        throw $unityResolution.ExplicitError
+    }
     throw "Unity $requiredVersion executable not found. Install the project editor version or set UNITY_EXE explicitly."
+}
+
+if (-not $unityResolution.InstallationHealthy) {
+    if ($unityResolution.ExplicitInvalid) {
+        throw $unityResolution.ExplicitError
+    }
+    throw ("Unity installation is incomplete: " + ($unityResolution.SelectedDiagnostics.MissingComponents -join "; "))
 }
 
 if (-not $LogFile) {

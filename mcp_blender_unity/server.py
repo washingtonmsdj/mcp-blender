@@ -13,9 +13,9 @@ from mcp.server.fastmcp import FastMCP
 from .config import (
     default_unity_project,
     find_blender,
-    find_unity,
     read_unity_api_compatibility_level,
     read_unity_project_version,
+    resolve_unity,
     unity_installation_diagnostics,
 )
 from .process import run_process
@@ -219,6 +219,28 @@ def _unity_result(
     upm_log_file: Path,
     timeout_seconds: int,
 ) -> dict:
+    installation = unity_installation_diagnostics(command[0], project)
+    if installation.get("missing_components"):
+        log_text = _read_tail(log_file)
+        upm_log_text = _read_tail(upm_log_file)
+        return {
+            "ok": False,
+            "returncode": None,
+            "stdout": "",
+            "stderr": (
+                "Unity installation is invalid; refusing to launch the Editor: "
+                + "; ".join(installation["missing_components"])
+            ),
+            "command": command,
+            "log_file": str(log_file),
+            "upm_log_file": str(upm_log_file),
+            "unity_log": log_text,
+            "upm_log": upm_log_text,
+            "detected_error_patterns": ["missing_unity_installation_component"],
+            "installation": installation,
+            "failure_classification": "unity_installation",
+        }
+
     result = run_process(
         command,
         cwd=project,
@@ -227,8 +249,6 @@ def _unity_result(
 
     log_text = _read_tail(log_file)
     upm_log_text = _read_tail(upm_log_file)
-    installation = unity_installation_diagnostics(command[0], project)
-
     if _has_upm_startup_failure(log_text) and installation.get("installation_healthy"):
         first_result = dict(result)
         first_log_text = log_text
@@ -276,7 +296,15 @@ def _unity_command(
     upm_log_file: Path,
     execute_method: str | None = None,
 ) -> list[str]:
-    unity = _required_file(find_unity(project), "Unity")
+    resolution = resolve_unity(project)
+    selected = resolution.get("selected_path")
+    if not selected:
+        required = resolution.get("required_version") or "the required version"
+        raise FileNotFoundError(f"Unity {required} executable was not found.")
+
+    unity = Path(selected)
+    if resolution.get("explicit_invalid") and not unity.is_file():
+        raise FileNotFoundError(resolution.get("explicit_error") or f"Invalid UNITY_EXE: {unity}")
 
     command = [
         str(unity),
@@ -301,9 +329,10 @@ def toolchain_status(project_path: str | None = None) -> dict:
     """Return detected tools plus version, API profile, and editor health."""
     blender = find_blender()
     project = _required_project(project_path) if project_path else default_unity_project()
-    unity = find_unity(project)
-    required_version = read_unity_project_version(project)
-    installation = unity_installation_diagnostics(unity, project)
+    resolution = resolve_unity(project)
+    unity = Path(resolution["selected_path"]) if resolution.get("selected_path") else None
+    required_version = resolution.get("required_version") or read_unity_project_version(project)
+    installation = resolution["selected_diagnostics"]
 
     return {
         "blender": str(blender) if blender else None,
@@ -314,6 +343,7 @@ def toolchain_status(project_path: str | None = None) -> dict:
         "unity_available": unity is not None,
         "api_compatibility_level": read_unity_api_compatibility_level(project),
         "installation": installation,
+        "unity_resolution": resolution,
     }
 
 
