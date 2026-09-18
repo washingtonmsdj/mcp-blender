@@ -53,7 +53,13 @@ def _read_tail(path: Path, max_chars: int = 40000) -> str:
     return text[-max_chars:]
 
 
-def _unity_result(command: list[str], project: Path, log_file: Path, timeout_seconds: int) -> dict:
+def _unity_result(
+    command: list[str],
+    project: Path,
+    log_file: Path,
+    upm_log_file: Path,
+    timeout_seconds: int,
+) -> dict:
     result = run_process(
         command,
         cwd=project,
@@ -61,6 +67,7 @@ def _unity_result(command: list[str], project: Path, log_file: Path, timeout_sec
     )
 
     log_text = _read_tail(log_file)
+    upm_log_text = _read_tail(upm_log_file)
     detected_errors: list[str] = []
 
     for pattern in _UNITY_ERROR_PATTERNS:
@@ -68,13 +75,20 @@ def _unity_result(command: list[str], project: Path, log_file: Path, timeout_sec
             detected_errors.append(pattern.pattern)
 
     result["log_file"] = str(log_file)
+    result["upm_log_file"] = str(upm_log_file)
     result["unity_log"] = log_text
+    result["upm_log"] = upm_log_text
     result["detected_error_patterns"] = detected_errors
     result["ok"] = bool(result.get("ok")) and not detected_errors
     return result
 
 
-def _unity_command(project: Path, log_file: Path, execute_method: str | None = None) -> list[str]:
+def _unity_command(
+    project: Path,
+    log_file: Path,
+    upm_log_file: Path,
+    execute_method: str | None = None,
+) -> list[str]:
     unity = _required_file(find_unity(project), "Unity")
 
     command = [
@@ -85,6 +99,8 @@ def _unity_command(project: Path, log_file: Path, execute_method: str | None = N
         str(project),
         "-logFile",
         str(log_file),
+        "-upmLogFile",
+        str(upm_log_file),
     ]
 
     if execute_method:
@@ -153,9 +169,10 @@ def unity_compile_project(
     logs = project / "Logs"
     logs.mkdir(parents=True, exist_ok=True)
     log_file = logs / "unity-mcp-compile.log"
+    upm_log_file = logs / "unity-mcp-upm.log"
 
-    command = _unity_command(project, log_file)
-    return _unity_result(command, project, log_file, timeout_seconds)
+    command = _unity_command(project, log_file, upm_log_file)
+    return _unity_result(command, project, log_file, upm_log_file, timeout_seconds)
 
 
 @mcp.tool()
@@ -172,9 +189,10 @@ def unity_validate_project(
     logs = project / "Logs"
     logs.mkdir(parents=True, exist_ok=True)
     log_file = logs / "unity-mcp-validation.log"
+    upm_log_file = logs / "unity-mcp-validation-upm.log"
 
-    command = _unity_command(project, log_file, execute_method)
-    return _unity_result(command, project, log_file, timeout_seconds)
+    command = _unity_command(project, log_file, upm_log_file, execute_method)
+    return _unity_result(command, project, log_file, upm_log_file, timeout_seconds)
 
 
 @mcp.tool()
@@ -193,13 +211,14 @@ def unity_run_method(
     logs.mkdir(parents=True, exist_ok=True)
     safe_name = execute_method.replace(".", "_")
     log_file = logs / f"unity-{safe_name}.log"
+    upm_log_file = logs / f"unity-{safe_name}-upm.log"
 
-    command = _unity_command(project, log_file, execute_method)
+    command = _unity_command(project, log_file, upm_log_file, execute_method)
 
     if extra_args.strip():
         command.extend(shlex.split(extra_args, posix=False))
 
-    return _unity_result(command, project, log_file, timeout_seconds)
+    return _unity_result(command, project, log_file, upm_log_file, timeout_seconds)
 
 
 def main() -> None:
