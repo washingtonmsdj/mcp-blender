@@ -57,8 +57,14 @@ async def run(project_path: str, timeout_seconds: int) -> int:
                 return 11
 
             print(f"Unity MCP compile: {'OK' if payload.get('ok') else 'FAILED'}")
+            if payload.get("retried_after_upm_startup_failure"):
+                print("UPM recovery: automatic managed-IPC retry was used")
+            if payload.get("first_attempt_returncode") is not None:
+                print(f"First attempt exit code: {payload['first_attempt_returncode']}")
             if payload.get("returncode") is not None:
                 print(f"Exit code: {payload['returncode']}")
+            if payload.get("managed_upm_log_file"):
+                print(f"Managed UPM log: {payload['managed_upm_log_file']}")
             if payload.get("log_file"):
                 print(f"Log: {payload['log_file']}")
 
