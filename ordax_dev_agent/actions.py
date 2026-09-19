@@ -186,6 +186,7 @@ class ActionRegistry(ObservationActions):
             "blender.live_api_lookup": self.blender_live_api_lookup,
             "blender.live_node_schema": self.blender_live_node_schema,
             "blender.live_export": self.blender_live_export,
+            "blender.export_headless": self.blender_export_headless,
             "blender.live_checkpoint_create": self.blender_live_checkpoint_create,
             "blender.live_checkpoint_list": self.blender_live_checkpoint_list,
             "blender.live_checkpoint_restore": self.blender_live_checkpoint_restore,
@@ -2092,6 +2093,129 @@ class ActionRegistry(ObservationActions):
             timeout_seconds=float(payload.get("timeout_seconds", 180)),
         )
 
+
+
+    def blender_export_headless(self, payload: dict[str, Any]) -> ActionResult:
+        blender = find_blender()
+        if blender is None:
+            return ActionResult(False, "Blender executable not found")
+
+        project = self._project(payload)
+        raw_blend = str(payload.get("blend_file") or "").strip()
+        if not raw_blend:
+            return ActionResult(False, "blend_file is required")
+        try:
+            blend_file = project.path(raw_blend)
+        except FileNotFoundError:
+            return ActionResult(False, "blend_file must be an existing .blend file")
+        if blend_file.suffix.lower() != ".blend" or not blend_file.is_file():
+            return ActionResult(False, "blend_file must be an existing .blend file")
+
+        raw_output = str(payload.get("output_path") or "").strip()
+        if not raw_output:
+            return ActionResult(False, "output_path is required")
+        output = project.path(raw_output, must_exist=False)
+        export_format = str(
+            payload.get("format") or output.suffix.lstrip(".")
+        ).strip().lower()
+        expected = {"glb": ".glb", "fbx": ".fbx"}.get(export_format)
+        if expected is None:
+            return ActionResult(False, "format must be glb or fbx")
+        if output.suffix.lower() != expected:
+            return ActionResult(False, f"output_path must end with {expected}")
+
+        object_names = payload.get("object_names")
+        if object_names is not None and (
+            not isinstance(object_names, list)
+            or len(object_names) > 500
+            or not all(isinstance(name, str) and name.strip() for name in object_names)
+        ):
+            return ActionResult(
+                False,
+                "object_names must be a list of at most 500 object names",
+            )
+
+        timeout = int(payload.get("timeout_seconds", 300))
+        if timeout < 10 or timeout > 3600:
+            return ActionResult(False, "timeout_seconds must be between 10 and 3600")
+
+        helper = (
+            Path(__file__).resolve().parent
+            / "assets"
+            / "blender_export_headless.py"
+        )
+        if not helper.is_file():
+            return ActionResult(False, f"headless Blender export helper missing: {helper}")
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            output.unlink(missing_ok=True)
+        except OSError as error:
+            return ActionResult(False, f"could not clear previous export: {error}")
+
+        command = [
+            str(blender),
+            "--background",
+            str(blend_file),
+            "--disable-autoexec",
+            "--python-exit-code",
+            "1",
+            "--python",
+            str(helper),
+            "--",
+            "--output",
+            str(output),
+            "--format",
+            export_format,
+        ]
+        if bool(payload.get("selected_only", True)):
+            command.append("--selected-only")
+        if bool(payload.get("animations", False)):
+            command.append("--animations")
+        if bool(payload.get("apply_modifiers", True)):
+            command.append("--apply-modifiers")
+        if object_names is not None:
+            for name in object_names:
+                command.extend(["--object-name", name.strip()])
+
+        result = _run(
+            command,
+            cwd=project.root,
+            timeout=timeout,
+        )
+        if not result.ok:
+            result.summary = (
+                "Headless Blender export timed out"
+                if result.data.get("timed_out")
+                else "Headless Blender export failed"
+            )
+            return result
+
+        if not output.is_file() or output.stat().st_size <= 0:
+            return ActionResult(
+                False,
+                "Headless Blender export completed without a non-empty artifact",
+                {
+                    **result.data,
+                    "artifact": str(output),
+                },
+            )
+
+        digest = hashlib.sha256(output.read_bytes()).hexdigest()
+        return ActionResult(
+            True,
+            "Headless Blender export completed",
+            {
+                **result.data,
+                "artifact": str(output),
+                "format": export_format,
+                "size_bytes": output.stat().st_size,
+                "sha256": digest,
+                "blend_file": str(blend_file),
+                "selection_only": bool(payload.get("selected_only", True)),
+                "isolated_process": True,
+            },
+        )
 
     def blender_live_checkpoint_create(self, payload: dict[str, Any]) -> ActionResult:
         label = str(payload.get("label") or "checkpoint").strip()
