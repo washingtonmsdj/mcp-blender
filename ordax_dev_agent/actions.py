@@ -201,6 +201,7 @@ class ActionRegistry(ObservationActions):
             "blender.live_stop": self.blender_live_stop,
             "blender.asset_search": self.blender_asset_search,
             "blender.asset_manifest": self.blender_asset_manifest,
+            "blender.multiview_compare": self.blender_multiview_compare,
             "unity.install_companion": self.unity_install_companion,
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
@@ -2781,6 +2782,286 @@ class ActionRegistry(ObservationActions):
         return self._blender_live(payload).request(
             "quit",
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+
+    def blender_multiview_compare(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        artifact_root = (
+            self.config.state_dir / "artifacts" / project.slug
+        ).resolve()
+
+        def resolve_manifest(value: Any, field: str) -> Path:
+            raw = str(value or "").strip()
+            if not raw:
+                raise ValueError(f"{field} is required")
+            candidate = Path(raw).expanduser()
+            path = (
+                candidate
+                if candidate.is_absolute()
+                else artifact_root / candidate
+            ).resolve()
+            if not path.is_relative_to(artifact_root):
+                raise ValueError(f"{field} must be inside the project artifact root")
+            if path.suffix.lower() != ".json" or not path.is_file():
+                raise FileNotFoundError(path)
+            return path
+
+        try:
+            baseline_path = resolve_manifest(
+                payload.get("baseline_manifest_path"),
+                "baseline_manifest_path",
+            )
+            candidate_path = resolve_manifest(
+                payload.get("candidate_manifest_path"),
+                "candidate_manifest_path",
+            )
+        except (ValueError, FileNotFoundError) as error:
+            return ActionResult(False, f"{type(error).__name__}: {error}")
+
+        try:
+            baseline = json.loads(baseline_path.read_text(encoding="utf-8-sig"))
+            candidate = json.loads(candidate_path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as error:
+            return ActionResult(False, f"invalid multiview manifest: {error}")
+
+        def manifest_views(data: Any, label: str) -> dict[str, dict[str, Any]]:
+            if not isinstance(data, dict):
+                raise ValueError(f"{label} manifest must contain an object")
+            raw_views = data.get("views")
+            if not isinstance(raw_views, list) or not raw_views:
+                raise ValueError(f"{label} manifest contains no views")
+            result: dict[str, dict[str, Any]] = {}
+            for index, entry in enumerate(raw_views):
+                if not isinstance(entry, dict):
+                    raise ValueError(f"{label} view {index} must be an object")
+                view = str(entry.get("view") or "").strip()
+                artifact = str(entry.get("artifact") or "").strip()
+                if not view or not artifact:
+                    raise ValueError(
+                        f"{label} view {index} needs view and artifact"
+                    )
+                if view in result:
+                    raise ValueError(f"{label} manifest duplicates view: {view}")
+                result[view] = entry
+            return result
+
+        try:
+            baseline_views = manifest_views(baseline, "baseline")
+            candidate_views = manifest_views(candidate, "candidate")
+        except ValueError as error:
+            return ActionResult(False, str(error))
+
+        baseline_names = set(baseline_views)
+        candidate_names = set(candidate_views)
+        if baseline_names != candidate_names and bool(
+            payload.get("require_same_views", True)
+        ):
+            return ActionResult(
+                False,
+                "multiview manifests do not contain the same view set",
+                {
+                    "baseline_only": sorted(baseline_names - candidate_names),
+                    "candidate_only": sorted(candidate_names - baseline_names),
+                },
+            )
+        common_views = sorted(baseline_names & candidate_names)
+        if not common_views:
+            return ActionResult(False, "multiview manifests have no common views")
+
+        try:
+            max_mae_raw = payload.get("max_mae")
+            max_changed_raw = payload.get("max_changed_ratio")
+            max_mae = float(max_mae_raw) if max_mae_raw is not None else None
+            max_changed = (
+                float(max_changed_raw) if max_changed_raw is not None else None
+            )
+        except (TypeError, ValueError):
+            return ActionResult(
+                False,
+                "max_mae and max_changed_ratio must be numbers",
+            )
+        for field, value in (
+            ("max_mae", max_mae),
+            ("max_changed_ratio", max_changed),
+        ):
+            if value is not None and (value < 0.0 or value > 1.0):
+                return ActionResult(False, f"{field} must be between 0 and 1")
+
+        try:
+            from PIL import Image, ImageChops, ImageStat
+        except ImportError:
+            return ActionResult(False, "Pillow is required for multiview comparison")
+
+        comparison_root = self._capture_output(
+            payload,
+            "multiview-comparison.json",
+        ).parent
+
+        def resolve_artifact(entry: dict[str, Any], label: str, view: str) -> Path:
+            raw = str(entry.get("artifact") or "").strip()
+            path = Path(raw).expanduser().resolve()
+            if not path.is_relative_to(artifact_root):
+                raise ValueError(
+                    f"{label} artifact for {view} escaped project artifact root"
+                )
+            if path.suffix.lower() not in {".png", ".jpg", ".jpeg"} or not path.is_file():
+                raise FileNotFoundError(path)
+            return path
+
+        comparisons = []
+        failed_views = []
+        write_diffs = bool(payload.get("write_diff_images", True))
+        require_same_resolution = bool(payload.get("require_same_resolution", True))
+
+        try:
+            for view in common_views:
+                baseline_image_path = resolve_artifact(
+                    baseline_views[view],
+                    "baseline",
+                    view,
+                )
+                candidate_image_path = resolve_artifact(
+                    candidate_views[view],
+                    "candidate",
+                    view,
+                )
+                with (
+                    Image.open(baseline_image_path) as baseline_image_raw,
+                    Image.open(candidate_image_path) as candidate_image_raw,
+                ):
+                    baseline_image = baseline_image_raw.convert("RGB")
+                    candidate_image = candidate_image_raw.convert("RGB")
+                    if baseline_image.size != candidate_image.size:
+                        if require_same_resolution:
+                            return ActionResult(
+                                False,
+                                f"multiview resolution differs for {view}",
+                                {
+                                    "view": view,
+                                    "baseline_size": list(baseline_image.size),
+                                    "candidate_size": list(candidate_image.size),
+                                },
+                            )
+                        candidate_image = candidate_image.resize(
+                            baseline_image.size,
+                            Image.Resampling.LANCZOS,
+                        )
+
+                    difference = ImageChops.difference(
+                        baseline_image,
+                        candidate_image,
+                    )
+                    stats = ImageStat.Stat(difference)
+                    channel_mean = [float(value) / 255.0 for value in stats.mean]
+                    channel_rms = [float(value) / 255.0 for value in stats.rms]
+                    mae = sum(channel_mean) / len(channel_mean)
+                    rms = sum(channel_rms) / len(channel_rms)
+
+                    gray = difference.convert("L")
+                    histogram = gray.histogram()
+                    total_pixels = baseline_image.size[0] * baseline_image.size[1]
+                    unchanged = int(histogram[0]) if histogram else 0
+                    changed_ratio = (
+                        (total_pixels - unchanged) / total_pixels
+                        if total_pixels
+                        else 0.0
+                    )
+
+                    view_passed = True
+                    if max_mae is not None and mae > max_mae:
+                        view_passed = False
+                    if max_changed is not None and changed_ratio > max_changed:
+                        view_passed = False
+
+                    diff_path = None
+                    if write_diffs:
+                        diff_path = comparison_root / f"{view}-diff.png"
+                        difference.save(diff_path, format="PNG")
+
+                    record = {
+                        "view": view,
+                        "passed": view_passed,
+                        "mae": round(mae, 8),
+                        "rms": round(rms, 8),
+                        "changed_pixel_ratio": round(changed_ratio, 8),
+                        "baseline_artifact": str(baseline_image_path),
+                        "candidate_artifact": str(candidate_image_path),
+                        "diff_artifact": str(diff_path) if diff_path else None,
+                        "resolution": list(baseline_image.size),
+                    }
+                    comparisons.append(record)
+                    if not view_passed:
+                        failed_views.append(view)
+        except (OSError, ValueError, FileNotFoundError) as error:
+            return ActionResult(False, f"{type(error).__name__}: {error}")
+
+        def vector3(data: Any, field: str) -> list[float] | None:
+            raw = data.get("bounds", {}).get(field) if isinstance(data, dict) else None
+            if (
+                isinstance(raw, list)
+                and len(raw) == 3
+                and all(isinstance(value, (int, float)) for value in raw)
+            ):
+                return [float(value) for value in raw]
+            return None
+
+        baseline_dimensions = vector3(baseline, "dimensions")
+        candidate_dimensions = vector3(candidate, "dimensions")
+        baseline_center = vector3(baseline, "center")
+        candidate_center = vector3(candidate, "center")
+        dimension_error = None
+        center_error = None
+        if baseline_dimensions and candidate_dimensions:
+            dimension_error = [
+                round(abs(candidate_dimensions[i] - baseline_dimensions[i]), 8)
+                for i in range(3)
+            ]
+        if baseline_center and candidate_center:
+            center_error = [
+                round(abs(candidate_center[i] - baseline_center[i]), 8)
+                for i in range(3)
+            ]
+
+        thresholds_declared = max_mae is not None or max_changed is not None
+        comparison_passed = not failed_views if thresholds_declared else None
+        report = {
+            "baseline_manifest": str(baseline_path),
+            "candidate_manifest": str(candidate_path),
+            "views": comparisons,
+            "view_count": len(comparisons),
+            "thresholds": {
+                "max_mae": max_mae,
+                "max_changed_ratio": max_changed,
+            },
+            "comparison_passed": comparison_passed,
+            "failed_views": failed_views,
+            "bounds": {
+                "baseline_dimensions": baseline_dimensions,
+                "candidate_dimensions": candidate_dimensions,
+                "absolute_dimension_error": dimension_error,
+                "baseline_center": baseline_center,
+                "candidate_center": candidate_center,
+                "absolute_center_error": center_error,
+            },
+        }
+        report_path = comparison_root / "multiview-comparison.json"
+        report_path.write_text(
+            json.dumps(report, indent=2),
+            encoding="utf-8",
+        )
+        report["report"] = str(report_path)
+
+        if thresholds_declared and failed_views:
+            return ActionResult(
+                False,
+                "Multiview comparison exceeded declared thresholds",
+                report,
+            )
+        return ActionResult(
+            True,
+            "Multiview comparison complete",
+            report,
         )
 
     def blender_asset_search(self, payload: dict[str, Any]) -> ActionResult:
