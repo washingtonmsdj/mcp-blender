@@ -2095,16 +2095,33 @@ def _multiview_target_objects(command: dict):
             )
         missing = []
         objects = []
+        allowed_types = {
+            "MESH",
+            "CURVE",
+            "SURFACE",
+            "META",
+            "FONT",
+            "VOLUME",
+            "GREASEPENCIL",
+        }
+        unsupported = []
         for raw_name in requested:
             name = raw_name.strip()
             obj = bpy.context.scene.objects.get(name)
             if obj is None:
                 missing.append(name)
+            elif obj.type not in allowed_types:
+                unsupported.append(f"{name}:{obj.type}")
             else:
                 objects.append(obj)
         if missing:
             raise ValueError(
                 "multiview objects were not found: " + ", ".join(missing[:20])
+            )
+        if unsupported:
+            raise ValueError(
+                "multiview objects are not renderable geometry: "
+                + ", ".join(unsupported[:20])
             )
         return objects
 
@@ -2120,7 +2137,11 @@ def _multiview_target_objects(command: dict):
     objects = [
         obj
         for obj in bpy.context.scene.objects
-        if obj.type in allowed_types and bool(obj.visible_get())
+        if (
+            obj.type in allowed_types
+            and bool(obj.visible_get())
+            and not bool(getattr(obj, "hide_render", False))
+        )
     ]
     if not objects:
         raise ValueError("no visible renderable objects are available for multiview")
@@ -2261,7 +2282,19 @@ def _multiview_capture(command: dict) -> None:
     engine_used = old_engine
     records = []
     error = None
+    requested_names = command.get("object_names")
+    render_visibility = {
+        obj.name: bool(getattr(obj, "hide_render", False))
+        for obj in bpy.context.scene.objects
+    }
     try:
+        if requested_names is not None:
+            target_names = {obj.name for obj in objects}
+            for scene_object in bpy.context.scene.objects:
+                try:
+                    scene_object.hide_render = scene_object.name not in target_names
+                except Exception:
+                    pass
         camera_data = bpy.data.cameras.new(f"__ORDAX_MULTIVIEW_CAMERA_{command_id[:8]}")
         camera = bpy.data.objects.new(
             f"__ORDAX_MULTIVIEW_CAMERA_{command_id[:8]}",
@@ -2350,6 +2383,13 @@ def _multiview_capture(command: dict) -> None:
             pass
         if hasattr(scene.render, "film_transparent"):
             scene.render.film_transparent = old_film_transparent
+        for object_name, hidden in render_visibility.items():
+            obj = bpy.context.scene.objects.get(object_name)
+            if obj is not None:
+                try:
+                    obj.hide_render = hidden
+                except Exception:
+                    pass
         if camera is not None:
             try:
                 bpy.data.objects.remove(camera, do_unlink=True)
