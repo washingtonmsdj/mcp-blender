@@ -127,6 +127,7 @@ class ActionRegistry(ObservationActions):
             "blender.live_status": self.blender_live_status,
             "blender.live_inspect": self.blender_live_inspect,
             "blender.live_scene_snapshot": self.blender_live_scene_snapshot,
+            "blender.live_scene_reset": self.blender_live_scene_reset,
             "blender.live_object_inspect": self.blender_live_object_inspect,
             "blender.live_contact_audit": self.blender_live_contact_audit,
             "blender.live_object_transform": self.blender_live_object_transform,
@@ -1334,6 +1335,12 @@ class ActionRegistry(ObservationActions):
             timeout_seconds=float(payload.get("timeout_seconds", 45)),
         )
 
+    def blender_live_scene_reset(self, payload: dict[str, Any]) -> ActionResult:
+        return self._blender_live(payload).request(
+            "scene_reset",
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
     def blender_live_object_inspect(self, payload: dict[str, Any]) -> ActionResult:
         object_name = str(payload.get("object_name") or "").strip()
         object_id = str(payload.get("ordax_object_id") or "").strip()
@@ -1533,6 +1540,26 @@ class ActionRegistry(ObservationActions):
 
         checkpoint_data = checkpoint.data.get("checkpoint") or {}
         checkpoint_id = str(checkpoint_data.get("id") or "").strip()
+
+        if bool(payload.get("reset_scene", False)):
+            reset = live.request(
+                "scene_reset",
+                timeout_seconds=min(timeout, 30),
+            )
+            phases["scene_reset"] = {
+                "ok": reset.ok,
+                "summary": reset.summary,
+                "data": reset.data,
+            }
+            if not reset.ok:
+                return ActionResult(
+                    False,
+                    "Blender generation pass could not reset the scene",
+                    {
+                        "checkpoint_id": checkpoint_id,
+                        "phases": phases,
+                    },
+                )
 
         def fail(summary: str, failed: ActionResult | None = None) -> ActionResult:
             if failed is not None:
