@@ -45,6 +45,8 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_capture", result.data["actions"])
             self.assertIn("blender.live_save", result.data["actions"])
             self.assertIn("blender.live_stop", result.data["actions"])
+            self.assertIn("blender.asset_search", result.data["actions"])
+            self.assertIn("blender.asset_manifest", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
