@@ -48,6 +48,7 @@ class ActionRegistry:
             "agent.update": self.agent_update,
             "git.status": self.git_status,
             "git.sync": self.git_sync,
+            "unity.editor_status": self.unity_editor_status,
             "unity.compile": self.unity_compile,
             "unity.validate": self.unity_validate,
             "unity.capture": self.unity_capture,
@@ -225,11 +226,28 @@ class ActionRegistry:
                 return script
         raise FileNotFoundError(candidates[0])
 
+    def unity_editor_status(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project_path(payload)
+        editor = UnityEditorBridge(project)
+        if not editor.presence_is_fresh() and editor.project_appears_open():
+            editor.nudge_companion(
+                wait_seconds=float(payload.get("wait_seconds", 30)),
+            )
+        status = editor.status()
+        ready = bool(status.get("presence_fresh"))
+        return ActionResult(
+            ready,
+            "Unity Editor companion ready" if ready else "Unity Editor companion not ready",
+            status,
+        )
+
     def unity_compile(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
         timeout = int(payload.get("timeout_seconds", 1800))
 
         editor = UnityEditorBridge(project)
+        if not editor.presence_is_fresh() and editor.project_appears_open():
+            editor.nudge_companion(wait_seconds=min(timeout, 45))
         editor_result = editor.request(
             "validate",
             timeout_seconds=min(timeout, 600),
@@ -262,6 +280,8 @@ class ActionRegistry:
             return ActionResult(False, f"execute method not allowed: {method}")
 
         editor = UnityEditorBridge(project)
+        if not editor.presence_is_fresh() and editor.project_appears_open():
+            editor.nudge_companion(wait_seconds=min(timeout, 45))
         editor_result = editor.request(
             "validate",
             timeout_seconds=min(timeout, 600),
@@ -292,6 +312,10 @@ class ActionRegistry:
         output.parent.mkdir(parents=True, exist_ok=True)
 
         editor = UnityEditorBridge(project)
+        if not editor.presence_is_fresh() and editor.project_appears_open():
+            editor.nudge_companion(
+                wait_seconds=min(float(payload.get("timeout_seconds", 900)), 45.0)
+            )
         editor_result = editor.request(
             "capture",
             {
