@@ -178,6 +178,43 @@ Deno.serve(async (req: Request) => {
 
     if (jobError || !job) return json({ error: "job_not_found" }, 404);
 
+    if (op === "renew") {
+      const leaseToken = String(body?.lease_token ?? "");
+      if (
+        !leaseToken ||
+        leaseToken !== String(job.lease_token ?? "") ||
+        job.status !== "running"
+      ) {
+        return json({ error: "lease_mismatch" }, 409);
+      }
+
+      const now = new Date().toISOString();
+      const leasedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+      const { error: leaseError } = await db
+        .from("ordax_dev_jobs")
+        .update({ leased_until: leasedUntil })
+        .eq("id", jobId)
+        .eq("agent_name", agent.agent_name)
+        .eq("lease_token", leaseToken)
+        .eq("status", "running");
+
+      if (leaseError) {
+        return json({ error: "lease_renew_failed", detail: leaseError.message }, 500);
+      }
+
+      await db
+        .from("ordax_dev_agents")
+        .update({
+          status: "busy",
+          last_seen_at: now,
+          last_job_id: jobId,
+        })
+        .eq("id", agent.id);
+
+      return json({ ok: true, leased_until: leasedUntil, server_time: now });
+    }
+
     if (op === "event") {
       const { error } = await db.from("ordax_dev_job_events").insert({
         job_id: jobId,
