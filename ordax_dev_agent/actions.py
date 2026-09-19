@@ -17,6 +17,7 @@ from mcp_blender_unity.config import find_blender
 from .config import AgentConfig
 from .models import ActionResult
 from .unity_editor_bridge import UnityEditorBridge
+from .blender_live_bridge import BlenderLiveBridge
 from .projects import load_projects, Project
 from .observations import ObservationActions
 from .execution_lock import ExecutionLock
@@ -61,6 +62,12 @@ class ActionRegistry(ObservationActions):
             "observation.capture": self.observation_capture,
             "blender.inspect": self.blender_inspect,
             "blender.render_preview": self.blender_render_preview,
+            "blender.live_start": self.blender_live_start,
+            "blender.live_status": self.blender_live_status,
+            "blender.live_run_script": self.blender_live_run_script,
+            "blender.live_capture": self.blender_live_capture,
+            "blender.live_save": self.blender_live_save,
+            "blender.live_stop": self.blender_live_stop,
             "unity.install_companion": self.unity_install_companion,
             "agent.status": self.agent_status,
             "agent.update": self.agent_update,
@@ -861,6 +868,109 @@ class ActionRegistry(ObservationActions):
                 method,
             ],
             timeout=int(payload.get("timeout_seconds", 1800)),
+        )
+
+    def _blender_live(self, payload: dict[str, Any]) -> BlenderLiveBridge:
+        return BlenderLiveBridge(self.config, self._project(payload))
+
+    def blender_live_start(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        live = BlenderLiveBridge(self.config, project)
+        raw_blend = payload.get("blend_file") or project.blender.get("blend_file")
+        blend_file = str(raw_blend) if raw_blend else None
+        return live.start(
+            blend_file=blend_file,
+            wait_seconds=float(payload.get("wait_seconds", 30)),
+        )
+
+    def blender_live_status(self, payload: dict[str, Any]) -> ActionResult:
+        live = self._blender_live(payload)
+        data = live.status()
+        ready = bool(data.get("presence_fresh"))
+        return ActionResult(
+            ready,
+            "Visible Blender live session ready"
+            if ready
+            else "Visible Blender live session is not running",
+            data,
+        )
+
+    def blender_live_run_script(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        raw_script = payload.get("script_path")
+        if not raw_script:
+            return ActionResult(False, "script_path is required")
+
+        script = project.path(str(raw_script))
+        allowed_root = project.path(
+            project.blender.get("scripts_dir", "automation/blender"),
+            must_exist=False,
+        ).resolve()
+        try:
+            script.relative_to(allowed_root)
+        except ValueError:
+            return ActionResult(
+                False,
+                f"Blender live script must be inside {allowed_root}",
+            )
+        if script.suffix.lower() != ".py":
+            return ActionResult(False, "Blender live script must be a .py file")
+
+        return BlenderLiveBridge(self.config, project).request(
+            "run_script",
+            {"script_path": str(script)},
+            timeout_seconds=float(payload.get("timeout_seconds", 300)),
+        )
+
+    def blender_live_capture(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        live = BlenderLiveBridge(self.config, project)
+        output = self._capture_output(payload, "blender-live.png")
+        result = live.request(
+            "capture_viewport",
+            {"output_path": str(output)},
+            timeout_seconds=float(payload.get("timeout_seconds", 120)),
+        )
+        if not result.ok:
+            return result
+
+        if output.is_file():
+            result.data["artifact"] = str(output)
+            result.data["sha256"] = hashlib.sha256(output.read_bytes()).hexdigest()
+
+            snapshot_path = output.with_suffix(".json")
+            snapshot = result.data.get("snapshot")
+            if isinstance(snapshot, dict):
+                snapshot_path.write_text(
+                    json.dumps(snapshot, indent=2),
+                    encoding="utf-8",
+                )
+                result.data["snapshot_path"] = str(snapshot_path)
+
+            self._record_capture(payload, output)
+
+        return result
+
+    def blender_live_save(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        raw_target = payload.get("target_path")
+        data: dict[str, Any] = {}
+        if raw_target:
+            target = project.path(str(raw_target), must_exist=False)
+            if target.suffix.lower() != ".blend":
+                return ActionResult(False, "target_path must be a .blend file")
+            data["target_path"] = str(target)
+
+        return BlenderLiveBridge(self.config, project).request(
+            "save",
+            data,
+            timeout_seconds=float(payload.get("timeout_seconds", 120)),
+        )
+
+    def blender_live_stop(self, payload: dict[str, Any]) -> ActionResult:
+        return self._blender_live(payload).request(
+            "quit",
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
 
     def blender_version(self, payload: dict[str, Any]) -> ActionResult:
