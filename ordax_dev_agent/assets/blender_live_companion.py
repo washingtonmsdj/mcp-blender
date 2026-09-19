@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import runpy
 import sys
 import time
@@ -36,6 +37,8 @@ CONTROL_ROOT = Path(CFG.ordax_control_root).resolve()
 PROJECT_ROOT = Path(CFG.ordax_project_root).resolve()
 SCRIPTS_ROOT = Path(CFG.ordax_scripts_root).resolve()
 ARTIFACTS_ROOT = Path(CFG.ordax_artifacts_root).resolve()
+CHECKPOINTS = ARTIFACTS_ROOT / "checkpoints"
+TRAJECTORY = CONTROL_ROOT / "trajectory.jsonl"
 INBOX = CONTROL_ROOT / "inbox"
 RESPONSES = CONTROL_ROOT / "responses"
 RESULTS = CONTROL_ROOT / "results"
@@ -49,6 +52,10 @@ CAPABILITIES = [
     "scene_snapshot",
     "object_inspect",
     "contact_audit",
+    "object_transform",
+    "checkpoint_create",
+    "checkpoint_restore",
+    "checkpoint_list",
     "run_script",
     "capture_viewport",
     "save",
@@ -56,7 +63,7 @@ CAPABILITIES = [
 ]
 _LAST_PRESENCE_AT = 0.0
 
-for path in (CONTROL_ROOT, INBOX, RESPONSES, RESULTS, INFLIGHT, ARTIFACTS_ROOT):
+for path in (CONTROL_ROOT, INBOX, RESPONSES, RESULTS, INFLIGHT, ARTIFACTS_ROOT, CHECKPOINTS):
     path.mkdir(parents=True, exist_ok=True)
 
 
@@ -318,14 +325,10 @@ def _scene_snapshot_rich(command: dict) -> None:
 
 def _object_inspect(command: dict) -> None:
     command_id = command["id"]
-    name = str(command.get("object_name") or "").strip()
-    if not name:
-        _response(command_id, False, "object_name is required")
-        return
-
-    obj = bpy.context.scene.objects.get(name)
-    if obj is None:
-        _response(command_id, False, f"Object not found in current scene: {name}")
+    try:
+        obj = _resolve_object(command)
+    except ValueError as error:
+        _response(command_id, False, str(error))
         return
 
     _response(
@@ -433,6 +436,204 @@ def _contact_audit(command: dict) -> None:
         intersection_pairs=intersection_pairs,
         results=results,
     )
+
+
+def _resolve_object(command: dict):
+    name = str(command.get("object_name") or "").strip()
+    object_id = str(command.get("ordax_object_id") or "").strip()
+
+    if bool(name) == bool(object_id):
+        raise ValueError("provide exactly one of object_name or ordax_object_id")
+
+    if name:
+        obj = bpy.context.scene.objects.get(name)
+        if obj is None:
+            raise ValueError(f"object not found in current scene: {name}")
+        return obj
+
+    matches = [
+        obj
+        for obj in bpy.context.scene.objects
+        if str(obj.get("ordax_object_id") or "") == object_id
+    ]
+    if not matches:
+        raise ValueError(f"ordax_object_id not found: {object_id}")
+    if len(matches) > 1:
+        raise ValueError(f"ordax_object_id is not unique: {object_id}")
+    return matches[0]
+
+
+def _coerce_vector(command: dict, key: str, *, allow_none: bool = True):
+    value = command.get(key)
+    if value is None and allow_none:
+        return None
+    if (
+        not isinstance(value, list)
+        or len(value) != 3
+        or not all(isinstance(item, (int, float)) for item in value)
+    ):
+        raise ValueError(f"{key} must be a list of three numbers")
+    return [float(item) for item in value]
+
+
+def _object_transform(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        obj = _resolve_object(command)
+        location = _coerce_vector(command, "location")
+        rotation = _coerce_vector(command, "rotation_euler")
+        scale = _coerce_vector(command, "scale")
+        dimensions = _coerce_vector(command, "dimensions")
+    except ValueError as error:
+        _response(command_id, False, str(error))
+        return
+
+    if all(value is None for value in (location, rotation, scale, dimensions)):
+        _response(command_id, False, "at least one transform field is required")
+        return
+
+    if scale is not None and any(abs(value) < 1e-8 for value in scale):
+        _response(command_id, False, "scale components must be non-zero")
+        return
+    if dimensions is not None and any(value <= 0 for value in dimensions):
+        _response(command_id, False, "dimensions components must be positive")
+        return
+
+    before = _object_details(obj)
+    try:
+        if location is not None:
+            obj.location = location
+        if rotation is not None:
+            obj.rotation_mode = "XYZ"
+            obj.rotation_euler = rotation
+        if scale is not None:
+            obj.scale = scale
+        if dimensions is not None:
+            obj.dimensions = dimensions
+        bpy.context.view_layer.update()
+    except Exception as error:
+        _response(command_id, False, f"{type(error).__name__}: {error}", before=before)
+        return
+
+    _response(
+        command_id,
+        True,
+        "Blender object transform updated",
+        before=before,
+        object=_object_details(obj),
+    )
+
+
+def _checkpoint_name(label: str, command_id: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", label.strip()).strip("-._")
+    if not cleaned:
+        cleaned = "checkpoint"
+    return f"{int(time.time())}-{cleaned[:80]}-{command_id[:8]}.blend"
+
+
+def _checkpoint_create(command: dict) -> None:
+    command_id = command["id"]
+    label = str(command.get("label") or "checkpoint")
+    target = (CHECKPOINTS / _checkpoint_name(label, command_id)).resolve()
+    if not _inside(target, CHECKPOINTS):
+        _response(command_id, False, "checkpoint path escaped managed directory")
+        return
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        bpy.ops.wm.save_as_mainfile(filepath=str(target), copy=True)
+        metadata = {
+            "id": target.stem,
+            "label": label,
+            "file": str(target),
+            "created_at": time.time(),
+            "source_file": bpy.data.filepath or "",
+            "snapshot": _scene_snapshot(),
+        }
+        _write_json_atomic(target.with_suffix(".json"), metadata)
+        _response(
+            command_id,
+            True,
+            "Blender checkpoint created",
+            checkpoint=metadata,
+        )
+    except Exception as error:
+        _response(command_id, False, f"{type(error).__name__}: {error}")
+
+
+def _checkpoint_list(command: dict) -> None:
+    command_id = command["id"]
+    entries = []
+    for path in sorted(CHECKPOINTS.glob("*.blend"), key=lambda item: item.stat().st_mtime, reverse=True)[:100]:
+        meta_path = path.with_suffix(".json")
+        metadata = {}
+        if meta_path.is_file():
+            try:
+                metadata = json.loads(meta_path.read_text(encoding="utf-8-sig"))
+            except Exception:
+                metadata = {}
+        entries.append(
+            {
+                "id": path.stem,
+                "file": str(path),
+                "size_bytes": path.stat().st_size,
+                "modified_at": path.stat().st_mtime,
+                **metadata,
+            }
+        )
+
+    _response(
+        command_id,
+        True,
+        "Blender checkpoints listed",
+        checkpoints=entries,
+    )
+
+
+def _checkpoint_restore(command: dict) -> None:
+    command_id = command["id"]
+    checkpoint_id = str(command.get("checkpoint_id") or "").strip()
+    if not checkpoint_id or not re.fullmatch(r"[A-Za-z0-9._-]+", checkpoint_id):
+        _response(command_id, False, "checkpoint_id is required and contains unsupported characters")
+        return
+
+    target = (CHECKPOINTS / f"{checkpoint_id}.blend").resolve()
+    if not _inside(target, CHECKPOINTS) or not target.is_file():
+        _response(command_id, False, "checkpoint does not exist in the managed checkpoint directory")
+        return
+
+    if bool(getattr(bpy.data, "is_dirty", False)) and not bool(command.get("discard_unsaved", False)):
+        _response(
+            command_id,
+            False,
+            "current Blender file has unsaved changes; set discard_unsaved=true to restore explicitly",
+        )
+        return
+
+    _response(
+        command_id,
+        True,
+        "Blender checkpoint restore scheduled",
+        checkpoint_id=checkpoint_id,
+        file=str(target),
+    )
+
+    def _restore_later():
+        try:
+            bpy.ops.wm.open_mainfile(filepath=str(target), load_ui=False)
+        except Exception:
+            pass
+        return None
+
+    bpy.app.timers.register(_restore_later, first_interval=0.20, persistent=True)
+
+
+def _trajectory_append(event: dict) -> None:
+    try:
+        with TRAJECTORY.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
+    except OSError:
+        pass
 
 
 def _inspect(command: dict) -> None:
@@ -594,6 +795,8 @@ def _process(path: Path) -> None:
     if not command_id:
         return
 
+    before_snapshot = _scene_snapshot()
+    started_at = time.time()
     inflight_path = INFLIGHT / (command_id + ".json")
     _write_json_atomic(
         inflight_path,
@@ -616,6 +819,14 @@ def _process(path: Path) -> None:
             _object_inspect(command)
         elif operation == "contact_audit":
             _contact_audit(command)
+        elif operation == "object_transform":
+            _object_transform(command)
+        elif operation == "checkpoint_create":
+            _checkpoint_create(command)
+        elif operation == "checkpoint_restore":
+            _checkpoint_restore(command)
+        elif operation == "checkpoint_list":
+            _checkpoint_list(command)
         elif operation == "run_script":
             _run_script(command)
         elif operation == "capture_viewport":
@@ -633,6 +844,25 @@ def _process(path: Path) -> None:
         else:
             _response(command_id, False, f"Unsupported Blender live operation: {operation}")
     finally:
+        result_path = RESULTS / f"{command_id}.json"
+        result = {}
+        if result_path.is_file():
+            try:
+                result = json.loads(result_path.read_text(encoding="utf-8-sig"))
+            except Exception:
+                result = {}
+        _trajectory_append(
+            {
+                "id": command_id,
+                "operation": operation,
+                "started_at": started_at,
+                "completed_at": time.time(),
+                "ok": bool(result.get("ok")),
+                "summary": result.get("summary"),
+                "before": before_snapshot,
+                "after": result.get("snapshot") or _scene_snapshot(),
+            }
+        )
         try:
             inflight_path.unlink()
         except OSError:
