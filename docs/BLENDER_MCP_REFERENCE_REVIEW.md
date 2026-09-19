@@ -102,6 +102,24 @@ The operation prefers Blender Workbench when the running version exposes it,
 falling back to the scene render engine otherwise. Multiview may be a required
 `generation_pass` phase, so missing visual evidence can reject and rollback a
 pass instead of being silently accepted.
+### Multiview baseline comparison
+
+- `blender.multiview_compare`
+- `blender.live_generation_pass` multiview options with `baseline_manifest_path`
+
+Comparison is intentionally limited to two OrdaX-generated multiview manifests
+inside the same project's managed artifact root. It is not treated as a generic
+perceptual score for unrelated reference images. Matching views are compared
+at the same resolution by default using normalized RGB mean absolute error, RMS
+error and the fraction of pixels with any changed RGB channel. Optional diff
+images and world-bounds center/dimension deltas are emitted as evidence.
+
+Thresholds are opt-in. Without `max_mae` or `max_changed_ratio`, comparison is
+informational and cannot reject a pass. When thresholds are declared, each view
+is evaluated independently and the overall comparison fails if any required
+view exceeds a limit. A generation pass can then reject and rollback against an
+approved baseline manifest. This preserves human/model agency over what
+constitutes an acceptable tolerance instead of hard-coding a universal score.
 
 ### Companion capabilities
 
@@ -175,11 +193,12 @@ asset/component iteration:
 6. run declared BVH contact checks;
 7. run declared deterministic quality checks;
 8. capture deterministic multiview evidence when requested;
-9. capture the visible viewport when requested;
-10. save the accepted .blend when requested.
+9. compare it to an approved OrdaX baseline when requested;
+10. capture the visible viewport when requested;
+11. save the accepted .blend when requested.
 
 If the generation script, snapshot, contact audit, deterministic quality gate,
-required multiview/capture, or final save fails, the pass is rejected. With \`rollback_on_failure=true\` the managed
+required multiview/comparison/capture, or final save fails, the pass is rejected. With \`rollback_on_failure=true\` the managed
 checkpoint is restored explicitly.
 
 This keeps iteration fast without making failed geometry part of the accepted
