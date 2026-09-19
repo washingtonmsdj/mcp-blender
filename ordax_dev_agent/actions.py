@@ -593,6 +593,7 @@ class ActionRegistry:
                 "width": int(payload.get("width", 1280)),
                 "height": int(payload.get("height", 720)),
                 "warmupFrames": int(payload.get("warmup_frames", 120)),
+                "warmupSeconds": float(payload.get("warmup_seconds", 0.0)),
                 "timeScale": float(payload.get("time_scale", 1.0)),
             },
             timeout_seconds=float(payload.get("timeout_seconds", 900)),
