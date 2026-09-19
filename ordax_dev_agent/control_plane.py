@@ -64,22 +64,22 @@ class ControlPlane:
             "capabilities": actions,
         }
         query_name = urllib.parse.quote(self.config.agent_name)
-        rows = self._request("GET", f"/dev_agents?agent_name=eq.{query_name}&select=id")
+        rows = self._request("GET", f"/ordax_dev_agents?agent_name=eq.{query_name}&select=id")
         if rows:
             self._request(
                 "PATCH",
-                f"/dev_agents?agent_name=eq.{query_name}",
+                f"/ordax_dev_agents?agent_name=eq.{query_name}",
                 payload,
             )
         else:
-            self._request("POST", "/dev_agents", payload)
+            self._request("POST", "/ordax_dev_agents", payload)
 
     def claim_next_job(self) -> AgentJob | None:
         agent = urllib.parse.quote(self.config.agent_name)
         rows = self._request(
             "GET",
             (
-                "/dev_jobs?"
+                "/ordax_dev_jobs?"
                 f"agent_name=eq.{agent}&status=eq.queued"
                 "&select=id,action,payload,project_slug"
                 "&order=created_at.asc&limit=1"
@@ -96,7 +96,7 @@ class ControlPlane:
         )
         claimed = self._request(
             "PATCH",
-            f"/dev_jobs?id=eq.{urllib.parse.quote(job.id)}&status=eq.queued",
+            f"/ordax_dev_jobs?id=eq.{urllib.parse.quote(job.id)}&status=eq.queued",
             {
                 "status": "running",
                 "started_at": datetime.now(timezone.utc).isoformat(),
@@ -110,7 +110,7 @@ class ControlPlane:
     def complete(self, job: AgentJob, result: ActionResult) -> None:
         self._request(
             "PATCH",
-            f"/dev_jobs?id=eq.{urllib.parse.quote(job.id)}",
+            f"/ordax_dev_jobs?id=eq.{urllib.parse.quote(job.id)}",
             {
                 "status": "succeeded" if result.ok else "failed",
                 "finished_at": datetime.now(timezone.utc).isoformat(),
@@ -125,7 +125,7 @@ class ControlPlane:
     def append_event(self, job_id: str, level: str, message: str, data: dict | None = None) -> None:
         self._request(
             "POST",
-            "/dev_job_events",
+            "/ordax_dev_job_events",
             {
                 "job_id": job_id,
                 "level": level,
