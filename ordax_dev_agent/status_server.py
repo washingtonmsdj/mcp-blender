@@ -103,6 +103,18 @@ footer { margin-top:22px; color:#658196; font-size:12px; }
   </article>
 
   <article class="card">
+    <div class="label">Unity ao vivo</div>
+    <div id="unity-live" class="value">—</div>
+    <div id="unity-live-meta" class="meta">—</div>
+  </article>
+
+  <article class="card">
+    <div class="label">Blender ao vivo</div>
+    <div id="blender-live" class="value">—</div>
+    <div id="blender-live-meta" class="meta">—</div>
+  </article>
+
+  <article class="card">
     <div class="label">Projetos locais</div>
     <div id="projects" class="meta">—</div>
     <div id="progress" class="meta"></div>
@@ -143,6 +155,32 @@ async function refresh() {
       r.last_job_id ? r.last_job_id : 'Sem job nesta sessão';
     document.getElementById('result').textContent =
       r.last_result ? JSON.stringify(r.last_result, null, 2) : 'Nenhum job executado nesta sessão.';
+    const live = s.live_apps || {};
+    const defaultProject = s.default_project || Object.keys(live)[0];
+    const appLive = defaultProject ? (live[defaultProject] || {}) : {};
+
+    const unity = appLive.unity || {};
+    const unityPresence = unity.presence || {};
+    document.getElementById('unity-live').textContent =
+      unity.presence_fresh ? 'Aberto' : 'Fechado / aguardando';
+    document.getElementById('unity-live-meta').textContent =
+      unity.presence_fresh
+        ? ((unityPresence.playing ? 'Play Mode' : 'Editor') +
+           (unityPresence.compiling ? ' · compilando' : ' · pronto') +
+           (unityPresence.unityVersion ? ' · ' + unityPresence.unityVersion : ''))
+        : (unity.error || 'Companion sem heartbeat');
+
+    const blender = appLive.blender || {};
+    const blenderPresence = blender.presence || {};
+    document.getElementById('blender-live').textContent =
+      blender.presence_fresh ? 'Aberto' : 'Fechado / aguardando';
+    document.getElementById('blender-live-meta').textContent =
+      blender.presence_fresh
+        ? ((blenderPresence.scene || 'Scene') +
+           ' · ' + (blenderPresence.objects ?? 0) + ' objetos' +
+           (blenderPresence.is_dirty ? ' · alterações não salvas' : ' · sincronizado'))
+        : (blender.error || 'Companion sem heartbeat');
+
     const projects = s.projects || [];
     document.getElementById('projects').replaceChildren(...projects.map(project => {
       const row = document.createElement('div');
