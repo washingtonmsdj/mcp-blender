@@ -193,27 +193,39 @@ The companion now writes a per-command file under `blender-live/<project>/inflig
 
 ## Windows resilience model
 
-The local Windows machine must not depend on one foreground process.
+The OrdaX Agent must remain available without depending on the GitHub runner.
 
-### Recovery channel A — GitHub runner service
+### Primary uptime — OrdaX interactive scheduled task
 
-The already-configured GitHub Actions runner is installed as a Windows Service with automatic startup and Service Control Manager restart-on-failure. It remains available without an interactive sign-in and is the out-of-band recovery path for the OrdaX Agent.
+The OrdaX Agent runs through the Windows Scheduled Task named `OrdaX Dev Agent` under the interactive Windows user.
 
-### Recovery channel B — OrdaX interactive scheduled task
+- Task Scheduler restarts the launcher after process failure.
+- The launcher retries non-zero exits with bounded exponential backoff.
+- Before every start it performs a safe fast-forward check.
+- Updated Python is compiled before launch.
+- If a newly fast-forwarded update fails the compile gate, the managed checkout is restored to the previous known-compilable commit.
 
-The OrdaX Agent runs through the Windows Scheduled Task named `OrdaX Dev Agent` under the interactive Windows user. Task Scheduler restarts the launcher after failure, while the launcher itself performs safe fast-forward updates and retries non-zero exits.
+The Agent intentionally runs in the interactive session because visible Blender and Unity workflows must not be launched in Windows Session 0.
 
-The Agent intentionally remains in the interactive session because visible Blender and Unity workflows must not be launched in Windows Session 0.
+### Optional secondary channel — GitHub runner service
 
-### Why two channels
+If the GitHub self-hosted runner is configured officially as a Windows Service, it can provide an independent CI/recovery channel. OrdaX only hardens an already-supported service configuration; it does not bypass GitHub's Windows runner registration flow.
 
-If the Agent crashes, the GitHub runner can fast-forward its checkout and request the scheduled task to start. If the runner process crashes, Windows Service Control Manager restarts it independently of the Agent.
+A runner configured interactively is not a requirement for Agent uptime.
 
-The cloud must not launch Blender/Unity desktop automation directly from the runner Windows Service.
+### Local recovery entrypoint
+
+The managed checkout includes:
+
+```powershell
+.\scripts\windows\ordax-emergency-recover.ps1
+```
+
+It refuses tracked local changes, performs only fast-forward Git updates, compiles the candidate code, rolls back a compile-invalid update, installs/starts the scheduled task and waits for the local health endpoint.
 
 ### Installation
 
-One-time resilient bootstrap:
+Normal one-time Agent bootstrap:
 
 ```powershell
 .\scripts\windows\ordax-resilience-install.ps1
