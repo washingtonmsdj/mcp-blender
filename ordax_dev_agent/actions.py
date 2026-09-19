@@ -2234,6 +2234,19 @@ class ActionRegistry(ObservationActions):
                 "protected_objects cannot be used with reset_scene=true",
             )
 
+
+        raw_multiview = payload.get("multiview", False)
+        if raw_multiview not in (None, False, True) and not isinstance(raw_multiview, dict):
+            return ActionResult(
+                False,
+                "multiview must be false, true, or an options object",
+            )
+        multiview_options: dict[str, Any] | None = None
+        if raw_multiview is True:
+            multiview_options = {}
+        elif isinstance(raw_multiview, dict):
+            multiview_options = dict(raw_multiview)
+
         save_target = None
         raw_save_target = payload.get("save_target_path")
         if raw_save_target:
@@ -2498,6 +2511,27 @@ class ActionRegistry(ObservationActions):
                 return fail(
                     "Blender deterministic quality gate failed; pass rejected",
                     quality,
+                )
+
+
+        if multiview_options is not None:
+            multiview_payload = {
+                **multiview_options,
+                "project": project.slug,
+                "timeout_seconds": min(timeout, 240),
+            }
+            multiview = self.blender_live_multiview_capture(multiview_payload)
+            phases["multiview"] = {
+                "ok": multiview.ok,
+                "summary": multiview.summary,
+                "data": multiview.data,
+            }
+            if not multiview.ok and bool(
+                multiview_options.get("required", True)
+            ):
+                return fail(
+                    "Blender deterministic multiview capture failed; pass rejected",
+                    multiview,
                 )
 
         artifact = None
