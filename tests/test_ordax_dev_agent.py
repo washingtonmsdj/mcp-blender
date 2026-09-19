@@ -41,6 +41,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_object_inspect", result.data["actions"])
             self.assertIn("blender.live_contact_audit", result.data["actions"])
             self.assertIn("blender.live_object_transform", result.data["actions"])
+            self.assertIn("blender.live_object_metadata", result.data["actions"])
             self.assertIn("blender.live_checkpoint_create", result.data["actions"])
             self.assertIn("blender.live_checkpoint_list", result.data["actions"])
             self.assertIn("blender.live_checkpoint_restore", result.data["actions"])
