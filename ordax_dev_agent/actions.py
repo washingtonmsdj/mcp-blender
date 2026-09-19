@@ -838,6 +838,35 @@ class ActionRegistry(ObservationActions):
                     {"status": tracked_status, "branch": current_branch},
                 )
 
+            changed_paths_result = _run(
+                [
+                    "git",
+                    "-C",
+                    str(project),
+                    "diff",
+                    "--name-only",
+                    "HEAD",
+                    "--",
+                ],
+                timeout=60,
+            )
+            if not changed_paths_result.ok:
+                return changed_paths_result
+            changed_paths = [
+                line.strip()
+                for line in changed_paths_result.data.get("stdout", "").splitlines()
+                if line.strip()
+            ]
+            if not changed_paths:
+                return ActionResult(
+                    False,
+                    "tracked status was dirty but no modified tracked paths could be resolved",
+                    {"status": tracked_status},
+                )
+
+            # Compare only paths modified locally. Remote changes on other paths
+            # must not make a safe reconciliation look divergent merely because
+            # the local branch is behind the authorized remote branch.
             matches_remote = subprocess.run(
                 [
                     "git",
@@ -847,6 +876,7 @@ class ActionRegistry(ObservationActions):
                     "--quiet",
                     f"origin/{branch}",
                     "--",
+                    *changed_paths,
                 ],
                 capture_output=True,
                 text=True,
@@ -861,6 +891,7 @@ class ActionRegistry(ObservationActions):
                         "returncode": matches_remote.returncode,
                         "stdout": matches_remote.stdout[-4000:],
                         "stderr": matches_remote.stderr[-4000:],
+                        "changed_paths": changed_paths,
                     },
                 )
 
@@ -897,6 +928,7 @@ class ActionRegistry(ObservationActions):
                         "status": tracked_status,
                         "local_ahead": local_ahead,
                         "matches_remote_target": matches_remote.returncode == 0,
+                        "changed_paths": changed_paths,
                     },
                 )
 
