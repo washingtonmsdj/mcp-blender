@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import runpy
@@ -31,6 +32,8 @@ def _args():
     parser.add_argument("--ordax-project-slug", required=True)
     return parser.parse_args(argv)
 
+
+COMPANION_FINGERPRINT = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 CFG = _args()
 CONTROL_ROOT = Path(CFG.ordax_control_root).resolve()
@@ -114,6 +117,7 @@ def _write_presence(force: bool = False) -> None:
             "ok": True,
             "summary": "OrdaX visible Blender companion ready",
             "protocol_version": PROTOCOL_VERSION,
+            "companion_fingerprint": COMPANION_FINGERPRINT,
             "capabilities": CAPABILITIES,
             **_scene_snapshot(),
         },
