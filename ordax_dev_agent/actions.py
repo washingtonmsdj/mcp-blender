@@ -1134,6 +1134,7 @@ class ActionRegistry(ObservationActions):
         editor = self._editor(payload)
 
         force = bool(payload.get("force", False))
+        wait_seconds = max(5.0, float(payload.get("wait_seconds", 45)))
         if editor.presence_is_fresh() and not force:
             return ActionResult(
                 True,
@@ -1148,6 +1149,64 @@ class ActionRegistry(ObservationActions):
                 editor.status(),
             )
 
+        # Prefer the typed Editor companion. This does not focus the Unity
+        # window, send keyboard shortcuts, or start a second Editor process.
+        if not editor.presence_is_fresh(max_age_seconds=12.0):
+            editor.nudge_companion(wait_seconds=min(wait_seconds, 15.0))
+
+        if editor.presence_is_fresh(max_age_seconds=12.0):
+            try:
+                presence_before = editor.presence.stat().st_mtime
+            except OSError:
+                presence_before = 0.0
+
+            refresh = editor.request(
+                "refresh",
+                {},
+                timeout_seconds=min(max(wait_seconds, 15.0), 120.0),
+            )
+            if refresh is not None:
+                if not refresh.ok:
+                    return refresh
+
+                deadline = time.monotonic() + wait_seconds
+                status = editor.status()
+                while time.monotonic() < deadline:
+                    status = editor.status()
+                    presence = status.get("presence") or {}
+                    try:
+                        presence_advanced = (
+                            editor.presence.stat().st_mtime > presence_before
+                        )
+                    except OSError:
+                        presence_advanced = False
+
+                    ready = (
+                        presence_advanced
+                        and editor.presence_is_fresh(max_age_seconds=12.0)
+                        and not bool(presence.get("compiling"))
+                    )
+                    if ready:
+                        status["refresh_transport"] = "unity-editor-companion"
+                        status["refresh_ack"] = refresh.data
+                        return ActionResult(
+                            True,
+                            "Unity Editor refreshed through typed companion and scripts settled",
+                            status,
+                        )
+                    time.sleep(0.25)
+
+                status["refresh_transport"] = "unity-editor-companion"
+                status["refresh_ack"] = refresh.data
+                return ActionResult(
+                    False,
+                    "Unity Editor accepted the typed refresh, but scripts did not settle in time",
+                    status,
+                )
+
+        # Recovery fallback for projects whose companion has not loaded yet.
+        # This path may focus the Editor and send Ctrl+R; it is intentionally
+        # not used when the typed companion is reachable.
         script = self._bridge_script("unity-editor-refresh.ps1")
         refresh = _run(
             [
@@ -1160,36 +1219,37 @@ class ActionRegistry(ObservationActions):
                 "-ProjectPath",
                 str(project),
             ],
-            timeout=60,
+            timeout=min(max(int(wait_seconds), 15), 60),
         )
         if not refresh.ok:
             return refresh
 
-        wait_seconds = float(payload.get("wait_seconds", 45))
-        deadline = time.monotonic() + max(2.0, wait_seconds)
+        deadline = time.monotonic() + wait_seconds
         editor.nudge_companion(wait_seconds=min(wait_seconds, 15.0))
-
-        ready = False
         status = editor.status()
         while time.monotonic() < deadline:
             status = editor.status()
             presence = status.get("presence") or {}
-            ready = (
+            if (
                 editor.presence_is_fresh(max_age_seconds=12.0)
                 and not bool(presence.get("compiling"))
-            )
-            if ready:
-                break
+            ):
+                status["refresh_transport"] = "foreground-shortcut-fallback"
+                status["refresh_stdout"] = refresh.data.get("stdout", "")
+                status["refresh_stderr"] = refresh.data.get("stderr", "")
+                return ActionResult(
+                    True,
+                    "Unity Editor refreshed through recovery fallback and scripts settled",
+                    status,
+                )
             time.sleep(0.5)
 
+        status["refresh_transport"] = "foreground-shortcut-fallback"
         status["refresh_stdout"] = refresh.data.get("stdout", "")
         status["refresh_stderr"] = refresh.data.get("stderr", "")
-
         return ActionResult(
-            ready,
-            "Unity Editor refreshed, scripts settled, and companion ready"
-            if ready
-            else "Unity Editor refresh sent, but scripts did not settle in time",
+            False,
+            "Unity Editor refresh fallback was sent, but scripts did not settle in time",
             status,
         )
 
