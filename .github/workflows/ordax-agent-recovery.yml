@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: ordax-agent-recovery
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   recover-if-offline:
