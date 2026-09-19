@@ -2761,6 +2761,10 @@ class ActionRegistry(ObservationActions):
                 "object_names must be a non-empty list of at most 200 object names",
             )
 
+        mode = str(payload.get("mode") or "material").strip().lower()
+        if mode not in {"material", "silhouette"}:
+            return ActionResult(False, "multiview mode must be material or silhouette")
+
         try:
             width = int(payload.get("width", 768))
             height = int(payload.get("height", 768))
@@ -2784,6 +2788,7 @@ class ActionRegistry(ObservationActions):
             "width": width,
             "height": height,
             "margin": margin,
+            "mode": mode,
         }
         if object_names is not None:
             request["object_names"] = [name.strip() for name in object_names]
@@ -2899,6 +2904,21 @@ class ActionRegistry(ObservationActions):
         except ValueError as error:
             return ActionResult(False, str(error))
 
+        baseline_mode = str(baseline.get("mode") or "material").strip().lower()
+        candidate_mode = str(candidate.get("mode") or "material").strip().lower()
+        if (
+            baseline_mode != candidate_mode
+            and bool(payload.get("require_same_mode", True))
+        ):
+            return ActionResult(
+                False,
+                "multiview manifests use different capture modes",
+                {
+                    "baseline_mode": baseline_mode,
+                    "candidate_mode": candidate_mode,
+                },
+            )
+
         baseline_names = set(baseline_views)
         candidate_names = set(candidate_views)
         if baseline_names != candidate_names and bool(
@@ -2919,21 +2939,31 @@ class ActionRegistry(ObservationActions):
         try:
             max_mae_raw = payload.get("max_mae")
             max_changed_raw = payload.get("max_changed_ratio")
+            min_iou_raw = payload.get("min_silhouette_iou")
             max_mae = float(max_mae_raw) if max_mae_raw is not None else None
             max_changed = (
                 float(max_changed_raw) if max_changed_raw is not None else None
             )
+            min_iou = float(min_iou_raw) if min_iou_raw is not None else None
         except (TypeError, ValueError):
             return ActionResult(
                 False,
-                "max_mae and max_changed_ratio must be numbers",
+                "max_mae, max_changed_ratio and min_silhouette_iou must be numbers",
             )
         for field, value in (
             ("max_mae", max_mae),
             ("max_changed_ratio", max_changed),
+            ("min_silhouette_iou", min_iou),
         ):
             if value is not None and (value < 0.0 or value > 1.0):
                 return ActionResult(False, f"{field} must be between 0 and 1")
+        if min_iou is not None and (
+            baseline_mode != "silhouette" or candidate_mode != "silhouette"
+        ):
+            return ActionResult(
+                False,
+                "min_silhouette_iou requires silhouette multiview manifests",
+            )
 
         try:
             from PIL import Image, ImageChops, ImageStat
@@ -3019,10 +3049,45 @@ class ActionRegistry(ObservationActions):
                         else 0.0
                     )
 
+                    silhouette_iou = None
+                    if (
+                        baseline_mode == "silhouette"
+                        and candidate_mode == "silhouette"
+                    ):
+                        baseline_gray = baseline_image.convert("L")
+                        candidate_gray = candidate_image.convert("L")
+                        baseline_mask = baseline_gray.point(
+                            lambda value: 255 if value < 128 else 0
+                        )
+                        candidate_mask = candidate_gray.point(
+                            lambda value: 255 if value < 128 else 0
+                        )
+                        intersection = ImageChops.multiply(
+                            baseline_mask,
+                            candidate_mask,
+                        )
+                        union = ImageChops.lighter(
+                            baseline_mask,
+                            candidate_mask,
+                        )
+                        intersection_pixels = intersection.histogram()[255]
+                        union_pixels = union.histogram()[255]
+                        silhouette_iou = (
+                            intersection_pixels / union_pixels
+                            if union_pixels
+                            else 1.0
+                        )
+
                     view_passed = True
                     if max_mae is not None and mae > max_mae:
                         view_passed = False
                     if max_changed is not None and changed_ratio > max_changed:
+                        view_passed = False
+                    if (
+                        min_iou is not None
+                        and silhouette_iou is not None
+                        and silhouette_iou < min_iou
+                    ):
                         view_passed = False
 
                     diff_path = None
@@ -3036,6 +3101,11 @@ class ActionRegistry(ObservationActions):
                         "mae": round(mae, 8),
                         "rms": round(rms, 8),
                         "changed_pixel_ratio": round(changed_ratio, 8),
+                        "silhouette_iou": (
+                            round(float(silhouette_iou), 8)
+                            if silhouette_iou is not None
+                            else None
+                        ),
                         "baseline_artifact": str(baseline_image_path),
                         "candidate_artifact": str(candidate_image_path),
                         "diff_artifact": str(diff_path) if diff_path else None,
@@ -3074,16 +3144,25 @@ class ActionRegistry(ObservationActions):
                 for i in range(3)
             ]
 
-        thresholds_declared = max_mae is not None or max_changed is not None
+        thresholds_declared = (
+            max_mae is not None
+            or max_changed is not None
+            or min_iou is not None
+        )
         comparison_passed = not failed_views if thresholds_declared else None
         report = {
             "baseline_manifest": str(baseline_path),
             "candidate_manifest": str(candidate_path),
             "views": comparisons,
             "view_count": len(comparisons),
+            "capture_modes": {
+                "baseline": baseline_mode,
+                "candidate": candidate_mode,
+            },
             "thresholds": {
                 "max_mae": max_mae,
                 "max_changed_ratio": max_changed,
+                "min_silhouette_iou": min_iou,
             },
             "comparison_passed": comparison_passed,
             "failed_views": failed_views,
