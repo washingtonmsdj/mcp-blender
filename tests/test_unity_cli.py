@@ -27,7 +27,7 @@ class UnityCliTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual({"success": True, "data": {"ok": 1}}, result.data["json"])
         self.assertFalse(run.call_args.kwargs["shell"])
-        self.assertEqual("C:/project", run.call_args.kwargs["cwd"])
+        self.assertEqual(str(Path("C:/project")), run.call_args.kwargs["cwd"])
 
     def test_pipeline_command_rejects_project_override(self):
         with tempfile.TemporaryDirectory() as raw:
