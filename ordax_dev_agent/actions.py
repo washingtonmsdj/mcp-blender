@@ -595,6 +595,8 @@ class ActionRegistry:
                 "warmupFrames": int(payload.get("warmup_frames", 120)),
                 "warmupSeconds": float(payload.get("warmup_seconds", 0.0)),
                 "timeScale": float(payload.get("time_scale", 1.0)),
+                "captureOnTerminal": bool(payload.get("capture_on_terminal", True)),
+                "captureOnBoss": bool(payload.get("capture_on_boss", False)),
             },
             timeout_seconds=float(payload.get("timeout_seconds", 900)),
         )
