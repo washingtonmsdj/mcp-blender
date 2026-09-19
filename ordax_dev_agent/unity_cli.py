@@ -118,7 +118,7 @@ def cli_status(project_root: Path, *, timeout_seconds: float = 60.0) -> ActionRe
         )
 
     version = run_unity_cli(
-        ["version", "--format", "json"],
+        ["--version"],
         cwd=project_root,
         timeout_seconds=timeout_seconds,
     )
