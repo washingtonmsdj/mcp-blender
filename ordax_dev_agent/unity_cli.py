@@ -167,7 +167,6 @@ def install_pipeline(
         "--format",
         "json",
         "--non-interactive",
-        "--yes",
     ]
     if force:
         args.append("--force")
