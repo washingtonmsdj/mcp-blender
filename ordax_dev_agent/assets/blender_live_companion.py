@@ -967,7 +967,7 @@ def _object_metadata(command: dict) -> None:
 
 
 _QUALITY_AXES = {"x": 0, "y": 1, "z": 2}
-_QUALITY_TYPES = {"dimensions", "symmetry", "proportion", "containment", "mesh_quality"}
+_QUALITY_TYPES = {"dimensions", "symmetry", "proportion", "containment", "mesh_quality", "uv_quality"}
 
 
 def _quality_axis(value, field: str) -> tuple[str, int]:
@@ -1358,6 +1358,420 @@ def _quality_mesh(check: dict) -> dict:
                 pass
 
 
+
+def _uv_coordinate(layer, loop_index: int) -> tuple[float, float]:
+    modern = getattr(layer, "uv", None)
+    if modern is not None:
+        try:
+            value = modern[loop_index]
+            vector = getattr(value, "vector", None)
+            if vector is not None:
+                return float(vector[0]), float(vector[1])
+        except (IndexError, TypeError, ValueError, ReferenceError):
+            pass
+
+    legacy = getattr(layer, "data", None)
+    if legacy is not None:
+        try:
+            vector = legacy[loop_index].uv
+            return float(vector[0]), float(vector[1])
+        except (IndexError, TypeError, ValueError, ReferenceError, AttributeError):
+            pass
+
+    raise ValueError("could not read UV coordinates from the selected UV layer")
+
+
+def _triangle_area_2d(points) -> float:
+    (ax, ay), (bx, by), (cx, cy) = points
+    return abs(
+        (bx - ax) * (cy - ay)
+        - (by - ay) * (cx - ax)
+    ) * 0.5
+
+
+def _signed_area_2d(points) -> float:
+    area = 0.0
+    for index, point in enumerate(points):
+        next_point = points[(index + 1) % len(points)]
+        area += point[0] * next_point[1] - next_point[0] * point[1]
+    return area * 0.5
+
+
+def _line_intersection_2d(p1, p2, q1, q2):
+    px = p2[0] - p1[0]
+    py = p2[1] - p1[1]
+    qx = q2[0] - q1[0]
+    qy = q2[1] - q1[1]
+    denominator = px * qy - py * qx
+    if abs(denominator) <= 1e-15:
+        return p2
+    t = (
+        (q1[0] - p1[0]) * qy
+        - (q1[1] - p1[1]) * qx
+    ) / denominator
+    return (p1[0] + t * px, p1[1] + t * py)
+
+
+def _triangle_overlap_area_2d(subject, clip) -> float:
+    output = list(subject)
+    orientation = 1.0 if _signed_area_2d(clip) >= 0 else -1.0
+
+    def inside(point, edge_a, edge_b) -> bool:
+        cross = (
+            (edge_b[0] - edge_a[0]) * (point[1] - edge_a[1])
+            - (edge_b[1] - edge_a[1]) * (point[0] - edge_a[0])
+        )
+        return orientation * cross >= -1e-12
+
+    for index, edge_a in enumerate(clip):
+        edge_b = clip[(index + 1) % len(clip)]
+        if not output:
+            return 0.0
+        input_points = output
+        output = []
+        previous = input_points[-1]
+        previous_inside = inside(previous, edge_a, edge_b)
+        for current in input_points:
+            current_inside = inside(current, edge_a, edge_b)
+            if current_inside:
+                if not previous_inside:
+                    output.append(
+                        _line_intersection_2d(
+                            previous,
+                            current,
+                            edge_a,
+                            edge_b,
+                        )
+                    )
+                output.append(current)
+            elif previous_inside:
+                output.append(
+                    _line_intersection_2d(
+                        previous,
+                        current,
+                        edge_a,
+                        edge_b,
+                    )
+                )
+            previous = current
+            previous_inside = current_inside
+
+    if len(output) < 3:
+        return 0.0
+    return abs(_signed_area_2d(output))
+
+
+def _triangle_shape_distortion(mesh, loop_indices, uv_points, epsilon: float) -> float | None:
+    vertices = [
+        mesh.vertices[mesh.loops[index].vertex_index].co
+        for index in loop_indices
+    ]
+    geometry_lengths = [
+        float((vertices[1] - vertices[0]).length),
+        float((vertices[2] - vertices[1]).length),
+        float((vertices[0] - vertices[2]).length),
+    ]
+    uv_lengths = [
+        ((uv_points[1][0] - uv_points[0][0]) ** 2 + (uv_points[1][1] - uv_points[0][1]) ** 2) ** 0.5,
+        ((uv_points[2][0] - uv_points[1][0]) ** 2 + (uv_points[2][1] - uv_points[1][1]) ** 2) ** 0.5,
+        ((uv_points[0][0] - uv_points[2][0]) ** 2 + (uv_points[0][1] - uv_points[2][1]) ** 2) ** 0.5,
+    ]
+    geometry_total = sum(geometry_lengths)
+    uv_total = sum(uv_lengths)
+    if geometry_total <= epsilon or uv_total <= epsilon:
+        return None
+    geometry_normalized = [value / geometry_total for value in geometry_lengths]
+    uv_normalized = [value / uv_total for value in uv_lengths]
+    return max(
+        abs(geometry_normalized[index] - uv_normalized[index])
+        for index in range(3)
+    )
+
+
+def _quality_uv(check: dict) -> dict:
+    obj = _quality_object(check.get("object_name"), "object_name")
+    if obj.type != "MESH":
+        raise ValueError(f"uv_quality requires a MESH object: {obj.name}")
+
+    evaluated = bool(check.get("evaluated", True))
+    try:
+        epsilon = float(check.get("epsilon", 1e-10))
+        tile_tolerance = float(check.get("tile_tolerance", 1e-6))
+    except (TypeError, ValueError):
+        raise ValueError("epsilon and tile_tolerance must be numbers")
+    if epsilon <= 0 or epsilon > 1.0:
+        raise ValueError("epsilon must be greater than 0 and at most 1")
+    if tile_tolerance < 0 or tile_tolerance > 1.0:
+        raise ValueError("tile_tolerance must be between 0 and 1")
+
+    try:
+        max_analysis_triangles = int(check.get("max_analysis_triangles", 20000))
+        max_pair_tests = int(check.get("max_overlap_pair_tests", 1000000))
+    except (TypeError, ValueError):
+        raise ValueError(
+            "max_analysis_triangles and max_overlap_pair_tests must be integers"
+        )
+    if max_analysis_triangles < 1 or max_analysis_triangles > 100000:
+        raise ValueError("max_analysis_triangles must be between 1 and 100000")
+    if max_pair_tests < 1 or max_pair_tests > 10000000:
+        raise ValueError("max_overlap_pair_tests must be between 1 and 10000000")
+
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    evaluated_obj = None
+    mesh = None
+    must_clear = False
+    try:
+        if evaluated:
+            evaluated_obj = obj.evaluated_get(depsgraph)
+            mesh = evaluated_obj.to_mesh()
+            must_clear = True
+        else:
+            mesh = obj.data
+        if mesh is None:
+            raise ValueError(f"mesh data is unavailable for {obj.name}")
+
+        uv_name = str(check.get("uv_map") or "").strip()
+        uv_layers = getattr(mesh, "uv_layers", None)
+        if uv_layers is None or len(uv_layers) == 0:
+            raise ValueError(f"object has no UV maps: {obj.name}")
+        uv_layer = uv_layers.get(uv_name) if uv_name else uv_layers.active
+        if uv_layer is None:
+            if uv_name:
+                raise ValueError(f"UV map was not found: {uv_name}")
+            raise ValueError(f"object has no active UV map: {obj.name}")
+
+        mesh.calc_loop_triangles()
+        triangles = list(mesh.loop_triangles)
+        if len(triangles) > max_analysis_triangles:
+            raise ValueError(
+                f"UV analysis has {len(triangles)} triangles; "
+                f"max_analysis_triangles is {max_analysis_triangles}"
+            )
+
+        uv_cache: dict[int, tuple[float, float]] = {}
+
+        def uv(loop_index: int) -> tuple[float, float]:
+            if loop_index not in uv_cache:
+                uv_cache[loop_index] = _uv_coordinate(uv_layer, loop_index)
+            return uv_cache[loop_index]
+
+        out_of_bounds_loops = 0
+        uv_min = [float("inf"), float("inf")]
+        uv_max = [float("-inf"), float("-inf")]
+        for loop_index in range(len(mesh.loops)):
+            point = uv(loop_index)
+            uv_min[0] = min(uv_min[0], point[0])
+            uv_min[1] = min(uv_min[1], point[1])
+            uv_max[0] = max(uv_max[0], point[0])
+            uv_max[1] = max(uv_max[1], point[1])
+            if (
+                point[0] < -tile_tolerance
+                or point[0] > 1.0 + tile_tolerance
+                or point[1] < -tile_tolerance
+                or point[1] > 1.0 + tile_tolerance
+            ):
+                out_of_bounds_loops += 1
+
+        face_uv_area = [0.0] * len(mesh.polygons)
+        triangle_records = []
+        distortions = []
+        degenerate_uv_triangles = 0
+        for triangle in triangles:
+            loop_indices = tuple(int(index) for index in triangle.loops)
+            uv_points = tuple(uv(index) for index in loop_indices)
+            uv_area = _triangle_area_2d(uv_points)
+            polygon_index = int(triangle.polygon_index)
+            if 0 <= polygon_index < len(face_uv_area):
+                face_uv_area[polygon_index] += uv_area
+            if uv_area <= epsilon:
+                degenerate_uv_triangles += 1
+            distortion = _triangle_shape_distortion(
+                mesh,
+                loop_indices,
+                uv_points,
+                epsilon,
+            )
+            if distortion is not None:
+                distortions.append(distortion)
+            triangle_records.append({
+                "polygon_index": polygon_index,
+                "uv": uv_points,
+                "area": uv_area,
+                "min_x": min(point[0] for point in uv_points),
+                "max_x": max(point[0] for point in uv_points),
+                "min_y": min(point[1] for point in uv_points),
+                "max_y": max(point[1] for point in uv_points),
+            })
+
+        zero_area_faces = sum(1 for area in face_uv_area if area <= epsilon)
+        maximum_distortion = max(distortions) if distortions else 0.0
+        mean_distortion = (
+            sum(distortions) / len(distortions)
+            if distortions
+            else 0.0
+        )
+
+        overlap_pair_count = None
+        overlap_pair_tests = 0
+        overlap_truncated = False
+        overlap_examples = []
+        overlap_limit_raw = check.get("max_overlap_pairs")
+        report_overlap = bool(check.get("report_overlap", False))
+        if overlap_limit_raw is not None or report_overlap:
+            allowed_overlap = None
+            if overlap_limit_raw is not None:
+                if (
+                    not isinstance(overlap_limit_raw, int)
+                    or isinstance(overlap_limit_raw, bool)
+                    or overlap_limit_raw < 0
+                ):
+                    raise ValueError("max_overlap_pairs must be a non-negative integer")
+                allowed_overlap = int(overlap_limit_raw)
+
+            overlap_pair_count = 0
+            ordered = sorted(
+                enumerate(triangle_records),
+                key=lambda item: item[1]["min_x"],
+            )
+            stop = False
+            for ordered_index, (left_index, left) in enumerate(ordered):
+                if left["area"] <= epsilon:
+                    continue
+                for right_index, right in ordered[ordered_index + 1:]:
+                    if right["min_x"] > left["max_x"] + epsilon:
+                        break
+                    if right["area"] <= epsilon:
+                        continue
+                    if (
+                        right["max_y"] < left["min_y"] - epsilon
+                        or right["min_y"] > left["max_y"] + epsilon
+                    ):
+                        continue
+                    overlap_pair_tests += 1
+                    if overlap_pair_tests > max_pair_tests:
+                        raise ValueError(
+                            "UV overlap analysis exceeded max_overlap_pair_tests"
+                        )
+                    area = _triangle_overlap_area_2d(left["uv"], right["uv"])
+                    if area <= epsilon:
+                        continue
+                    overlap_pair_count += 1
+                    if len(overlap_examples) < 20:
+                        overlap_examples.append({
+                            "triangle_a": left_index,
+                            "triangle_b": right_index,
+                            "polygon_a": left["polygon_index"],
+                            "polygon_b": right["polygon_index"],
+                            "overlap_area": round(float(area), 10),
+                        })
+                    if (
+                        allowed_overlap is not None
+                        and overlap_pair_count > allowed_overlap
+                    ):
+                        overlap_truncated = True
+                        stop = True
+                        break
+                if stop:
+                    break
+
+        metrics = {
+            "uv_map": uv_layer.name,
+            "loops": len(mesh.loops),
+            "faces": len(mesh.polygons),
+            "triangles": len(triangles),
+            "uv_bounds_min": [round(value, 8) for value in uv_min],
+            "uv_bounds_max": [round(value, 8) for value in uv_max],
+            "out_of_bounds_loops": out_of_bounds_loops,
+            "zero_area_faces": zero_area_faces,
+            "degenerate_uv_triangles": degenerate_uv_triangles,
+            "max_shape_distortion": round(float(maximum_distortion), 8),
+            "mean_shape_distortion": round(float(mean_distortion), 8),
+            "measured_distortion_triangles": len(distortions),
+            "overlap_triangle_pairs": overlap_pair_count,
+            "overlap_pair_tests": overlap_pair_tests,
+            "overlap_truncated": overlap_truncated,
+            "overlap_examples": overlap_examples,
+        }
+
+        rules = []
+
+        def maximum_integer(field: str, actual: int) -> None:
+            if field not in check or check.get(field) is None:
+                return
+            raw = check.get(field)
+            if not isinstance(raw, int) or isinstance(raw, bool) or raw < 0:
+                raise ValueError(f"{field} must be a non-negative integer")
+            rules.append({
+                "rule": field,
+                "passed": actual <= raw,
+                "expected_max": raw,
+                "actual": actual,
+            })
+
+        maximum_integer("max_out_of_bounds_loops", out_of_bounds_loops)
+        maximum_integer("max_zero_area_faces", zero_area_faces)
+        maximum_integer(
+            "max_degenerate_uv_triangles",
+            degenerate_uv_triangles,
+        )
+        if overlap_limit_raw is not None:
+            maximum_integer(
+                "max_overlap_pairs",
+                int(overlap_pair_count or 0),
+            )
+
+        for field, actual in (
+            ("max_shape_distortion", maximum_distortion),
+            ("max_mean_shape_distortion", mean_distortion),
+        ):
+            if field not in check or check.get(field) is None:
+                continue
+            try:
+                expected_max = float(check.get(field))
+            except (TypeError, ValueError):
+                raise ValueError(f"{field} must be a number")
+            if expected_max < 0 or expected_max > 1:
+                raise ValueError(f"{field} must be between 0 and 1")
+            rules.append({
+                "rule": field,
+                "passed": actual <= expected_max,
+                "expected_max": expected_max,
+                "actual": round(float(actual), 8),
+            })
+
+        if bool(check.get("require_unit_tile", False)):
+            rules.append({
+                "rule": "require_unit_tile",
+                "passed": out_of_bounds_loops == 0,
+                "expected_max": 0,
+                "actual": out_of_bounds_loops,
+            })
+
+        if not rules:
+            raise ValueError(
+                "uv_quality requires at least one threshold or requirement"
+            )
+
+        failed = [rule for rule in rules if not rule["passed"]]
+        return {
+            "type": "uv_quality",
+            "passed": not failed,
+            "object_name": obj.name,
+            "evaluated": evaluated,
+            "epsilon": epsilon,
+            "tile_tolerance": tile_tolerance,
+            "metrics": metrics,
+            "rules": rules,
+            "failed_rules": len(failed),
+        }
+    finally:
+        if must_clear and evaluated_obj is not None:
+            try:
+                evaluated_obj.to_mesh_clear()
+            except Exception:
+                pass
+
+
 def _quality_gate(command: dict) -> None:
     command_id = command["id"]
     checks = command.get("checks")
@@ -1375,6 +1789,7 @@ def _quality_gate(command: dict) -> None:
         "proportion": _quality_proportion,
         "containment": _quality_containment,
         "mesh_quality": _quality_mesh,
+        "uv_quality": _quality_uv,
     }
     for index, check in enumerate(checks):
         if not isinstance(check, dict):
