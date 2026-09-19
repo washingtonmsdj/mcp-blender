@@ -50,6 +50,20 @@ jobs:
             throw "Candidate agent code does not compile. Local managed agent was not touched."
           }
 
+      - name: Run isolated real Blender smoke
+        shell: pwsh
+        run: |
+          $managedRepo = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent\src"
+          $venvPython = Join-Path $managedRepo ".venv\Scripts\python.exe"
+          if (-not (Test-Path $venvPython)) {
+            throw "Managed agent virtual environment is missing: $venvPython"
+          }
+
+          & $venvPython (Join-Path $env:GITHUB_WORKSPACE "scripts\verify_visual_agent.py")
+          if ($LASTEXITCODE -ne 0) {
+            throw "Candidate failed isolated real Blender visual/multiview smoke."
+          }
+
       - name: Recover managed agent safely
         shell: pwsh
         run: |
