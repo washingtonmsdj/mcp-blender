@@ -20,7 +20,7 @@ from .config import AgentConfig
 from .models import ActionResult
 from .unity_editor_bridge import UnityEditorBridge
 from .unity_knowledge import capability_report as unity_capability_report, project_profile as unity_project_profile, skill_catalog as unity_skill_catalog
-from .unity_assets import asset_inventory as unity_asset_inventory
+from .unity_assets import asset_inventory as unity_asset_inventory, import_project_asset as unity_import_project_asset
 from .unity_cli import (
     cli_status as unity_cli_status,
     install_pipeline as unity_install_pipeline,
@@ -207,6 +207,7 @@ class ActionRegistry(ObservationActions):
             "unity.pipeline_catalog": self.unity_pipeline_catalog,
             "unity.pipeline_command": self.unity_pipeline_command,
             "unity.asset_inventory": self.unity_asset_inventory,
+            "unity.asset_import": self.unity_asset_import,
             "unity.scene_open": self.unity_scene_open,
             "unity.scene_summary": self.unity_scene_summary,
             "unity.physics_audit": self.unity_physics_audit,
@@ -794,6 +795,37 @@ class ActionRegistry(ObservationActions):
         return ActionResult(
             bool(report.get("exists")),
             "Unity asset inventory ready",
+            {"project": project.slug, **report},
+        )
+
+    def unity_asset_import(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        source_raw = str(payload.get("source_path") or "").strip()
+        destination_raw = str(payload.get("destination_path") or "").strip()
+        if not source_raw or not destination_raw:
+            return ActionResult(False, "source_path and destination_path are required")
+
+        try:
+            source = project.path(source_raw)
+            destination = project.path(destination_raw, must_exist=False)
+            assets_root = (project.root / "Assets").resolve()
+            destination.resolve().relative_to(assets_root)
+        except (ValueError, FileNotFoundError) as error:
+            return ActionResult(False, str(error))
+
+        try:
+            report = unity_import_project_asset(
+                project.root,
+                source_path=source,
+                destination_path=destination,
+                overwrite=bool(payload.get("overwrite", False)),
+            )
+        except (ValueError, FileNotFoundError, FileExistsError, OSError) as error:
+            return ActionResult(False, f"{type(error).__name__}: {error}")
+
+        return ActionResult(
+            True,
+            "Unity project asset imported" if report.get("imported") else "Unity project asset already current",
             {"project": project.slug, **report},
         )
 
