@@ -4,6 +4,7 @@ set "ROOT=%~dp0\..\.."
 set "PYTHON=%ROOT%\.venv\Scripts\python.exe"
 set "BRANCH=feat/ordax-dev-agent"
 set /a RETRY_SECONDS=10
+set "SKIP_SAFE_UPDATE=0"
 
 if not exist "%PYTHON%" (
   echo OrdaX Dev Agent: .venv nao encontrado.
@@ -14,7 +15,11 @@ if not exist "%PYTHON%" (
 cd /d "%ROOT%"
 
 :run
-call :safe_update
+if "%SKIP_SAFE_UPDATE%"=="0" (
+  call :safe_update
+) else (
+  set "SKIP_SAFE_UPDATE=0"
+)
 
 "%PYTHON%" -m compileall -q "%ROOT%\mcp_blender_unity" "%ROOT%\ordax_dev_agent"
 if errorlevel 1 (
@@ -28,8 +33,9 @@ if errorlevel 1 (
 set "CODE=%ERRORLEVEL%"
 
 if "%CODE%"=="42" (
-  echo OrdaX Dev Agent atualizado. Reiniciando...
+  echo OrdaX Dev Agent atualizado. Reiniciando sem fetch redundante...
   set /a RETRY_SECONDS=10
+  set "SKIP_SAFE_UPDATE=1"
   timeout /t 2 >nul
   goto :run
 )
