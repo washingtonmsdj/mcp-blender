@@ -19,6 +19,12 @@ from .models import ActionResult
 from .unity_editor_bridge import UnityEditorBridge
 from .unity_knowledge import capability_report as unity_capability_report, project_profile as unity_project_profile, skill_catalog as unity_skill_catalog
 from .unity_assets import asset_inventory as unity_asset_inventory
+from .unity_cli import (
+    cli_status as unity_cli_status,
+    install_pipeline as unity_install_pipeline,
+    pipeline_catalog as unity_pipeline_catalog,
+    pipeline_command as unity_pipeline_command,
+)
 from .blender_live_bridge import BlenderLiveBridge
 from .blender_asset_sources import polyhaven_file_manifest, search_polyhaven
 from .projects import load_projects, Project
@@ -151,6 +157,10 @@ class ActionRegistry(ObservationActions):
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
             "unity.skill_catalog": self.unity_skill_catalog,
+            "unity.cli_status": self.unity_cli_status,
+            "unity.pipeline_install": self.unity_pipeline_install,
+            "unity.pipeline_catalog": self.unity_pipeline_catalog,
+            "unity.pipeline_command": self.unity_pipeline_command,
             "unity.asset_inventory": self.unity_asset_inventory,
             "unity.scene_open": self.unity_scene_open,
             "unity.scene_summary": self.unity_scene_summary,
@@ -545,6 +555,56 @@ class ActionRegistry(ObservationActions):
             "Unity first-party capability catalog ready; no Codex runtime dependency",
             unity_skill_catalog(),
         )
+
+
+    def unity_cli_status(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        result = unity_cli_status(
+            project.root,
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+        result.data.setdefault("project", project.slug)
+        return result
+
+    def unity_pipeline_install(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        result = unity_install_pipeline(
+            project.root,
+            force=bool(payload.get("force", False)),
+            timeout_seconds=float(payload.get("timeout_seconds", 240)),
+        )
+        result.data.setdefault("project", project.slug)
+        return result
+
+    def unity_pipeline_catalog(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        result = unity_pipeline_catalog(
+            project.root,
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+        result.data.setdefault("project", project.slug)
+        return result
+
+    def unity_pipeline_command(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        command_name = str(payload.get("command") or "").strip()
+        if not command_name:
+            return ActionResult(False, "command is required")
+
+        arguments = payload.get("arguments", [])
+        if not isinstance(arguments, list) or len(arguments) > 200:
+            return ActionResult(False, "arguments must be a list with at most 200 items")
+        if not all(isinstance(item, (str, int, float, bool)) for item in arguments):
+            return ActionResult(False, "arguments must contain only scalar values")
+
+        result = unity_pipeline_command(
+            project.root,
+            command_name,
+            [str(item) for item in arguments],
+            timeout_seconds=float(payload.get("timeout_seconds", 120)),
+        )
+        result.data.setdefault("project", project.slug)
+        return result
 
     def unity_asset_inventory(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
