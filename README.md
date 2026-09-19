@@ -160,7 +160,7 @@ O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório iso
 
 Os workflows são manuais por segurança.
 
-## Blender Live 0.9.0
+## Blender Live 1.0.0
 
 The visible Blender companion now exposes a richer typed perception loop:
 
@@ -168,6 +168,7 @@ The visible Blender companion now exposes a richer typed perception loop:
   materials, modifiers, constraints, mesh counts and semantic OrdaX properties.
 - \`blender.live_object_inspect\` — full inspection for one stable object name.
 - \`blender.live_object_fingerprints\` — deterministic transform/base-mesh or evaluated-mesh hashes for approved-component revision guards.
+- \`blender.live_multiview_capture\` — deterministic orthographic front/back/left/right/top/3⁄4 evidence with automatic framing, hashes and a manifest; explicit object lists are isolated during capture.
 - \`blender.live_contact_audit\` — evaluated mesh BVH intersection checks for
   protected object pairs.
 - \`blender.live_quality_gate\` — deterministic dimensions, symmetry, proportion,
@@ -183,7 +184,7 @@ sessions may restart automatically; unsaved Blender work is preserved.
 - `blender.live_object_metadata` — stable semantic IDs and provenance.
 - `blender.live_checkpoint_create/list/restore` — managed rollback points.
 - `blender.live_trajectory` — durable before/after operation journal.
-- `blender.live_generation_pass` — checkpoint → fingerprint protected approved objects → generate → verify locks → inspect → contact audit → deterministic quality gate → capture → save, with rollback on failure.
+- `blender.live_generation_pass` — checkpoint → fingerprint protected approved objects → generate → verify locks → inspect → contact audit → deterministic quality gate → optional deterministic multiview → capture → save, with rollback on failure.
 
 See \`docs/BLENDER_MCP_REFERENCE_REVIEW.md\` for the design review that informed
 this layer and the capabilities intentionally not copied.
