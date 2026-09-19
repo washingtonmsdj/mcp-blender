@@ -12,7 +12,7 @@ from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any, Callable
 
-from mcp_blender_unity.config import find_blender
+from mcp_blender_unity.config import find_blender, find_unity
 
 from .config import AgentConfig
 from .models import ActionResult
@@ -87,6 +87,7 @@ class ActionRegistry(ObservationActions):
             "git.status": self.git_status,
             "git.sync": self.git_sync,
             "unity.editor_status": self.unity_editor_status,
+            "unity.editor_start": self.unity_editor_start,
             "unity.refresh_editor": self.unity_refresh_editor,
             "unity.play_start": self.unity_play_start,
             "unity.play_stop": self.unity_play_stop,
@@ -714,6 +715,74 @@ class ActionRegistry(ObservationActions):
             "Unity Editor is open but its OrdaX companion did not become ready; "
             "batch fallback was refused to avoid a second Unity instance",
             editor.status(),
+        )
+
+    def unity_editor_start(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        editor = self._editor(payload)
+
+        if editor.presence_is_fresh(max_age_seconds=12.0):
+            return ActionResult(True, "Unity Editor already open and companion ready", editor.status())
+
+        if editor.project_appears_open():
+            editor.nudge_companion(wait_seconds=float(payload.get("wait_seconds", 45)))
+            status = editor.status()
+            return ActionResult(
+                bool(status.get("presence_fresh")),
+                "Unity Editor project is open and companion ready"
+                if status.get("presence_fresh")
+                else "Unity project appears open but companion is not ready",
+                status,
+            )
+
+        unity = find_unity(project.root)
+        if unity is None:
+            return ActionResult(False, "Unity executable not found for registered project")
+
+        command = [str(unity), "-projectPath", str(project.root)]
+        popen_kwargs = {
+            "cwd": str(project.root),
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+            "shell": False,
+        }
+        if sys.platform == "win32":
+            creationflags = 0
+            creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            creationflags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+            popen_kwargs["creationflags"] = creationflags
+        else:
+            popen_kwargs["start_new_session"] = True
+
+        process = subprocess.Popen(command, **popen_kwargs)
+        wait_seconds = max(1.0, min(240.0, float(payload.get("wait_seconds", 120))))
+        deadline = time.monotonic() + wait_seconds
+        status = editor.status()
+        while time.monotonic() < deadline:
+            status = editor.status()
+            if editor.presence_is_fresh(max_age_seconds=12.0):
+                return ActionResult(
+                    True,
+                    "Unity Editor started and OrdaX companion ready",
+                    {
+                        **status,
+                        "launched": True,
+                        "pid": process.pid,
+                        "command": command,
+                    },
+                )
+            time.sleep(0.5)
+
+        return ActionResult(
+            False,
+            "Unity Editor was launched but companion did not become ready in time",
+            {
+                **status,
+                "launched": True,
+                "pid": process.pid,
+                "command": command,
+            },
         )
 
     def unity_editor_status(self, payload: dict[str, Any]) -> ActionResult:
