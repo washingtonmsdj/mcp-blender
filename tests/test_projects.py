@@ -175,5 +175,37 @@ class ProjectTests(unittest.TestCase):
         self.assertFalse(list(bridge.inbox.glob('*.json')))
 
 
+    def test_unity_refresh_prefers_typed_companion_without_foreground_helper(self):
+        registry = ActionRegistry(self.config)
+        presence = self.root / "editor-presence.json"
+        presence.write_text("{}", encoding="utf-8")
+        initial_mtime = presence.stat().st_mtime
+
+        editor = Mock()
+        editor.presence = presence
+        editor.project_appears_open.return_value = True
+        editor.presence_is_fresh.return_value = True
+        editor.status.return_value = {"presence": {"compiling": False}}
+
+        def request(action, payload, timeout_seconds):
+            self.assertEqual("refresh", action)
+            os.utime(presence, (initial_mtime + 2.0, initial_mtime + 2.0))
+            return ActionResult(True, "Asset refresh requested", {"transport": "unity-editor-companion"})
+
+        editor.request.side_effect = request
+
+        with (
+            patch.object(registry, "_editor", return_value=editor),
+            patch("ordax_dev_agent.actions._run") as foreground_helper,
+        ):
+            result = registry.unity_refresh_editor(
+                {"project": "model", "force": True, "wait_seconds": 5}
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("unity-editor-companion", result.data["refresh_transport"])
+        foreground_helper.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()
