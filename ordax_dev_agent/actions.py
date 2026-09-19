@@ -17,6 +17,7 @@ from mcp_blender_unity.config import find_blender
 from .config import AgentConfig
 from .models import ActionResult
 from .unity_editor_bridge import UnityEditorBridge
+from .unity_knowledge import capability_report as unity_capability_report, project_profile as unity_project_profile, skill_catalog as unity_skill_catalog
 from .blender_live_bridge import BlenderLiveBridge
 from .projects import load_projects, Project
 from .observations import ObservationActions
@@ -71,6 +72,9 @@ class ActionRegistry(ObservationActions):
             "blender.live_save": self.blender_live_save,
             "blender.live_stop": self.blender_live_stop,
             "unity.install_companion": self.unity_install_companion,
+            "unity.project_profile": self.unity_project_profile,
+            "unity.capabilities": self.unity_capabilities,
+            "unity.skill_catalog": self.unity_skill_catalog,
             "agent.status": self.agent_status,
             "agent.update": self.agent_update,
             "agent.self_test": self.agent_self_test,
@@ -423,6 +427,42 @@ class ActionRegistry(ObservationActions):
         if source:
             source = project.path(source, must_exist=False)
         return UnityEditorBridge(project.root, source)
+
+    def unity_project_profile(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        profile = unity_project_profile(project.root)
+        ok = bool(profile.get("unity_version")) and bool(profile.get("has_project_settings"))
+        return ActionResult(
+            ok,
+            "Unity project profile ready" if ok else "Unity project profile is incomplete",
+            {
+                "project": project.slug,
+                **profile,
+            },
+        )
+
+    def unity_capabilities(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        report = unity_capability_report(project.root)
+        profile = report.get("profile") or {}
+        supported = bool(profile.get("unity_6_or_newer"))
+        return ActionResult(
+            supported,
+            "Unity 6 capability report ready"
+            if supported
+            else "Unity project detected, but Unity 6+ is required for the first-party skill baseline",
+            {
+                "project": project.slug,
+                **report,
+            },
+        )
+
+    def unity_skill_catalog(self, payload: dict[str, Any]) -> ActionResult:
+        return ActionResult(
+            True,
+            "Unity first-party capability catalog ready; no Codex runtime dependency",
+            unity_skill_catalog(),
+        )
 
     def git_status(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
