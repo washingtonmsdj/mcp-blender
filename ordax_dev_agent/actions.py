@@ -139,6 +139,7 @@ class ActionRegistry(ObservationActions):
             "blender.live_object_transform": self.blender_live_object_transform,
             "blender.live_object_metadata": self.blender_live_object_metadata,
             "blender.live_api_schema": self.blender_live_api_schema,
+            "blender.live_api_lookup": self.blender_live_api_lookup,
             "blender.live_node_schema": self.blender_live_node_schema,
             "blender.live_export": self.blender_live_export,
             "blender.live_checkpoint_create": self.blender_live_checkpoint_create,
@@ -1519,6 +1520,19 @@ class ActionRegistry(ObservationActions):
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
 
+    def blender_live_api_lookup(self, payload: dict[str, Any]) -> ActionResult:
+        query = str(payload.get("query") or "").strip()
+        if not query or len(query) > 300:
+            return ActionResult(
+                False,
+                "query is required and must be at most 300 characters",
+            )
+        return self._blender_live(payload).request(
+            "api_lookup",
+            {"query": query},
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
     def blender_live_node_schema(self, payload: dict[str, Any]) -> ActionResult:
         node_type = str(payload.get("node_type") or "").strip()
         tree_type = str(payload.get("tree_type") or "ShaderNodeTree").strip()
@@ -1529,9 +1543,30 @@ class ActionRegistry(ObservationActions):
                 False,
                 "tree_type must be ShaderNodeTree, GeometryNodeTree, or CompositorNodeTree",
             )
+        overrides = payload.get("property_overrides") or {}
+        if not isinstance(overrides, dict) or len(overrides) > 30:
+            return ActionResult(
+                False,
+                "property_overrides must be an object with at most 30 entries",
+            )
+        for key, value in overrides.items():
+            if (
+                not isinstance(key, str)
+                or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+                or not isinstance(value, (str, int, float, bool))
+            ):
+                return ActionResult(
+                    False,
+                    "property_overrides must contain scalar values under valid property names",
+                )
+
         return self._blender_live(payload).request(
             "node_schema",
-            {"node_type": node_type, "tree_type": tree_type},
+            {
+                "node_type": node_type,
+                "tree_type": tree_type,
+                "property_overrides": overrides,
+            },
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
 
