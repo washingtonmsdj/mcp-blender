@@ -60,7 +60,7 @@ RESULTS = CONTROL_ROOT / "results"
 INFLIGHT = CONTROL_ROOT / "inflight"
 PRESENCE = CONTROL_ROOT / "presence.json"
 
-PROTOCOL_VERSION = 7
+PROTOCOL_VERSION = 8
 CAPABILITIES = [
     "ping",
     "inspect",
