@@ -11,7 +11,7 @@ class AgentActionRegistryTests(unittest.TestCase):
         return AgentConfig(
             agent_name="test-agent",
             supabase_url=None,
-            supabase_key=None,
+            publishable_key=None,
             poll_seconds=5.0,
             state_dir=root / "state",
             hordax_path=root / "hordax",
