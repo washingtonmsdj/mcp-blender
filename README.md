@@ -160,7 +160,7 @@ O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório iso
 
 Os workflows são manuais por segurança.
 
-## Blender Live 0.6.0
+## Blender Live 0.8.0
 
 The visible Blender companion now exposes a richer typed perception loop:
 
@@ -169,6 +169,8 @@ The visible Blender companion now exposes a richer typed perception loop:
 - \`blender.live_object_inspect\` — full inspection for one stable object name.
 - \`blender.live_contact_audit\` — evaluated mesh BVH intersection checks for
   protected object pairs.
+- \`blender.live_quality_gate\` — deterministic dimensions, symmetry, proportion
+  and containment checks with measured error/clearance evidence.
 - \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
 - \`blender.asset_manifest\` — provider file manifest/provenance lookup.
 
@@ -179,7 +181,7 @@ sessions may restart automatically; unsaved Blender work is preserved.
 - `blender.live_object_metadata` — stable semantic IDs and provenance.
 - `blender.live_checkpoint_create/list/restore` — managed rollback points.
 - `blender.live_trajectory` — durable before/after operation journal.
-- `blender.live_generation_pass` — checkpoint → generate → inspect → contact audit → capture → save, with rollback on failure.
+- `blender.live_generation_pass` — checkpoint → generate → inspect → contact audit → deterministic quality gate → capture → save, with rollback on failure.
 
 See \`docs/BLENDER_MCP_REFERENCE_REVIEW.md\` for the design review that informed
 this layer and the capabilities intentionally not copied.
