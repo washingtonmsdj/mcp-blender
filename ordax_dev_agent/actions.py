@@ -130,6 +130,7 @@ class ActionRegistry(ObservationActions):
             "blender.live_object_inspect": self.blender_live_object_inspect,
             "blender.live_contact_audit": self.blender_live_contact_audit,
             "blender.live_object_transform": self.blender_live_object_transform,
+            "blender.live_object_metadata": self.blender_live_object_metadata,
             "blender.live_checkpoint_create": self.blender_live_checkpoint_create,
             "blender.live_checkpoint_list": self.blender_live_checkpoint_list,
             "blender.live_checkpoint_restore": self.blender_live_checkpoint_restore,
@@ -1333,12 +1334,18 @@ class ActionRegistry(ObservationActions):
         )
 
     def blender_live_object_inspect(self, payload: dict[str, Any]) -> ActionResult:
-        name = str(payload.get("object_name") or "").strip()
-        if not name:
-            return ActionResult(False, "object_name is required")
+        object_name = str(payload.get("object_name") or "").strip()
+        object_id = str(payload.get("ordax_object_id") or "").strip()
+        if bool(object_name) == bool(object_id):
+            return ActionResult(False, "provide exactly one of object_name or ordax_object_id")
+        request = (
+            {"object_name": object_name}
+            if object_name
+            else {"ordax_object_id": object_id}
+        )
         return self._blender_live(payload).request(
             "object_inspect",
-            {"object_name": name},
+            request,
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
 
@@ -1396,6 +1403,31 @@ class ActionRegistry(ObservationActions):
             request,
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
+
+    def blender_live_object_metadata(self, payload: dict[str, Any]) -> ActionResult:
+        object_name = str(payload.get("object_name") or "").strip()
+        object_id = str(payload.get("ordax_object_id") or "").strip()
+        if bool(object_name) == bool(object_id):
+            return ActionResult(False, "provide exactly one of object_name or ordax_object_id")
+
+        metadata = payload.get("metadata")
+        if not isinstance(metadata, dict) or not metadata:
+            return ActionResult(False, "metadata must be a non-empty object")
+
+        request = {
+            "metadata": metadata,
+        }
+        if object_name:
+            request["object_name"] = object_name
+        else:
+            request["ordax_object_id"] = object_id
+
+        return self._blender_live(payload).request(
+            "object_metadata",
+            request,
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
 
     def blender_live_checkpoint_create(self, payload: dict[str, Any]) -> ActionResult:
         label = str(payload.get("label") or "checkpoint").strip()
