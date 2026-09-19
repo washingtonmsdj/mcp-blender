@@ -63,6 +63,23 @@ claims such as `passed`, `ok`, or `result`.
 
 `blender.live_generation_pass` accepts `quality_checks`; a failed deterministic
 gate rejects the pass and uses the existing managed rollback when enabled.
+### Approved-component revision guards
+
+- `blender.live_object_fingerprints`
+- `blender.live_generation_pass` with `protected_objects`
+
+Approved components can be guarded by semantic `ordax_object_id` or by exact
+object name. The live companion fingerprints world transform plus base mesh
+geometry/topology by default; evaluated geometry can be requested explicitly.
+`blender.live_generation_pass` captures the baseline before executing the
+generation script and captures the same objects again immediately afterward.
+If a protected object was deleted, cannot be resolved, or its fingerprint
+changed, the pass is rejected and the managed checkpoint rollback is requested.
+
+Materials and UV data are intentionally outside the default base-geometry lock
+so later look-development passes may texture an approved shape without needing
+to unlock its geometry. `reset_scene=true` is incompatible with protected
+objects because resetting would intentionally destroy the protected state.
 
 ### Companion capabilities
 
@@ -129,12 +146,14 @@ This loop is the default baseline for future OrdaX Blender generation work.
 asset/component iteration:
 
 1. create a managed checkpoint;
-2. run one approved project script;
-3. collect a rich scene snapshot;
-4. run declared BVH contact checks;
-5. run declared deterministic quality checks;
-6. capture the visible viewport;
-7. save the accepted .blend when requested.
+2. fingerprint declared protected approved objects;
+3. run one approved project script;
+4. verify protected objects did not change;
+5. collect a rich scene snapshot;
+6. run declared BVH contact checks;
+7. run declared deterministic quality checks;
+8. capture the visible viewport;
+9. save the accepted .blend when requested.
 
 If the generation script, snapshot, contact audit, deterministic quality gate,
 required capture, or final save fails, the pass is rejected. With \`rollback_on_failure=true\` the managed
