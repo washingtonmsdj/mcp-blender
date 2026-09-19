@@ -64,6 +64,25 @@ jobs:
             throw "Candidate failed isolated real Blender visual/multiview smoke."
           }
 
+      - name: Run OrdaX BlenderBench
+        shell: pwsh
+        run: |
+          $managedRepo = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent\src"
+          $venvPython = Join-Path $managedRepo ".venv\Scripts\python.exe"
+          if (-not (Test-Path $venvPython)) {
+            throw "Managed agent virtual environment is missing: $venvPython"
+          }
+
+          $benchmarkRoot = Join-Path $env:RUNNER_TEMP "ordax-blenderbench"
+          if (Test-Path $benchmarkRoot) {
+            Remove-Item $benchmarkRoot -Recurse -Force
+          }
+
+          & $venvPython (Join-Path $env:GITHUB_WORKSPACE "scripts\blender_benchmark.py") --output-dir $benchmarkRoot
+          if ($LASTEXITCODE -ne 0) {
+            throw "Candidate failed OrdaX BlenderBench."
+          }
+
       - name: Recover managed agent safely
         shell: pwsh
         run: |
