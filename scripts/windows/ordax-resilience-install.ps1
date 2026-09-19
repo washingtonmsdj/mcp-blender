@@ -1,18 +1,8 @@
 param(
-    [string]$RunnerPath = ""
+    [switch]$HardenRunnerService
 )
 
 $ErrorActionPreference = "Stop"
-
-function Assert-Administrator {
-    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
-    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        throw "Run this installer from an elevated PowerShell. Administrator privileges are required only to install/harden the GitHub Actions runner service."
-    }
-}
-
-Assert-Administrator
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $agentInstaller = Join-Path $repoRoot "scripts\windows\ordax-agent-install.ps1"
@@ -32,22 +22,29 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "[2/3] Installing/hardening GitHub self-hosted runner service..."
-$runnerArgs = @(
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-File", $runnerInstaller
-)
-if ($RunnerPath) {
-    $runnerArgs += @("-RunnerPath", $RunnerPath)
-}
-& powershell.exe @runnerArgs
-if ($LASTEXITCODE -ne 0) {
-    throw "GitHub Actions runner service setup failed with exit code $LASTEXITCODE"
+Write-Host "[2/3] Checking optional GitHub self-hosted runner service..."
+$runnerBefore = Get-CimInstance Win32_Service |
+    Where-Object { $_.Name -like "actions.runner.*" } |
+    Select-Object -First 1
+
+if ($HardenRunnerService) {
+    if (-not $runnerBefore) {
+        Write-Warning "No official GitHub Actions Windows service is installed. The OrdaX Agent will still be resilient."
+        Write-Warning "Windows runners configured interactively must be officially reconfigured in service mode before hardening."
+    } else {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $runnerInstaller
+        if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Actions runner service hardening failed with exit code $LASTEXITCODE"
+        }
+    }
+} elseif (-not $runnerBefore) {
+    Write-Host "Runner service: not installed (optional). Agent uptime does not depend on it."
+} else {
+    Write-Host ("Runner service found: " + $runnerBefore.Name)
 }
 
 Write-Host ""
-Write-Host "[3/3] Verifying both independent recovery channels..."
+Write-Host "[3/3] Verifying OrdaX persistence..."
 
 $taskName = "OrdaX Dev Agent"
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
@@ -56,9 +53,6 @@ $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
 $runner = Get-CimInstance Win32_Service |
     Where-Object { $_.Name -like "actions.runner.*" } |
     Select-Object -First 1
-if (-not $runner) {
-    throw "GitHub Actions runner service was not found after installation."
-}
 
 $agentStatus = $null
 $deadline = [DateTime]::UtcNow.AddSeconds(45)
@@ -78,9 +72,13 @@ Write-Host ("  LastTaskResult: " + $taskInfo.LastTaskResult)
 Write-Host ("  NextRunTime: " + $taskInfo.NextRunTime)
 
 Write-Host "GitHub Actions runner service:"
-Write-Host ("  Name: " + $runner.Name)
-Write-Host ("  State: " + $runner.State)
-Write-Host ("  StartMode: " + $runner.StartMode)
+if ($runner) {
+    Write-Host ("  Name: " + $runner.Name)
+    Write-Host ("  State: " + $runner.State)
+    Write-Host ("  StartMode: " + $runner.StartMode)
+} else {
+    Write-Host "  Not installed as service (optional)."
+}
 
 if ($agentStatus) {
     Write-Host "OrdaX local health endpoint: ONLINE"
@@ -92,12 +90,16 @@ if ($agentStatus) {
     Write-Warning "The task/launcher restart policy will keep retrying; inspect scripts/windows/ordax-resilience-status.ps1 if it remains offline."
 }
 
-if ($runner.State -ne "Running" -or $runner.StartMode -ne "Auto") {
-    throw "Runner service is not healthy after setup."
+if ($HardenRunnerService -and $runner -and ($runner.State -ne "Running" -or $runner.StartMode -ne "Auto")) {
+    throw "Runner service is not healthy after hardening."
 }
 
 Write-Host ""
 Write-Host "Resilience bootstrap completed."
-Write-Host "Recovery channel A: Windows Task Scheduler -> OrdaX interactive agent"
-Write-Host "Recovery channel B: Windows Service Control Manager -> GitHub Actions runner"
-Write-Host "Each channel can recover the other without arbitrary remote shell access."
+Write-Host "Primary uptime: Windows Task Scheduler -> OrdaX interactive agent"
+Write-Host "Agent launcher: safe Git fast-forward + retry loop"
+if ($runner) {
+    Write-Host "Secondary recovery channel: GitHub Actions Windows service"
+} else {
+    Write-Host "Secondary runner service is optional and not currently installed."
+}
