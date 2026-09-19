@@ -18,6 +18,7 @@ from .config import AgentConfig
 from .models import ActionResult
 from .unity_editor_bridge import UnityEditorBridge
 from .unity_knowledge import capability_report as unity_capability_report, project_profile as unity_project_profile, skill_catalog as unity_skill_catalog
+from .unity_assets import asset_inventory as unity_asset_inventory
 from .blender_live_bridge import BlenderLiveBridge
 from .projects import load_projects, Project
 from .observations import ObservationActions
@@ -75,6 +76,7 @@ class ActionRegistry(ObservationActions):
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
             "unity.skill_catalog": self.unity_skill_catalog,
+            "unity.asset_inventory": self.unity_asset_inventory,
             "unity.scene_summary": self.unity_scene_summary,
             "unity.physics_audit": self.unity_physics_audit,
             "agent.status": self.agent_status,
@@ -464,6 +466,24 @@ class ActionRegistry(ObservationActions):
             True,
             "Unity first-party capability catalog ready; no Codex runtime dependency",
             unity_skill_catalog(),
+        )
+
+    def unity_asset_inventory(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        raw_terms = payload.get("terms", [])
+        if isinstance(raw_terms, str):
+            raw_terms = [raw_terms]
+        if not isinstance(raw_terms, list) or not all(isinstance(item, str) for item in raw_terms):
+            return ActionResult(False, "terms must be a string or list of strings")
+        report = unity_asset_inventory(
+            project.root,
+            terms=raw_terms,
+            max_results=int(payload.get("max_results", 500)),
+        )
+        return ActionResult(
+            bool(report.get("exists")),
+            "Unity asset inventory ready",
+            {"project": project.slug, **report},
         )
 
     def _unity_live_inspection(
