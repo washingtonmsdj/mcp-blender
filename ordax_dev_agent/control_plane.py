@@ -60,6 +60,7 @@ class ControlPlane:
         body = {"op": op, **(payload or {})}
         headers = {
             "apikey": self.publishable_key,
+            "Authorization": f"Bearer {self.publishable_key}",
             "content-type": "application/json",
             "user-agent": "OrdaX-Dev-Agent/0.1",
         }
