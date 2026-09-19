@@ -196,6 +196,7 @@ class ActionRegistry(ObservationActions):
             "blender.live_result": self.blender_live_result,
             "blender.live_run_script": self.blender_live_run_script,
             "blender.live_capture": self.blender_live_capture,
+            "blender.live_multiview_capture": self.blender_live_multiview_capture,
             "blender.live_save": self.blender_live_save,
             "blender.live_stop": self.blender_live_stop,
             "blender.asset_search": self.blender_asset_search,
@@ -2628,6 +2629,101 @@ class ActionRegistry(ObservationActions):
                 result.data["snapshot_path"] = str(snapshot_path)
 
             self._record_capture(payload, output)
+
+        return result
+
+
+    def blender_live_multiview_capture(self, payload: dict[str, Any]) -> ActionResult:
+        views = payload.get(
+            "views",
+            ["front", "back", "left", "right", "top", "three_quarter"],
+        )
+        supported = {
+            "front",
+            "back",
+            "left",
+            "right",
+            "top",
+            "bottom",
+            "three_quarter",
+            "three_quarter_back",
+        }
+        if (
+            not isinstance(views, list)
+            or not views
+            or len(views) > len(supported)
+        ):
+            return ActionResult(False, "views must be a non-empty bounded list")
+        normalized_views: list[str] = []
+        for raw in views:
+            view = str(raw or "").strip().lower()
+            if view not in supported:
+                return ActionResult(
+                    False,
+                    f"unsupported multiview view: {view}",
+                    {"supported_views": sorted(supported)},
+                )
+            if view in normalized_views:
+                return ActionResult(False, "multiview views must be unique")
+            normalized_views.append(view)
+
+        object_names = payload.get("object_names")
+        if object_names is not None and (
+            not isinstance(object_names, list)
+            or not object_names
+            or len(object_names) > 200
+            or not all(isinstance(name, str) and name.strip() for name in object_names)
+        ):
+            return ActionResult(
+                False,
+                "object_names must be a non-empty list of at most 200 object names",
+            )
+
+        try:
+            width = int(payload.get("width", 768))
+            height = int(payload.get("height", 768))
+            margin = float(payload.get("margin", 1.15))
+        except (TypeError, ValueError):
+            return ActionResult(False, "width, height and margin must be numeric")
+        if width < 128 or width > 4096 or height < 128 or height > 4096:
+            return ActionResult(
+                False,
+                "multiview resolution must be between 128 and 4096",
+            )
+        if margin < 1.0 or margin > 3.0:
+            return ActionResult(False, "multiview margin must be between 1.0 and 3.0")
+
+        project = self._project(payload)
+        live = BlenderLiveBridge(self.config, project)
+        anchor = self._capture_output(payload, "multiview.json")
+        request: dict[str, Any] = {
+            "output_dir": str(anchor.parent),
+            "views": normalized_views,
+            "width": width,
+            "height": height,
+            "margin": margin,
+        }
+        if object_names is not None:
+            request["object_names"] = [name.strip() for name in object_names]
+
+        result = live.request(
+            "multiview_capture",
+            request,
+            timeout_seconds=float(payload.get("timeout_seconds", 240)),
+        )
+        if not result.ok:
+            return result
+
+        primary = result.data.get("primary_artifact")
+        if primary:
+            primary_path = Path(str(primary)).resolve()
+            manifest_path = primary_path.with_suffix(".json")
+            manifest_path.write_text(
+                json.dumps(result.data, indent=2),
+                encoding="utf-8",
+            )
+            result.data["primary_snapshot_path"] = str(manifest_path)
+            self._record_capture(payload, primary_path)
 
         return result
 
