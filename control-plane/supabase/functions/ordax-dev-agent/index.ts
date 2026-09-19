@@ -268,19 +268,52 @@ Deno.serve(async (req: Request) => {
       const artifactId = String(body?.artifact_id ?? "");
       if (!artifactId) return json({ error: "artifact_id_required" }, 400);
 
+      const { data: artifact, error: artifactLookupError } = await db
+        .from("ordax_dev_artifacts")
+        .select("id,storage_path")
+        .eq("id", artifactId)
+        .eq("job_id", jobId)
+        .eq("agent_name", agent.agent_name)
+        .maybeSingle();
+
+      if (artifactLookupError || !artifact?.storage_path) {
+        return json(
+          {
+            error: "artifact_lookup_failed",
+            detail: artifactLookupError?.message ?? "artifact not found",
+          },
+          404,
+        );
+      }
+
+      const { data: signedRead, error: signedReadError } = await db.storage
+        .from(BUCKET)
+        .createSignedUrl(String(artifact.storage_path), 3600);
+
+      if (signedReadError || !signedRead?.signedUrl) {
+        return json(
+          {
+            error: "artifact_read_url_failed",
+            detail: signedReadError?.message,
+          },
+          500,
+        );
+      }
+
       const { error } = await db
         .from("ordax_dev_artifacts")
         .update({
           sha256: body?.sha256 ?? null,
           size_bytes: body?.size_bytes ?? null,
           metadata: body?.metadata ?? { state: "uploaded" },
+          signed_url: signedRead.signedUrl,
         })
         .eq("id", artifactId)
         .eq("job_id", jobId)
         .eq("agent_name", agent.agent_name);
 
       if (error) return json({ error: "artifact_finalize_failed", detail: error.message }, 500);
-      return json({ ok: true });
+      return json({ ok: true, signed_url: signedRead.signedUrl });
     }
 
     return json({ error: "unknown_operation" }, 400);
