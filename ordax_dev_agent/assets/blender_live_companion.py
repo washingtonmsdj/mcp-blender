@@ -432,6 +432,7 @@ def _contact_audit(command: dict) -> None:
 
     results = []
     invalid = []
+    resolution_errors = 0
     intersection_pairs = 0
 
     for item in raw_pairs:
@@ -446,6 +447,7 @@ def _contact_audit(command: dict) -> None:
         left = bpy.context.scene.objects.get(item[0])
         right = bpy.context.scene.objects.get(item[1])
         if left is None or right is None:
+            resolution_errors += 1
             results.append(
                 {
                     "a": item[0],
@@ -459,6 +461,7 @@ def _contact_audit(command: dict) -> None:
         left_tree, left_points = geometry_for(left)
         right_tree, right_points = geometry_for(right)
         if left_tree is None or right_tree is None:
+            resolution_errors += 1
             results.append(
                 {
                     "a": left.name,
@@ -540,13 +543,24 @@ def _contact_audit(command: dict) -> None:
         )
         return
 
+    passed = resolution_errors == 0 and intersection_pairs == 0
+    if resolution_errors:
+        summary = (
+            f"Blender contact audit could not resolve {resolution_errors} pair(s)"
+        )
+    elif intersection_pairs:
+        summary = (
+            f"Blender contact audit found {intersection_pairs} intersecting object pair(s)"
+        )
+    else:
+        summary = "Blender contact audit passed"
+
     _response(
         command_id,
-        intersection_pairs == 0,
-        "Blender contact audit passed"
-        if intersection_pairs == 0
-        else f"Blender contact audit found {intersection_pairs} intersecting object pair(s)",
+        passed,
+        summary,
         audited_pairs=len(results),
+        resolution_errors=resolution_errors,
         intersection_pairs=intersection_pairs,
         results=results,
     )
