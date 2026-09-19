@@ -339,6 +339,75 @@ def _object_inspect(command: dict) -> None:
     )
 
 
+def _evaluated_world_bvh(obj, depsgraph):
+    evaluated = obj.evaluated_get(depsgraph)
+    mesh = evaluated.to_mesh()
+    try:
+        matrix = evaluated.matrix_world.copy()
+        vertices = [matrix @ vertex.co for vertex in mesh.vertices]
+        polygons = [tuple(poly.vertices) for poly in mesh.polygons if len(poly.vertices) >= 3]
+        if not vertices or not polygons:
+            return None, []
+        tree = BVHTree.FromPolygons(
+            vertices,
+            polygons,
+            all_triangles=False,
+            epsilon=0.00001,
+        )
+        return tree, vertices
+    finally:
+        evaluated.to_mesh_clear()
+
+
+def _sample_points(points, limit: int = 160):
+    if len(points) <= limit:
+        return points
+    step = max(1, len(points) // limit)
+    return points[::step][:limit]
+
+
+def _point_inside_closed_surface(tree, point, tolerance: float = 1e-5) -> bool:
+    try:
+        nearest = tree.find_nearest(point)
+    except Exception:
+        return False
+    if not nearest:
+        return False
+    surface_point, normal, _, distance = nearest
+    if surface_point is None or normal is None or distance is None:
+        return False
+    # For consistently outward-facing closed meshes, an interior point lies
+    # behind the closest surface plane relative to its outward normal.
+    signed = (point - surface_point).dot(normal)
+    return signed < -max(tolerance, float(distance) * 1e-6)
+
+
+def _approx_surface_clearance(source_points, target_tree) -> float | None:
+    minimum = None
+    for point in _sample_points(source_points, 96):
+        try:
+            nearest = target_tree.find_nearest(point)
+        except Exception:
+            continue
+        if not nearest or nearest[3] is None:
+            continue
+        distance = float(nearest[3])
+        minimum = distance if minimum is None else min(minimum, distance)
+    return minimum
+
+
+def _aabb_overlap(left: dict, right: dict) -> bool:
+    left_min, left_max = left.get("aabb_min"), left.get("aabb_max")
+    right_min, right_max = right.get("aabb_min"), right.get("aabb_max")
+    if not all((left_min, left_max, right_min, right_max)):
+        return False
+    return all(
+        left_min[axis] <= right_max[axis]
+        and left_max[axis] >= right_min[axis]
+        for axis in range(3)
+    )
+
+
 def _contact_audit(command: dict) -> None:
     command_id = command["id"]
     raw_pairs = command.get("pairs")
@@ -352,12 +421,12 @@ def _contact_audit(command: dict) -> None:
     depsgraph = bpy.context.evaluated_depsgraph_get()
     cache = {}
 
-    def tree_for(obj):
+    def geometry_for(obj):
         if obj.name not in cache:
             if obj.type != "MESH":
-                cache[obj.name] = None
+                cache[obj.name] = (None, [])
             else:
-                cache[obj.name] = BVHTree.FromObject(obj, depsgraph, epsilon=0.00001)
+                cache[obj.name] = _evaluated_world_bvh(obj, depsgraph)
         return cache[obj.name]
 
     results = []
@@ -386,8 +455,8 @@ def _contact_audit(command: dict) -> None:
             )
             continue
 
-        left_tree = tree_for(left)
-        right_tree = tree_for(right)
+        left_tree, left_points = geometry_for(left)
+        right_tree, right_points = geometry_for(right)
         if left_tree is None or right_tree is None:
             results.append(
                 {
@@ -399,20 +468,64 @@ def _contact_audit(command: dict) -> None:
             )
             continue
 
+        left_bounds = _world_bounds(left)
+        right_bounds = _world_bounds(right)
+        broad_phase_overlap = _aabb_overlap(left_bounds, right_bounds)
+
         overlaps = left_tree.overlap(right_tree)
-        count = len(overlaps)
-        intersects = count > 0
+        triangle_overlap_count = len(overlaps)
+        surface_intersection = triangle_overlap_count > 0
+
+        left_inside_right = False
+        right_inside_left = False
+        if broad_phase_overlap and not surface_intersection:
+            left_inside_right = any(
+                _point_inside_closed_surface(right_tree, point)
+                for point in _sample_points(left_points)
+            )
+            right_inside_left = any(
+                _point_inside_closed_surface(left_tree, point)
+                for point in _sample_points(right_points)
+            )
+
+        contained = left_inside_right or right_inside_left
+        intersects = surface_intersection or contained
         if intersects:
             intersection_pairs += 1
+
+        left_to_right = _approx_surface_clearance(left_points, right_tree)
+        right_to_left = _approx_surface_clearance(right_points, left_tree)
+        clearances = [
+            distance
+            for distance in (left_to_right, right_to_left)
+            if distance is not None
+        ]
+        min_clearance = min(clearances) if clearances else None
+
+        reason = None
+        if surface_intersection:
+            reason = "surface_intersection"
+        elif contained:
+            reason = "containment"
+
         results.append(
             {
                 "a": left.name,
                 "b": right.name,
                 "ok": True,
                 "intersects": intersects,
-                "triangle_overlap_count": count,
-                "a_bounds": _world_bounds(left),
-                "b_bounds": _world_bounds(right),
+                "reason": reason,
+                "broad_phase_aabb_overlap": broad_phase_overlap,
+                "triangle_overlap_count": triangle_overlap_count,
+                "left_inside_right": left_inside_right,
+                "right_inside_left": right_inside_left,
+                "approx_min_surface_distance": (
+                    round(min_clearance, 6)
+                    if min_clearance is not None
+                    else None
+                ),
+                "a_bounds": left_bounds,
+                "b_bounds": right_bounds,
             }
         )
 
