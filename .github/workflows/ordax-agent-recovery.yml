@@ -15,10 +15,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ordax-agent-recovery
-  cancel-in-progress: false
-
 jobs:
   recover-if-offline:
     runs-on: [self-hosted, Windows, X64]
