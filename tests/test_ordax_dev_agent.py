@@ -34,6 +34,12 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("agent.update", result.data["actions"])
             self.assertIn("unity.compile", result.data["actions"])
             self.assertIn("blender.run_python", result.data["actions"])
+            self.assertIn("blender.live_start", result.data["actions"])
+            self.assertIn("blender.live_status", result.data["actions"])
+            self.assertIn("blender.live_run_script", result.data["actions"])
+            self.assertIn("blender.live_capture", result.data["actions"])
+            self.assertIn("blender.live_save", result.data["actions"])
+            self.assertIn("blender.live_stop", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
