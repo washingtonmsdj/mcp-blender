@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -479,9 +480,20 @@ def unity_capture_project(
 
     result = _unity_result(command, project, log_file, upm_log_file, timeout_seconds)
     capture_available = capture.is_file() and capture.stat().st_size > 0
+    snapshot = capture.with_suffix(".json")
+    snapshot_available = snapshot.is_file() and snapshot.stat().st_size > 0
+
     result["capture_file"] = str(capture)
     result["capture_available"] = capture_available
     result["capture_size_bytes"] = capture.stat().st_size if capture_available else 0
+    result["snapshot_file"] = str(snapshot)
+    result["snapshot_available"] = snapshot_available
+
+    if snapshot_available:
+        try:
+            result["snapshot"] = json.loads(snapshot.read_text(encoding="utf-8"))
+        except Exception as error:
+            result["snapshot_error"] = str(error)
 
     if not capture_available:
         result["ok"] = False
