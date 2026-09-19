@@ -39,6 +39,16 @@ class UnityCliTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("managed by OrdaX", result.summary)
 
+    def test_pipeline_command_rejects_equals_project_override(self):
+        with tempfile.TemporaryDirectory() as raw:
+            result = pipeline_command(
+                Path(raw),
+                "scene_summary",
+                ["--project-path=C:/other"],
+            )
+        self.assertFalse(result.ok)
+        self.assertIn("managed by OrdaX", result.summary)
+
     def test_pipeline_command_rejects_control_characters(self):
         with tempfile.TemporaryDirectory() as raw:
             result = pipeline_command(
