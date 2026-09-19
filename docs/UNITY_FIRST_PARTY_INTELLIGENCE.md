@@ -75,3 +75,24 @@ The long-term direction is to turn high-value domains from the first-party catal
 - `unity.scene_summary`
 
 Each operation must remain deterministic, inspectable and testable.
+
+## Unity CLI / Pipeline integration
+
+OrdaX 0.7.0 also adopts Unity's official CLI/Pipeline surface as a fast generic
+Editor transport while retaining the OrdaX control plane and project scoping.
+
+Typed actions:
+
+- `unity.cli_status`: detect the official Unity CLI and inspect Editor/Pipeline
+  availability;
+- `unity.pipeline_install`: install the official `com.unity.pipeline` package
+  for the registered project;
+- `unity.pipeline_catalog`: discover commands registered by the open Editor;
+- `unity.pipeline_command`: invoke one registered command using structured
+  argv, with the registered project path controlled by OrdaX.
+
+The integration does not depend on Codex. Unity's agent skills remain useful as
+a capability/knowledge map; Unity CLI + Pipeline is treated as the execution
+surface when available. Existing OrdaX Editor companions remain valid for
+project-specific capture, validation and workflows not represented in the
+Pipeline catalog.
