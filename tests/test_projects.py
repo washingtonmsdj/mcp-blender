@@ -41,12 +41,15 @@ class ProjectTests(unittest.TestCase):
         registry = ActionRegistry(replace(self.config, projects={'model': {
             'path': str(self.project), 'apps': ['unity'],
             'unity': {'companion_source': 'Assets/Editor/Custom.cs'}}}))
-        self.assertEqual(registry._editor({}).companion_source_path, self.project / 'Assets/Editor/Custom.cs')
+        self.assertEqual(
+            registry._editor({}).companion_source_path,
+            (self.project / 'Assets/Editor/Custom.cs').resolve(),
+        )
 
     def test_jobs_route_to_registered_project_without_git(self):
         job = AgentJob('id', 'project.observe', project_slug='model')
         registry = ActionRegistry(self.config)
-        self.assertEqual(registry._project_path(job.action_payload()), self.project)
+        self.assertEqual(registry._project_path(job.action_payload()), self.project.resolve())
         self.assertFalse(registry.execute('project.observe', {'project': 'unknown'}).ok)
         with self.assertRaises(ValueError):
             AgentJob('id', 'git.sync', {'project': 'other'}, project_slug='model').action_payload()
