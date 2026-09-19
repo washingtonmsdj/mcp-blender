@@ -64,6 +64,8 @@ class ActionRegistry(ObservationActions):
             "blender.render_preview": self.blender_render_preview,
             "blender.live_start": self.blender_live_start,
             "blender.live_status": self.blender_live_status,
+            "blender.live_inspect": self.blender_live_inspect,
+            "blender.live_result": self.blender_live_result,
             "blender.live_run_script": self.blender_live_run_script,
             "blender.live_capture": self.blender_live_capture,
             "blender.live_save": self.blender_live_save,
@@ -919,6 +921,19 @@ class ActionRegistry(ObservationActions):
             else "Visible Blender live session is not running",
             data,
         )
+
+    def blender_live_inspect(self, payload: dict[str, Any]) -> ActionResult:
+        return self._blender_live(payload).request(
+            "inspect",
+            {"max_objects": int(payload.get("max_objects", 200))},
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_result(self, payload: dict[str, Any]) -> ActionResult:
+        command_id = str(payload.get("command_id") or "").strip()
+        if not command_id:
+            return ActionResult(False, "command_id is required")
+        return self._blender_live(payload).result(command_id)
 
     def blender_live_run_script(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
