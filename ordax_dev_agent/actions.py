@@ -216,10 +216,14 @@ class ActionRegistry:
         )
 
     def _bridge_script(self, name: str) -> Path:
-        script = self.config.bridge_path / "scripts" / "windows" / name
-        if not script.is_file():
-            raise FileNotFoundError(script)
-        return script
+        candidates = [
+            self.config.agent_repo_path / "scripts" / "windows" / name,
+            self.config.bridge_path / "scripts" / "windows" / name,
+        ]
+        for script in candidates:
+            if script.is_file():
+                return script
+        raise FileNotFoundError(candidates[0])
 
     def unity_compile(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
