@@ -2007,6 +2007,40 @@ class ActionRegistry(ObservationActions):
             if save_target.suffix.lower() != ".blend":
                 return ActionResult(False, "save_target_path must be a .blend file")
 
+        raw_extra_artifacts = payload.get("collect_artifacts", [])
+        if raw_extra_artifacts is None:
+            raw_extra_artifacts = []
+        if not isinstance(raw_extra_artifacts, list) or len(raw_extra_artifacts) > 24:
+            return ActionResult(False, "collect_artifacts must be a list with at most 24 entries")
+
+        extra_artifacts: list[tuple[Path, str]] = []
+        allowed_artifact_suffixes = {
+            ".png", ".jpg", ".jpeg", ".json", ".glb", ".gltf", ".fbx", ".blend"
+        }
+        for item in raw_extra_artifacts:
+            if isinstance(item, str):
+                raw_path = item
+                kind = "blender-generated-artifact"
+            elif isinstance(item, dict):
+                raw_path = str(item.get("path") or "").strip()
+                kind = str(item.get("kind") or "blender-generated-artifact").strip()
+            else:
+                return ActionResult(
+                    False,
+                    "collect_artifacts entries must be paths or {path, kind} objects",
+                )
+            if not raw_path:
+                return ActionResult(False, "collect_artifacts contains an empty path")
+            artifact_path = project.path(raw_path, must_exist=False)
+            if artifact_path.suffix.lower() not in allowed_artifact_suffixes:
+                return ActionResult(
+                    False,
+                    f"unsupported collected artifact type: {artifact_path.suffix}",
+                )
+            if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", kind):
+                return ActionResult(False, "collect_artifacts kind contains unsupported characters")
+            extra_artifacts.append((artifact_path, kind))
+
         live = BlenderLiveBridge(self.config, project)
         phases: dict[str, Any] = {}
         rollback_on_failure = bool(payload.get("rollback_on_failure", True))
@@ -2159,6 +2193,28 @@ class ActionRegistry(ObservationActions):
             if not saved.ok:
                 return fail("Blender final save failed; pass rejected")
 
+        collected_artifacts = []
+        missing_artifacts = []
+        for artifact_path, kind in extra_artifacts:
+            if artifact_path.is_file() and artifact_path.stat().st_size > 0:
+                collected_artifacts.append({
+                    "path": str(artifact_path),
+                    "kind": kind,
+                    "size_bytes": artifact_path.stat().st_size,
+                })
+            else:
+                missing_artifacts.append(str(artifact_path))
+
+        if missing_artifacts and bool(payload.get("collect_artifacts_required", True)):
+            return fail(
+                "Blender declared artifacts are missing; pass rejected",
+                ActionResult(
+                    False,
+                    "missing declared Blender artifacts",
+                    {"missing_artifacts": missing_artifacts},
+                ),
+            )
+
         return ActionResult(
             True,
             "Blender generation pass accepted",
@@ -2166,6 +2222,8 @@ class ActionRegistry(ObservationActions):
                 "checkpoint_id": checkpoint_id,
                 "script_path": str(script),
                 "artifact": artifact,
+                "artifacts": collected_artifacts,
+                "missing_artifacts": missing_artifacts,
                 "save_target_path": str(save_target) if save_target else None,
                 "phases": phases,
             },
