@@ -79,6 +79,17 @@ async def run(
                 print(f"Capture: {payload['capture_file']}")
             if payload.get("capture_size_bytes") is not None:
                 print(f"Capture size: {payload['capture_size_bytes']} bytes")
+            if payload.get("snapshot_file"):
+                print(f"Snapshot: {payload['snapshot_file']}")
+            snapshot = payload.get("snapshot")
+            if isinstance(snapshot, dict):
+                print(
+                    "State: "
+                    f"{snapshot.get('gameState', 'unknown')} | "
+                    f"enemies={snapshot.get('activeEnemies', '?')} | "
+                    f"elite={snapshot.get('activeElites', '?')} | "
+                    f"boss={snapshot.get('activeBosses', '?')}"
+                )
             if payload.get("log_file"):
                 print(f"Log: {payload['log_file']}")
 
