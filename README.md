@@ -160,7 +160,7 @@ O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório iso
 
 Os workflows são manuais por segurança.
 
-## Blender Live 0.5.1
+## Blender Live 0.6.0
 
 The visible Blender companion now exposes a richer typed perception loop:
 
@@ -175,6 +175,11 @@ The visible Blender companion now exposes a richer typed perception loop:
 The companion advertises a protocol version and capabilities, polls commands at
 low latency, and refuses silent use of an outdated companion. Clean outdated
 sessions may restart automatically; unsaved Blender work is preserved.
+
+- `blender.live_object_metadata` — stable semantic IDs and provenance.
+- `blender.live_checkpoint_create/list/restore` — managed rollback points.
+- `blender.live_trajectory` — durable before/after operation journal.
+- `blender.live_generation_pass` — checkpoint → generate → inspect → contact audit → capture → save, with rollback on failure.
 
 See \`docs/BLENDER_MCP_REFERENCE_REVIEW.md\` for the design review that informed
 this layer and the capabilities intentionally not copied.
