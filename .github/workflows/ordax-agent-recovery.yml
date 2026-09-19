@@ -11,6 +11,14 @@ on:
       - "pyproject.toml"
       - ".github/workflows/ordax-agent-recovery.yml"
       - ".github/ordax-recovery-request.json"
+  pull_request:
+    paths:
+      - "ordax_dev_agent/**"
+      - "mcp_blender_unity/**"
+      - "scripts/windows/ordax-agent-start.cmd"
+      - "pyproject.toml"
+      - ".github/workflows/ordax-agent-recovery.yml"
+      - ".github/ordax-recovery-request.json"
   workflow_dispatch:
 
 permissions:
