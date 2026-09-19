@@ -188,6 +188,18 @@ class ControlPlane:
             },
         )
 
+    def renew(self, job: AgentJob) -> dict[str, Any]:
+        if not job.lease_token:
+            raise RuntimeError("Cannot renew a job without a lease token.")
+
+        return self._call(
+            "renew",
+            {
+                "job_id": job.id,
+                "lease_token": job.lease_token,
+            },
+        )
+
     def complete(self, job: AgentJob, result: ActionResult) -> None:
         self._call(
             "complete",
