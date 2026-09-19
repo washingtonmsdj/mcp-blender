@@ -59,10 +59,6 @@ Deno.serve(async (req: Request) => {
   try {
     if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
-    if (req.headers.get("apikey") !== ANON_KEY) {
-      return json({ error: "invalid_apikey" }, 401);
-    }
-
     const body = await req.json();
     const op = String(body?.op ?? "");
 
