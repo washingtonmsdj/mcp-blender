@@ -13,7 +13,7 @@ from mcp_blender_unity.config import find_blender
 from .models import ActionResult
 
 
-EXPECTED_PROTOCOL_VERSION = 2
+EXPECTED_PROTOCOL_VERSION = 3
 
 
 class BlenderLiveBridge:
