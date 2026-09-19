@@ -135,12 +135,17 @@ def _prune_results(limit: int = 200) -> None:
 
 
 def _response(command_id: str, ok: bool, summary: str, **data) -> None:
+    snapshot = _scene_snapshot()
+    # Heavy Blender operations pause the timer heartbeat. Refresh presence
+    # synchronously before publishing the response so the next typed command
+    # cannot observe a stale session between two successful operations.
+    _write_presence(force=True)
     body = {
         "id": command_id,
         "ok": ok,
         "summary": summary,
         **data,
-        "snapshot": _scene_snapshot(),
+        "snapshot": snapshot,
         "completed_at": time.time(),
     }
     # Persist first. The response inbox is ephemeral; results survive timeouts,
