@@ -4,6 +4,7 @@ import unittest
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from ordax_dev_agent.blender_live_bridge import BlenderLiveBridge
 from ordax_dev_agent.projects import Project
@@ -89,6 +90,48 @@ class BlenderLiveResultTests(unittest.TestCase):
 
             self.assertIn(command_id, status["inflight_commands"])
             self.assertEqual(str(bridge.inflight), status["inflight_root"])
+
+
+    def test_outdated_companion_allows_advertised_maintenance_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            bridge = self.make_bridge(Path(raw))
+            bridge._ensure_dirs()
+            command_id = "a" * 32
+            (bridge.responses / f"{command_id}.json").write_text(
+                json.dumps({"id": command_id, "ok": True, "summary": "saved"}),
+                encoding="utf-8",
+            )
+            outdated = {
+                "protocol_compatible": False,
+                "companion_current": False,
+                "capabilities": ["save", "quit"],
+            }
+            with (
+                patch.object(bridge, "presence_is_fresh", return_value=True),
+                patch.object(bridge, "status", return_value=outdated),
+                patch("ordax_dev_agent.blender_live_bridge.uuid.uuid4", return_value=SimpleNamespace(hex=command_id)),
+            ):
+                result = bridge.request("save", {"target_path": "demo.blend"}, timeout_seconds=1)
+
+            self.assertTrue(result.ok)
+            self.assertEqual("saved", result.summary)
+
+    def test_outdated_companion_blocks_nonmaintenance_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            bridge = self.make_bridge(Path(raw))
+            outdated = {
+                "protocol_compatible": False,
+                "companion_current": False,
+                "capabilities": ["run_script"],
+            }
+            with (
+                patch.object(bridge, "presence_is_fresh", return_value=True),
+                patch.object(bridge, "status", return_value=outdated),
+            ):
+                result = bridge.request("run_script", {"script_path": "demo.py"})
+
+            self.assertFalse(result.ok)
+            self.assertIn("protocol is outdated", result.summary)
 
 
 if __name__ == "__main__":
