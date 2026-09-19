@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 import bpy
+import bmesh
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
@@ -813,7 +814,7 @@ def _object_metadata(command: dict) -> None:
 
 
 _QUALITY_AXES = {"x": 0, "y": 1, "z": 2}
-_QUALITY_TYPES = {"dimensions", "symmetry", "proportion", "containment"}
+_QUALITY_TYPES = {"dimensions", "symmetry", "proportion", "containment", "mesh_quality"}
 
 
 def _quality_axis(value, field: str) -> tuple[str, int]:
@@ -1033,6 +1034,177 @@ def _quality_containment(check: dict) -> dict:
     }
 
 
+
+
+def _quality_mesh(check: dict) -> dict:
+    obj = _quality_object(check.get("object_name"), "object_name")
+    if obj.type != "MESH":
+        raise ValueError(f"mesh_quality requires a MESH object: {obj.name}")
+
+    evaluated = bool(check.get("evaluated", True))
+    try:
+        epsilon = float(check.get("epsilon", 1e-10))
+    except (TypeError, ValueError):
+        raise ValueError("epsilon must be a number")
+    if epsilon <= 0 or epsilon > 1.0:
+        raise ValueError("epsilon must be greater than 0 and at most 1")
+
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    evaluated_obj = None
+    mesh = None
+    must_clear = False
+    bm = None
+    try:
+        if evaluated:
+            evaluated_obj = obj.evaluated_get(depsgraph)
+            mesh = evaluated_obj.to_mesh()
+            must_clear = True
+        else:
+            mesh = obj.data
+
+        if mesh is None:
+            raise ValueError(f"mesh data is unavailable for {obj.name}")
+
+        try:
+            mesh.calc_loop_triangles()
+        except Exception:
+            pass
+
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+
+        triangle_count = len(getattr(mesh, "loop_triangles", []))
+        face_count = len(bm.faces)
+        triangle_faces = sum(1 for face in bm.faces if len(face.verts) == 3)
+        quad_faces = sum(1 for face in bm.faces if len(face.verts) == 4)
+        ngon_faces = sum(1 for face in bm.faces if len(face.verts) > 4)
+        quad_ratio = (quad_faces / face_count) if face_count else 0.0
+
+        boundary_edges = sum(1 for edge in bm.edges if edge.is_boundary)
+        wire_edges = sum(1 for edge in bm.edges if edge.is_wire)
+        non_manifold_edges = sum(1 for edge in bm.edges if not edge.is_manifold)
+        loose_vertices = sum(1 for vert in bm.verts if not vert.link_edges)
+        degenerate_faces = sum(1 for face in bm.faces if float(face.calc_area()) <= epsilon)
+        zero_length_edges = sum(
+            1 for edge in bm.edges
+            if float((edge.verts[0].co - edge.verts[1].co).length) <= epsilon
+        )
+        uv_layers = len(getattr(mesh, "uv_layers", []))
+        material_slots = len(getattr(obj, "material_slots", []))
+
+        metrics = {
+            "vertices": len(bm.verts),
+            "edges": len(bm.edges),
+            "faces": face_count,
+            "triangles": triangle_count,
+            "triangle_faces": triangle_faces,
+            "quad_faces": quad_faces,
+            "ngon_faces": ngon_faces,
+            "quad_ratio": round(quad_ratio, 6),
+            "boundary_edges": boundary_edges,
+            "wire_edges": wire_edges,
+            "non_manifold_edges": non_manifold_edges,
+            "loose_vertices": loose_vertices,
+            "degenerate_faces": degenerate_faces,
+            "zero_length_edges": zero_length_edges,
+            "uv_layers": uv_layers,
+            "material_slots": material_slots,
+        }
+
+        rules = []
+
+        def maximum(field: str, actual: int) -> None:
+            if field not in check or check.get(field) is None:
+                return
+            raw = check.get(field)
+            if not isinstance(raw, int) or isinstance(raw, bool) or raw < 0:
+                raise ValueError(f"{field} must be a non-negative integer")
+            rules.append({
+                "rule": field,
+                "passed": actual <= raw,
+                "expected_max": raw,
+                "actual": actual,
+            })
+
+        maximum("max_triangles", triangle_count)
+        maximum("max_ngons", ngon_faces)
+        maximum("max_boundary_edges", boundary_edges)
+        maximum("max_wire_edges", wire_edges)
+        maximum("max_non_manifold_edges", non_manifold_edges)
+        maximum("max_loose_vertices", loose_vertices)
+        maximum("max_degenerate_faces", degenerate_faces)
+        maximum("max_zero_length_edges", zero_length_edges)
+
+        if "min_quad_ratio" in check and check.get("min_quad_ratio") is not None:
+            try:
+                minimum_quad_ratio = float(check.get("min_quad_ratio"))
+            except (TypeError, ValueError):
+                raise ValueError("min_quad_ratio must be a number")
+            if minimum_quad_ratio < 0 or minimum_quad_ratio > 1:
+                raise ValueError("min_quad_ratio must be between 0 and 1")
+            rules.append({
+                "rule": "min_quad_ratio",
+                "passed": quad_ratio >= minimum_quad_ratio,
+                "expected_min": minimum_quad_ratio,
+                "actual": round(quad_ratio, 6),
+            })
+
+        if bool(check.get("require_uv", False)):
+            rules.append({
+                "rule": "require_uv",
+                "passed": uv_layers > 0,
+                "expected_min": 1,
+                "actual": uv_layers,
+            })
+
+        if bool(check.get("require_material", False)):
+            rules.append({
+                "rule": "require_material",
+                "passed": material_slots > 0,
+                "expected_min": 1,
+                "actual": material_slots,
+            })
+
+        if bool(check.get("require_manifold", False)):
+            rules.append({
+                "rule": "require_manifold",
+                "passed": non_manifold_edges == 0,
+                "expected_max": 0,
+                "actual": non_manifold_edges,
+            })
+
+        if not rules:
+            raise ValueError(
+                "mesh_quality requires at least one threshold or requirement"
+            )
+
+        failed = [rule for rule in rules if not rule["passed"]]
+        return {
+            "type": "mesh_quality",
+            "passed": not failed,
+            "object_name": obj.name,
+            "evaluated": evaluated,
+            "epsilon": epsilon,
+            "metrics": metrics,
+            "rules": rules,
+            "failed_rules": len(failed),
+        }
+    finally:
+        if bm is not None:
+            try:
+                bm.free()
+            except Exception:
+                pass
+        if must_clear and evaluated_obj is not None:
+            try:
+                evaluated_obj.to_mesh_clear()
+            except Exception:
+                pass
+
+
 def _quality_gate(command: dict) -> None:
     command_id = command["id"]
     checks = command.get("checks")
@@ -1049,6 +1221,7 @@ def _quality_gate(command: dict) -> None:
         "symmetry": _quality_symmetry,
         "proportion": _quality_proportion,
         "containment": _quality_containment,
+        "mesh_quality": _quality_mesh,
     }
     for index, check in enumerate(checks):
         if not isinstance(check, dict):
