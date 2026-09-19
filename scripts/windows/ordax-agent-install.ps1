@@ -88,7 +88,7 @@ $settingsParams = @{
     ExecutionTimeLimit = [TimeSpan]::Zero
 }
 $settings = New-ScheduledTaskSettingsSet @settingsParams
-$principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType InteractiveToken -RunLevel Limited
+$principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
 $task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "OrdaX Dev Agent - persistent interactive Unity/Blender control plane"
 Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
 
