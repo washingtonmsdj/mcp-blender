@@ -1,6 +1,9 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
+
+from PIL import Image
 
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
@@ -66,6 +69,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_stop", result.data["actions"])
             self.assertIn("blender.asset_search", result.data["actions"])
             self.assertIn("blender.asset_manifest", result.data["actions"])
+            self.assertIn("blender.multiview_compare", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
@@ -149,6 +153,106 @@ class AgentActionRegistryTests(unittest.TestCase):
 
             self.assertFalse(result.ok)
             self.assertIn("between 128 and 4096", result.summary)
+
+
+    def test_multiview_compare_identical_bundle_has_zero_error(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            artifact_root = root / "state" / "artifacts" / "hordax"
+            baseline_dir = artifact_root / "baseline"
+            candidate_dir = artifact_root / "candidate"
+            baseline_dir.mkdir(parents=True)
+            candidate_dir.mkdir(parents=True)
+
+            baseline_image = baseline_dir / "front.png"
+            candidate_image = candidate_dir / "front.png"
+            Image.new("RGB", (16, 16), (20, 40, 60)).save(baseline_image)
+            Image.new("RGB", (16, 16), (20, 40, 60)).save(candidate_image)
+
+            baseline_manifest = baseline_dir / "multiview.json"
+            candidate_manifest = candidate_dir / "multiview.json"
+            manifest_bounds = {
+                "dimensions": [2.0, 1.0, 0.5],
+                "center": [0.0, 0.0, 0.25],
+            }
+            baseline_manifest.write_text(
+                json.dumps({
+                    "views": [{"view": "front", "artifact": str(baseline_image)}],
+                    "bounds": manifest_bounds,
+                }),
+                encoding="utf-8",
+            )
+            candidate_manifest.write_text(
+                json.dumps({
+                    "views": [{"view": "front", "artifact": str(candidate_image)}],
+                    "bounds": manifest_bounds,
+                }),
+                encoding="utf-8",
+            )
+
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "blender.multiview_compare",
+                {
+                    "baseline_manifest_path": str(baseline_manifest),
+                    "candidate_manifest_path": str(candidate_manifest),
+                    "max_mae": 0.0,
+                    "max_changed_ratio": 0.0,
+                },
+            )
+
+            self.assertTrue(result.ok)
+            self.assertTrue(result.data["comparison_passed"])
+            self.assertEqual(0.0, result.data["views"][0]["mae"])
+            self.assertEqual(0.0, result.data["views"][0]["changed_pixel_ratio"])
+
+    def test_multiview_compare_rejects_bundle_above_threshold(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            artifact_root = root / "state" / "artifacts" / "hordax"
+            baseline_dir = artifact_root / "baseline"
+            candidate_dir = artifact_root / "candidate"
+            baseline_dir.mkdir(parents=True)
+            candidate_dir.mkdir(parents=True)
+
+            baseline_image = baseline_dir / "front.png"
+            candidate_image = candidate_dir / "front.png"
+            Image.new("RGB", (16, 16), (0, 0, 0)).save(baseline_image)
+            Image.new("RGB", (16, 16), (255, 255, 255)).save(candidate_image)
+
+            baseline_manifest = baseline_dir / "multiview.json"
+            candidate_manifest = candidate_dir / "multiview.json"
+            baseline_manifest.write_text(
+                json.dumps({
+                    "views": [{"view": "front", "artifact": str(baseline_image)}],
+                    "bounds": {"dimensions": [1, 1, 1], "center": [0, 0, 0]},
+                }),
+                encoding="utf-8",
+            )
+            candidate_manifest.write_text(
+                json.dumps({
+                    "views": [{"view": "front", "artifact": str(candidate_image)}],
+                    "bounds": {"dimensions": [1, 1, 1], "center": [0, 0, 0]},
+                }),
+                encoding="utf-8",
+            )
+
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "blender.multiview_compare",
+                {
+                    "baseline_manifest_path": str(baseline_manifest),
+                    "candidate_manifest_path": str(candidate_manifest),
+                    "max_mae": 0.05,
+                    "max_changed_ratio": 0.05,
+                },
+            )
+
+            self.assertFalse(result.ok)
+            self.assertFalse(result.data["comparison_passed"])
+            self.assertEqual(["front"], result.data["failed_views"])
 
 
 if __name__ == "__main__":
