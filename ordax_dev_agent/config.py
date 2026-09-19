@@ -34,7 +34,7 @@ class AgentConfig:
         settings: dict = {}
         if settings_path.is_file():
             try:
-                settings = json.loads(settings_path.read_text(encoding="utf-8"))
+                settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
             except Exception:
                 settings = {}
 
