@@ -36,9 +36,10 @@ SCRIPTS_ROOT = Path(CFG.ordax_scripts_root).resolve()
 ARTIFACTS_ROOT = Path(CFG.ordax_artifacts_root).resolve()
 INBOX = CONTROL_ROOT / "inbox"
 RESPONSES = CONTROL_ROOT / "responses"
+RESULTS = CONTROL_ROOT / "results"
 PRESENCE = CONTROL_ROOT / "presence.json"
 
-for path in (CONTROL_ROOT, INBOX, RESPONSES, ARTIFACTS_ROOT):
+for path in (CONTROL_ROOT, INBOX, RESPONSES, RESULTS, ARTIFACTS_ROOT):
     path.mkdir(parents=True, exist_ok=True)
 
 
@@ -87,16 +88,67 @@ def _write_presence() -> None:
     )
 
 
+def _prune_results(limit: int = 200) -> None:
+    try:
+        entries = sorted(
+            (p for p in RESULTS.glob("*.json") if p.is_file()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for stale in entries[limit:]:
+            stale.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _response(command_id: str, ok: bool, summary: str, **data) -> None:
-    _write_json_atomic(
-        RESPONSES / f"{command_id}.json",
-        {
-            "id": command_id,
-            "ok": ok,
-            "summary": summary,
-            **data,
-            "snapshot": _scene_snapshot(),
-        },
+    body = {
+        "id": command_id,
+        "ok": ok,
+        "summary": summary,
+        **data,
+        "snapshot": _scene_snapshot(),
+        "completed_at": time.time(),
+    }
+    # Persist first. The response inbox is ephemeral; results survive timeouts,
+    # agent restarts and Blender closing so callers can query before retrying.
+    _write_json_atomic(RESULTS / f"{command_id}.json", body)
+    _write_json_atomic(RESPONSES / f"{command_id}.json", body)
+    _prune_results()
+
+
+def _inspect(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        limit = max(1, min(500, int(command.get("max_objects", 200))))
+    except (TypeError, ValueError):
+        _response(command_id, False, "max_objects must be an integer")
+        return
+
+    objects = []
+    for obj in list(bpy.context.scene.objects)[:limit]:
+        objects.append(
+            {
+                "name": obj.name,
+                "type": obj.type,
+                "visible": bool(obj.visible_get()),
+                "selected": bool(obj.select_get()),
+                "location": [round(float(v), 6) for v in obj.location],
+                "rotation_euler": [round(float(v), 6) for v in obj.rotation_euler],
+                "scale": [round(float(v), 6) for v in obj.scale],
+                "parent": obj.parent.name if obj.parent else None,
+            }
+        )
+
+    _response(
+        command_id,
+        True,
+        "Visible Blender scene inspected",
+        object_count=len(bpy.context.scene.objects),
+        returned_objects=len(objects),
+        truncated=len(bpy.context.scene.objects) > len(objects),
+        objects=objects,
+        collections=[collection.name for collection in bpy.data.collections[:200]],
     )
 
 
@@ -226,6 +278,8 @@ def _process(path: Path) -> None:
 
     if operation == "ping":
         _response(command_id, True, "Visible Blender companion ready")
+    elif operation == "inspect":
+        _inspect(command)
     elif operation == "run_script":
         _run_script(command)
     elif operation == "capture_viewport":
