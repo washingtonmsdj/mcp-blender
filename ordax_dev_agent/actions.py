@@ -2535,6 +2535,53 @@ class ActionRegistry(ObservationActions):
                     multiview,
                 )
 
+            baseline_manifest = str(
+                multiview_options.get("baseline_manifest_path") or ""
+            ).strip()
+            if multiview.ok and baseline_manifest:
+                candidate_manifest = str(
+                    multiview.data.get("manifest") or ""
+                ).strip()
+                if not candidate_manifest:
+                    return fail(
+                        "Blender multiview comparison has no candidate manifest",
+                        multiview,
+                    )
+                compare_payload: dict[str, Any] = {
+                    "project": project.slug,
+                    "baseline_manifest_path": baseline_manifest,
+                    "candidate_manifest_path": candidate_manifest,
+                    "require_same_views": bool(
+                        multiview_options.get("require_same_views", True)
+                    ),
+                    "require_same_resolution": bool(
+                        multiview_options.get("require_same_resolution", True)
+                    ),
+                    "write_diff_images": bool(
+                        multiview_options.get("write_diff_images", True)
+                    ),
+                }
+                if "max_mae" in multiview_options:
+                    compare_payload["max_mae"] = multiview_options.get("max_mae")
+                if "max_changed_ratio" in multiview_options:
+                    compare_payload["max_changed_ratio"] = multiview_options.get(
+                        "max_changed_ratio"
+                    )
+
+                comparison = self.blender_multiview_compare(compare_payload)
+                phases["multiview_compare"] = {
+                    "ok": comparison.ok,
+                    "summary": comparison.summary,
+                    "data": comparison.data,
+                }
+                if not comparison.ok and bool(
+                    multiview_options.get("compare_required", True)
+                ):
+                    return fail(
+                        "Blender multiview comparison failed; pass rejected",
+                        comparison,
+                    )
+
         artifact = None
         if bool(payload.get("capture", True)):
             output = self._capture_output(payload, "blender-generation-pass.png")
