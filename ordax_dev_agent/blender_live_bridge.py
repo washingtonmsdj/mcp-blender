@@ -13,7 +13,7 @@ from mcp_blender_unity.config import find_blender
 from .models import ActionResult
 
 
-EXPECTED_PROTOCOL_VERSION = 7
+EXPECTED_PROTOCOL_VERSION = 8
 LEGACY_MAINTENANCE_OPERATIONS = {
     "checkpoint_create",
     "checkpoint_restore",
