@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import time
@@ -39,6 +40,12 @@ class BlenderLiveBridge:
             / "blender_live_companion.py"
         )
 
+    def _companion_fingerprint(self) -> str | None:
+        try:
+            return hashlib.sha256(self.companion.read_bytes()).hexdigest()
+        except OSError:
+            return None
+
     def _ensure_dirs(self) -> None:
         self.inbox.mkdir(parents=True, exist_ok=True)
         self.responses.mkdir(parents=True, exist_ok=True)
@@ -64,6 +71,7 @@ class BlenderLiveBridge:
             "inflight_commands": sorted(p.stem for p in self.inflight.glob("*.json")),
             "scripts_root": str(self.scripts_root),
             "expected_protocol_version": EXPECTED_PROTOCOL_VERSION,
+            "expected_companion_fingerprint": self._companion_fingerprint(),
         }
         if self.presence.is_file():
             try:
@@ -72,6 +80,14 @@ class BlenderLiveBridge:
                 protocol = presence.get("protocol_version")
                 data["protocol_version"] = protocol
                 data["protocol_compatible"] = protocol == EXPECTED_PROTOCOL_VERSION
+                loaded_fingerprint = presence.get("companion_fingerprint")
+                expected_fingerprint = data.get("expected_companion_fingerprint")
+                data["companion_fingerprint"] = loaded_fingerprint
+                data["companion_current"] = bool(
+                    loaded_fingerprint
+                    and expected_fingerprint
+                    and loaded_fingerprint == expected_fingerprint
+                )
                 capabilities = presence.get("capabilities")
                 if isinstance(capabilities, list):
                     data["capabilities"] = capabilities
@@ -88,7 +104,7 @@ class BlenderLiveBridge:
     ) -> ActionResult:
         if self.presence_is_fresh():
             status = self.status()
-            if status.get("protocol_compatible"):
+            if status.get("protocol_compatible") and status.get("companion_current"):
                 return ActionResult(
                     True,
                     "Visible Blender live session already running",
@@ -201,6 +217,12 @@ class BlenderLiveBridge:
             return ActionResult(
                 False,
                 "Visible Blender companion protocol is outdated; restart the live session before using this operation",
+                status,
+            )
+        if operation != "quit" and status.get("companion_current") is False:
+            return ActionResult(
+                False,
+                "Visible Blender companion code is outdated; restart the live session before using this operation",
                 status,
             )
         capabilities = status.get("capabilities")
