@@ -50,6 +50,7 @@ CAPABILITIES = [
     "ping",
     "inspect",
     "scene_snapshot",
+    "scene_reset",
     "object_inspect",
     "contact_audit",
     "object_transform",
@@ -322,6 +323,48 @@ def _scene_snapshot_rich(command: dict) -> None:
         ),
         scene_ordax=_ordax_properties(scene),
     )
+
+
+def _scene_reset(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        bpy.ops.object.select_all(action="DESELECT")
+        for obj in list(bpy.context.scene.objects):
+            bpy.data.objects.remove(obj, do_unlink=True)
+
+        for collection in list(bpy.data.collections):
+            if collection.users == 0:
+                try:
+                    bpy.data.collections.remove(collection)
+                except Exception:
+                    pass
+
+        for blocks in (
+            bpy.data.meshes,
+            bpy.data.curves,
+            bpy.data.cameras,
+            bpy.data.lights,
+        ):
+            for block in list(blocks):
+                if block.users == 0 and not getattr(block, "use_fake_user", False):
+                    try:
+                        blocks.remove(block)
+                    except Exception:
+                        pass
+
+        bpy.context.scene.frame_set(1)
+        _response(
+            command_id,
+            True,
+            "Blender scene reset for isolated generation",
+            removed_to_object_count=len(bpy.context.scene.objects),
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            f"{type(error).__name__}: {error}",
+        )
 
 
 def _object_inspect(command: dict) -> None:
@@ -1031,6 +1074,8 @@ def _process(path: Path) -> None:
             _inspect(command)
         elif operation == "scene_snapshot":
             _scene_snapshot_rich(command)
+        elif operation == "scene_reset":
+            _scene_reset(command)
         elif operation == "object_inspect":
             _object_inspect(command)
         elif operation == "contact_audit":
