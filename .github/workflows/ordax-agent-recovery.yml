@@ -1,0 +1,104 @@
+name: OrdaX Agent Recovery
+
+on:
+  push:
+    branches:
+      - feat/ordax-dev-agent
+    paths:
+      - "ordax_dev_agent/**"
+      - "mcp_blender_unity/**"
+      - "scripts/windows/ordax-agent-start.cmd"
+      - "pyproject.toml"
+      - ".github/workflows/ordax-agent-recovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ordax-agent-recovery
+  cancel-in-progress: true
+
+jobs:
+  recover-if-offline:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout candidate code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Compile candidate Python before touching managed agent
+        shell: pwsh
+        run: |
+          $python = Get-Command python -ErrorAction SilentlyContinue
+          if (-not $python) {
+            $python = Get-Command py -ErrorAction SilentlyContinue
+            if (-not $python) { throw "Python is unavailable on the recovery runner." }
+            & $python.Source -3 -m compileall -q mcp_blender_unity ordax_dev_agent
+          } else {
+            & $python.Source -m compileall -q mcp_blender_unity ordax_dev_agent
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "Candidate agent code does not compile. Local managed agent was not touched."
+          }
+
+      - name: Recover managed agent only when process is absent
+        shell: pwsh
+        run: |
+          $branch = "feat/ordax-dev-agent"
+          $repo = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent\src"
+
+          if (-not (Test-Path (Join-Path $repo ".git"))) {
+            throw "Managed OrdaX agent repository not found at $repo"
+          }
+
+          $running = Get-CimInstance Win32_Process |
+            Where-Object {
+              $_.CommandLine -and
+              $_.CommandLine -like "*ordax_dev_agent.main*" -and
+              $_.CommandLine -like "*OrdaX*DevAgent*"
+            }
+
+          if ($running) {
+            Write-Host "OrdaX agent process is already running. Recovery will not disturb it."
+            exit 0
+          }
+
+          $dirty = git -C $repo status --porcelain --untracked-files=no
+          if ($LASTEXITCODE -ne 0) { throw "Could not read managed agent Git status." }
+          if ($dirty) {
+            throw "Managed agent has tracked local changes. Recovery refuses to overwrite them."
+          }
+
+          git -C $repo fetch --quiet origin $branch
+          if ($LASTEXITCODE -ne 0) { throw "Could not fetch agent recovery branch." }
+
+          $current = (git -C $repo rev-parse --abbrev-ref HEAD).Trim()
+          if ($current -ne $branch) {
+            git -C $repo checkout $branch
+            if ($LASTEXITCODE -ne 0) { throw "Could not checkout $branch safely." }
+          }
+
+          git -C $repo merge --ff-only --quiet "origin/$branch"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Managed agent is not fast-forwardable. Recovery stopped without force."
+          }
+
+          $venvPython = Join-Path $repo ".venv\Scripts\python.exe"
+          if (-not (Test-Path $venvPython)) {
+            throw "Managed agent virtual environment is missing: $venvPython"
+          }
+
+          & $venvPython -m compileall -q (Join-Path $repo "mcp_blender_unity") (Join-Path $repo "ordax_dev_agent")
+          if ($LASTEXITCODE -ne 0) {
+            throw "Managed checkout failed compile verification after fast-forward."
+          }
+
+          $launcher = Join-Path $repo "scripts\windows\ordax-agent-start.cmd"
+          if (-not (Test-Path $launcher)) { throw "Agent launcher not found: $launcher" }
+
+          Start-Process -FilePath $env:ComSpec -ArgumentList "/c", ('"' + $launcher + '"') -WorkingDirectory $repo -WindowStyle Hidden
+          Write-Host "OrdaX recovery launcher started from $repo"
