@@ -180,6 +180,8 @@ sessions may restart automatically; unsaved Blender work is preserved.
 - `blender.live_checkpoint_create/list/restore` — managed rollback points.
 - `blender.live_trajectory` — durable before/after operation journal.
 - `blender.live_generation_pass` — checkpoint → generate → inspect → contact audit → capture → save, with rollback on failure.
+- `blender.live_export` — export through the visible companion when the UI session must be used.
+- `blender.export_headless` — export a saved `.blend` in an isolated Blender background process with a hard process timeout; intended for final GLB/FBX delivery so exporter stalls cannot block the visible companion.
 
 See \`docs/BLENDER_MCP_REFERENCE_REVIEW.md\` for the design review that informed
 this layer and the capabilities intentionally not copied.
