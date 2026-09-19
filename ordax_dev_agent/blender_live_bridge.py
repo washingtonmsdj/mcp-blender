@@ -21,6 +21,7 @@ class BlenderLiveBridge:
         self.root = (config.state_dir / "blender-live" / project.slug).resolve()
         self.inbox = self.root / "inbox"
         self.responses = self.root / "responses"
+        self.results = self.root / "results"
         self.presence = self.root / "presence.json"
         self.artifacts_root = (config.state_dir / "artifacts" / project.slug).resolve()
         self.scripts_root = project.path(
@@ -36,6 +37,7 @@ class BlenderLiveBridge:
     def _ensure_dirs(self) -> None:
         self.inbox.mkdir(parents=True, exist_ok=True)
         self.responses.mkdir(parents=True, exist_ok=True)
+        self.results.mkdir(parents=True, exist_ok=True)
         self.artifacts_root.mkdir(parents=True, exist_ok=True)
 
     def presence_is_fresh(self, max_age_seconds: float = 5.0) -> bool:
@@ -51,6 +53,7 @@ class BlenderLiveBridge:
             "presence_fresh": self.presence_is_fresh(),
             "presence_path": str(self.presence),
             "control_root": str(self.root),
+            "results_root": str(self.results),
             "scripts_root": str(self.scripts_root),
         }
         if self.presence.is_file():
@@ -197,7 +200,11 @@ class BlenderLiveBridge:
                 return ActionResult(
                     False,
                     "Blender live session stopped responding",
-                    self.status(),
+                    {
+                        "command_id": command_id,
+                        "result_query": "blender.live_result",
+                        **self.status(),
+                    },
                 )
             time.sleep(0.2)
 
@@ -209,5 +216,60 @@ class BlenderLiveBridge:
         return ActionResult(
             False,
             f"Blender live operation timed out: {operation}",
-            self.status(),
+            {
+                "command_id": command_id,
+                "result_query": "blender.live_result",
+                "retry_without_querying_result": False,
+                **self.status(),
+            },
+        )
+
+    def result(self, command_id: str) -> ActionResult:
+        """Read a durable result without requiring the Blender session to still be alive."""
+        try:
+            parsed = uuid.UUID(str(command_id))
+        except (ValueError, AttributeError, TypeError):
+            return ActionResult(False, "command_id must be a UUID hex string")
+        normalized = parsed.hex
+        if str(command_id).lower() != normalized:
+            return ActionResult(False, "command_id must be the canonical UUID hex string")
+
+        self._ensure_dirs()
+        path = (self.results / f"{normalized}.json").resolve()
+        if not path.is_relative_to(self.results.resolve()):
+            return ActionResult(False, "result path escaped managed directory")
+        if not path.is_file():
+            return ActionResult(
+                False,
+                "Blender live result is not available",
+                {
+                    "command_id": normalized,
+                    "retryable": True,
+                    "presence_fresh": self.presence_is_fresh(),
+                },
+            )
+
+        try:
+            response = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as error:
+            return ActionResult(
+                False,
+                f"Blender live result could not be read: {error}",
+                {"command_id": normalized},
+            )
+
+        if str(response.get("id") or "") != normalized:
+            return ActionResult(
+                False,
+                "Blender live result ID mismatch",
+                {"command_id": normalized},
+            )
+        return ActionResult(
+            bool(response.get("ok")),
+            str(response.get("summary") or "Blender live result"),
+            {
+                "transport": "blender-visible-companion",
+                "durable_result": True,
+                **response,
+            },
         )
