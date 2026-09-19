@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
+from mcp_blender_unity.config import find_blender
+
 from .config import AgentConfig
 from .models import ActionResult
 
@@ -46,7 +48,9 @@ class ActionRegistry:
             "unity.compile": self.unity_compile,
             "unity.validate": self.unity_validate,
             "unity.capture": self.unity_capture,
+            "unity.run_method": self.unity_run_method,
             "blender.version": self.blender_version,
+            "blender.run_python": self.blender_run_python,
         }
 
     @property
@@ -223,8 +227,17 @@ class ActionRegistry:
                 result.data["snapshot_error"] = str(error)
         return result
 
-    def blender_version(self, payload: dict[str, Any]) -> ActionResult:
-        script = self._bridge_script("blender-run.ps1")
+    def unity_run_method(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project_path(payload)
+        method = payload.get("execute_method", "")
+        allowed = {
+            "HORDAX.EditorTools.CiValidation.Run",
+            "HORDAX.EditorTools.AutomationCapture.CapturePrototype",
+        }
+        if method not in allowed:
+            return ActionResult(False, f"execute method not allowed: {method}")
+
+        script = self._bridge_script("unity-run.ps1")
         return _run(
             [
                 "powershell",
@@ -233,7 +246,50 @@ class ActionRegistry:
                 "Bypass",
                 "-File",
                 str(script),
-                "-VersionOnly",
+                "-ProjectPath",
+                str(project),
+                "-ExecuteMethod",
+                method,
             ],
-            timeout=120,
+            timeout=int(payload.get("timeout_seconds", 1800)),
+        )
+
+    def blender_version(self, payload: dict[str, Any]) -> ActionResult:
+        blender = find_blender()
+        if blender is None:
+            return ActionResult(False, "Blender executable not found")
+        return _run([str(blender), "--version"], timeout=120)
+
+    def blender_run_python(self, payload: dict[str, Any]) -> ActionResult:
+        blender = find_blender()
+        if blender is None:
+            return ActionResult(False, "Blender executable not found")
+
+        raw_script = payload.get("script_path")
+        if not raw_script:
+            return ActionResult(False, "script_path is required")
+
+        script = Path(raw_script).expanduser().resolve()
+        allowed_root = (self.config.bridge_path / "automation" / "blender").resolve()
+        try:
+            script.relative_to(allowed_root)
+        except ValueError:
+            return ActionResult(
+                False,
+                f"Blender script must be inside {allowed_root}",
+            )
+        if not script.is_file():
+            return ActionResult(False, f"Blender script not found: {script}")
+
+        command = [str(blender), "--background"]
+        raw_blend = payload.get("blend_file")
+        if raw_blend:
+            blend = Path(raw_blend).expanduser().resolve()
+            if not blend.is_file():
+                return ActionResult(False, f"Blend file not found: {blend}")
+            command.append(str(blend))
+        command.extend(["--python", str(script)])
+        return _run(
+            command,
+            timeout=int(payload.get("timeout_seconds", 1800)),
         )
