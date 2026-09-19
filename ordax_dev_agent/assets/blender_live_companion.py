@@ -118,6 +118,28 @@ def _response(command_id: str, ok: bool, summary: str, **data) -> None:
     _prune_results()
 
 
+def _ordax_properties(owner) -> dict:
+    data = {}
+    try:
+        keys = owner.keys()
+    except Exception:
+        return data
+    for key in keys:
+        if not str(key).startswith("ordax_"):
+            continue
+        try:
+            value = owner.get(key)
+            if value is None or isinstance(value, (str, int, float, bool)):
+                data[str(key)] = value
+            elif isinstance(value, (list, tuple)):
+                data[str(key)] = list(value)[:50]
+            else:
+                data[str(key)] = str(value)
+        except Exception:
+            continue
+    return data
+
+
 def _inspect(command: dict) -> None:
     command_id = command["id"]
     try:
@@ -138,6 +160,7 @@ def _inspect(command: dict) -> None:
                 "rotation_euler": [round(float(v), 6) for v in obj.rotation_euler],
                 "scale": [round(float(v), 6) for v in obj.scale],
                 "parent": obj.parent.name if obj.parent else None,
+                "ordax": _ordax_properties(obj),
             }
         )
 
@@ -150,6 +173,7 @@ def _inspect(command: dict) -> None:
         truncated=len(bpy.context.scene.objects) > len(objects),
         objects=objects,
         collections=[collection.name for collection in bpy.data.collections[:200]],
+        scene_ordax=_ordax_properties(bpy.context.scene),
     )
 
 
