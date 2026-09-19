@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
@@ -47,6 +48,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_api_lookup", result.data["actions"])
             self.assertIn("blender.live_node_schema", result.data["actions"])
             self.assertIn("blender.live_export", result.data["actions"])
+            self.assertIn("blender.export_headless", result.data["actions"])
             self.assertIn("unity.cli_status", result.data["actions"])
             self.assertIn("unity.pipeline_install", result.data["actions"])
             self.assertIn("unity.pipeline_catalog", result.data["actions"])
@@ -67,6 +69,29 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.asset_search", result.data["actions"])
             self.assertIn("blender.asset_manifest", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
+
+
+    def test_headless_export_requires_existing_blend_file(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch(
+                "ordax_dev_agent.actions.find_blender",
+                return_value=Path("/fake/blender"),
+            ):
+                result = registry.execute(
+                    "blender.export_headless",
+                    {
+                        "project": "hordax",
+                        "blend_file": "missing.blend",
+                        "output_path": "Artifacts/test.glb",
+                        "format": "glb",
+                    },
+                )
+
+            self.assertFalse(result.ok)
+            self.assertIn("existing .blend", result.summary)
 
 
 if __name__ == "__main__":
