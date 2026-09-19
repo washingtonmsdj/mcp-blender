@@ -347,57 +347,91 @@ class ActionRegistry(ObservationActions):
             return ActionResult(False, f"managed agent repository not found: {repo}")
 
         branch = "feat/ordax-dev-agent"
-        status = _run(
-            ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=no"],
-            timeout=60,
+        git = ["git", "-c", "core.fsmonitor=false", "-C", str(repo)]
+
+        def quiet_check(args: list[str], *, timeout: int = 20) -> tuple[int, str]:
+            try:
+                completed = subprocess.run(
+                    [*git, *args],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=timeout,
+                    shell=False,
+                )
+                return completed.returncode, completed.stderr[-4000:]
+            except subprocess.TimeoutExpired as error:
+                return 124, f"timed out after {error.timeout} seconds"
+
+        # We only care about tracked edits. Avoid `git status` here: on some
+        # Windows worktrees its index refresh can stall behind filesystem
+        # monitors for minutes even with untracked scanning disabled.
+        unstaged_rc, unstaged_error = quiet_check(["diff-files", "--quiet", "--"])
+        staged_rc, staged_error = quiet_check(
+            ["diff-index", "--cached", "--quiet", "HEAD", "--"]
         )
-        if not status.ok:
-            return status
-        if status.data.get("stdout", "").strip():
+        if unstaged_rc not in (0, 1) or staged_rc not in (0, 1):
+            return ActionResult(
+                False,
+                "managed agent tracked-change check failed",
+                {
+                    "unstaged_returncode": unstaged_rc,
+                    "unstaged_error": unstaged_error,
+                    "staged_returncode": staged_rc,
+                    "staged_error": staged_error,
+                },
+            )
+        if unstaged_rc == 1 or staged_rc == 1:
+            changed = _run(
+                [*git, "diff", "--name-status", "HEAD", "--"],
+                timeout=30,
+            )
             return ActionResult(
                 False,
                 "managed agent has local tracked changes; update refused",
-                {"status": status.data["stdout"]},
+                {
+                    "status": changed.data.get("stdout", "") if changed.ok else "",
+                    "unstaged": unstaged_rc == 1,
+                    "staged": staged_rc == 1,
+                },
             )
 
-        before = _run(
-            ["git", "-C", str(repo), "rev-parse", "HEAD"],
-            timeout=30,
-        )
+        before = _run([*git, "rev-parse", "HEAD"], timeout=20)
         if not before.ok:
             return before
         before_head = before.data.get("stdout", "").strip()
 
         fetch = _run(
-            ["git", "-C", str(repo), "fetch", "--quiet", "origin", branch],
+            [*git, "fetch", "--quiet", "origin", branch],
             timeout=180,
         )
         if not fetch.ok:
             return fetch
 
         current = _run(
-            ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
-            timeout=30,
+            [*git, "rev-parse", "--abbrev-ref", "HEAD"],
+            timeout=20,
         )
         if not current.ok:
             return current
 
         if current.data.get("stdout", "").strip() != branch:
             checkout = _run(
-                ["git", "-C", str(repo), "checkout", "-B", branch, f"origin/{branch}"],
+                [*git, "checkout", "-B", branch, f"origin/{branch}"],
                 timeout=120,
             )
             if not checkout.ok:
                 return checkout
         else:
             merge = _run(
-                ["git", "-C", str(repo), "merge", "--ff-only", "--quiet", f"origin/{branch}"],
+                [*git, "merge", "--ff-only", "--quiet", f"origin/{branch}"],
                 timeout=120,
             )
             if not merge.ok:
                 return merge
 
-        head = _run(["git", "-C", str(repo), "rev-parse", "HEAD"], timeout=30)
+        head = _run([*git, "rev-parse", "HEAD"], timeout=20)
         if not head.ok:
             return ActionResult(
                 False,
@@ -411,9 +445,7 @@ class ActionRegistry(ObservationActions):
         if before_head and after_head and before_head != after_head:
             dependency_diff = subprocess.run(
                 [
-                    "git",
-                    "-C",
-                    str(repo),
+                    *git,
                     "diff",
                     "--quiet",
                     before_head,
@@ -421,9 +453,11 @@ class ActionRegistry(ObservationActions):
                     "--",
                     "pyproject.toml",
                 ],
-                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=60,
+                timeout=30,
                 shell=False,
             )
             if dependency_diff.returncode == 1:
@@ -434,7 +468,6 @@ class ActionRegistry(ObservationActions):
                     "could not determine whether agent dependencies changed",
                     {
                         "returncode": dependency_diff.returncode,
-                        "stdout": dependency_diff.stdout[-4000:],
                         "stderr": dependency_diff.stderr[-4000:],
                     },
                 )
@@ -455,6 +488,7 @@ class ActionRegistry(ObservationActions):
                 "head": after_head,
                 "restart_required": True,
                 "dependencies_refreshed": dependency_refresh,
+                "tracked_check": "diff-files+diff-index",
             },
         )
 
