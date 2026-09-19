@@ -81,6 +81,27 @@ Materials and UV data are intentionally outside the default base-geometry lock
 so later look-development passes may texture an approved shape without needing
 to unlock its geometry. `reset_scene=true` is incompatible with protected
 objects because resetting would intentionally destroy the protected state.
+### Deterministic multiview evidence
+
+- `blender.live_multiview_capture`
+- `blender.live_generation_pass` with `multiview=true` or an options object
+
+The live companion computes evaluated world bounds, creates a temporary
+orthographic camera, and captures reproducible views without depending on the
+user's active camera. The default bundle is front, back, left, right, top and
+three-quarter. Each record includes artifact path, SHA-256, camera transform,
+orthographic scale and direction; `multiview.json` records the shared bounds,
+objects, resolution, margin, projection and render engine.
+
+When explicit `object_names` are supplied, non-target scene objects are
+temporarily hidden from render so component silhouettes can be reviewed without
+occlusion. Original render visibility, scene camera, render engine, resolution
+and output settings are restored even if a capture fails.
+
+The operation prefers Blender Workbench when the running version exposes it,
+falling back to the scene render engine otherwise. Multiview may be a required
+`generation_pass` phase, so missing visual evidence can reject and rollback a
+pass instead of being silently accepted.
 
 ### Companion capabilities
 
@@ -132,9 +153,9 @@ providers. They are not core dependencies.
 5. run contact audit for protected pairs;
 6. run deterministic geometry quality gates;
 7. correct measured dimensions/contact/proportion failures;
-8. capture viewport;
-9. compare to reference;
-10. repeat until validation passes;
+8. capture deterministic multiview evidence;
+9. compare the same views to the reference/stage baseline;
+10. repeat localized corrections until validation passes;
 11. assemble validated components;
 12. run final contact/structural validation;
 13. save artifact.
@@ -153,11 +174,12 @@ asset/component iteration:
 5. collect a rich scene snapshot;
 6. run declared BVH contact checks;
 7. run declared deterministic quality checks;
-8. capture the visible viewport;
-9. save the accepted .blend when requested.
+8. capture deterministic multiview evidence when requested;
+9. capture the visible viewport when requested;
+10. save the accepted .blend when requested.
 
 If the generation script, snapshot, contact audit, deterministic quality gate,
-required capture, or final save fails, the pass is rejected. With \`rollback_on_failure=true\` the managed
+required multiview/capture, or final save fails, the pass is rejected. With \`rollback_on_failure=true\` the managed
 checkpoint is restored explicitly.
 
 This keeps iteration fast without making failed geometry part of the accepted
