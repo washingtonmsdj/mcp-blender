@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import importlib
 import json
@@ -60,6 +61,7 @@ CAPABILITIES = [
     "object_transform",
     "object_metadata",
     "api_schema",
+    "api_lookup",
     "node_schema",
     "export_scene",
     "checkpoint_create",
@@ -1098,6 +1100,173 @@ def _api_schema(command: dict) -> None:
     )
 
 
+
+def _rna_function_schema(function) -> dict:
+    parameters = []
+    returns = []
+    try:
+        raw_parameters = list(function.parameters)
+    except Exception:
+        raw_parameters = []
+    for param in raw_parameters:
+        data = _rna_property_schema(param)
+        if bool(getattr(param, "is_output", False)):
+            returns.append(data)
+        else:
+            parameters.append(data)
+    return {
+        "identifier": str(getattr(function, "identifier", "")),
+        "name": str(getattr(function, "name", "")),
+        "description": str(getattr(function, "description", "")),
+        "parameters": parameters,
+        "returns": returns,
+    }
+
+
+def _did_you_mean(value: str, candidates, limit: int = 8) -> list[str]:
+    normalized = [str(item) for item in candidates if str(item)]
+    return difflib.get_close_matches(value, normalized, n=limit, cutoff=0.45)
+
+
+def _api_lookup(command: dict) -> None:
+    command_id = command["id"]
+    query = str(command.get("query") or "").strip()
+    if not query or len(query) > 300:
+        _response(command_id, False, "query is required and must be at most 300 characters")
+        return
+
+    normalized = query
+    for prefix in ("bpy.types.", "bpy."):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix):]
+
+    # Operators: bpy.ops.mesh.primitive_cube_add
+    if normalized.startswith("ops."):
+        parts = normalized.split(".")
+        if len(parts) != 3 or not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", part) for part in parts[1:]):
+            _response(command_id, False, "Operator query must look like bpy.ops.mesh.primitive_cube_add")
+            return
+        category_name, operator_name = parts[1], parts[2]
+        category = getattr(bpy.ops, category_name, None)
+        operator = getattr(category, operator_name, None) if category is not None else None
+        if operator is None:
+            candidates = []
+            if category is not None:
+                try:
+                    candidates = dir(category)
+                except Exception:
+                    pass
+            _response(
+                command_id,
+                False,
+                f"Unknown Blender operator: {query}",
+                did_you_mean=_did_you_mean(operator_name, candidates),
+            )
+            return
+        try:
+            rna = operator.get_rna_type()
+            properties = [
+                _rna_property_schema(prop)
+                for prop in list(rna.properties)
+                if str(getattr(prop, "identifier", "")) != "rna_type"
+            ]
+            _response(
+                command_id,
+                True,
+                "Blender operator schema ready",
+                query=query,
+                kind="operator",
+                identifier=f"bpy.ops.{category_name}.{operator_name}",
+                description=str(getattr(rna, "description", "")),
+                parameters=properties,
+            )
+        except Exception as error:
+            _response(command_id, False, f"{type(error).__name__}: {error}")
+        return
+
+    parts = normalized.split(".")
+    type_name = parts[0]
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", type_name):
+        _response(command_id, False, "Type query must start with a bpy.types class name")
+        return
+
+    blender_type = getattr(bpy.types, type_name, None)
+    rna = getattr(blender_type, "bl_rna", None)
+    if blender_type is None or rna is None:
+        candidates = [
+            name for name in dir(bpy.types)
+            if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name)
+        ]
+        _response(
+            command_id,
+            False,
+            f"Unknown Blender RNA type: {type_name}",
+            did_you_mean=_did_you_mean(type_name, candidates),
+        )
+        return
+
+    if len(parts) == 1:
+        properties = [
+            _rna_property_schema(prop)
+            for prop in list(rna.properties)
+            if str(getattr(prop, "identifier", "")) != "rna_type"
+        ]
+        functions = [_rna_function_schema(fn) for fn in list(rna.functions)]
+        _response(
+            command_id,
+            True,
+            "Blender RNA type lookup ready",
+            query=query,
+            kind="type",
+            type_name=type_name,
+            properties=properties[:500],
+            functions=functions[:300],
+        )
+        return
+
+    if len(parts) != 2 or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", parts[1]):
+        _response(command_id, False, "Member query must look like Object.ray_cast or Material.diffuse_color")
+        return
+
+    member = parts[1]
+    prop = rna.properties.get(member)
+    if prop is not None:
+        _response(
+            command_id,
+            True,
+            "Blender RNA property lookup ready",
+            query=query,
+            kind="property",
+            type_name=type_name,
+            property=_rna_property_schema(prop),
+        )
+        return
+
+    function = rna.functions.get(member)
+    if function is not None:
+        _response(
+            command_id,
+            True,
+            "Blender RNA function lookup ready",
+            query=query,
+            kind="function",
+            type_name=type_name,
+            function=_rna_function_schema(function),
+        )
+        return
+
+    candidates = [
+        str(getattr(prop, "identifier", "")) for prop in list(rna.properties)
+    ] + [
+        str(getattr(fn, "identifier", "")) for fn in list(rna.functions)
+    ]
+    _response(
+        command_id,
+        False,
+        f"Unknown member on {type_name}: {member}",
+        did_you_mean=_did_you_mean(member, candidates),
+    )
+
 def _socket_schema(socket) -> dict:
     data = {
         "name": str(getattr(socket, "name", "")),
@@ -1125,6 +1294,7 @@ def _node_schema(command: dict) -> None:
     command_id = command["id"]
     node_type = str(command.get("node_type") or "").strip()
     tree_type = str(command.get("tree_type") or "ShaderNodeTree").strip()
+    overrides = command.get("property_overrides") or {}
     allowed_trees = {"ShaderNodeTree", "GeometryNodeTree", "CompositorNodeTree"}
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", node_type):
         _response(command_id, False, "node_type must be a Blender node bl_idname")
@@ -1132,6 +1302,16 @@ def _node_schema(command: dict) -> None:
     if tree_type not in allowed_trees:
         _response(command_id, False, "tree_type must be ShaderNodeTree, GeometryNodeTree, or CompositorNodeTree")
         return
+    if not isinstance(overrides, dict) or len(overrides) > 30:
+        _response(command_id, False, "property_overrides must be an object with at most 30 entries")
+        return
+    for key, value in overrides.items():
+        if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            _response(command_id, False, "property_overrides contains an invalid property name")
+            return
+        if not isinstance(value, (str, int, float, bool)):
+            _response(command_id, False, "property_overrides values must be scalar")
+            return
 
     group = None
     try:
@@ -1140,6 +1320,12 @@ def _node_schema(command: dict) -> None:
             type=tree_type,
         )
         node = group.nodes.new(node_type)
+        applied = {}
+        for key, value in overrides.items():
+            if not hasattr(node, key):
+                raise ValueError(f"Node {node_type} has no property: {key}")
+            setattr(node, key, value)
+            applied[key] = _serialize_rna_value(getattr(node, key))
         _response(
             command_id,
             True,
@@ -1148,6 +1334,7 @@ def _node_schema(command: dict) -> None:
             tree_type=tree_type,
             node_name=node.name,
             label=str(getattr(node, "bl_label", "")),
+            applied_overrides=applied,
             inputs=[_socket_schema(socket) for socket in node.inputs],
             outputs=[_socket_schema(socket) for socket in node.outputs],
         )
@@ -1392,6 +1579,8 @@ def _process(path: Path) -> None:
             _object_metadata(command)
         elif operation == "api_schema":
             _api_schema(command)
+        elif operation == "api_lookup":
+            _api_lookup(command)
         elif operation == "node_schema":
             _node_schema(command)
         elif operation == "export_scene":
