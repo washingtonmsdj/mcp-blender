@@ -272,8 +272,9 @@ class ActionRegistry(ObservationActions):
 
     def agent_self_test(self, payload: dict[str, Any]) -> ActionResult:
         repo = self.config.agent_repo_path.resolve()
-        if not (repo / "tests").is_dir():
-            return ActionResult(False, f"agent test suite not found: {repo / 'tests'}")
+        tests_root = repo / "tests"
+        if not tests_root.is_dir():
+            return ActionResult(False, f"agent test suite not found: {tests_root}")
 
         compile_result = _run(
             [
@@ -285,40 +286,73 @@ class ActionRegistry(ObservationActions):
                 "ordax_dev_agent",
             ],
             cwd=repo,
-            timeout=300,
+            timeout=min(int(payload.get("compile_timeout_seconds", 120)), 300),
         )
         if not compile_result.ok:
             compile_result.summary = "agent Python compile check failed"
             return compile_result
 
-        tests = _run(
-            [
-                sys.executable,
-                "-m",
-                "unittest",
-                "discover",
-                "-s",
-                "tests",
-                "-p",
-                "test_*.py",
-                "-v",
-            ],
-            cwd=repo,
-            timeout=int(payload.get("timeout_seconds", 900)),
+        per_file_timeout = max(
+            10,
+            min(int(payload.get("per_test_file_timeout_seconds", 120)), 600),
         )
-        if not tests.ok:
-            return ActionResult(
-                False,
-                "agent unit/integration tests failed",
+        test_files = sorted(tests_root.glob("test_*.py"))
+        if not test_files:
+            return ActionResult(False, "agent test suite contains no test_*.py files")
+
+        test_runs: list[dict[str, Any]] = []
+        for test_file in test_files:
+            try:
+                test_result = _run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "unittest",
+                        "discover",
+                        "-s",
+                        "tests",
+                        "-p",
+                        test_file.name,
+                        "-v",
+                    ],
+                    cwd=repo,
+                    timeout=per_file_timeout,
+                )
+            except subprocess.TimeoutExpired as error:
+                return ActionResult(
+                    False,
+                    f"agent test file timed out: {test_file.name}",
+                    {
+                        "compile": compile_result.data,
+                        "test_file": test_file.name,
+                        "timeout_seconds": error.timeout,
+                        "completed_test_files": test_runs,
+                    },
+                )
+
+            test_runs.append(
                 {
-                    "compile": compile_result.data,
-                    "tests": tests.data,
-                },
+                    "file": test_file.name,
+                    "ok": test_result.ok,
+                    "returncode": test_result.data.get("returncode"),
+                    "stdout": test_result.data.get("stdout", ""),
+                    "stderr": test_result.data.get("stderr", ""),
+                }
             )
+            if not test_result.ok:
+                return ActionResult(
+                    False,
+                    f"agent test file failed: {test_file.name}",
+                    {
+                        "compile": compile_result.data,
+                        "tests": test_runs,
+                    },
+                )
 
         data = {
             "compile": compile_result.data,
-            "tests": tests.data,
+            "test_files": test_runs,
+            "test_file_count": len(test_runs),
         }
 
         if bool(payload.get("visual", False)):
@@ -337,9 +371,10 @@ class ActionRegistry(ObservationActions):
 
         return ActionResult(
             True,
-            "agent compile, tests, and requested visual smoke passed",
+            "agent compile, per-file tests, and requested visual smoke passed",
             data,
         )
+
 
     def agent_update(self, payload: dict[str, Any]) -> ActionResult:
         repo = self.config.agent_repo_path.resolve()
