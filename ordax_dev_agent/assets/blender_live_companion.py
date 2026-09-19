@@ -37,9 +37,10 @@ ARTIFACTS_ROOT = Path(CFG.ordax_artifacts_root).resolve()
 INBOX = CONTROL_ROOT / "inbox"
 RESPONSES = CONTROL_ROOT / "responses"
 RESULTS = CONTROL_ROOT / "results"
+INFLIGHT = CONTROL_ROOT / "inflight"
 PRESENCE = CONTROL_ROOT / "presence.json"
 
-for path in (CONTROL_ROOT, INBOX, RESPONSES, RESULTS, ARTIFACTS_ROOT):
+for path in (CONTROL_ROOT, INBOX, RESPONSES, RESULTS, INFLIGHT, ARTIFACTS_ROOT):
     path.mkdir(parents=True, exist_ok=True)
 
 
@@ -276,26 +277,43 @@ def _process(path: Path) -> None:
     if not command_id:
         return
 
-    if operation == "ping":
-        _response(command_id, True, "Visible Blender companion ready")
-    elif operation == "inspect":
-        _inspect(command)
-    elif operation == "run_script":
-        _run_script(command)
-    elif operation == "capture_viewport":
-        _capture_viewport(command)
-    elif operation == "save":
-        _save(command)
-    elif operation == "quit":
-        _response(command_id, True, "Visible Blender session closing")
+    inflight_path = INFLIGHT / (command_id + ".json")
+    _write_json_atomic(
+        inflight_path,
+        {
+            "id": command_id,
+            "operation": operation,
+            "started_at": time.time(),
+            "project": CFG.ordax_project_slug,
+        },
+    )
 
-        def _quit_later():
-            bpy.ops.wm.quit_blender()
-            return None
+    try:
+        if operation == "ping":
+            _response(command_id, True, "Visible Blender companion ready")
+        elif operation == "inspect":
+            _inspect(command)
+        elif operation == "run_script":
+            _run_script(command)
+        elif operation == "capture_viewport":
+            _capture_viewport(command)
+        elif operation == "save":
+            _save(command)
+        elif operation == "quit":
+            _response(command_id, True, "Visible Blender session closing")
 
-        bpy.app.timers.register(_quit_later, first_interval=0.15)
-    else:
-        _response(command_id, False, f"Unsupported Blender live operation: {operation}")
+            def _quit_later():
+                bpy.ops.wm.quit_blender()
+                return None
+
+            bpy.app.timers.register(_quit_later, first_interval=0.15)
+        else:
+            _response(command_id, False, f"Unsupported Blender live operation: {operation}")
+    finally:
+        try:
+            inflight_path.unlink()
+        except OSError:
+            pass
 
 
 def _tick():
@@ -311,6 +329,12 @@ def _tick():
         pass
     return 0.5
 
+
+for stale in INFLIGHT.glob("*.json"):
+    try:
+        stale.unlink()
+    except OSError:
+        pass
 
 _write_presence()
 if not bpy.app.timers.is_registered(_tick):
