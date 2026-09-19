@@ -20,6 +20,7 @@ from .unity_editor_bridge import UnityEditorBridge
 from .projects import load_projects, Project
 from .observations import ObservationActions
 from .execution_lock import ExecutionLock
+from .blender_live import BlenderLiveActions
 
 
 Action = Callable[[dict[str, Any]], ActionResult]
@@ -47,7 +48,7 @@ def _run(command: list[str], *, cwd: Path | None = None, timeout: int = 1800) ->
     )
 
 
-class ActionRegistry(ObservationActions):
+class ActionRegistry(ObservationActions, BlenderLiveActions):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
     def __init__(self, config: AgentConfig):
@@ -60,6 +61,10 @@ class ActionRegistry(ObservationActions):
             "project.observe": self.project_observe,
             "observation.capture": self.observation_capture,
             "blender.inspect": self.blender_inspect,
+            "blender.live_status": self.blender_live_status,
+            "blender.live_inspect": self.blender_live_inspect,
+            "blender.live_run_python": self.blender_live_run_python,
+            "blender.live_result": self.blender_live_result,
             "blender.render_preview": self.blender_render_preview,
             "unity.install_companion": self.unity_install_companion,
             "agent.status": self.agent_status,

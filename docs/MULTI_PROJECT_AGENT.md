@@ -95,6 +95,10 @@ genérico. `companion_source` permite indicar um caminho relativo personalizado.
 
 ## Blender
 
+Para atuar na cena aberta, inclusive alterações não salvas, veja a
+[sessão persistente Blender](BLENDER_LIVE.md). As ações `blender.live_*` são
+explicitamente separadas das operações CLI descritas abaixo.
+
 `blender.inspect` devolve cena, câmera, objetos, dimensões, materiais e contagem de
 vértices. `blender.render_preview` produz PNG e o mesmo snapshot, com resolução,
 frame e amostras configuráveis. Informe `blend_file` relativo ao projeto ou defina-o
