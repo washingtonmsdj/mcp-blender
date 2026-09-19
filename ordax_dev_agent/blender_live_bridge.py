@@ -14,6 +14,13 @@ from .models import ActionResult
 
 
 EXPECTED_PROTOCOL_VERSION = 3
+LEGACY_MAINTENANCE_OPERATIONS = {
+    "checkpoint_create",
+    "checkpoint_restore",
+    "checkpoint_list",
+    "save",
+    "quit",
+}
 
 
 class BlenderLiveBridge:
@@ -230,13 +237,14 @@ class BlenderLiveBridge:
             return ActionResult(False, "Visible Blender live session is not running", self.status())
 
         status = self.status()
-        if operation != "quit" and status.get("protocol_compatible") is False:
+        maintenance = operation in LEGACY_MAINTENANCE_OPERATIONS
+        if not maintenance and status.get("protocol_compatible") is False:
             return ActionResult(
                 False,
                 "Visible Blender companion protocol is outdated; restart the live session before using this operation",
                 status,
             )
-        if operation != "quit" and status.get("companion_current") is False:
+        if not maintenance and status.get("companion_current") is False:
             return ActionResult(
                 False,
                 "Visible Blender companion code is outdated; restart the live session before using this operation",
