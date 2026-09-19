@@ -803,19 +803,17 @@ class ActionRegistry(ObservationActions):
         if branch not in allowed:
             return ActionResult(False, f"branch not allowed: {branch}")
 
-        status = _run(
-            ["git", "-C", str(project), "status", "--porcelain", "--untracked-files=no"],
-            timeout=60,
+        current = _run(
+            ["git", "-C", str(project), "rev-parse", "--abbrev-ref", "HEAD"],
+            timeout=30,
         )
-        if not status.ok:
-            return status
-        if status.data.get("stdout", "").strip():
-            return ActionResult(
-                False,
-                "local tracked changes exist; sync refused",
-                {"status": status.data["stdout"]},
-            )
+        if not current.ok:
+            return current
+        current_branch = current.data["stdout"].strip()
 
+        # Fetch first so we can distinguish a genuinely dirty tree from a local
+        # worktree that already contains exactly the content now committed to the
+        # authorized remote branch (for example after Unity CLI edits manifest.json).
         fetch = _run(
             ["git", "-C", str(project), "fetch", "--quiet", "origin", branch],
             timeout=180,
@@ -823,26 +821,134 @@ class ActionRegistry(ObservationActions):
         if not fetch.ok:
             return fetch
 
-        current = _run(
-            ["git", "-C", str(project), "rev-parse", "--abbrev-ref", "HEAD"],
-            timeout=30,
+        status = _run(
+            ["git", "-C", str(project), "status", "--porcelain", "--untracked-files=no"],
+            timeout=60,
         )
-        if not current.ok:
-            return current
+        if not status.ok:
+            return status
 
-        current_branch = current.data["stdout"].strip()
-        if current_branch != branch:
-            exists = _run(["git", "-C", str(project), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], timeout=30)
-            switch = (["git", "-C", str(project), "switch", branch] if exists.ok else
-                      ["git", "-C", str(project), "switch", "--track", "-c", branch, f"origin/{branch}"])
-            checkout = _run(
-                switch,
+        tracked_status = status.data.get("stdout", "").strip()
+        reconciled_remote_worktree = False
+        if tracked_status:
+            if current_branch != branch:
+                return ActionResult(
+                    False,
+                    "local tracked changes exist on a different branch; sync refused",
+                    {"status": tracked_status, "branch": current_branch},
+                )
+
+            matches_remote = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(project),
+                    "diff",
+                    "--quiet",
+                    f"origin/{branch}",
+                    "--",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                shell=False,
+            )
+            if matches_remote.returncode not in (0, 1):
+                return ActionResult(
+                    False,
+                    "could not compare local worktree with remote branch",
+                    {
+                        "returncode": matches_remote.returncode,
+                        "stdout": matches_remote.stdout[-4000:],
+                        "stderr": matches_remote.stderr[-4000:],
+                    },
+                )
+
+            ahead = _run(
+                [
+                    "git",
+                    "-C",
+                    str(project),
+                    "rev-list",
+                    "--left-right",
+                    "--count",
+                    f"HEAD...origin/{branch}",
+                ],
+                timeout=30,
+            )
+            if not ahead.ok:
+                return ahead
+            try:
+                local_ahead, _remote_ahead = [
+                    int(value) for value in ahead.data.get("stdout", "").split()
+                ]
+            except (TypeError, ValueError):
+                return ActionResult(
+                    False,
+                    "could not parse local/remote Git divergence",
+                    {"stdout": ahead.data.get("stdout", "")},
+                )
+
+            if matches_remote.returncode != 0 or local_ahead != 0:
+                return ActionResult(
+                    False,
+                    "local tracked changes differ from the authorized remote branch; sync refused",
+                    {
+                        "status": tracked_status,
+                        "local_ahead": local_ahead,
+                        "matches_remote_target": matches_remote.returncode == 0,
+                    },
+                )
+
+            reset = _run(
+                ["git", "-C", str(project), "reset", "--hard", f"origin/{branch}"],
                 timeout=120,
             )
+            if not reset.ok:
+                return reset
+            reconciled_remote_worktree = True
+
+        if current_branch != branch:
+            exists = _run(
+                [
+                    "git",
+                    "-C",
+                    str(project),
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    f"refs/heads/{branch}",
+                ],
+                timeout=30,
+            )
+            switch = (
+                ["git", "-C", str(project), "switch", branch]
+                if exists.ok
+                else [
+                    "git",
+                    "-C",
+                    str(project),
+                    "switch",
+                    "--track",
+                    "-c",
+                    branch,
+                    f"origin/{branch}",
+                ]
+            )
+            checkout = _run(switch, timeout=120)
             if not checkout.ok:
                 return checkout
+
         merge = _run(
-            ["git", "-C", str(project), "merge", "--ff-only", "--quiet", f"origin/{branch}"],
+            [
+                "git",
+                "-C",
+                str(project),
+                "merge",
+                "--ff-only",
+                "--quiet",
+                f"origin/{branch}",
+            ],
             timeout=120,
         )
         if not merge.ok:
@@ -852,7 +958,11 @@ class ActionRegistry(ObservationActions):
         return ActionResult(
             head.ok,
             "repository synchronized" if head.ok else "sync completed but HEAD lookup failed",
-            {"branch": branch, "head": head.data.get("stdout", "").strip()},
+            {
+                "branch": branch,
+                "head": head.data.get("stdout", "").strip(),
+                "reconciled_remote_worktree": reconciled_remote_worktree,
+            },
         )
 
     def _bridge_script(self, name: str) -> Path:
