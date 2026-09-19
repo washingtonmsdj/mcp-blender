@@ -2104,7 +2104,10 @@ class ActionRegistry(ObservationActions):
         raw_blend = str(payload.get("blend_file") or "").strip()
         if not raw_blend:
             return ActionResult(False, "blend_file is required")
-        blend_file = project.path(raw_blend)
+        try:
+            blend_file = project.path(raw_blend)
+        except FileNotFoundError:
+            return ActionResult(False, "blend_file must be an existing .blend file")
         if blend_file.suffix.lower() != ".blend" or not blend_file.is_file():
             return ActionResult(False, "blend_file must be an existing .blend file")
 
