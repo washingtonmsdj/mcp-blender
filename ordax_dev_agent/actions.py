@@ -50,6 +50,64 @@ def _run(command: list[str], *, cwd: Path | None = None, timeout: int = 1800) ->
     )
 
 
+def _unity_process_ids_for_project(project: Path) -> list[int]:
+    """Return Unity process IDs whose command line references this project."""
+    target = str(project.resolve()).replace("\\", "/").lower()
+    if sys.platform == "win32":
+        completed = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance Win32_Process -Filter \\"Name='Unity.exe'\\" | "
+                "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            shell=False,
+        )
+        if completed.returncode != 0 or not completed.stdout.strip():
+            return []
+        try:
+            raw = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            return []
+        records = raw if isinstance(raw, list) else [raw]
+        result: list[int] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            command = str(record.get("CommandLine") or "").replace("\\", "/").lower()
+            if target and target in command:
+                try:
+                    result.append(int(record.get("ProcessId")))
+                except (TypeError, ValueError):
+                    pass
+        return result
+
+    completed = subprocess.run(
+        ["ps", "-eo", "pid=,args="],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        shell=False,
+    )
+    if completed.returncode != 0:
+        return []
+    result: list[int] = []
+    for line in completed.stdout.splitlines():
+        normalized = line.replace("\\", "/").lower()
+        if "unity" not in normalized or target not in normalized:
+            continue
+        head = line.strip().split(None, 1)[0]
+        try:
+            result.append(int(head))
+        except ValueError:
+            pass
+    return result
+
+
 class ActionRegistry(ObservationActions):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
@@ -789,16 +847,32 @@ class ActionRegistry(ObservationActions):
         if editor.presence_is_fresh(max_age_seconds=12.0):
             return ActionResult(True, "Unity Editor already open and companion ready", editor.status())
 
+        stale_lock_cleared = False
         if editor.project_appears_open():
-            editor.nudge_companion(wait_seconds=float(payload.get("wait_seconds", 45)))
-            status = editor.status()
-            return ActionResult(
-                bool(status.get("presence_fresh")),
-                "Unity Editor project is open and companion ready"
-                if status.get("presence_fresh")
-                else "Unity project appears open but companion is not ready",
-                status,
-            )
+            pids = _unity_process_ids_for_project(project.root)
+            if pids:
+                editor.nudge_companion(wait_seconds=float(payload.get("wait_seconds", 45)))
+                status = editor.status()
+                status["unity_process_ids"] = pids
+                return ActionResult(
+                    bool(status.get("presence_fresh")),
+                    "Unity Editor project is open and companion ready"
+                    if status.get("presence_fresh")
+                    else "Unity process is running for this project but companion is not ready",
+                    status,
+                )
+
+            # A stale Temp/UnityLockfile can survive a crashed or killed batch.
+            # Only remove it after verifying there is no Unity process for this project.
+            try:
+                editor.project_lock_path.unlink(missing_ok=True)
+                stale_lock_cleared = True
+            except OSError as error:
+                return ActionResult(
+                    False,
+                    f"Unity lock appears stale but could not be cleared: {error}",
+                    editor.status(),
+                )
 
         unity = find_unity(project.root)
         if unity is None:
@@ -835,6 +909,7 @@ class ActionRegistry(ObservationActions):
                         "launched": True,
                         "pid": process.pid,
                         "command": command,
+                        "stale_lock_cleared": stale_lock_cleared,
                     },
                 )
             time.sleep(0.5)
@@ -847,6 +922,7 @@ class ActionRegistry(ObservationActions):
                 "launched": True,
                 "pid": process.pid,
                 "command": command,
+                "stale_lock_cleared": stale_lock_cleared,
             },
         )
 
