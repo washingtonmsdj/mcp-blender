@@ -124,7 +124,15 @@ class UnityEditorBridge:
                     },
                 )
 
-            if not self.presence_is_fresh(max_age_seconds=12.0):
+            # Long Unity Editor commands can block the main thread and therefore
+            # pause heartbeat writes while still progressing normally. Keep polling
+            # for the authoritative response for a bounded grace period instead of
+            # treating a short stale presence as immediate failure.
+            stale_grace = min(max(30.0, timeout_seconds), 300.0)
+            if (
+                not self.presence_is_fresh(max_age_seconds=stale_grace)
+                and not self.project_appears_open()
+            ):
                 break
             time.sleep(0.2)
 
