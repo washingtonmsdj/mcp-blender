@@ -20,6 +20,7 @@ from .unity_editor_bridge import UnityEditorBridge
 from .unity_knowledge import capability_report as unity_capability_report, project_profile as unity_project_profile, skill_catalog as unity_skill_catalog
 from .unity_assets import asset_inventory as unity_asset_inventory
 from .blender_live_bridge import BlenderLiveBridge
+from .blender_asset_sources import polyhaven_file_manifest, search_polyhaven
 from .projects import load_projects, Project
 from .observations import ObservationActions
 from .execution_lock import ExecutionLock
@@ -133,6 +134,8 @@ class ActionRegistry(ObservationActions):
             "blender.live_capture": self.blender_live_capture,
             "blender.live_save": self.blender_live_save,
             "blender.live_stop": self.blender_live_stop,
+            "blender.asset_search": self.blender_asset_search,
+            "blender.asset_manifest": self.blender_asset_manifest,
             "unity.install_companion": self.unity_install_companion,
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
@@ -1440,6 +1443,42 @@ class ActionRegistry(ObservationActions):
             "quit",
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
+
+    def blender_asset_search(self, payload: dict[str, Any]) -> ActionResult:
+        provider = str(payload.get("provider") or "polyhaven").strip().lower()
+        if provider != "polyhaven":
+            return ActionResult(False, "supported asset provider: polyhaven")
+        try:
+            report = search_polyhaven(
+                query=str(payload.get("query") or ""),
+                asset_type=str(payload.get("asset_type") or "all"),
+                categories=(
+                    str(payload.get("categories")).strip()
+                    if payload.get("categories") is not None
+                    else None
+                ),
+                limit=int(payload.get("limit", 20)),
+                timeout_seconds=float(payload.get("timeout_seconds", 30)),
+            )
+        except Exception as error:
+            return ActionResult(False, f"Poly Haven search failed: {type(error).__name__}: {error}")
+        return ActionResult(True, "Poly Haven asset search ready", report)
+
+    def blender_asset_manifest(self, payload: dict[str, Any]) -> ActionResult:
+        provider = str(payload.get("provider") or "polyhaven").strip().lower()
+        if provider != "polyhaven":
+            return ActionResult(False, "supported asset provider: polyhaven")
+        asset_id = str(payload.get("asset_id") or "").strip()
+        if not asset_id:
+            return ActionResult(False, "asset_id is required")
+        try:
+            report = polyhaven_file_manifest(
+                asset_id,
+                timeout_seconds=float(payload.get("timeout_seconds", 30)),
+            )
+        except Exception as error:
+            return ActionResult(False, f"Poly Haven manifest failed: {type(error).__name__}: {error}")
+        return ActionResult(True, "Poly Haven file manifest ready", report)
 
     def blender_version(self, payload: dict[str, Any]) -> ActionResult:
         blender = find_blender()
