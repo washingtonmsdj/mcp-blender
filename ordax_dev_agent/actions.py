@@ -77,6 +77,7 @@ class ActionRegistry(ObservationActions):
             "unity.capabilities": self.unity_capabilities,
             "unity.skill_catalog": self.unity_skill_catalog,
             "unity.asset_inventory": self.unity_asset_inventory,
+            "unity.scene_open": self.unity_scene_open,
             "unity.scene_summary": self.unity_scene_summary,
             "unity.physics_audit": self.unity_physics_audit,
             "unity.benchmark_islands_generate": self.unity_benchmark_islands_generate,
@@ -509,6 +510,30 @@ class ActionRegistry(ObservationActions):
             )
         if result.ok:
             result.summary = summary
+        return result
+
+    def unity_scene_open(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        raw = str(payload.get("scene_path") or "").strip()
+        if not raw:
+            return ActionResult(False, "scene_path is required")
+
+        scene = project.path(raw)
+        if scene.suffix.lower() != ".unity":
+            return ActionResult(False, "scene_path must point to a .unity scene inside the registered project")
+
+        relative = str(scene.relative_to(project.root)).replace("\\", "/")
+        editor = self._editor(payload)
+        result = self._request_live_unity_editor(
+            editor,
+            "scene_open",
+            {"scenePath": relative},
+            timeout_seconds=float(payload.get("timeout_seconds", 90)),
+        )
+        if result is None:
+            return ActionResult(False, "Unity Editor must be open to open a scene", editor.status())
+        if result.ok:
+            result.summary = f"Unity scene opened: {relative}"
         return result
 
     def unity_scene_summary(self, payload: dict[str, Any]) -> ActionResult:
