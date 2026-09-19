@@ -49,6 +49,7 @@ class ActionRegistry:
             "git.status": self.git_status,
             "git.sync": self.git_sync,
             "unity.editor_status": self.unity_editor_status,
+            "unity.refresh_editor": self.unity_refresh_editor,
             "unity.compile": self.unity_compile,
             "unity.validate": self.unity_validate,
             "unity.capture": self.unity_capture,
@@ -238,6 +239,55 @@ class ActionRegistry:
         return ActionResult(
             ready,
             "Unity Editor companion ready" if ready else "Unity Editor companion not ready",
+            status,
+        )
+
+    def unity_refresh_editor(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project_path(payload)
+        editor = UnityEditorBridge(project)
+
+        if editor.presence_is_fresh():
+            return ActionResult(
+                True,
+                "Unity Editor companion already ready",
+                editor.status(),
+            )
+
+        if not editor.project_appears_open():
+            return ActionResult(
+                False,
+                "Unity project does not appear to be open",
+                editor.status(),
+            )
+
+        script = self._bridge_script("unity-editor-refresh.ps1")
+        refresh = _run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+                "-ProjectPath",
+                str(project),
+            ],
+            timeout=60,
+        )
+        if not refresh.ok:
+            return refresh
+
+        wait_seconds = float(payload.get("wait_seconds", 45))
+        ready = editor.nudge_companion(wait_seconds=wait_seconds)
+        status = editor.status()
+        status["refresh_stdout"] = refresh.data.get("stdout", "")
+        status["refresh_stderr"] = refresh.data.get("stderr", "")
+
+        return ActionResult(
+            ready,
+            "Unity Editor refreshed and companion ready"
+            if ready
+            else "Unity Editor refresh sent, but companion did not become ready",
             status,
         )
 
