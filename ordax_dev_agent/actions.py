@@ -64,6 +64,7 @@ class ActionRegistry(ObservationActions):
             "unity.install_companion": self.unity_install_companion,
             "agent.status": self.agent_status,
             "agent.update": self.agent_update,
+            "agent.self_test": self.agent_self_test,
             "artifact.preview": self.artifact_preview,
             "git.status": self.git_status,
             "git.sync": self.git_sync,
@@ -136,6 +137,77 @@ class ActionRegistry(ObservationActions):
                 "default_project": self.config.default_project,
                 "busy": self._execution_lock.locked(),
             },
+        )
+
+    def agent_self_test(self, payload: dict[str, Any]) -> ActionResult:
+        repo = self.config.agent_repo_path.resolve()
+        if not (repo / "tests").is_dir():
+            return ActionResult(False, f"agent test suite not found: {repo / 'tests'}")
+
+        compile_result = _run(
+            [
+                sys.executable,
+                "-m",
+                "compileall",
+                "-q",
+                "mcp_blender_unity",
+                "ordax_dev_agent",
+            ],
+            cwd=repo,
+            timeout=300,
+        )
+        if not compile_result.ok:
+            compile_result.summary = "agent Python compile check failed"
+            return compile_result
+
+        tests = _run(
+            [
+                sys.executable,
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "tests",
+                "-p",
+                "test_*.py",
+                "-v",
+            ],
+            cwd=repo,
+            timeout=int(payload.get("timeout_seconds", 900)),
+        )
+        if not tests.ok:
+            return ActionResult(
+                False,
+                "agent unit/integration tests failed",
+                {
+                    "compile": compile_result.data,
+                    "tests": tests.data,
+                },
+            )
+
+        data = {
+            "compile": compile_result.data,
+            "tests": tests.data,
+        }
+
+        if bool(payload.get("visual", False)):
+            visual = _run(
+                [sys.executable, "scripts/verify_visual_agent.py"],
+                cwd=repo,
+                timeout=int(payload.get("visual_timeout_seconds", 600)),
+            )
+            data["visual"] = visual.data
+            if not visual.ok:
+                return ActionResult(
+                    False,
+                    "agent tests passed, but real Blender visual smoke failed",
+                    data,
+                )
+
+        return ActionResult(
+            True,
+            "agent compile, tests, and requested visual smoke passed",
+            data,
         )
 
     def agent_update(self, payload: dict[str, Any]) -> ActionResult:
