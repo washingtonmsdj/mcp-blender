@@ -24,7 +24,7 @@ namespace OrdaX.EditorTools
             public string id, summary, artifact, snapshotPath;
             public bool ok, compiling, playing;
             public string unityVersion = Application.unityVersion;
-            public string protocol = "ordax-generic-v2";
+            public string protocol = "ordax-generic-v3";
             public int errorCount, warningCount;
             public string activeScene, renderPipeline;
             public int gameObjectCount, activeGameObjectCount;
@@ -104,6 +104,13 @@ namespace OrdaX.EditorTools
                 switch (command.action)
                 {
                     case "health": reply.summary = "Generic companion ready"; break;
+                    case "refresh":
+                        // A refresh may trigger a domain reload. Persist the ACK first so
+                        // the controller can wait for the next fresh presence heartbeat.
+                        reply.summary = "Asset refresh requested";
+                        Write(Path.Combine(Root, "responses", id + ".json"), reply);
+                        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                        return;
                     case "validate":
                         reply.ok = errors == 0;
                         reply.summary = "Editor ready; errors observed since companion reload: " + errors;
