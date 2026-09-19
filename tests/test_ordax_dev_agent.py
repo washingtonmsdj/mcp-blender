@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
@@ -252,6 +252,80 @@ class AgentActionRegistryTests(unittest.TestCase):
 
             self.assertFalse(result.ok)
             self.assertFalse(result.data["comparison_passed"])
+            self.assertEqual(["front"], result.data["failed_views"])
+
+
+    def test_multiview_rejects_unknown_capture_mode_before_blender_request(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "blender.live_multiview_capture",
+                {"mode": "wireframe"},
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("material or silhouette", result.summary)
+
+    def test_silhouette_multiview_compare_enforces_iou_threshold(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            artifact_root = root / "state" / "artifacts" / "hordax"
+            baseline_dir = artifact_root / "baseline-silhouette"
+            candidate_dir = artifact_root / "candidate-silhouette"
+            baseline_dir.mkdir(parents=True)
+            candidate_dir.mkdir(parents=True)
+
+            baseline_image = baseline_dir / "front.png"
+            candidate_image = candidate_dir / "front.png"
+
+            baseline_canvas = Image.new("RGB", (16, 16), (255, 255, 255))
+            ImageDraw.Draw(baseline_canvas).rectangle(
+                [4, 4, 11, 11],
+                fill=(0, 0, 0),
+            )
+            baseline_canvas.save(baseline_image)
+
+            candidate_canvas = Image.new("RGB", (16, 16), (255, 255, 255))
+            ImageDraw.Draw(candidate_canvas).rectangle(
+                [5, 5, 10, 10],
+                fill=(0, 0, 0),
+            )
+            candidate_canvas.save(candidate_image)
+
+            baseline_manifest = baseline_dir / "multiview.json"
+            candidate_manifest = candidate_dir / "multiview.json"
+            baseline_manifest.write_text(
+                json.dumps({
+                    "mode": "silhouette",
+                    "views": [{"view": "front", "artifact": str(baseline_image)}],
+                    "bounds": {"dimensions": [1, 1, 1], "center": [0, 0, 0]},
+                }),
+                encoding="utf-8",
+            )
+            candidate_manifest.write_text(
+                json.dumps({
+                    "mode": "silhouette",
+                    "views": [{"view": "front", "artifact": str(candidate_image)}],
+                    "bounds": {"dimensions": [1, 1, 1], "center": [0, 0, 0]},
+                }),
+                encoding="utf-8",
+            )
+
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "blender.multiview_compare",
+                {
+                    "baseline_manifest_path": str(baseline_manifest),
+                    "candidate_manifest_path": str(candidate_manifest),
+                    "min_silhouette_iou": 0.9,
+                },
+            )
+
+            self.assertFalse(result.ok)
+            self.assertLess(result.data["views"][0]["silhouette_iou"], 0.9)
             self.assertEqual(["front"], result.data["failed_views"])
 
 
