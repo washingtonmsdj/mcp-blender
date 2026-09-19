@@ -24,16 +24,45 @@ from ordax_dev_agent.config import AgentConfig
 
 
 def _create_scene(blender: Path, scene: Path, dimensions: tuple[float, float, float]) -> None:
-    expression = (
-        "import bpy; "
-        "bpy.ops.wm.read_factory_settings(use_empty=True); "
-        "bpy.ops.mesh.primitive_cube_add(size=2, location=(0,0,0)); "
-        "obj=bpy.context.object; obj.name='BenchmarkBody'; "
-        f"obj.dimensions={dimensions!r}; "
-        "bpy.context.view_layer.objects.active=obj; "
-        "bpy.ops.object.transform_apply(location=False, rotation=False, scale=True); "
-        f"bpy.ops.wm.save_as_mainfile(filepath={str(scene)!r})"
+    script = f"""
+import bpy
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0, 0))
+body = bpy.context.object
+body.name = "BenchmarkBody"
+body.dimensions = {dimensions!r}
+bpy.context.view_layer.objects.active = body
+bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+def uv_probe(name, invalid=False):
+    mesh = bpy.data.meshes.new(name + "Mesh")
+    mesh.from_pydata(
+        [(-1.0, -1.0, 0.0), (1.0, -1.0, 0.0), (1.0, 1.0, 0.0), (-1.0, 1.0, 0.0)],
+        [],
+        [(0, 1, 2, 3)],
     )
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.hide_render = True
+    layer = mesh.uv_layers.new(name="UVMap")
+    coordinates = (
+        [(0.0, 0.0)] * 4
+        if invalid
+        else [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    )
+    for polygon in mesh.polygons:
+        for loop_index in polygon.loop_indices:
+            vertex_index = mesh.loops[loop_index].vertex_index
+            layer.uv[loop_index].vector = coordinates[vertex_index]
+    return obj
+
+uv_probe("UVProbe", invalid=False)
+uv_probe("UVProbeBad", invalid=True)
+bpy.ops.wm.save_as_mainfile(filepath={str(scene)!r})
+"""
+    expression = "exec(" + repr(script) + ")"
     result = run_process(
         [
             str(blender),
@@ -93,6 +122,7 @@ def _run_companion_smoke(
             "384",
             "--ordax-smoke-height",
             "384",
+            "--ordax-smoke-quality-fixture",
         ],
         timeout_seconds=180,
     )
@@ -105,6 +135,25 @@ def _run_companion_smoke(
     data = json.loads(result_path.read_text(encoding="utf-8-sig"))
     if not data.get("ok"):
         raise RuntimeError(json.dumps(data, indent=2))
+
+    valid_quality_path = control_root / "results" / "smoke-quality-valid.json"
+    invalid_quality_path = control_root / "results" / "smoke-quality-invalid.json"
+    if not valid_quality_path.is_file() or not invalid_quality_path.is_file():
+        raise RuntimeError("UV quality fixture did not produce both durable results")
+    valid_quality = json.loads(valid_quality_path.read_text(encoding="utf-8-sig"))
+    invalid_quality = json.loads(invalid_quality_path.read_text(encoding="utf-8-sig"))
+    if not valid_quality.get("ok"):
+        raise RuntimeError(
+            "UV positive control failed: " + json.dumps(valid_quality, indent=2)
+        )
+    if invalid_quality.get("ok"):
+        raise RuntimeError("UV negative control was incorrectly accepted")
+    data["uv_quality"] = {
+        "positive_control": True,
+        "negative_control_detected": True,
+        "valid": valid_quality,
+        "invalid": invalid_quality,
+    }
 
     after = hashlib.sha256(scene.read_bytes()).hexdigest()
     if before != after:
@@ -214,6 +263,16 @@ def run(root: Path) -> dict:
         "baseline_manifest": baseline["manifest"],
         "candidate_manifest": candidate["manifest"],
         "baseline_views": [item["view"] for item in baseline["artifacts"]],
+        "uv_quality": {
+            "positive_control": baseline["uv_quality"]["positive_control"],
+            "negative_control_detected": baseline["uv_quality"]["negative_control_detected"],
+            "valid_metrics": (
+                (baseline["uv_quality"]["valid"].get("checks") or [{}])[0].get("metrics")
+            ),
+            "invalid_metrics": (
+                (baseline["uv_quality"]["invalid"].get("checks") or [{}])[0].get("metrics")
+            ),
+        },
         "self_comparison": {
             "passed": identical.data.get("comparison_passed"),
             "views": identical.data.get("views"),
