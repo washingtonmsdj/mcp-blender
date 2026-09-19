@@ -69,8 +69,9 @@ gate rejects the pass and uses the existing managed rollback when enabled.
 - `blender.live_generation_pass` with `protected_objects`
 
 Approved components can be guarded by semantic `ordax_object_id` or by exact
-object name. The live companion fingerprints world transform plus base mesh
-geometry/topology by default; evaluated geometry can be requested explicitly.
+object name. The live companion fingerprints world transform plus evaluated
+mesh geometry/topology by default so modifier-driven shape changes are caught;
+`evaluated=false` selects the base mesh for time-dependent/simulated cases.
 `blender.live_generation_pass` captures the baseline before executing the
 generation script and captures the same objects again immediately afterward.
 If a protected object was deleted, cannot be resolved, or its fingerprint
