@@ -555,8 +555,57 @@ class ActionRegistry(ObservationActions):
         if project.unity.get("profile") != "hordax":
             return ActionResult(False, "Island benchmark generator is currently registered for the HORDAX Unity profile")
 
+        timeout = int(payload.get("timeout_seconds", 1200))
+        artifact = (
+            project.root
+            / "Artifacts"
+            / "Unity"
+            / "IslandReferenceBenchmark"
+            / "island-reference.png"
+        )
+        report = artifact.with_suffix(".json")
+        scene = project.root / "Assets" / "HORDAX" / "Scenes" / "Benchmarks" / "IslandReferenceBenchmark.unity"
+
+        editor = self._editor(payload)
+        live = self._request_live_unity_editor(
+            editor,
+            "benchmark_islands_generate",
+            {},
+            timeout_seconds=min(timeout, 600),
+        )
+        if live is not None:
+            if not live.ok:
+                return live
+            if not artifact.is_file() or not report.is_file() or not scene.is_file():
+                return ActionResult(
+                    False,
+                    "Live Unity benchmark completed but expected artifacts are missing",
+                    {
+                        **live.data,
+                        "artifact_exists": artifact.is_file(),
+                        "report_exists": report.is_file(),
+                        "scene_exists": scene.is_file(),
+                    },
+                )
+            try:
+                report_data = json.loads(report.read_text(encoding="utf-8-sig"))
+            except (OSError, json.JSONDecodeError):
+                report_data = {}
+            return ActionResult(
+                True,
+                "Unity island reference benchmark generated in live Editor",
+                {
+                    **live.data,
+                    "artifact": str(artifact),
+                    "snapshot_path": str(report),
+                    "scene_path": str(scene),
+                    "benchmark": report_data,
+                    "transport": "unity-editor-companion",
+                },
+            )
+
         script = self._bridge_script("unity-run.ps1")
-        method = "HORDAX.EditorTools.IslandReferenceBenchmark.Generate"
+        execute_method = "HORDAX.EditorTools.IslandReferenceBenchmark.Generate"
         result = _run(
             [
                 "powershell",
@@ -568,23 +617,13 @@ class ActionRegistry(ObservationActions):
                 "-ProjectPath",
                 str(project.root),
                 "-ExecuteMethod",
-                method,
+                execute_method,
             ],
-            timeout=int(payload.get("timeout_seconds", 1200)),
+            timeout=timeout,
         )
         if not result.ok:
             result.summary = "Unity island benchmark generation failed"
             return result
-
-        artifact = (
-            project.root
-            / "Artifacts"
-            / "Unity"
-            / "IslandReferenceBenchmark"
-            / "island-reference.png"
-        )
-        report = artifact.with_suffix(".json")
-        scene = project.root / "Assets" / "HORDAX" / "Scenes" / "Benchmarks" / "IslandReferenceBenchmark.unity"
 
         if not artifact.is_file() or not report.is_file() or not scene.is_file():
             return ActionResult(
@@ -612,7 +651,8 @@ class ActionRegistry(ObservationActions):
                 "snapshot_path": str(report),
                 "scene_path": str(scene),
                 "benchmark": report_data,
-                "execute_method": method,
+                "execute_method": execute_method,
+                "transport": "unity-batch",
             },
         )
 
