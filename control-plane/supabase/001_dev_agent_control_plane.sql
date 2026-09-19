@@ -92,3 +92,35 @@ grant all on public.ordax_dev_artifacts to service_role;
 
 alter publication supabase_realtime add table public.ordax_dev_jobs;
 alter publication supabase_realtime add table public.ordax_dev_job_events;
+
+
+create index if not exists ordax_dev_artifacts_job_id_idx
+  on public.ordax_dev_artifacts(job_id);
+
+create index if not exists ordax_dev_artifacts_agent_name_idx
+  on public.ordax_dev_artifacts(agent_name);
+
+create policy ordax_dev_agents_deny_client_access
+  on public.ordax_dev_agents
+  for all to anon, authenticated
+  using (false) with check (false);
+
+create policy ordax_dev_projects_deny_client_access
+  on public.ordax_dev_projects
+  for all to anon, authenticated
+  using (false) with check (false);
+
+create policy ordax_dev_jobs_deny_client_access
+  on public.ordax_dev_jobs
+  for all to anon, authenticated
+  using (false) with check (false);
+
+create policy ordax_dev_job_events_deny_client_access
+  on public.ordax_dev_job_events
+  for all to anon, authenticated
+  using (false) with check (false);
+
+create policy ordax_dev_artifacts_deny_client_access
+  on public.ordax_dev_artifacts
+  for all to anon, authenticated
+  using (false) with check (false);
