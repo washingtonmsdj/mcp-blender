@@ -102,7 +102,7 @@ class ObservationActions:
             "frame": payload.get("frame"),
         }), encoding="utf-8")
         script = Path(__file__).parent / "assets" / "blender_observe.py"
-        command = [str(blender), "--background", "--disable-autoexec", str(blend),
+        command = [str(blender), "--background", "--factory-startup", "--disable-autoexec", str(blend),
                    "--python-exit-code", "1", "--python", str(script), "--", str(request_path)]
         process = run_process(command, cwd=project.root,
                               timeout_seconds=max(1, min(1800, int(payload.get("timeout_seconds", 300)))))
