@@ -56,24 +56,39 @@ if !RETRY_SECONDS! GTR 300 set /a RETRY_SECONDS=300
 goto :eof
 
 :safe_update
-for /f "delims=" %%S in ('git status --porcelain --untracked-files=no 2^>nul') do (
+git -c core.fsmonitor=false diff-files --quiet -- 2>nul
+if errorlevel 2 (
+  echo OrdaX Dev Agent: falha ao verificar alteracoes locais; iniciando codigo local.
+  goto :eof
+)
+if errorlevel 1 (
   echo OrdaX Dev Agent: alteracoes locais rastreadas; auto-update ignorado.
   goto :eof
 )
 
-for /f "delims=" %%H in ('git rev-parse HEAD 2^>nul') do set "PREV_SHA=%%H"
+git -c core.fsmonitor=false diff-index --cached --quiet HEAD -- 2>nul
+if errorlevel 2 (
+  echo OrdaX Dev Agent: falha ao verificar alteracoes staged; iniciando codigo local.
+  goto :eof
+)
+if errorlevel 1 (
+  echo OrdaX Dev Agent: alteracoes locais rastreadas; auto-update ignorado.
+  goto :eof
+)
+
+for /f "delims=" %%H in ('git -c core.fsmonitor=false rev-parse HEAD 2^>nul') do set "PREV_SHA=%%H"
 if not defined PREV_SHA (
   echo OrdaX Dev Agent: nao foi possivel ler o commit atual; iniciando codigo local.
   goto :eof
 )
 
-git fetch --quiet origin "%BRANCH%" 2>nul
+git -c core.fsmonitor=false fetch --quiet origin "%BRANCH%" 2>nul
 if errorlevel 1 (
   echo OrdaX Dev Agent: remoto indisponivel; iniciando codigo local.
   goto :eof
 )
 
-git merge --ff-only --quiet "origin/%BRANCH%" 2>nul
+git -c core.fsmonitor=false merge --ff-only --quiet "origin/%BRANCH%" 2>nul
 if errorlevel 1 (
   echo OrdaX Dev Agent: fast-forward indisponivel; iniciando codigo local sem sobrescrever alteracoes.
   goto :eof
