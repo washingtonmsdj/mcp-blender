@@ -1904,7 +1904,7 @@ class ActionRegistry(ObservationActions):
         if len(checks) > 100:
             return ActionResult(False, "quality gate is limited to 100 checks")
 
-        supported = {"dimensions", "symmetry", "proportion", "containment", "mesh_quality"}
+        supported = {"dimensions", "symmetry", "proportion", "containment", "mesh_quality", "uv_quality"}
         normalized: list[dict[str, Any]] = []
         for index, check in enumerate(checks):
             if not isinstance(check, dict):
@@ -2172,7 +2172,7 @@ class ActionRegistry(ObservationActions):
                 False,
                 "quality_checks must be a list with at most 100 checks",
             )
-        supported_quality_types = {"dimensions", "symmetry", "proportion", "containment", "mesh_quality"}
+        supported_quality_types = {"dimensions", "symmetry", "proportion", "containment", "mesh_quality", "uv_quality"}
         quality_checks: list[dict[str, Any]] = []
         for index, check in enumerate(raw_quality_checks):
             if not isinstance(check, dict):
