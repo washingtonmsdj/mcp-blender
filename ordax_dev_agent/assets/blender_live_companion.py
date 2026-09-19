@@ -42,6 +42,7 @@ def _args():
     )
     parser.add_argument("--ordax-smoke-width", type=int, default=320)
     parser.add_argument("--ordax-smoke-height", type=int, default=320)
+    parser.add_argument("--ordax-smoke-quality-fixture", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -3145,6 +3146,67 @@ for stale in INFLIGHT.glob("*.json"):
         pass
 
 if CFG.ordax_smoke_output_dir:
+    quality_summary = None
+    if CFG.ordax_smoke_quality_fixture:
+        valid_quality_id = "smoke-quality-valid"
+        _quality_gate(
+            {
+                "id": valid_quality_id,
+                "checks": [
+                    {
+                        "type": "uv_quality",
+                        "object_name": "UVProbe",
+                        "max_zero_area_faces": 0,
+                        "max_degenerate_uv_triangles": 0,
+                        "max_out_of_bounds_loops": 0,
+                        "max_overlap_pairs": 0,
+                        "max_shape_distortion": 0.000001,
+                        "require_unit_tile": True,
+                    }
+                ],
+            }
+        )
+        valid_path = RESULTS / f"{valid_quality_id}.json"
+        if not valid_path.is_file():
+            raise RuntimeError("UV quality smoke did not create its positive-control result")
+        valid_quality = json.loads(valid_path.read_text(encoding="utf-8-sig"))
+        if not bool(valid_quality.get("ok")):
+            raise RuntimeError(
+                "UV quality positive control failed: "
+                + str(valid_quality.get("summary") or "unknown failure")
+            )
+
+        invalid_quality_id = "smoke-quality-invalid"
+        _quality_gate(
+            {
+                "id": invalid_quality_id,
+                "checks": [
+                    {
+                        "type": "uv_quality",
+                        "object_name": "UVProbeBad",
+                        "max_zero_area_faces": 0,
+                    }
+                ],
+            }
+        )
+        invalid_path = RESULTS / f"{invalid_quality_id}.json"
+        if not invalid_path.is_file():
+            raise RuntimeError("UV quality smoke did not create its negative-control result")
+        invalid_quality = json.loads(invalid_path.read_text(encoding="utf-8-sig"))
+        if bool(invalid_quality.get("ok")):
+            raise RuntimeError("UV quality negative control was incorrectly accepted")
+
+        quality_summary = {
+            "positive_control": True,
+            "negative_control_detected": True,
+            "valid_metrics": (
+                (valid_quality.get("checks") or [{}])[0].get("metrics")
+            ),
+            "invalid_metrics": (
+                (invalid_quality.get("checks") or [{}])[0].get("metrics")
+            ),
+        }
+
     smoke_id = "smoke"
     _multiview_capture(
         {
@@ -3178,6 +3240,7 @@ if CFG.ordax_smoke_output_dir:
                     for item in smoke_result.get("artifacts", [])
                 ],
                 "render_engine": smoke_result.get("render_engine"),
+                "quality_fixture": quality_summary,
             },
             indent=2,
         )
