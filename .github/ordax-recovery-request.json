@@ -1,5 +1,5 @@
 {
-  "job_id": "6f9c9f0b-8a34-4e44-8498-562bd4e1d3e6",
-  "reason": "stuck agent.self_test on 0.7.1 blocking Blender benchmark generation",
+  "job_id": "aa966e42-7fee-49f1-9761-832d31504057",
+  "reason": "stuck blender.live_export blocking OrdaX agent after validated boat export preparation",
   "requested_by": "ChatGPT OrdaX control loop"
 }
