@@ -3005,8 +3005,12 @@ class ActionRegistry(ObservationActions):
                     mae = sum(channel_mean) / len(channel_mean)
                     rms = sum(channel_rms) / len(channel_rms)
 
-                    gray = difference.convert("L")
-                    histogram = gray.histogram()
+                    red, green, blue = difference.split()
+                    max_channel = ImageChops.lighter(
+                        ImageChops.lighter(red, green),
+                        blue,
+                    )
+                    histogram = max_channel.histogram()
                     total_pixels = baseline_image.size[0] * baseline_image.size[1]
                     unchanged = int(histogram[0]) if histogram else 0
                     changed_ratio = (
