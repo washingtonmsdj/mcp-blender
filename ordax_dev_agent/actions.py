@@ -134,6 +134,30 @@ class ActionRegistry(ObservationActions):
             self._execution_lock.release()
 
     def agent_status(self, payload: dict[str, Any]) -> ActionResult:
+        live_apps: dict[str, dict[str, Any]] = {}
+        for slug, project in self.projects.items():
+            if not project.root.is_dir():
+                continue
+
+            app_state: dict[str, Any] = {}
+            if "unity" in project.apps:
+                try:
+                    app_state["unity"] = self._editor({"project": slug}).status()
+                except Exception as error:
+                    app_state["unity"] = {"presence_fresh": False, "error": str(error)}
+
+            if "blender" in project.apps:
+                try:
+                    app_state["blender"] = BlenderLiveBridge(
+                        self.config,
+                        project,
+                    ).status()
+                except Exception as error:
+                    app_state["blender"] = {"presence_fresh": False, "error": str(error)}
+
+            if app_state:
+                live_apps[slug] = app_state
+
         return ActionResult(
             True,
             "agent ready",
@@ -143,6 +167,7 @@ class ActionRegistry(ObservationActions):
                 "projects": [project.public() for project in self.projects.values()],
                 "default_project": self.config.default_project,
                 "busy": self._execution_lock.locked(),
+                "live_apps": live_apps,
             },
         )
 
