@@ -23,6 +23,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install package
+        run: python -m pip install -e .
+
       - name: Compile Python sources
         run: python -m compileall -q mcp_blender_unity ordax_dev_agent
 
