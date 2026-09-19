@@ -102,6 +102,14 @@ class ActionRegistry:
                 {"status": status.data["stdout"]},
             )
 
+        before = _run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            timeout=30,
+        )
+        if not before.ok:
+            return before
+        before_head = before.data.get("stdout", "").strip()
+
         fetch = _run(
             ["git", "-C", str(repo), "fetch", "--quiet", "origin", branch],
             timeout=180,
@@ -131,21 +139,64 @@ class ActionRegistry:
             if not merge.ok:
                 return merge
 
-        install = _run(
-            [sys.executable, "-m", "pip", "install", "-e", str(repo)],
-            timeout=600,
-        )
-        if not install.ok:
-            return install
-
         head = _run(["git", "-C", str(repo), "rev-parse", "HEAD"], timeout=30)
+        if not head.ok:
+            return ActionResult(
+                False,
+                "agent update completed but HEAD lookup failed",
+                head.data,
+            )
+
+        after_head = head.data.get("stdout", "").strip()
+        dependency_refresh = False
+
+        if before_head and after_head and before_head != after_head:
+            dependency_diff = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "diff",
+                    "--quiet",
+                    before_head,
+                    after_head,
+                    "--",
+                    "pyproject.toml",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                shell=False,
+            )
+            if dependency_diff.returncode == 1:
+                dependency_refresh = True
+            elif dependency_diff.returncode not in (0, 1):
+                return ActionResult(
+                    False,
+                    "could not determine whether agent dependencies changed",
+                    {
+                        "returncode": dependency_diff.returncode,
+                        "stdout": dependency_diff.stdout[-4000:],
+                        "stderr": dependency_diff.stderr[-4000:],
+                    },
+                )
+
+        if dependency_refresh:
+            install = _run(
+                [sys.executable, "-m", "pip", "install", "-e", str(repo)],
+                timeout=600,
+            )
+            if not install.ok:
+                return install
+
         return ActionResult(
-            head.ok,
-            "agent updated; restart required" if head.ok else "agent update completed but HEAD lookup failed",
+            True,
+            "agent updated; restart required",
             {
                 "branch": branch,
-                "head": head.data.get("stdout", "").strip(),
+                "head": after_head,
                 "restart_required": True,
+                "dependencies_refreshed": dependency_refresh,
             },
         )
 
