@@ -52,7 +52,7 @@ RESULTS = CONTROL_ROOT / "results"
 INFLIGHT = CONTROL_ROOT / "inflight"
 PRESENCE = CONTROL_ROOT / "presence.json"
 
-PROTOCOL_VERSION = 5
+PROTOCOL_VERSION = 6
 CAPABILITIES = [
     "ping",
     "inspect",
@@ -73,6 +73,7 @@ CAPABILITIES = [
     "checkpoint_list",
     "run_script",
     "capture_viewport",
+    "multiview_capture",
     "save",
     "quit",
 ]
@@ -2059,6 +2060,339 @@ def _export_scene(command: dict) -> None:
         except Exception:
             pass
 
+
+_MULTIVIEW_DIRECTIONS = {
+    "front": (0.0, -1.0, 0.0),
+    "back": (0.0, 1.0, 0.0),
+    "left": (-1.0, 0.0, 0.0),
+    "right": (1.0, 0.0, 0.0),
+    "top": (0.0, 0.0, 1.0),
+    "bottom": (0.0, 0.0, -1.0),
+    "three_quarter": (1.0, -1.0, 0.75),
+    "three_quarter_back": (-1.0, 1.0, 0.75),
+}
+_MULTIVIEW_DEFAULTS = (
+    "front",
+    "back",
+    "left",
+    "right",
+    "top",
+    "three_quarter",
+)
+
+
+def _multiview_target_objects(command: dict):
+    requested = command.get("object_names")
+    if requested is not None:
+        if (
+            not isinstance(requested, list)
+            or not requested
+            or len(requested) > 200
+            or not all(isinstance(name, str) and name.strip() for name in requested)
+        ):
+            raise ValueError(
+                "object_names must be a non-empty list of at most 200 object names"
+            )
+        missing = []
+        objects = []
+        for raw_name in requested:
+            name = raw_name.strip()
+            obj = bpy.context.scene.objects.get(name)
+            if obj is None:
+                missing.append(name)
+            else:
+                objects.append(obj)
+        if missing:
+            raise ValueError(
+                "multiview objects were not found: " + ", ".join(missing[:20])
+            )
+        return objects
+
+    allowed_types = {
+        "MESH",
+        "CURVE",
+        "SURFACE",
+        "META",
+        "FONT",
+        "VOLUME",
+        "GREASEPENCIL",
+    }
+    objects = [
+        obj
+        for obj in bpy.context.scene.objects
+        if obj.type in allowed_types and bool(obj.visible_get())
+    ]
+    if not objects:
+        raise ValueError("no visible renderable objects are available for multiview")
+    return objects[:200]
+
+
+def _multiview_world_corners(objects) -> tuple[list[Vector], list[str]]:
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    corners: list[Vector] = []
+    used: list[str] = []
+    for obj in objects:
+        try:
+            evaluated = obj.evaluated_get(depsgraph)
+            bound_box = list(evaluated.bound_box)
+            if len(bound_box) != 8:
+                continue
+            matrix = evaluated.matrix_world
+            object_corners = [matrix @ Vector(corner) for corner in bound_box]
+            if not all(all(abs(float(value)) < 1e15 for value in corner) for corner in object_corners):
+                continue
+            corners.extend(object_corners)
+            used.append(obj.name)
+        except Exception:
+            continue
+    if not corners:
+        raise ValueError("selected multiview objects do not expose usable world bounds")
+    return corners, used
+
+
+def _multiview_bounds(corners: list[Vector]) -> dict:
+    mins = Vector((
+        min(point.x for point in corners),
+        min(point.y for point in corners),
+        min(point.z for point in corners),
+    ))
+    maxs = Vector((
+        max(point.x for point in corners),
+        max(point.y for point in corners),
+        max(point.z for point in corners),
+    ))
+    center = (mins + maxs) * 0.5
+    dimensions = maxs - mins
+    return {
+        "min": _round_vector(mins),
+        "max": _round_vector(maxs),
+        "center": _round_vector(center),
+        "dimensions": _round_vector(dimensions),
+        "diagonal": round(float(dimensions.length), 6),
+    }
+
+
+def _multiview_render_engine(scene) -> tuple[str, str]:
+    original = str(scene.render.engine)
+    for candidate in ("BLENDER_WORKBENCH_NEXT", "BLENDER_WORKBENCH"):
+        try:
+            scene.render.engine = candidate
+            return original, candidate
+        except Exception:
+            continue
+    scene.render.engine = original
+    return original, original
+
+
+def _multiview_capture(command: dict) -> None:
+    command_id = command["id"]
+    raw_dir = str(command.get("output_dir") or "").strip()
+    output_dir = Path(raw_dir).expanduser().resolve()
+    if not raw_dir or not _inside(output_dir, ARTIFACTS_ROOT):
+        _response(
+            command_id,
+            False,
+            "Multiview output_dir must be inside the managed artifact directory",
+        )
+        return
+
+    raw_views = command.get("views", list(_MULTIVIEW_DEFAULTS))
+    if (
+        not isinstance(raw_views, list)
+        or not raw_views
+        or len(raw_views) > len(_MULTIVIEW_DIRECTIONS)
+    ):
+        _response(command_id, False, "views must be a non-empty bounded list")
+        return
+    views = []
+    for raw in raw_views:
+        view = str(raw or "").strip().lower()
+        if view not in _MULTIVIEW_DIRECTIONS:
+            _response(
+                command_id,
+                False,
+                "unsupported multiview view: " + view,
+                supported_views=sorted(_MULTIVIEW_DIRECTIONS),
+            )
+            return
+        if view in views:
+            _response(command_id, False, "multiview views must be unique")
+            return
+        views.append(view)
+
+    try:
+        width = int(command.get("width", 768))
+        height = int(command.get("height", 768))
+        margin = float(command.get("margin", 1.15))
+    except (TypeError, ValueError):
+        _response(command_id, False, "width, height and margin must be numeric")
+        return
+    if width < 128 or width > 4096 or height < 128 or height > 4096:
+        _response(command_id, False, "multiview resolution must be between 128 and 4096")
+        return
+    if margin < 1.0 or margin > 3.0:
+        _response(command_id, False, "multiview margin must be between 1.0 and 3.0")
+        return
+
+    try:
+        objects = _multiview_target_objects(command)
+        corners, used_objects = _multiview_world_corners(objects)
+    except ValueError as error:
+        _response(command_id, False, str(error))
+        return
+
+    bounds = _multiview_bounds(corners)
+    center = Vector(bounds["center"])
+    diagonal = max(float(bounds["diagonal"]), 0.001)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    scene = bpy.context.scene
+    original_camera = scene.camera
+    old_path = scene.render.filepath
+    old_format = scene.render.image_settings.file_format
+    old_resolution_x = scene.render.resolution_x
+    old_resolution_y = scene.render.resolution_y
+    old_resolution_percentage = scene.render.resolution_percentage
+    old_film_transparent = bool(getattr(scene.render, "film_transparent", False))
+    old_engine = str(scene.render.engine)
+
+    camera_data = None
+    camera = None
+    engine_used = old_engine
+    records = []
+    error = None
+    try:
+        camera_data = bpy.data.cameras.new(f"__ORDAX_MULTIVIEW_CAMERA_{command_id[:8]}")
+        camera = bpy.data.objects.new(
+            f"__ORDAX_MULTIVIEW_CAMERA_{command_id[:8]}",
+            camera_data,
+        )
+        scene.collection.objects.link(camera)
+        scene.camera = camera
+        camera_data.type = "ORTHO"
+
+        scene.render.resolution_x = width
+        scene.render.resolution_y = height
+        scene.render.resolution_percentage = 100
+        scene.render.image_settings.file_format = "PNG"
+        if hasattr(scene.render, "film_transparent"):
+            scene.render.film_transparent = False
+
+        _, engine_used = _multiview_render_engine(scene)
+        distance = max(diagonal * 2.5, 2.0)
+        aspect = float(width) / float(height)
+
+        for view in views:
+            direction = Vector(_MULTIVIEW_DIRECTIONS[view]).normalized()
+            camera.location = center + (direction * distance)
+            look_direction = center - camera.location
+            camera.rotation_euler = look_direction.to_track_quat("-Z", "Y").to_euler()
+            bpy.context.view_layer.update()
+
+            camera_inverse = camera.matrix_world.inverted()
+            projected = [camera_inverse @ corner for corner in corners]
+            xs = [point.x for point in projected]
+            ys = [point.y for point in projected]
+            projected_width = max(xs) - min(xs)
+            projected_height = max(ys) - min(ys)
+            camera_data.ortho_scale = max(
+                projected_height,
+                projected_width / aspect,
+                0.001,
+            ) * margin
+            camera_data.clip_start = max(0.001, distance - (diagonal * 1.5))
+            camera_data.clip_end = max(
+                camera_data.clip_start + 1.0,
+                distance + (diagonal * 1.5),
+            )
+
+            output = output_dir / f"{view}.png"
+            scene.render.filepath = str(output)
+            bpy.ops.render.render(write_still=True)
+            if not output.is_file() or output.stat().st_size <= 0:
+                raise RuntimeError(f"multiview render did not create {view}.png")
+
+            records.append({
+                "view": view,
+                "artifact": str(output),
+                "size_bytes": output.stat().st_size,
+                "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+                "camera_location": _round_vector(camera.location),
+                "camera_rotation_euler": _round_vector(camera.rotation_euler),
+                "ortho_scale": round(float(camera_data.ortho_scale), 6),
+                "direction_from_target": _round_vector(direction),
+            })
+
+        manifest = {
+            "project": CFG.ordax_project_slug,
+            "views": records,
+            "objects": used_objects,
+            "bounds": bounds,
+            "resolution": [width, height],
+            "margin": margin,
+            "projection": "orthographic",
+            "render_engine": engine_used,
+        }
+        manifest_path = output_dir / "multiview.json"
+        _write_json_atomic(manifest_path, manifest)
+    except Exception as caught:
+        error = caught
+    finally:
+        scene.camera = original_camera
+        scene.render.filepath = old_path
+        scene.render.image_settings.file_format = old_format
+        scene.render.resolution_x = old_resolution_x
+        scene.render.resolution_y = old_resolution_y
+        scene.render.resolution_percentage = old_resolution_percentage
+        try:
+            scene.render.engine = old_engine
+        except Exception:
+            pass
+        if hasattr(scene.render, "film_transparent"):
+            scene.render.film_transparent = old_film_transparent
+        if camera is not None:
+            try:
+                bpy.data.objects.remove(camera, do_unlink=True)
+            except Exception:
+                pass
+        if camera_data is not None:
+            try:
+                bpy.data.cameras.remove(camera_data)
+            except Exception:
+                pass
+
+    if error is not None:
+        _response(
+            command_id,
+            False,
+            f"{type(error).__name__}: {error}",
+            artifacts=records,
+            bounds=bounds,
+            render_engine=engine_used,
+        )
+        return
+
+    manifest_path = output_dir / "multiview.json"
+    primary = next(
+        (item["artifact"] for item in records if item["view"] == "three_quarter"),
+        records[0]["artifact"] if records else None,
+    )
+    _response(
+        command_id,
+        bool(records),
+        "Deterministic Blender multiview captured",
+        artifacts=records,
+        primary_artifact=primary,
+        manifest=str(manifest_path),
+        bounds=bounds,
+        objects=used_objects,
+        resolution=[width, height],
+        margin=margin,
+        projection="orthographic",
+        render_engine=engine_used,
+    )
+
+
 def _capture_viewport(command: dict) -> None:
     command_id = command["id"]
     raw = str(command.get("output_path") or "")
@@ -2203,6 +2537,8 @@ def _process(path: Path) -> None:
             _run_script(command)
         elif operation == "capture_viewport":
             _capture_viewport(command)
+        elif operation == "multiview_capture":
+            _multiview_capture(command)
         elif operation == "save":
             _save(command)
         elif operation == "quit":
