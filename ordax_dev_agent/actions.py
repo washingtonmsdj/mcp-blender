@@ -891,7 +891,7 @@ class ActionRegistry(ObservationActions):
         if not script.is_file():
             return ActionResult(False, f"Blender script not found: {script}")
 
-        command = [str(blender), "--background"]
+        command = [str(blender), "--background", "--factory-startup", "--disable-autoexec"]
         raw_blend = payload.get("blend_file")
         if raw_blend:
             blend = registered.path(raw_blend)
