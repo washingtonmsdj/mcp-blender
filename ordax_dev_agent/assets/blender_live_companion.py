@@ -53,6 +53,7 @@ CAPABILITIES = [
     "object_inspect",
     "contact_audit",
     "object_transform",
+    "object_metadata",
     "checkpoint_create",
     "checkpoint_restore",
     "checkpoint_list",
@@ -637,6 +638,94 @@ def _object_transform(command: dict) -> None:
     )
 
 
+_OBJECT_METADATA_KEYS = frozenset(
+    {
+        "ordax_asset",
+        "ordax_component",
+        "ordax_role",
+        "ordax_object_id",
+        "ordax_standard_version",
+        "ordax_source_provider",
+        "ordax_source_asset_id",
+        "ordax_source_license",
+        "ordax_source_url",
+    }
+)
+
+
+def _object_metadata(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        obj = _resolve_object(command)
+    except ValueError as error:
+        _response(command_id, False, str(error))
+        return
+
+    metadata = command.get("metadata")
+    if not isinstance(metadata, dict) or not metadata:
+        _response(command_id, False, "metadata must be a non-empty object")
+        return
+
+    unsupported = sorted(set(metadata) - _OBJECT_METADATA_KEYS)
+    if unsupported:
+        _response(
+            command_id,
+            False,
+            "unsupported metadata key(s): " + ", ".join(unsupported),
+        )
+        return
+
+    normalized = {}
+    for key, value in metadata.items():
+        if value is None:
+            normalized[key] = None
+            continue
+        if not isinstance(value, (str, int, float, bool)):
+            _response(command_id, False, f"{key} must be a scalar or null")
+            return
+        if isinstance(value, str) and len(value) > 1024:
+            _response(command_id, False, f"{key} exceeds 1024 characters")
+            return
+        normalized[key] = value
+
+    new_id = normalized.get("ordax_object_id")
+    if isinstance(new_id, str) and new_id:
+        duplicate = next(
+            (
+                candidate
+                for candidate in bpy.context.scene.objects
+                if candidate != obj
+                and str(candidate.get("ordax_object_id") or "") == new_id
+            ),
+            None,
+        )
+        if duplicate is not None:
+            _response(
+                command_id,
+                False,
+                f"ordax_object_id already belongs to {duplicate.name}",
+            )
+            return
+
+    before = _object_details(obj)
+    for key, value in normalized.items():
+        if value is None:
+            try:
+                del obj[key]
+            except KeyError:
+                pass
+        else:
+            obj[key] = value
+
+    _response(
+        command_id,
+        True,
+        "Blender object metadata updated",
+        before=before,
+        object=_object_details(obj),
+    )
+
+
 def _checkpoint_name(label: str, command_id: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", label.strip()).strip("-._")
     if not cleaned:
@@ -934,6 +1023,8 @@ def _process(path: Path) -> None:
             _contact_audit(command)
         elif operation == "object_transform":
             _object_transform(command)
+        elif operation == "object_metadata":
+            _object_metadata(command)
         elif operation == "checkpoint_create":
             _checkpoint_create(command)
         elif operation == "checkpoint_restore":
