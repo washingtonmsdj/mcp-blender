@@ -120,6 +120,23 @@ is evaluated independently and the overall comparison fails if any required
 view exceeds a limit. A generation pass can then reject and rollback against an
 approved baseline manifest. This preserves human/model agency over what
 constitutes an acceptable tolerance instead of hard-coding a universal score.
+### Silhouette mode
+
+`blender.live_multiview_capture` accepts `mode=silhouette` for geometry-focused
+evidence. The companion requires an available Blender Workbench engine, switches
+the temporary Workbench display to flat black geometry on a white viewport
+background, disables shadow/cavity/specular effects, and restores every changed
+display/render setting after capture. If Workbench is unavailable, silhouette
+capture fails explicitly instead of falling back to a materially different
+render and producing a misleading comparison.
+
+`blender.multiview_compare` requires matching capture modes by default. When both
+manifests are silhouette captures it computes per-view foreground intersection
+over union (IoU), using black pixels as geometry and white pixels as background.
+`min_silhouette_iou` is an optional explicit gate and is only valid for
+silhouette-to-silhouette comparisons. This gives the pipeline a shape-focused
+metric that is substantially less sensitive to material or texture changes than
+raw RGB difference.
 
 ### Companion capabilities
 
