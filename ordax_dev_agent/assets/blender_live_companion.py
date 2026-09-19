@@ -10,6 +10,7 @@ import importlib
 import json
 import re
 import runpy
+import struct
 import sys
 import time
 from pathlib import Path
@@ -51,13 +52,14 @@ RESULTS = CONTROL_ROOT / "results"
 INFLIGHT = CONTROL_ROOT / "inflight"
 PRESENCE = CONTROL_ROOT / "presence.json"
 
-PROTOCOL_VERSION = 4
+PROTOCOL_VERSION = 5
 CAPABILITIES = [
     "ping",
     "inspect",
     "scene_snapshot",
     "scene_reset",
     "object_inspect",
+    "object_fingerprints",
     "contact_audit",
     "quality_gate",
     "object_transform",
@@ -394,6 +396,148 @@ def _scene_reset(command: dict) -> None:
             False,
             f"{type(error).__name__}: {error}",
         )
+
+
+
+def _digest_text(digest, value: str) -> None:
+    digest.update(str(value).encode("utf-8", errors="surrogatepass"))
+    digest.update(b"\0")
+
+
+def _transform_fingerprint(obj) -> str:
+    digest = hashlib.sha256()
+    _digest_text(digest, obj.type)
+    for row in obj.matrix_world:
+        for value in row:
+            digest.update(struct.pack("<d", float(value)))
+    return digest.hexdigest()
+
+
+def _mesh_fingerprint(obj, *, evaluated: bool = False) -> tuple[str | None, dict]:
+    if obj.type != "MESH":
+        return None, {}
+
+    evaluated_obj = None
+    mesh = None
+    must_clear = False
+    try:
+        if evaluated:
+            depsgraph = bpy.context.evaluated_depsgraph_get()
+            evaluated_obj = obj.evaluated_get(depsgraph)
+            mesh = evaluated_obj.to_mesh()
+            must_clear = True
+        else:
+            mesh = obj.data
+
+        if mesh is None:
+            return None, {}
+
+        digest = hashlib.sha256()
+        _digest_text(digest, "evaluated" if evaluated else "base")
+        digest.update(struct.pack(
+            "<QQQ",
+            int(len(mesh.vertices)),
+            int(len(mesh.edges)),
+            int(len(mesh.polygons)),
+        ))
+
+        for vertex in mesh.vertices:
+            co = vertex.co
+            digest.update(struct.pack("<3d", float(co.x), float(co.y), float(co.z)))
+
+        for edge in mesh.edges:
+            vertices = tuple(int(index) for index in edge.vertices)
+            digest.update(struct.pack("<2Q", vertices[0], vertices[1]))
+
+        for polygon in mesh.polygons:
+            vertices = tuple(int(index) for index in polygon.vertices)
+            digest.update(struct.pack("<Q", len(vertices)))
+            for index in vertices:
+                digest.update(struct.pack("<Q", index))
+
+        return digest.hexdigest(), {
+            "vertices": len(mesh.vertices),
+            "edges": len(mesh.edges),
+            "polygons": len(mesh.polygons),
+        }
+    finally:
+        if must_clear and evaluated_obj is not None:
+            try:
+                evaluated_obj.to_mesh_clear()
+            except Exception:
+                pass
+
+
+def _fingerprint_selector(selector: dict) -> tuple[str, object]:
+    object_name = str(selector.get("object_name") or "").strip()
+    object_id = str(selector.get("ordax_object_id") or "").strip()
+    if bool(object_name) == bool(object_id):
+        raise ValueError(
+            "each fingerprint selector must provide exactly one of object_name or ordax_object_id"
+        )
+    obj = _resolve_object(
+        {"object_name": object_name} if object_name else {"ordax_object_id": object_id}
+    )
+    key = f"name:{object_name}" if object_name else f"id:{object_id}"
+    return key, obj
+
+
+def _object_fingerprint_entry(selector: dict) -> dict:
+    key, obj = _fingerprint_selector(selector)
+    evaluated = bool(selector.get("evaluated", False))
+    transform_sha256 = _transform_fingerprint(obj)
+    geometry_sha256, mesh_counts = _mesh_fingerprint(obj, evaluated=evaluated)
+
+    digest = hashlib.sha256()
+    _digest_text(digest, obj.type)
+    _digest_text(digest, transform_sha256)
+    _digest_text(digest, geometry_sha256 or "")
+    combined = digest.hexdigest()
+
+    return {
+        "selector_key": key,
+        "object_name": obj.name,
+        "ordax_object_id": str(obj.get("ordax_object_id") or "") or None,
+        "type": obj.type,
+        "evaluated": evaluated,
+        "transform_sha256": transform_sha256,
+        "geometry_sha256": geometry_sha256,
+        "combined_sha256": combined,
+        "mesh": mesh_counts,
+    }
+
+
+def _object_fingerprints(command: dict) -> None:
+    command_id = command["id"]
+    selectors = command.get("selectors")
+    if not isinstance(selectors, list) or not selectors:
+        _response(command_id, False, "selectors must be a non-empty list")
+        return
+    if len(selectors) > 100:
+        _response(command_id, False, "fingerprint request is limited to 100 objects")
+        return
+
+    fingerprints = []
+    seen = set()
+    try:
+        for index, selector in enumerate(selectors):
+            if not isinstance(selector, dict):
+                raise ValueError(f"fingerprint selector {index} must be an object")
+            key, _ = _fingerprint_selector(selector)
+            if key in seen:
+                raise ValueError(f"duplicate fingerprint selector: {key}")
+            seen.add(key)
+            fingerprints.append(_object_fingerprint_entry(selector))
+    except ValueError as error:
+        _response(command_id, False, str(error))
+        return
+
+    _response(
+        command_id,
+        True,
+        "Blender object fingerprints ready",
+        fingerprints=fingerprints,
+    )
 
 
 def _object_inspect(command: dict) -> None:
@@ -2031,6 +2175,8 @@ def _process(path: Path) -> None:
             _scene_reset(command)
         elif operation == "object_inspect":
             _object_inspect(command)
+        elif operation == "object_fingerprints":
+            _object_fingerprints(command)
         elif operation == "contact_audit":
             _contact_audit(command)
         elif operation == "quality_gate":
