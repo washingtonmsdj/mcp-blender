@@ -183,6 +183,8 @@ sessions may restart automatically; unsaved Blender work is preserved.
 - `blender.live_export` — export through the visible companion when the UI session must be used.
 - `blender.export_headless` — export a saved `.blend` in an isolated Blender background process with a hard process timeout; intended for final GLB/FBX delivery so exporter stalls cannot block the visible companion.
 
+On Windows, the Dev Agent also launches an independent local watchdog process. The watchdog probes the local status endpoint, tracks the active job independently of the Python worker, and terminates only the Dev Agent process tree after repeated health failures or a single unchanged busy job exceeding the bounded 15-minute safety window. The existing launcher/Scheduled Task then restarts the agent and performs the normal safe fast-forward update.
+
 See \`docs/BLENDER_MCP_REFERENCE_REVIEW.md\` for the design review that informed
 this layer and the capabilities intentionally not copied.
 
