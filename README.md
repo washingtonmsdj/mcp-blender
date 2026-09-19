@@ -160,6 +160,26 @@ O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório iso
 
 Os workflows são manuais por segurança.
 
+## Blender Live 0.5.1
+
+The visible Blender companion now exposes a richer typed perception loop:
+
+- \`blender.live_scene_snapshot\` — world-space bounds, dimensions, relations,
+  materials, modifiers, constraints, mesh counts and semantic OrdaX properties.
+- \`blender.live_object_inspect\` — full inspection for one stable object name.
+- \`blender.live_contact_audit\` — evaluated mesh BVH intersection checks for
+  protected object pairs.
+- \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
+- \`blender.asset_manifest\` — provider file manifest/provenance lookup.
+
+The companion advertises a protocol version and capabilities, polls commands at
+low latency, and refuses silent use of an outdated companion. Clean outdated
+sessions may restart automatically; unsaved Blender work is preserved.
+
+See \`docs/BLENDER_MCP_REFERENCE_REVIEW.md\` for the design review that informed
+this layer and the capabilities intentionally not copied.
+
+
 ## Segurança
 
 Não versione tokens, segredos ou dados de licença. Use variáveis de ambiente locais e GitHub Secrets quando necessário.
