@@ -40,6 +40,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_scene_snapshot", result.data["actions"])
             self.assertIn("blender.live_scene_reset", result.data["actions"])
             self.assertIn("blender.live_object_inspect", result.data["actions"])
+            self.assertIn("blender.live_object_fingerprints", result.data["actions"])
             self.assertIn("blender.live_contact_audit", result.data["actions"])
             self.assertIn("blender.live_quality_gate", result.data["actions"])
             self.assertIn("blender.live_object_transform", result.data["actions"])
@@ -101,6 +102,25 @@ class AgentActionRegistryTests(unittest.TestCase):
 
             self.assertFalse(result.ok)
             self.assertIn("type must be one of", result.summary)
+
+
+    def test_object_fingerprints_reject_duplicate_selectors(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "blender.live_object_fingerprints",
+                {
+                    "selectors": [
+                        {"object_name": "Frame"},
+                        {"object_name": "Frame"},
+                    ]
+                },
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("duplicate fingerprint selector", result.summary)
 
 
 if __name__ == "__main__":
