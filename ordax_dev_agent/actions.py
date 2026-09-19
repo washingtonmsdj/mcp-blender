@@ -2557,6 +2557,9 @@ class ActionRegistry(ObservationActions):
                     "require_same_resolution": bool(
                         multiview_options.get("require_same_resolution", True)
                     ),
+                    "require_same_mode": bool(
+                        multiview_options.get("require_same_mode", True)
+                    ),
                     "write_diff_images": bool(
                         multiview_options.get("write_diff_images", True)
                     ),
@@ -2566,6 +2569,10 @@ class ActionRegistry(ObservationActions):
                 if "max_changed_ratio" in multiview_options:
                     compare_payload["max_changed_ratio"] = multiview_options.get(
                         "max_changed_ratio"
+                    )
+                if "min_silhouette_iou" in multiview_options:
+                    compare_payload["min_silhouette_iou"] = multiview_options.get(
+                        "min_silhouette_iou"
                     )
 
                 comparison = self.blender_multiview_compare(compare_payload)
