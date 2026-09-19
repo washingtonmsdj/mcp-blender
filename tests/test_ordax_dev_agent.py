@@ -61,6 +61,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_result", result.data["actions"])
             self.assertIn("blender.live_run_script", result.data["actions"])
             self.assertIn("blender.live_capture", result.data["actions"])
+            self.assertIn("blender.live_multiview_capture", result.data["actions"])
             self.assertIn("blender.live_save", result.data["actions"])
             self.assertIn("blender.live_stop", result.data["actions"])
             self.assertIn("blender.asset_search", result.data["actions"])
@@ -121,6 +122,33 @@ class AgentActionRegistryTests(unittest.TestCase):
 
             self.assertFalse(result.ok)
             self.assertIn("duplicate fingerprint selector", result.summary)
+
+
+    def test_multiview_rejects_duplicate_views_before_blender_request(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "blender.live_multiview_capture",
+                {"views": ["front", "front"]},
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("views must be unique", result.summary)
+
+    def test_multiview_rejects_invalid_resolution_before_blender_request(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "blender.live_multiview_capture",
+                {"width": 32, "height": 768},
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("between 128 and 4096", result.summary)
 
 
 if __name__ == "__main__":
