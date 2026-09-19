@@ -185,9 +185,10 @@ class BlenderLiveBridge:
         while time.monotonic() < deadline:
             if self.presence_is_fresh():
                 data = self.status()
-                data["pid"] = process.pid
-                data["transport"] = "blender-visible-companion"
-                return ActionResult(True, "Visible Blender live session started", data)
+                if data.get("protocol_compatible") and data.get("companion_current"):
+                    data["pid"] = process.pid
+                    data["transport"] = "blender-visible-companion"
+                    return ActionResult(True, "Visible Blender live session started", data)
             if process.poll() is not None:
                 return ActionResult(
                     False,
