@@ -160,7 +160,7 @@ O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório iso
 
 Os workflows são manuais por segurança.
 
-## Blender Live 1.2.2
+## Blender Live 1.3.0
 
 The visible Blender companion now exposes a richer typed perception loop:
 
@@ -175,8 +175,9 @@ The visible Blender companion now exposes a richer typed perception loop:
 - \`blender.live_contact_audit\` — evaluated mesh BVH intersection checks for
   protected object pairs.
 - \`blender.live_quality_gate\` — deterministic dimensions, symmetry, proportion,
-  containment and mesh-quality checks (topology budgets, manifold/degenerate
-  geometry, quad ratio, UV/material presence) with measured evidence.
+  containment, mesh-quality and UV-quality checks. UV quality measures collapsed
+  faces/triangles, out-of-tile loops, scale-invariant shape distortion and
+  optional exact triangle-overlap evidence under a bounded analysis budget.
 - \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
 - \`blender.asset_manifest\` — provider file manifest/provenance lookup.
 
@@ -194,7 +195,7 @@ this layer and the capabilities intentionally not copied.
 
 `python scripts/verify_visual_agent.py` now runs both the existing isolated render smoke and the real companion deterministic silhouette-multiview path. On the Windows self-hosted recovery runner this candidate smoke runs before the managed agent is touched.
 
-`python scripts/blender_benchmark.py` adds an end-to-end regression: exact baseline self-comparison must pass, while a controlled geometry mutation must fail silhouette IoU and expose the expected bounds delta. See `docs/BLENDERBENCH.md`.
+`python scripts/blender_benchmark.py` adds an end-to-end regression: exact baseline self-comparison must pass, while a controlled geometry mutation must fail silhouette IoU and expose the expected bounds delta. See `docs/BLENDERBENCH.md`. The benchmark also contains valid/invalid UV fixtures so the Blender 5.x UV API and `uv_quality` implementation are exercised in the real runtime.
 
 
 ## Segurança
