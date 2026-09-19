@@ -479,6 +479,18 @@ def _aabb_overlap(left: dict, right: dict) -> bool:
     )
 
 
+def _aabb_contains(outer: dict, inner: dict, tolerance: float = 1e-6) -> bool:
+    outer_min, outer_max = outer.get("aabb_min"), outer.get("aabb_max")
+    inner_min, inner_max = inner.get("aabb_min"), inner.get("aabb_max")
+    if not all((outer_min, outer_max, inner_min, inner_max)):
+        return False
+    return all(
+        inner_min[axis] >= outer_min[axis] - tolerance
+        and inner_max[axis] <= outer_max[axis] + tolerance
+        for axis in range(3)
+    )
+
+
 def _contact_audit(command: dict) -> None:
     command_id = command["id"]
     raw_pairs = command.get("pairs")
@@ -553,14 +565,20 @@ def _contact_audit(command: dict) -> None:
         left_inside_right = False
         right_inside_left = False
         if broad_phase_overlap and not surface_intersection:
-            left_inside_right = any(
-                _point_inside_closed_surface(right_tree, point)
-                for point in _sample_points(left_points)
-            )
-            right_inside_left = any(
-                _point_inside_closed_surface(left_tree, point)
-                for point in _sample_points(right_points)
-            )
+            # Full containment without surface intersection is only possible
+            # when the containing object's world AABB also contains the other
+            # object's AABB. This avoids nearest-normal false positives on
+            # tubular/curved geometry that merely wraps around another object.
+            if _aabb_contains(right_bounds, left_bounds):
+                left_inside_right = any(
+                    _point_inside_closed_surface(right_tree, point)
+                    for point in _sample_points(left_points)
+                )
+            if _aabb_contains(left_bounds, right_bounds):
+                right_inside_left = any(
+                    _point_inside_closed_surface(left_tree, point)
+                    for point in _sample_points(right_points)
+                )
 
         contained = left_inside_right or right_inside_left
         intersects = surface_intersection or contained
