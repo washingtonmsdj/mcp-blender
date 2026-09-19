@@ -1,5 +1,8 @@
 # Etapa 1 — sessão persistente Blender
 
+Para cadastrar imagens-alvo e consultar referência e modelo juntos, veja
+[Etapa 3 — revisão por referências](REFERENCE_REVIEW.md).
+
 Ações novas: `blender.live_status`, `blender.live_inspect`, `blender.live_capture`,
 `blender.live_run_python`, `blender.live_result`. Disponíveis pelo mesmo dispatcher
 MCP/fila remota, depois de instalar esta versão do agente. Não mudam as ações CLI

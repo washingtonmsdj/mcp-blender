@@ -21,6 +21,7 @@ from .projects import load_projects, Project
 from .observations import ObservationActions
 from .execution_lock import ExecutionLock
 from .blender_live import BlenderLiveActions
+from .references import ReferenceActions
 
 
 Action = Callable[[dict[str, Any]], ActionResult]
@@ -48,7 +49,7 @@ def _run(command: list[str], *, cwd: Path | None = None, timeout: int = 1800) ->
     )
 
 
-class ActionRegistry(ObservationActions, BlenderLiveActions):
+class ActionRegistry(ObservationActions, BlenderLiveActions, ReferenceActions):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
     def __init__(self, config: AgentConfig):
@@ -58,6 +59,9 @@ class ActionRegistry(ObservationActions, BlenderLiveActions):
         self._execution_lock = threading.Lock()
         self._actions: dict[str, Action] = {
             "projects.list": self.projects_list,
+            "project.references": self.project_references,
+            "project.reference_images": self.project_reference_images,
+            "blender.reference_review": self.blender_reference_review,
             "project.observe": self.project_observe,
             "observation.capture": self.observation_capture,
             "blender.inspect": self.blender_inspect,

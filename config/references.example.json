@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "assets": {
+    "bottle": {
+      "requirements": [
+        "Preservar o contorno do corpo e a proporção entre gargalo e tampa.",
+        "Partes não visíveis na referência precisam ser tratadas como hipóteses."
+      ],
+      "dimensions_world_m": {"x": 0.08, "y": 0.08, "z": 0.24},
+      "tolerance_percent": 5,
+      "references": [
+        {
+          "id": "front",
+          "path": "references/bottle-front.png",
+          "view": "front",
+          "projection": "orthographic",
+          "notes": "Frente orientada para -Y; topo para +Z. Confirme a projeção antes de usar."
+        },
+        {
+          "id": "detail-neck",
+          "path": "references/bottle-neck.jpg",
+          "view": "detail",
+          "projection": "unknown",
+          "notes": "Detalhe do gargalo, sem escala física conhecida."
+        }
+      ]
+    }
+  }
+}

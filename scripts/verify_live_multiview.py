@@ -19,6 +19,8 @@ modifier = cube.modifiers.new('Preview bevel', 'BEVEL')
 modifier.width = .15
 modifier.segments = 3
 bpy.context.view_layer.update()
+bpy.context.scene.unit_settings.system = 'METRIC'
+bpy.context.scene.unit_settings.scale_length = .01
 
 
 def original_state():
@@ -42,6 +44,7 @@ try:
         companion['_tick']()
         result = json.loads((root / '.ordax/blender/responses' / f'{command_id}.json').read_text())
         assert result['ok'], result
+        assert abs(result['data']['unit_scale_m'] - .01) < .000001
         folder = root / '.ordax/blender/captures' / command_id
         for view in result['data']['views']:
             image = folder / view['filename']

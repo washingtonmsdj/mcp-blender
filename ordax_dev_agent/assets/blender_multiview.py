@@ -111,6 +111,7 @@ def capture(arguments, output):
         result = {'views': evidence, 'objects': [o.name for o in targets],
                   'source_scene': source.name, 'source_file': bpy.data.filepath,
                   'frame': source.frame_current, 'size': size, 'style': style,
+                  'unit_scale_m': source.unit_settings.scale_length if source.unit_settings.system != 'NONE' else None,
                   'bounds_world': {'min': list(low), 'max': list(high)},
                   'duration_seconds': round(time.monotonic() - started, 3),
                   'render_engine': 'BLENDER_WORKBENCH',
