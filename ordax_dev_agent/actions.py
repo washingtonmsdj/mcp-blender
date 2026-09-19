@@ -180,6 +180,7 @@ class ActionRegistry(ObservationActions):
             "blender.live_scene_reset": self.blender_live_scene_reset,
             "blender.live_object_inspect": self.blender_live_object_inspect,
             "blender.live_contact_audit": self.blender_live_contact_audit,
+            "blender.live_quality_gate": self.blender_live_quality_gate,
             "blender.live_object_transform": self.blender_live_object_transform,
             "blender.live_object_metadata": self.blender_live_object_metadata,
             "blender.live_api_schema": self.blender_live_api_schema,
@@ -1852,6 +1853,38 @@ class ActionRegistry(ObservationActions):
             timeout_seconds=float(payload.get("timeout_seconds", 60)),
         )
 
+
+    def blender_live_quality_gate(self, payload: dict[str, Any]) -> ActionResult:
+        checks = payload.get("checks")
+        if not isinstance(checks, list) or not checks:
+            return ActionResult(False, "checks must be a non-empty list")
+        if len(checks) > 100:
+            return ActionResult(False, "quality gate is limited to 100 checks")
+
+        supported = {"dimensions", "symmetry", "proportion", "containment"}
+        normalized: list[dict[str, Any]] = []
+        for index, check in enumerate(checks):
+            if not isinstance(check, dict):
+                return ActionResult(False, f"quality check {index} must be an object")
+            if any(key in check for key in ("passed", "ok", "result")):
+                return ActionResult(
+                    False,
+                    f"quality check {index} cannot provide its own completion claim",
+                )
+            kind = str(check.get("type") or "").strip().lower()
+            if kind not in supported:
+                return ActionResult(
+                    False,
+                    f"quality check {index} type must be one of: {', '.join(sorted(supported))}",
+                )
+            normalized.append({**check, "type": kind})
+
+        return self._blender_live(payload).request(
+            "quality_gate",
+            {"checks": normalized},
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+
     def blender_live_object_transform(self, payload: dict[str, Any]) -> ActionResult:
         request: dict[str, Any] = {}
         object_name = str(payload.get("object_name") or "").strip()
@@ -2087,6 +2120,33 @@ class ActionRegistry(ObservationActions):
                 )
             normalized_pairs.append([item[0].strip(), item[1].strip()])
 
+
+        raw_quality_checks = payload.get("quality_checks", [])
+        if raw_quality_checks is None:
+            raw_quality_checks = []
+        if not isinstance(raw_quality_checks, list) or len(raw_quality_checks) > 100:
+            return ActionResult(
+                False,
+                "quality_checks must be a list with at most 100 checks",
+            )
+        supported_quality_types = {"dimensions", "symmetry", "proportion", "containment"}
+        quality_checks: list[dict[str, Any]] = []
+        for index, check in enumerate(raw_quality_checks):
+            if not isinstance(check, dict):
+                return ActionResult(False, f"quality check {index} must be an object")
+            if any(key in check for key in ("passed", "ok", "result")):
+                return ActionResult(
+                    False,
+                    f"quality check {index} cannot provide its own completion claim",
+                )
+            kind = str(check.get("type") or "").strip().lower()
+            if kind not in supported_quality_types:
+                return ActionResult(
+                    False,
+                    f"quality check {index} type must be one of: {', '.join(sorted(supported_quality_types))}",
+                )
+            quality_checks.append({**check, "type": kind})
+
         save_target = None
         raw_save_target = payload.get("save_target_path")
         if raw_save_target:
@@ -2244,6 +2304,24 @@ class ActionRegistry(ObservationActions):
             if not audit.ok:
                 return fail(
                     "Blender contact audit failed; pass rejected and rollback requested",
+                )
+
+
+        if quality_checks:
+            quality = live.request(
+                "quality_gate",
+                {"checks": quality_checks},
+                timeout_seconds=min(timeout, 120),
+            )
+            phases["quality_gate"] = {
+                "ok": quality.ok,
+                "summary": quality.summary,
+                "data": quality.data,
+            }
+            if not quality.ok:
+                return fail(
+                    "Blender deterministic quality gate failed; pass rejected",
+                    quality,
                 )
 
         artifact = None
