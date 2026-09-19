@@ -1295,9 +1295,15 @@ class ActionRegistry(ObservationActions):
         live = BlenderLiveBridge(self.config, project)
         raw_blend = payload.get("blend_file") or project.blender.get("blend_file")
         blend_file = str(raw_blend) if raw_blend else None
+        wait_seconds = float(
+            payload.get(
+                "wait_seconds",
+                payload.get("timeout_seconds", 60),
+            )
+        )
         return live.start(
             blend_file=blend_file,
-            wait_seconds=float(payload.get("wait_seconds", 30)),
+            wait_seconds=wait_seconds,
         )
 
     def blender_live_status(self, payload: dict[str, Any]) -> ActionResult:
