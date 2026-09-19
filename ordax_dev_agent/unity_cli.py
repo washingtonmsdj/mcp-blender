@@ -117,8 +117,8 @@ def cli_status(project_root: Path, *, timeout_seconds: float = 60.0) -> ActionRe
             {"available": False},
         )
 
-    commands = run_unity_cli(
-        ["commands", "--format", "json"],
+    version = run_unity_cli(
+        ["version", "--format", "json"],
         cwd=project_root,
         timeout_seconds=timeout_seconds,
     )
@@ -146,7 +146,7 @@ def cli_status(project_root: Path, *, timeout_seconds: float = 60.0) -> ActionRe
         {
             "available": True,
             "executable": str(executable),
-            "commands": commands.data,
+            "version": version.data,
             "editor_status": status.data,
             "pipeline": pipeline.data,
         },
