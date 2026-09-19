@@ -54,7 +54,9 @@ class ActionRegistry:
             "git.sync": self.git_sync,
             "unity.editor_status": self.unity_editor_status,
             "unity.refresh_editor": self.unity_refresh_editor,
-            "unity.stop_play": self.unity_stop_play,
+            "unity.play_start": self.unity_play_start,
+            "unity.play_stop": self.unity_play_stop,
+            "unity.stop_play": self.unity_play_stop,
             "unity.compile": self.unity_compile,
             "unity.validate": self.unity_validate,
             "unity.capture": self.unity_capture,
@@ -459,12 +461,63 @@ class ActionRegistry:
             status,
         )
 
-    def unity_stop_play(self, payload: dict[str, Any]) -> ActionResult:
+    def unity_play_start(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
         editor = UnityEditorBridge(project)
+        wait_seconds = float(payload.get("wait_seconds", 45))
+
         status = editor.status()
         presence = status.get("presence") or {}
+        if bool(presence.get("playing")):
+            return ActionResult(
+                True,
+                "Unity Editor is already in Play Mode",
+                status,
+            )
 
+        result = self._request_live_unity_editor(
+            editor,
+            "play_start",
+            {},
+            timeout_seconds=min(wait_seconds, 30.0),
+        )
+        if result is None:
+            return ActionResult(
+                False,
+                "Unity project is not open; background Play Mode requires the open Editor companion",
+                editor.status(),
+            )
+        if not result.ok:
+            return result
+
+        deadline = time.monotonic() + max(5.0, wait_seconds)
+        while time.monotonic() < deadline:
+            current = editor.status()
+            current_presence = current.get("presence") or {}
+            if (
+                editor.presence_is_fresh(max_age_seconds=12.0)
+                and bool(current_presence.get("playing"))
+            ):
+                return ActionResult(
+                    True,
+                    "Unity Play Mode is running in the background",
+                    current,
+                )
+            time.sleep(0.35)
+
+        return ActionResult(
+            False,
+            "Play Mode start was requested, but Unity did not enter Play Mode in time",
+            editor.status(),
+        )
+
+    def unity_play_stop(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project_path(payload)
+        editor = UnityEditorBridge(project)
+        wait_seconds = float(payload.get("wait_seconds", 30))
+
+        status = editor.status()
+        presence = status.get("presence") or {}
         if not bool(presence.get("playing")):
             return ActionResult(
                 True,
@@ -472,46 +525,40 @@ class ActionRegistry:
                 status,
             )
 
-        script = self._bridge_script("unity-editor-toggle-play.ps1")
-        toggle = _run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                str(script),
-                "-ProjectPath",
-                str(project),
-            ],
-            timeout=60,
+        result = self._request_live_unity_editor(
+            editor,
+            "play_stop",
+            {},
+            timeout_seconds=min(wait_seconds, 20.0),
         )
-        if not toggle.ok:
-            return toggle
+        if result is None:
+            return ActionResult(
+                False,
+                "Unity Editor companion is unavailable; focus-stealing fallback is disabled",
+                editor.status(),
+            )
+        if not result.ok:
+            return result
 
-        deadline = time.monotonic() + float(payload.get("wait_seconds", 30))
+        deadline = time.monotonic() + max(5.0, wait_seconds)
         while time.monotonic() < deadline:
             current = editor.status()
             current_presence = current.get("presence") or {}
-            if editor.presence_is_fresh(max_age_seconds=8.0) and not bool(
-                current_presence.get("playing")
+            if (
+                editor.presence_is_fresh(max_age_seconds=12.0)
+                and not bool(current_presence.get("playing"))
             ):
-                current["toggle_stdout"] = toggle.data.get("stdout", "")
-                current["toggle_stderr"] = toggle.data.get("stderr", "")
                 return ActionResult(
                     True,
-                    "Unity Editor exited Play Mode",
+                    "Unity Play Mode stopped without foreground focus",
                     current,
                 )
             time.sleep(0.35)
 
-        final_status = editor.status()
-        final_status["toggle_stdout"] = toggle.data.get("stdout", "")
-        final_status["toggle_stderr"] = toggle.data.get("stderr", "")
         return ActionResult(
             False,
-            "Play toggle was sent, but Unity did not leave Play Mode in time",
-            final_status,
+            "Play Mode stop was requested, but Unity did not exit Play Mode in time",
+            editor.status(),
         )
 
     def unity_compile(self, payload: dict[str, Any]) -> ActionResult:
