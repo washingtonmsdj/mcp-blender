@@ -212,10 +212,11 @@ def pipeline_command(
         value = str(raw)
         if "\x00" in value or "\n" in value or "\r" in value:
             return ActionResult(False, "Unity Pipeline arguments may not contain control characters")
-        if value in _BLOCKED_ARGUMENTS:
+        option_name = value.split("=", 1)[0] if value.startswith("--") else value
+        if option_name in _BLOCKED_ARGUMENTS:
             return ActionResult(
                 False,
-                f"Unity Pipeline argument is managed by OrdaX and cannot be overridden: {value}",
+                f"Unity Pipeline argument is managed by OrdaX and cannot be overridden: {option_name}",
             )
         argv.append(value)
 
