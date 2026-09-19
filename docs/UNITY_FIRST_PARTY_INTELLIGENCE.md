@@ -78,7 +78,7 @@ Each operation must remain deterministic, inspectable and testable.
 
 ## Unity CLI / Pipeline integration
 
-OrdaX 0.7.0 also adopts Unity's official CLI/Pipeline surface as a fast generic
+OrdaX 0.7.3 also adopts Unity's official CLI/Pipeline surface as a fast generic
 Editor transport while retaining the OrdaX control plane and project scoping.
 
 Typed actions:
@@ -111,3 +111,16 @@ if tracked files are locally modified but those exact modified paths already
 match the authorized remote branch and there are no local commits ahead, the
 worktree can be reconciled to that remote before the fast-forward. Real local
 divergence remains a hard refusal.
+
+
+## 0.7.3 execution policy
+
+When the official Unity CLI and `com.unity.pipeline` are available, OrdaX
+prefers the warm Editor command surface for generic scene/GameObject operations.
+The project-specific companion remains the fallback and the home for workflows
+that need richer OrdaX evidence, deterministic captures, or game-specific
+validation.
+
+The command catalog is discovered from the running Editor instead of hard-coded.
+Project targeting remains explicit through the locally registered project path,
+and remote payloads cannot override that path or Unity output-mode controls.
