@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ordax_dev_agent.actions import ActionRegistry
+from ordax_dev_agent.main import _start_local_watchdog
 from ordax_dev_agent.config import AgentConfig
 
 
@@ -92,6 +93,15 @@ class AgentActionRegistryTests(unittest.TestCase):
 
             self.assertFalse(result.ok)
             self.assertIn("existing .blend", result.summary)
+
+
+    def test_local_watchdog_is_windows_only(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config = self.make_config(Path(raw))
+            with patch("ordax_dev_agent.main.sys.platform", "linux"):
+                process = _start_local_watchdog(config)
+
+            self.assertIsNone(process)
 
 
 if __name__ == "__main__":
