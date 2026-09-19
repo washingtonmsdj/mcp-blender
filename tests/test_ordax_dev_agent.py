@@ -14,6 +14,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             publishable_key=None,
             poll_seconds=5.0,
             state_dir=root / "state",
+            agent_repo_path=root / "agent",
             hordax_path=root / "hordax",
             bridge_path=root / "bridge",
         )
@@ -30,6 +31,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             registry = ActionRegistry(self.make_config(Path(raw)))
             result = registry.execute("agent.status", {})
             self.assertTrue(result.ok)
+            self.assertIn("agent.update", result.data["actions"])
             self.assertIn("unity.compile", result.data["actions"])
             self.assertIn("blender.run_python", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
