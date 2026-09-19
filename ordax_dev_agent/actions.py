@@ -79,6 +79,7 @@ class ActionRegistry(ObservationActions):
             "unity.asset_inventory": self.unity_asset_inventory,
             "unity.scene_summary": self.unity_scene_summary,
             "unity.physics_audit": self.unity_physics_audit,
+            "unity.benchmark_islands_generate": self.unity_benchmark_islands_generate,
             "agent.status": self.agent_status,
             "agent.update": self.agent_update,
             "agent.self_test": self.agent_self_test,
@@ -521,6 +522,72 @@ class ActionRegistry(ObservationActions):
             payload,
             "physics_audit",
             "Unity physics audit passed",
+        )
+
+    def unity_benchmark_islands_generate(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        if project.unity.get("profile") != "hordax":
+            return ActionResult(False, "Island benchmark generator is currently registered for the HORDAX Unity profile")
+
+        script = self._bridge_script("unity-run.ps1")
+        method = "HORDAX.EditorTools.IslandReferenceBenchmark.Generate"
+        result = _run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+                "-ProjectPath",
+                str(project.root),
+                "-ExecuteMethod",
+                method,
+            ],
+            timeout=int(payload.get("timeout_seconds", 1200)),
+        )
+        if not result.ok:
+            result.summary = "Unity island benchmark generation failed"
+            return result
+
+        artifact = (
+            project.root
+            / "Artifacts"
+            / "Unity"
+            / "IslandReferenceBenchmark"
+            / "island-reference.png"
+        )
+        report = artifact.with_suffix(".json")
+        scene = project.root / "Assets" / "HORDAX" / "Scenes" / "Benchmarks" / "IslandReferenceBenchmark.unity"
+
+        if not artifact.is_file() or not report.is_file() or not scene.is_file():
+            return ActionResult(
+                False,
+                "Unity benchmark method completed but expected artifacts are missing",
+                {
+                    **result.data,
+                    "artifact_exists": artifact.is_file(),
+                    "report_exists": report.is_file(),
+                    "scene_exists": scene.is_file(),
+                },
+            )
+
+        try:
+            report_data = json.loads(report.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            report_data = {}
+
+        return ActionResult(
+            True,
+            "Unity island reference benchmark generated",
+            {
+                **result.data,
+                "artifact": str(artifact),
+                "snapshot_path": str(report),
+                "scene_path": str(scene),
+                "benchmark": report_data,
+                "execute_method": method,
+            },
         )
 
     def git_status(self, payload: dict[str, Any]) -> ActionResult:
