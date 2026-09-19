@@ -27,6 +27,7 @@ class BlenderLiveBridge:
         self.results = self.root / "results"
         self.inflight = self.root / "inflight"
         self.presence = self.root / "presence.json"
+        self.trajectory_path = self.root / "trajectory.jsonl"
         self.artifacts_root = (config.state_dir / "artifacts" / project.slug).resolve()
         self.scripts_root = project.path(
             project.blender.get("scripts_dir", "automation/blender"),
@@ -279,6 +280,50 @@ class BlenderLiveBridge:
                 "retry_without_querying_result": False,
                 "inflight": inflight,
                 **self.status(),
+            },
+        )
+
+    def trajectory(self, *, limit: int = 50) -> ActionResult:
+        limit = max(1, min(int(limit), 500))
+        if not self.trajectory_path.is_file():
+            return ActionResult(
+                True,
+                "Blender live trajectory is empty",
+                {
+                    "project": self.project.slug,
+                    "trajectory_path": str(self.trajectory_path),
+                    "events": [],
+                },
+            )
+
+        try:
+            lines = self.trajectory_path.read_text(
+                encoding="utf-8-sig",
+                errors="replace",
+            ).splitlines()
+        except OSError as error:
+            return ActionResult(
+                False,
+                f"Blender live trajectory could not be read: {error}",
+            )
+
+        events = []
+        for line in lines[-limit:]:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                events.append(event)
+
+        return ActionResult(
+            True,
+            "Blender live trajectory ready",
+            {
+                "project": self.project.slug,
+                "trajectory_path": str(self.trajectory_path),
+                "returned_events": len(events),
+                "events": events,
             },
         )
 
