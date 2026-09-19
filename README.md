@@ -160,7 +160,7 @@ O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório iso
 
 Os workflows são manuais por segurança.
 
-## Blender Live 1.1.0
+## Blender Live 1.2.0
 
 The visible Blender companion now exposes a richer typed perception loop:
 
@@ -169,7 +169,9 @@ The visible Blender companion now exposes a richer typed perception loop:
 - \`blender.live_object_inspect\` — full inspection for one stable object name.
 - \`blender.live_object_fingerprints\` — deterministic transform/base-mesh or evaluated-mesh hashes for approved-component revision guards.
 - \`blender.live_multiview_capture\` — deterministic orthographic front/back/left/right/top/3⁄4 evidence with automatic framing, hashes and a manifest; explicit object lists are isolated during capture.
+  Supports `mode=material` and deterministic `mode=silhouette`; silhouette requires Workbench and does not silently fall back to a material render.
 - `blender.multiview_compare` — compare two OrdaX multiview manifests with normalized MAE/RMS, changed-pixel ratio, bounds deltas, optional diff images and explicit thresholds.
+  Silhouette manifests additionally expose IoU and may gate with `min_silhouette_iou`.
 - \`blender.live_contact_audit\` — evaluated mesh BVH intersection checks for
   protected object pairs.
 - \`blender.live_quality_gate\` — deterministic dimensions, symmetry, proportion,
