@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 import bpy
+from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
 
@@ -147,7 +148,7 @@ def _round_vector(values, digits: int = 6) -> list[float]:
 
 def _world_bounds(obj) -> dict:
     try:
-        corners = [obj.matrix_world @ __import__("mathutils").Vector(corner) for corner in obj.bound_box]
+        corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
         xs = [corner.x for corner in corners]
         ys = [corner.y for corner in corners]
         zs = [corner.z for corner in corners]
