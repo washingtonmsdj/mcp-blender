@@ -45,6 +45,11 @@ def _dispatch(request):
     if request['action'] == 'capture':
         capture = runpy.run_path(str(Path(__file__).with_name('blender_multiview.py')))['capture']
         return capture(args, state['ipc'] / 'captures' / request['id'])
+    if request['action'] in ('checkpoint_create', 'checkpoint_restore'):
+        checkpoints = runpy.run_path(str(Path(__file__).with_name('blender_checkpoints.py')))
+        if request['action'] == 'checkpoint_create':
+            return {'checkpoint': checkpoints['create'](state, args.get('label', 'manual'))}
+        return checkpoints['restore'](state, args, request['id'])
     if request['action'] in ('object_info', 'model'):
         if request['action'] == 'model' and not state['allow_modeling']:
             raise ValueError('Modeling is not authorized in this Blender session')
@@ -54,7 +59,16 @@ def _dispatch(request):
             if obj is None:
                 raise ValueError('Object not found in the current scene')
             return {'object': modeling['info'](obj)}
-        return modeling['execute'](args['operation'], args['arguments'])
+        modeling['validate'](args['operation'], args['arguments'])
+        checkpoint = None
+        if state['checkpoint_before_modeling'] or args.get('checkpoint_before') is True:
+            checkpoints = runpy.run_path(str(Path(__file__).with_name('blender_checkpoints.py')))
+            checkpoint = checkpoints['create'](state, 'before ' + args['operation'])
+            state['operation_checkpoint'] = checkpoint
+        result = modeling['execute'](args['operation'], args['arguments'])
+        if checkpoint:
+            result['checkpoint'] = checkpoint
+        return result
     if request['action'] != 'run_script' or not state['allow_scripts']:
         raise ValueError('Action not allowed by this local companion')
     script = Path(args['script']).resolve()
@@ -77,8 +91,10 @@ def _tick():
             'session': state['session'], 'project_root': str(state['project']),
             'file': bpy.data.filepath, 'allow_scripts': state['allow_scripts'],
             'allow_modeling': state['allow_modeling'],
+            'allow_checkpoints': state['allow_checkpoints'], 'allow_restore': state['allow_restore'],
+            'checkpoint_before_modeling': state['checkpoint_before_modeling'],
             'blender_version': bpy.app.version_string, 'observed_at': time.time(),
-            'actions': ['inspect', 'capture', 'object_info'] + (['model'] if state['allow_modeling'] else []) + (['run_script'] if state['allow_scripts'] else []),
+            'actions': ['inspect', 'capture', 'object_info'] + (['model'] if state['allow_modeling'] else []) + (['run_script'] if state['allow_scripts'] else []) + (['checkpoint_create'] if state['allow_checkpoints'] else []) + (['checkpoint_restore'] if state['allow_restore'] else []),
         })
         # One command per timer tick keeps the event loop available between commands.
         for path in sorted((state['ipc'] / 'inbox').glob('*.json')):
@@ -94,6 +110,8 @@ def _tick():
             path.replace(claimed)
             started = time.monotonic()
             request = {}
+            state['operation_checkpoint'] = None
+            state['recovery'] = None
             try:
                 request = json.loads(claimed.read_text(encoding='utf-8'))
                 if request.get('id') != path.stem:
@@ -102,8 +120,12 @@ def _tick():
                 ok, summary = True, 'Blender live command completed'
             except Exception as error:
                 ok, summary, data = False, f'{type(error).__name__}: {error}', {}
-                if isinstance(request, dict) and request.get('action') in ('model', 'run_script'):
+                if isinstance(request, dict) and request.get('action') in ('model', 'run_script', 'checkpoint_restore'):
                     data['changes_may_be_partial'] = True
+                if state['operation_checkpoint']:
+                    data['checkpoint'] = state['operation_checkpoint']
+                if state['recovery']:
+                    data['recovery'] = state['recovery']
             data.update(command_id=path.stem, session=state['session'], transport='blender-live',
                         duration_seconds=round(time.monotonic() - started, 3))
             _write(response, {'ok': ok, 'summary': summary, 'data': data})
@@ -113,11 +135,14 @@ def _tick():
     return .2
 
 
-def start(project_root, *, allow_scripts=False, allow_modeling=False, scripts_dir='automation/blender'):
+def start(project_root, *, allow_scripts=False, allow_modeling=False, allow_checkpoints=False,
+          allow_restore=False, checkpoint_before_modeling=False, scripts_dir='automation/blender'):
     """Explicitly pair this Blender instance. Existing scene is never loaded or saved."""
     global _STATE
     if _STATE is not None:
         raise RuntimeError('Companion is already running')
+    if (allow_restore or checkpoint_before_modeling) and allow_checkpoints is not True:
+        raise ValueError('Restoration/automatic protection requires allow_checkpoints=True')
     project = Path(project_root).resolve(strict=True)
     if not project.is_dir():
         raise ValueError('Project root must be a directory')
@@ -149,6 +174,8 @@ def start(project_root, *, allow_scripts=False, allow_modeling=False, scripts_di
         raise RuntimeError('Another Blender companion already owns this project')
     _STATE = {'project': project, 'scripts': scripts, 'ipc': ipc, 'lock': lock,
               'allow_modeling': allow_modeling is True,
+              'allow_checkpoints': allow_checkpoints is True, 'allow_restore': allow_restore is True,
+              'checkpoint_before_modeling': checkpoint_before_modeling is True,
               'session': uuid.uuid4().hex, 'allow_scripts': bool(allow_scripts)}
     try:
         bpy.app.timers.register(_tick, first_interval=.2, persistent=True)

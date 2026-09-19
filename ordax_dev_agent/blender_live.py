@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .models import ActionResult
 from .assets.blender_modeling import SCHEMAS, validate
+from .assets.blender_checkpoints import listing, identifier
 
 
 class BlenderLive:
@@ -61,6 +62,32 @@ class BlenderLive:
 
 
 class BlenderLiveActions:
+    def blender_checkpoint_list(self, payload):
+        project = self._project(payload)
+        return ActionResult(True, 'Local Blender checkpoints (not uploaded)', {
+            'project': project.slug, **listing(project.root, payload.get('limit', 20))})
+
+    def blender_checkpoint_create(self, payload):
+        project = self._project(payload)
+        if project.blender.get('allow_checkpoints') is not True:
+            raise ValueError('Checkpoint creation requires local allow_checkpoints: true')
+        return BlenderLive(project).request('checkpoint_create', {'label': payload.get('label', 'manual')},
+                                            payload.get('timeout_seconds', 120))
+
+    def blender_checkpoint_restore(self, payload):
+        project = self._project(payload)
+        if project.blender.get('allow_restore') is not True or project.blender.get('allow_checkpoints') is not True:
+            raise ValueError('Restore requires local allow_restore and allow_checkpoints: true')
+        identifier(payload.get('checkpoint_id'))
+        digest = payload.get('expected_sha256')
+        if not isinstance(digest, str) or len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest):
+            raise ValueError('expected_sha256 from checkpoint metadata is required')
+        if payload.get('confirm_replace_scene') is not True:
+            raise ValueError('confirm_replace_scene: true is required')
+        return BlenderLive(project).request('checkpoint_restore', {
+            key: payload[key] for key in ('checkpoint_id', 'expected_sha256', 'confirm_replace_scene')
+        }, payload.get('timeout_seconds', 120))
+
     def blender_modeling_tools(self, payload):
         project = self._project(payload)
         return ActionResult(True, 'Explicit modeling schemas; inspect before changing objects', {
@@ -81,7 +108,11 @@ class BlenderLiveActions:
             raise ValueError('Modeling requires allow_modeling: true in local project settings')
         arguments = {key: value for key, value in payload.items() if key not in ('project', 'timeout_seconds')}
         validate(operation, arguments)
-        return BlenderLive(project).request('model', {'operation': operation, 'arguments': arguments},
+        protect = project.blender.get('checkpoint_before_modeling') is True
+        if protect and project.blender.get('allow_checkpoints') is not True:
+            raise ValueError('Automatic protection requires local allow_checkpoints: true')
+        return BlenderLive(project).request('model', {'operation': operation, 'arguments': arguments,
+                                            'checkpoint_before': protect},
                                             payload.get('timeout_seconds', 60))
 
     def blender_model_create(self, payload):

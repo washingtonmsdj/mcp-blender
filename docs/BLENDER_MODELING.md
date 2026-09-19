@@ -65,7 +65,8 @@ seus valores e adição de modificador tenta remover o recém-adicionado. Isso n
 uma transação durável: falhas do processo, callbacks de outros add-ons e efeitos em
 dependentes podem escapar à reversão. Falhas são marcadas como potencialmente
 parciais; consulte o objeto e capture novamente. Não há integração garantida com
-Ctrl+Z nem checkpoints persistentes ainda. Nunca salve automaticamente por essa razão.
+Ctrl+Z. Para proteção persistente opcional, habilite os
+[checkpoints da etapa 5](BLENDER_CHECKPOINTS.md); eles não sobrescrevem o original.
 
 Em timeout, consulte `blender.live_result` pelo comando antes de repetir qualquer
 alteração. IDs de comandos evitam reexecução do mesmo pedido na fila, mas enviar
