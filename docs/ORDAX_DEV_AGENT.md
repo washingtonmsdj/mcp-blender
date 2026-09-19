@@ -142,6 +142,9 @@ Actions:
 
 - `blender.live_start`: opens one managed interactive Blender session for the project.
 - `blender.live_status`: reads heartbeat and scene telemetry without changing the scene.
+- `blender.live_inspect`: returns bounded structured object/collection data from the open scene.
+- `blender.live_result`: retrieves the durable result of a prior command by ID, including
+  after a timeout or after Blender closes. Query this before retrying a timed-out mutation.
 - `blender.live_run_script`: executes only a Python file inside the project's approved
   Blender automation directory, in the already-open Blender process.
 - `blender.live_capture`: captures the currently visible 3D viewport and publishes it
@@ -161,3 +164,13 @@ This gives the development loop two visible modes:
 `Blender open -> live asset / scene changes`
 
 Background CLI observation remains available when a visible window is not needed.
+
+
+### Blender Live timeout safety
+
+Every live command now writes an immutable-by-convention result record under the local
+agent state before publishing the transient response. If the caller times out after
+Blender has already accepted a command, the timeout includes `command_id`. Call
+`blender.live_result` with that ID before deciding whether to retry. The companion keeps
+the 200 most recent small JSON results per project; scene files and assets are not copied
+or uploaded by this mechanism.
