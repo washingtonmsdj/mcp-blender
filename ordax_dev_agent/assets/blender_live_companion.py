@@ -87,22 +87,34 @@ def _write_json_atomic(path: Path, data: dict) -> None:
 
 
 def _scene_snapshot() -> dict:
-    selected = [obj.name for obj in bpy.context.selected_objects[:40]]
-    active = bpy.context.view_layer.objects.active
+    try:
+        selected = [obj.name for obj in bpy.context.selected_objects[:40]]
+    except (ReferenceError, RuntimeError):
+        selected = []
+
+    active_name = None
+    try:
+        active = bpy.context.view_layer.objects.active
+        if active is not None:
+            active_name = active.name
+    except (ReferenceError, RuntimeError):
+        active_name = None
+
+    scene = bpy.context.scene
     return {
         "project": CFG.ordax_project_slug,
         "timestamp": time.time(),
         "blender_version": ".".join(str(v) for v in bpy.app.version),
         "file": bpy.data.filepath or "",
         "is_dirty": bool(getattr(bpy.data, "is_dirty", False)),
-        "scene": bpy.context.scene.name if bpy.context.scene else "",
-        "frame": int(bpy.context.scene.frame_current) if bpy.context.scene else 0,
+        "scene": scene.name if scene else "",
+        "frame": int(scene.frame_current) if scene else 0,
         "mode": getattr(bpy.context, "mode", "UNKNOWN"),
         "objects": len(bpy.data.objects),
         "meshes": len(bpy.data.meshes),
         "materials": len(bpy.data.materials),
         "selected": selected,
-        "active_object": active.name if active else None,
+        "active_object": active_name,
     }
 
 
