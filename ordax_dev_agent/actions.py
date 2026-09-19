@@ -59,7 +59,7 @@ def _unity_process_ids_for_project(project: Path) -> list[int]:
                 "powershell",
                 "-NoProfile",
                 "-Command",
-                "Get-CimInstance Win32_Process -Filter \\"Name='Unity.exe'\\" | "
+                "Get-CimInstance Win32_Process -Filter \"Name='Unity.exe'\" | "
                 "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
             ],
             capture_output=True,
