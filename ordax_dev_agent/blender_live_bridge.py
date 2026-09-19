@@ -12,6 +12,9 @@ from mcp_blender_unity.config import find_blender
 from .models import ActionResult
 
 
+EXPECTED_PROTOCOL_VERSION = 2
+
+
 class BlenderLiveBridge:
     """File-protocol bridge to one visible Blender session per registered project."""
 
@@ -59,14 +62,21 @@ class BlenderLiveBridge:
             "inflight_root": str(self.inflight),
             "inflight_commands": sorted(p.stem for p in self.inflight.glob("*.json")),
             "scripts_root": str(self.scripts_root),
+            "expected_protocol_version": EXPECTED_PROTOCOL_VERSION,
         }
         if self.presence.is_file():
             try:
-                data["presence"] = json.loads(
-                    self.presence.read_text(encoding="utf-8-sig")
-                )
+                presence = json.loads(self.presence.read_text(encoding="utf-8-sig"))
+                data["presence"] = presence
+                protocol = presence.get("protocol_version")
+                data["protocol_version"] = protocol
+                data["protocol_compatible"] = protocol == EXPECTED_PROTOCOL_VERSION
+                capabilities = presence.get("capabilities")
+                if isinstance(capabilities, list):
+                    data["capabilities"] = capabilities
             except Exception as error:
                 data["presence_error"] = str(error)
+                data["protocol_compatible"] = False
         return data
 
     def start(
@@ -76,11 +86,28 @@ class BlenderLiveBridge:
         wait_seconds: float = 30.0,
     ) -> ActionResult:
         if self.presence_is_fresh():
-            return ActionResult(
-                True,
-                "Visible Blender live session already running",
-                self.status(),
-            )
+            status = self.status()
+            if status.get("protocol_compatible"):
+                return ActionResult(
+                    True,
+                    "Visible Blender live session already running",
+                    status,
+                )
+
+            presence = status.get("presence") or {}
+            if bool(presence.get("is_dirty")):
+                return ActionResult(
+                    False,
+                    "Visible Blender companion is outdated and the current file has unsaved changes; save before restarting the companion",
+                    status,
+                )
+
+            # Protocol upgrades are safe to apply automatically when the current
+            # Blender session is clean. The previous protocol already supports quit.
+            self.request("quit", timeout_seconds=15.0)
+            deadline = time.monotonic() + 15.0
+            while time.monotonic() < deadline and self.presence_is_fresh():
+                time.sleep(0.2)
 
         blender = find_blender()
         if blender is None:
@@ -167,6 +194,21 @@ class BlenderLiveBridge:
     ) -> ActionResult:
         if not self.presence_is_fresh():
             return ActionResult(False, "Visible Blender live session is not running", self.status())
+
+        status = self.status()
+        if operation != "quit" and status.get("protocol_compatible") is False:
+            return ActionResult(
+                False,
+                "Visible Blender companion protocol is outdated; restart the live session before using this operation",
+                status,
+            )
+        capabilities = status.get("capabilities")
+        if isinstance(capabilities, list) and operation not in capabilities:
+            return ActionResult(
+                False,
+                f"Visible Blender companion does not advertise operation: {operation}",
+                status,
+            )
 
         self._ensure_dirs()
         command_id = uuid.uuid4().hex
