@@ -1862,7 +1862,7 @@ class ActionRegistry(ObservationActions):
                 if object_name
                 else {"ordax_object_id": object_id}
             )
-            selector["evaluated"] = bool(item.get("evaluated", False))
+            selector["evaluated"] = bool(item.get("evaluated", True))
             selectors.append(selector)
 
         return self._blender_live(payload).request(
@@ -2224,7 +2224,7 @@ class ActionRegistry(ObservationActions):
                 if object_name
                 else {"ordax_object_id": object_id}
             )
-            selector["evaluated"] = bool(item.get("evaluated", False))
+            selector["evaluated"] = bool(item.get("evaluated", True))
             protected_objects.append(selector)
 
         if protected_objects and bool(payload.get("reset_scene", False)):
