@@ -1,0 +1,119 @@
+name: HORDAX Unity Autopilot
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout tool bridge
+        uses: actions/checkout@v4
+        with:
+          path: toolbridge
+          persist-credentials: false
+
+      - name: Read autopilot config
+        id: config
+        shell: pwsh
+        run: |
+          $config = Get-Content ".\toolbridge\config\hordax-autopilot.json" -Raw | ConvertFrom-Json
+          if (-not $config.enabled) {
+            "enabled=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            exit 0
+          }
+          "enabled=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "repository=$($config.source_repository)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "branch=$($config.source_branch)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "width=$($config.capture.width)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "height=$($config.capture.height)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "warmup=$($config.capture.warmup_frames)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Detect new HORDAX commit
+        if: steps.config.outputs.enabled == 'true'
+        id: changed
+        shell: pwsh
+        run: |
+          $repo = "${{ steps.config.outputs.repository }}"
+          $branch = "${{ steps.config.outputs.branch }}"
+          $remote = "https://github.com/$repo.git"
+          $line = git ls-remote $remote "refs/heads/$branch"
+          if (-not $line) { throw "Could not resolve $repo@$branch" }
+          $sha = ($line -split "\s+")[0]
+          $stateDir = Join-Path $env:LOCALAPPDATA "HORDAX-Autopilot"
+          $stateFile = Join-Path $stateDir "last-successful-sha.txt"
+          New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+          $previous = if (Test-Path $stateFile) { (Get-Content $stateFile -Raw).Trim() } else { "" }
+          $isChanged = $sha -ne $previous
+          "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "state_file=$stateFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "changed=$($isChanged.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Target:   $repo@$branch"
+          Write-Host "Remote:   $sha"
+          Write-Host "Previous: $previous"
+          Write-Host "Changed:  $isChanged"
+
+      - name: Checkout HORDAX
+        if: steps.changed.outputs.changed == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: washingtonmsdj/HORDAX-game
+          ref: ${{ steps.config.outputs.branch }}
+          path: hordax
+          persist-credentials: false
+
+      - name: Detect healthy Unity
+        if: steps.changed.outputs.changed == 'true'
+        shell: pwsh
+        run: .\toolbridge\scripts\windows\toolchain-status.ps1 -RequireUnity -ProjectPath "$env:GITHUB_WORKSPACE\hordax"
+
+      - name: Compile HORDAX
+        if: steps.changed.outputs.changed == 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\unity-artifacts" | Out-Null
+          .\toolbridge\scripts\windows\unity-run.ps1 -ProjectPath "$env:GITHUB_WORKSPACE\hordax" -LogFile "$env:GITHUB_WORKSPACE\unity-artifacts\unity-compile.log"
+
+      - name: Validate HORDAX
+        if: steps.changed.outputs.changed == 'true'
+        shell: pwsh
+        run: .\toolbridge\scripts\windows\unity-run.ps1 -ProjectPath "$env:GITHUB_WORKSPACE\hordax" -ExecuteMethod "HORDAX.EditorTools.CiValidation.Run" -LogFile "$env:GITHUB_WORKSPACE\unity-artifacts\unity-validation.log"
+
+      - name: Capture gameplay image
+        if: steps.changed.outputs.changed == 'true'
+        shell: pwsh
+        run: .\toolbridge\scripts\windows\unity-capture.ps1 -ProjectPath "$env:GITHUB_WORKSPACE\hordax" -OutputPath "$env:GITHUB_WORKSPACE\unity-artifacts\prototype.png" -Width ${{ steps.config.outputs.width }} -Height ${{ steps.config.outputs.height }} -WarmupFrames ${{ steps.config.outputs.warmup }} -LogFile "$env:GITHUB_WORKSPACE\unity-artifacts\unity-capture.log"
+
+      - name: Write report
+        if: always() && steps.changed.outputs.changed == 'true'
+        shell: pwsh
+        run: |
+          $report = [ordered]@{
+            repository = "${{ steps.config.outputs.repository }}"
+            branch = "${{ steps.config.outputs.branch }}"
+            commit = "${{ steps.changed.outputs.sha }}"
+            run_id = "${{ github.run_id }}"
+            generated_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+          }
+          $report | ConvertTo-Json | Set-Content "$env:GITHUB_WORKSPACE\unity-artifacts\report.json"
+
+      - name: Upload visual validation artifacts
+        if: always() && steps.changed.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hordax-unity-observation-${{ steps.changed.outputs.sha }}
+          path: unity-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Mark commit observed
+        if: success() && steps.changed.outputs.changed == 'true'
+        shell: pwsh
+        run: '"${{ steps.changed.outputs.sha }}" | Set-Content "${{ steps.changed.outputs.state_file }}"'
