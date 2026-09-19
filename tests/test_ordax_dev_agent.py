@@ -46,6 +46,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_checkpoint_list", result.data["actions"])
             self.assertIn("blender.live_checkpoint_restore", result.data["actions"])
             self.assertIn("blender.live_trajectory", result.data["actions"])
+            self.assertIn("blender.live_generation_pass", result.data["actions"])
             self.assertIn("blender.live_result", result.data["actions"])
             self.assertIn("blender.live_run_script", result.data["actions"])
             self.assertIn("blender.live_capture", result.data["actions"])
