@@ -3,6 +3,8 @@ param(
     [string]$PublishableKey = "",
     [string]$PairingCode = "",
     [string]$AgentName = "TONECOS-HORDAX",
+    [string]$HordaxPath = "C:\Users\TONECOS\Documents\github\HORDAX-game",
+    [string]$BridgePath = "",
     [switch]$StartNow
 )
 
@@ -15,6 +17,10 @@ $launcher = Join-Path $repoRoot "scripts\windows\ordax-agent-start.cmd"
 $stateDir = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent"
 $settingsPath = Join-Path $stateDir "agent-settings.json"
 $pairingPath = Join-Path $stateDir "pairing-code.txt"
+
+if (-not $BridgePath) {
+    $BridgePath = $repoRoot
+}
 
 if (-not (Test-Path $python)) {
     $basePython = Get-Command python -ErrorAction SilentlyContinue
@@ -42,8 +48,8 @@ if ($SupabaseUrl -and $PublishableKey) {
         supabase_url = $SupabaseUrl
         publishable_key = $PublishableKey
         poll_seconds = 5
-        hordax_path = "C:\Users\TONECOS\Documents\github\HORDAX-game"
-        bridge_path = $repoRoot
+        hordax_path = $HordaxPath
+        bridge_path = $BridgePath
     }
 
     $settings | ConvertTo-Json | Set-Content -Path $settingsPath -Encoding UTF8
