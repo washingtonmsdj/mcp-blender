@@ -16,6 +16,10 @@ dependencies = [
 [project.scripts]
 mcp-blender-unity = "mcp_blender_unity.server:main"
 ordax-dev-agent = "ordax_dev_agent.main:main"
+ordax-project-mcp = "ordax_dev_agent.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["mcp_blender_unity*", "ordax_dev_agent*"]
+
+[tool.setuptools.package-data]
+ordax_dev_agent = ["assets/*.py", "assets/*.cs"]

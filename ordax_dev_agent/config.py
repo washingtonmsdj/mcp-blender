@@ -17,6 +17,9 @@ class AgentConfig:
     agent_repo_path: Path
     hordax_path: Path
     bridge_path: Path
+    projects: dict | None = None
+    default_project: str = "hordax"
+    adapters: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -33,14 +36,20 @@ class AgentConfig:
 
         settings_path = state_dir / "agent-settings.json"
         settings: dict = {}
-        settings_error: str | None = None
         if settings_path.is_file():
             try:
                 settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
             except Exception as error:
-                settings_error = f"{type(error).__name__}: {error}"
+                raise ValueError(f"Cannot read agent settings: {settings_path}: {error}") from error
+        if not isinstance(settings, dict):
+            raise ValueError("Agent settings must be a JSON object")
+        if not isinstance(settings.get("adapters", []), list):
+            raise ValueError("adapters must be a list of locally installed adapter names")
 
         config = cls(
+            projects=settings.get("projects"),
+            default_project=settings.get("default_project", "hordax"),
+            adapters=tuple(settings.get("adapters", [])),
             agent_name=os.environ.get(
                 "ORDAX_AGENT_NAME",
                 settings.get("agent_name") or socket.gethostname(),
@@ -74,7 +83,7 @@ class AgentConfig:
                     "ORDAX_HORDAX_PATH",
                     settings.get(
                         "hordax_path",
-                        r"C:\Users\TONECOS\Documents\github\HORDAX-game",
+                        str(Path.home() / "Documents" / "github" / "HORDAX-game"),
                     ),
                 )
             ),
@@ -83,20 +92,11 @@ class AgentConfig:
                     "ORDAX_BRIDGE_PATH",
                     settings.get(
                         "bridge_path",
-                        r"C:\Users\TONECOS\Documents\github\mcp-blender",
+                        str(Path(__file__).resolve().parents[1]),
                     ),
                 )
             ),
         )
-
-        if settings_error:
-            warning = state_dir / "settings-error.txt"
-            warning.write_text(settings_error + "\n", encoding="utf-8")
-        else:
-            try:
-                (state_dir / "settings-error.txt").unlink()
-            except OSError:
-                pass
 
         return config
 

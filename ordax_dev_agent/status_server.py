@@ -104,8 +104,8 @@ footer { margin-top:22px; color:#658196; font-size:12px; }
 
   <article class="card">
     <div class="label">Projetos locais</div>
-    <div class="meta"><strong>HORDAX</strong><br><span id="hordax">—</span></div>
-    <div class="meta"><strong>Tool bridge</strong><br><span id="bridge">—</span></div>
+    <div id="projects" class="meta">—</div>
+    <div id="progress" class="meta"></div>
   </article>
 
   <article class="card full">
@@ -143,8 +143,17 @@ async function refresh() {
       r.last_job_id ? r.last_job_id : 'Sem job nesta sessão';
     document.getElementById('result').textContent =
       r.last_result ? JSON.stringify(r.last_result, null, 2) : 'Nenhum job executado nesta sessão.';
-    document.getElementById('hordax').textContent = s.hordax_path || '—';
-    document.getElementById('bridge').textContent = s.bridge_path || '—';
+    const projects = s.projects || [];
+    document.getElementById('projects').replaceChildren(...projects.map(project => {
+      const row = document.createElement('div');
+      row.textContent = project.slug + ' · ' + (project.apps || []).join(', ') +
+        (project.available ? ' · disponível' : ' · caminho ausente');
+      row.title = project.path;
+      return row;
+    }));
+    document.getElementById('progress').textContent = r.progress ?
+      'Captura ' + (r.progress.index + 1) + ' · ' + r.progress.duration_seconds + 's' +
+      (r.progress.delivery_error ? ' · falha na entrega' : '') : '';
     const actions = document.getElementById('actions');
     actions.replaceChildren(...(s.actions || []).map(name => {
       const el = document.createElement('span');

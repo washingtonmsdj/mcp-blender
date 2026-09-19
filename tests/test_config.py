@@ -15,6 +15,12 @@ from mcp_blender_unity.server import _classify_failure
 
 
 class ConfigTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # These fixtures model Windows Hub installations, even on Linux CI.
+        platform_patch = patch("mcp_blender_unity.config.platform.system", return_value="Windows")
+        platform_patch.start()
+        self.addCleanup(platform_patch.stop)
+
     def make_project(self, root: Path) -> Path:
         project = root / "Project"
         (project / "Assets").mkdir(parents=True)

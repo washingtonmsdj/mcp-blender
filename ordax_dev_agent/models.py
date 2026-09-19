@@ -12,6 +12,14 @@ class AgentJob:
     project_slug: str | None = None
     lease_token: str | None = None
 
+    def action_payload(self) -> dict[str, Any]:
+        payload = dict(self.payload)
+        if self.project_slug:
+            if payload.get("project") not in (None, self.project_slug):
+                raise ValueError("job project_slug conflicts with payload.project")
+            payload["project"] = self.project_slug
+        return payload
+
 
 @dataclass(slots=True)
 class ActionResult:

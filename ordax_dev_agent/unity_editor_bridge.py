@@ -10,8 +10,9 @@ from .models import ActionResult
 
 
 class UnityEditorBridge:
-    def __init__(self, project_path: Path):
+    def __init__(self, project_path: Path, companion_source: Path | None = None):
         self.project = project_path.resolve()
+        self._companion_source = companion_source
         self.root = self.project / "Library" / "OrdaXAgent"
         self.inbox = self.root / "inbox"
         self.responses = self.root / "responses"
@@ -23,7 +24,10 @@ class UnityEditorBridge:
 
     @property
     def companion_source_path(self) -> Path:
-        return self.project / "Assets" / "HORDAX" / "Editor" / "OrdaXEditorAgent.cs"
+        if self._companion_source:
+            return self._companion_source
+        generic = self.project / "Assets/OrdaX/Editor/OrdaXGenericAgent.cs"
+        return generic if generic.is_file() else self.project / "Assets/HORDAX/Editor/OrdaXEditorAgent.cs"
 
     def project_appears_open(self) -> bool:
         return self.project_lock_path.exists()
@@ -62,6 +66,7 @@ class UnityEditorBridge:
             "presence_fresh": self.presence_is_fresh(),
             "presence_path": str(self.presence),
             "companion_source": str(self.companion_source_path),
+            "presence_age_seconds": max(0.0, time.time() - self.presence.stat().st_mtime) if self.presence.is_file() else None,
         }
         if self.presence.is_file():
             try:
@@ -91,9 +96,9 @@ class UnityEditorBridge:
         temp_path = self.inbox / f"{command_id}.tmp"
 
         body = {
+            **(payload or {}),
             "id": command_id,
             "action": action,
-            **(payload or {}),
         }
         temp_path.write_text(json.dumps(body), encoding="utf-8")
         temp_path.replace(command_path)
@@ -128,4 +133,7 @@ class UnityEditorBridge:
         except OSError:
             pass
 
-        return None
+        return ActionResult(False, "Unity response timed out; command outcome is unknown; inspect before retrying", {
+            "command_id": command_id, "outcome_unknown": True,
+            "transport": "unity-editor-companion",
+        })

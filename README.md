@@ -1,5 +1,13 @@
 # MCP Blender + Unity CLI
 
+## OrdaX multi-projeto (0.3)
+
+O agente aceita projetos locais cadastrados, companion Unity genérico, inspeção e
+preview Blender, sequências de capturas com snapshots e imagens entregues ao modelo
+por MCP. A fila Supabase existente continua atendendo clientes remotos.
+Veja [configuração e limites](docs/MULTI_PROJECT_AGENT.md) e
+[exemplo de projetos](config/projects.example.json).
+
 Ponte local para controlar **Blender CLI** e **Unity CLI** por MCP e para executar validações pelo GitHub em um self-hosted runner.
 
 O antigo Ordax Engine foi removido da `main`. O snapshot anterior está preservado em:

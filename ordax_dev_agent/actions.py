@@ -6,6 +6,9 @@ import json
 import subprocess
 import sys
 import time
+import threading
+import re
+from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any, Callable
 
@@ -14,6 +17,9 @@ from mcp_blender_unity.config import find_blender
 from .config import AgentConfig
 from .models import ActionResult
 from .unity_editor_bridge import UnityEditorBridge
+from .projects import load_projects, Project
+from .observations import ObservationActions
+from .execution_lock import ExecutionLock
 
 
 Action = Callable[[dict[str, Any]], ActionResult]
@@ -41,12 +47,21 @@ def _run(command: list[str], *, cwd: Path | None = None, timeout: int = 1800) ->
     )
 
 
-class ActionRegistry:
+class ActionRegistry(ObservationActions):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
     def __init__(self, config: AgentConfig):
         self.config = config
+        self.projects = load_projects(config)
+        self.on_observation = None
+        self._execution_lock = threading.Lock()
         self._actions: dict[str, Action] = {
+            "projects.list": self.projects_list,
+            "project.observe": self.project_observe,
+            "observation.capture": self.observation_capture,
+            "blender.inspect": self.blender_inspect,
+            "blender.render_preview": self.blender_render_preview,
+            "unity.install_companion": self.unity_install_companion,
             "agent.status": self.agent_status,
             "agent.update": self.agent_update,
             "artifact.preview": self.artifact_preview,
@@ -64,6 +79,21 @@ class ActionRegistry:
             "blender.version": self.blender_version,
             "blender.run_python": self.blender_run_python,
         }
+        self._app_prefixes = {"unity", "blender"}
+        available = {entry.name: entry for entry in entry_points(group="ordax_dev_agent.adapters")}
+        for name in config.adapters:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender"}:
+                raise ValueError(f"invalid or reserved adapter name: {name}")
+            if name not in available:
+                raise ValueError(f"configured adapter is not installed: {name}")
+            # Local installed plugin, explicitly enabled by workstation settings.
+            handlers = available[name].load()(config)
+            for operation, handler in handlers.items():
+                if not re.fullmatch(r"[a-z][a-z0-9_]*", operation) or not callable(handler):
+                    raise ValueError(f"invalid action in adapter {name}: {operation}")
+                self._actions[f"{name}.{operation}"] = (
+                    lambda payload, fn=handler: fn(self._project(payload), payload))
+            self._app_prefixes.add(name)
 
     @property
     def names(self) -> list[str]:
@@ -73,7 +103,27 @@ class ActionRegistry:
         handler = self._actions.get(action)
         if handler is None:
             return ActionResult(False, f"action not allowed: {action}")
-        return handler(payload or {})
+        payload = payload or {}
+        if action in ("agent.status", "projects.list"):
+            return handler(payload)
+        # A busy application must not receive a second editor/render operation.
+        if not self._execution_lock.acquire(blocking=False):
+            return ActionResult(False, "Agent is busy; retry after the current action", {"retryable": True})
+        process_lock = ExecutionLock(self.config.state_dir)
+        try:
+            if not process_lock.acquire():
+                return ActionResult(False, "Another agent/MCP action is running", {"retryable": True})
+            if action.split('.')[0] in self._app_prefixes and action != "blender.version":
+                project = self._project(payload)
+                if action.split('.')[0] not in project.apps:
+                    raise ValueError(f"application not enabled for project {project.slug}")
+            result = handler(payload)
+            return result
+        except (ValueError, FileNotFoundError, OSError, subprocess.TimeoutExpired) as error:
+            return ActionResult(False, f"{type(error).__name__}: {error}")
+        finally:
+            process_lock.release()
+            self._execution_lock.release()
 
     def agent_status(self, payload: dict[str, Any]) -> ActionResult:
         return ActionResult(
@@ -82,6 +132,9 @@ class ActionRegistry:
             {
                 **self.config.public_status(),
                 "actions": self.names,
+                "projects": [project.public() for project in self.projects.values()],
+                "default_project": self.config.default_project,
+                "busy": self._execution_lock.locked(),
             },
         )
 
@@ -204,15 +257,15 @@ class ActionRegistry:
 
     def artifact_preview(self, payload: dict[str, Any]) -> ActionResult:
         name = str(payload.get("artifact_name", "hordax-prototype.png"))
-        allowed = {
-            "hordax-prototype.png",
-            "hordax-prototype.json",
-        }
-        if name not in allowed:
-            return ActionResult(False, f"artifact not allowed: {name}")
-
-        path = (self.config.state_dir / "artifacts" / name).resolve()
-        root = (self.config.state_dir / "artifacts").resolve()
+        root = (self.config.state_dir / "artifacts" / self._project(payload).slug).resolve()
+        if name in {"hordax-prototype.png", "hordax-prototype.json", "latest.png", "latest.json"}:
+            manifest = root / 'latest.json'
+            if not manifest.is_file():
+                return ActionResult(False, "No successful capture for this project yet")
+            latest = json.loads(manifest.read_text(encoding='utf-8'))
+            path = Path(latest['snapshot_path' if name.endswith('.json') else 'artifact']).resolve()
+        else:
+            path = (root / name).resolve()
         try:
             path.relative_to(root)
         except ValueError:
@@ -221,20 +274,20 @@ class ActionRegistry:
         if not path.is_file():
             return ActionResult(False, f"artifact not found: {path}")
 
-        data = path.read_bytes()
         max_bytes = int(payload.get("max_bytes", 65536))
-        max_bytes = max(1024, min(max_bytes, 131072))
-        if len(data) > max_bytes:
+        max_bytes = max(1024, min(max_bytes, 2 * 1024 * 1024))
+        size = path.stat().st_size
+        if size > max_bytes:
             return ActionResult(
                 False,
-                f"artifact is too large for inline preview: {len(data)} > {max_bytes}",
+                f"artifact is too large for inline preview: {size} > {max_bytes}",
                 {
                     "path": str(path),
-                    "size_bytes": len(data),
-                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "size_bytes": size,
                 },
             )
 
+        data = path.read_bytes()
         return ActionResult(
             True,
             "artifact preview ready",
@@ -247,13 +300,23 @@ class ActionRegistry:
         )
 
     def _project_path(self, payload: dict[str, Any]) -> Path:
-        slug = payload.get("project", "hordax")
-        if slug != "hordax":
-            raise ValueError(f"project not allowed: {slug}")
-        path = self.config.hordax_path.resolve()
-        if not (path / ".git").is_dir():
-            raise FileNotFoundError(f"Git project not found: {path}")
-        return path
+        return self._project(payload).root
+
+    def _project(self, payload: dict[str, Any]) -> Project:
+        slug = payload.get("project") or self.config.default_project
+        if slug not in self.projects:
+            raise ValueError(f"project not registered: {slug}")
+        project = self.projects[slug]
+        if not project.root.is_dir():
+            raise FileNotFoundError(f"Project directory not found: {project.root}")
+        return project
+
+    def _editor(self, payload: dict[str, Any]) -> UnityEditorBridge:
+        project = self._project(payload)
+        source = project.unity.get("companion_source")
+        if source:
+            source = project.path(source, must_exist=False)
+        return UnityEditorBridge(project.root, source)
 
     def git_status(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
@@ -261,11 +324,8 @@ class ActionRegistry:
 
     def git_sync(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
-        branch = payload.get("branch", "dev/unity6-gameplay-pass-1")
-        allowed = {
-            "dev/unity6-gameplay-pass-1",
-            "upgrade/unity-6000.6.1f1",
-        }
+        allowed = self._project(payload).allowed_branches
+        branch = payload.get("branch") or (allowed[0] if allowed else None)
         if branch not in allowed:
             return ActionResult(False, f"branch not allowed: {branch}")
 
@@ -298,19 +358,21 @@ class ActionRegistry:
 
         current_branch = current.data["stdout"].strip()
         if current_branch != branch:
+            exists = _run(["git", "-C", str(project), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], timeout=30)
+            switch = (["git", "-C", str(project), "switch", branch] if exists.ok else
+                      ["git", "-C", str(project), "switch", "--track", "-c", branch, f"origin/{branch}"])
             checkout = _run(
-                ["git", "-C", str(project), "checkout", "-B", branch, f"origin/{branch}"],
+                switch,
                 timeout=120,
             )
             if not checkout.ok:
                 return checkout
-        else:
-            merge = _run(
-                ["git", "-C", str(project), "merge", "--ff-only", "--quiet", f"origin/{branch}"],
-                timeout=120,
-            )
-            if not merge.ok:
-                return merge
+        merge = _run(
+            ["git", "-C", str(project), "merge", "--ff-only", "--quiet", f"origin/{branch}"],
+            timeout=120,
+        )
+        if not merge.ok:
+            return merge
 
         head = _run(["git", "-C", str(project), "rev-parse", "HEAD"], timeout=30)
         return ActionResult(
@@ -384,7 +446,7 @@ class ActionRegistry:
 
     def unity_editor_status(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
-        editor = UnityEditorBridge(project)
+        editor = self._editor(payload)
         if not editor.presence_is_fresh() and editor.project_appears_open():
             editor.nudge_companion(
                 wait_seconds=float(payload.get("wait_seconds", 30)),
@@ -399,7 +461,7 @@ class ActionRegistry:
 
     def unity_refresh_editor(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
-        editor = UnityEditorBridge(project)
+        editor = self._editor(payload)
 
         force = bool(payload.get("force", False))
         if editor.presence_is_fresh() and not force:
@@ -463,7 +525,7 @@ class ActionRegistry:
 
     def unity_play_start(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
-        editor = UnityEditorBridge(project)
+        editor = self._editor(payload)
         wait_seconds = float(payload.get("wait_seconds", 45))
 
         status = editor.status()
@@ -513,7 +575,7 @@ class ActionRegistry:
 
     def unity_play_stop(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
-        editor = UnityEditorBridge(project)
+        editor = self._editor(payload)
         wait_seconds = float(payload.get("wait_seconds", 30))
 
         status = editor.status()
@@ -565,7 +627,7 @@ class ActionRegistry:
         project = self._project_path(payload)
         timeout = int(payload.get("timeout_seconds", 1800))
 
-        editor = UnityEditorBridge(project)
+        editor = self._editor(payload)
         editor_result = self._request_live_unity_editor(
             editor,
             "validate",
@@ -573,8 +635,6 @@ class ActionRegistry:
             timeout_seconds=min(timeout, 600),
         )
         if editor_result is not None:
-            if editor_result.ok:
-                editor_result.summary = "Unity Editor loaded current scripts and validation passed"
             return editor_result
 
         script = self._bridge_script("unity-run.ps1")
@@ -595,11 +655,14 @@ class ActionRegistry:
     def unity_validate(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
         timeout = int(payload.get("timeout_seconds", 1800))
-        method = payload.get("execute_method", "HORDAX.EditorTools.CiValidation.Run")
-        if method != "HORDAX.EditorTools.CiValidation.Run":
+        settings = self._project(payload).unity
+        method = payload.get("execute_method", settings.get("validate_method"))
+        if method and method not in settings.get("allowed_methods", []):
             return ActionResult(False, f"execute method not allowed: {method}")
 
-        editor = UnityEditorBridge(project)
+        editor = self._editor(payload)
+        if method and settings.get("profile") != "hordax" and editor.project_appears_open():
+            return ActionResult(False, "Custom validation methods require a project-specific live companion; close the Editor to run this allow-listed batch method")
         editor_result = self._request_live_unity_editor(
             editor,
             "validate",
@@ -609,6 +672,8 @@ class ActionRegistry:
         if editor_result is not None:
             return editor_result
 
+        if not method:
+            return self.unity_compile(payload)
         script = self._bridge_script("unity-run.ps1")
         return _run(
             [
@@ -628,10 +693,10 @@ class ActionRegistry:
 
     def unity_capture(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
-        output = self.config.state_dir / "artifacts" / "hordax-prototype.png"
+        output = self._capture_output(payload)
         output.parent.mkdir(parents=True, exist_ok=True)
 
-        editor = UnityEditorBridge(project)
+        editor = self._editor(payload)
         editor_result = self._request_live_unity_editor(
             editor,
             "capture",
@@ -649,7 +714,10 @@ class ActionRegistry:
         )
         if editor_result is not None:
             if editor_result.ok:
+                if not output.is_file() or output.stat().st_size == 0:
+                    return ActionResult(False, "Unity reported success without producing a fresh image", editor_result.data)
                 editor_result.data["artifact"] = str(output)
+                self._record_capture(payload, output)
                 snapshot = output.with_suffix(".json")
                 if snapshot.is_file():
                     try:
@@ -661,6 +729,8 @@ class ActionRegistry:
                         editor_result.data["snapshot_error"] = str(error)
             return editor_result
 
+        if self._project(payload).unity.get("profile") != "hordax":
+            return ActionResult(False, "Open Unity and install its generic companion to capture this project")
         script = self._bridge_script("unity-capture.ps1")
         result = _run(
             [
@@ -684,6 +754,10 @@ class ActionRegistry:
             timeout=int(payload.get("timeout_seconds", 900)),
         )
         result.data["artifact"] = str(output)
+        if result.ok and output.is_file() and output.stat().st_size > 0:
+            self._record_capture(payload, output)
+        else:
+            result.ok = False
         snapshot = output.with_suffix(".json")
         if snapshot.is_file():
             try:
@@ -696,10 +770,7 @@ class ActionRegistry:
     def unity_run_method(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
         method = payload.get("execute_method", "")
-        allowed = {
-            "HORDAX.EditorTools.CiValidation.Run",
-            "HORDAX.EditorTools.AutomationCapture.CapturePrototype",
-        }
+        allowed = self._project(payload).unity.get("allowed_methods", [])
         if method not in allowed:
             return ActionResult(False, f"execute method not allowed: {method}")
 
@@ -735,8 +806,9 @@ class ActionRegistry:
         if not raw_script:
             return ActionResult(False, "script_path is required")
 
-        script = Path(raw_script).expanduser().resolve()
-        allowed_root = (self.config.bridge_path / "automation" / "blender").resolve()
+        registered = self._project(payload)
+        script = registered.path(raw_script)
+        allowed_root = registered.path(registered.blender.get("scripts_dir", "automation/blender"), must_exist=False)
         try:
             script.relative_to(allowed_root)
         except ValueError:
@@ -750,11 +822,11 @@ class ActionRegistry:
         command = [str(blender), "--background"]
         raw_blend = payload.get("blend_file")
         if raw_blend:
-            blend = Path(raw_blend).expanduser().resolve()
+            blend = registered.path(raw_blend)
             if not blend.is_file():
                 return ActionResult(False, f"Blend file not found: {blend}")
             command.append(str(blend))
-        command.extend(["--python", str(script)])
+        command.extend(["--python-exit-code", "1", "--python", str(script)])
         return _run(
             command,
             timeout=int(payload.get("timeout_seconds", 1800)),
