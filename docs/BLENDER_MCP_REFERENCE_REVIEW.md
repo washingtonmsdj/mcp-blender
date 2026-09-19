@@ -53,11 +53,13 @@ diagnostics only.
 - \`blender.live_quality_gate\`
 
 One grouped typed operation evaluates geometry contracts without asking the
-model to decide whether its own work passed. The first verifier set covers
-dimensions, bilateral symmetry, dimension ratios, and world-AABB containment.
-Every check returns measured error or clearance evidence from the live Blender
-session and refuses client-supplied completion claims such as `passed`, `ok`,
-or `result`.
+model to decide whether its own work passed. The verifier set covers dimensions,
+bilateral symmetry, dimension ratios, world-AABB containment, and mesh quality.
+The mesh-quality contract can bound triangle/ngon/boundary/wire/non-manifold,
+loose-vertex, degenerate-face and zero-length-edge counts; it can also require
+a minimum quad ratio plus UV and material presence. Every check returns measured
+evidence from the live Blender session and refuses client-supplied completion
+claims such as `passed`, `ok`, or `result`.
 
 `blender.live_generation_pass` accepts `quality_checks`; a failed deterministic
 gate rejects the pass and uses the existing managed rollback when enabled.
