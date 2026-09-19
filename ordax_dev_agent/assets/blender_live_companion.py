@@ -50,7 +50,7 @@ RESULTS = CONTROL_ROOT / "results"
 INFLIGHT = CONTROL_ROOT / "inflight"
 PRESENCE = CONTROL_ROOT / "presence.json"
 
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = 4
 CAPABILITIES = [
     "ping",
     "inspect",
@@ -58,6 +58,7 @@ CAPABILITIES = [
     "scene_reset",
     "object_inspect",
     "contact_audit",
+    "quality_gate",
     "object_transform",
     "object_metadata",
     "api_schema",
@@ -809,6 +810,292 @@ def _object_metadata(command: dict) -> None:
         object=_object_details(obj),
     )
 
+
+
+_QUALITY_AXES = {"x": 0, "y": 1, "z": 2}
+_QUALITY_TYPES = {"dimensions", "symmetry", "proportion", "containment"}
+
+
+def _quality_axis(value, field: str) -> tuple[str, int]:
+    axis = str(value or "").strip().lower()
+    if axis not in _QUALITY_AXES:
+        raise ValueError(f"{field} must be one of x, y, z")
+    return axis, _QUALITY_AXES[axis]
+
+
+def _quality_tolerance(check: dict, default: float = 0.01) -> float:
+    try:
+        tolerance = float(check.get("tolerance", default))
+    except (TypeError, ValueError):
+        raise ValueError("tolerance must be a number")
+    if tolerance < 0 or tolerance > 1000000:
+        raise ValueError("tolerance must be between 0 and 1000000")
+    return tolerance
+
+
+def _quality_object(name, field: str):
+    object_name = str(name or "").strip()
+    if not object_name:
+        raise ValueError(f"{field} is required")
+    obj = bpy.context.scene.objects.get(object_name)
+    if obj is None:
+        raise ValueError(f"{field} was not found: {object_name}")
+    return obj
+
+
+def _world_extents(obj) -> dict:
+    bounds = _world_bounds(obj)
+    mins = bounds.get("aabb_min")
+    maxs = bounds.get("aabb_max")
+    if not mins or not maxs:
+        raise ValueError(f"could not measure world bounds for {obj.name}")
+    dimensions = [float(maxs[i]) - float(mins[i]) for i in range(3)]
+    center = [(float(maxs[i]) + float(mins[i])) / 2.0 for i in range(3)]
+    return {
+        "min": _round_vector(mins),
+        "max": _round_vector(maxs),
+        "dimensions": _round_vector(dimensions),
+        "center": _round_vector(center),
+    }
+
+
+def _quality_dimensions(check: dict) -> dict:
+    obj = _quality_object(check.get("object_name"), "object_name")
+    expected = check.get("expected")
+    if (
+        not isinstance(expected, list)
+        or len(expected) != 3
+        or not all(isinstance(item, (int, float)) for item in expected)
+    ):
+        raise ValueError("dimensions.expected must contain exactly three numbers")
+
+    tolerance = _quality_tolerance(check)
+    world_space = bool(check.get("world_space", False))
+    actual = (
+        _world_extents(obj)["dimensions"]
+        if world_space
+        else _round_vector(obj.dimensions)
+    )
+    expected_values = [float(item) for item in expected]
+    errors = [abs(float(actual[i]) - expected_values[i]) for i in range(3)]
+    passed = all(error <= tolerance for error in errors)
+    return {
+        "type": "dimensions",
+        "passed": passed,
+        "object_name": obj.name,
+        "world_space": world_space,
+        "expected": _round_vector(expected_values),
+        "actual": _round_vector(actual),
+        "absolute_error": _round_vector(errors),
+        "max_error": round(max(errors), 6),
+        "tolerance": tolerance,
+    }
+
+
+def _quality_symmetry(check: dict) -> dict:
+    left = _quality_object(check.get("left_object"), "left_object")
+    right = _quality_object(check.get("right_object"), "right_object")
+    axis, axis_index = _quality_axis(check.get("axis"), "axis")
+    tolerance = _quality_tolerance(check)
+    try:
+        mirror_coordinate = float(check.get("mirror_coordinate", 0.0))
+    except (TypeError, ValueError):
+        raise ValueError("mirror_coordinate must be a number")
+
+    left_bounds = _world_extents(left)
+    right_bounds = _world_extents(right)
+    left_center = left_bounds["center"]
+    right_center = right_bounds["center"]
+    left_dimensions = left_bounds["dimensions"]
+    right_dimensions = right_bounds["dimensions"]
+
+    center_errors = []
+    for index in range(3):
+        if index == axis_index:
+            expected_left = (2.0 * mirror_coordinate) - float(right_center[index])
+            center_errors.append(abs(float(left_center[index]) - expected_left))
+        else:
+            center_errors.append(abs(float(left_center[index]) - float(right_center[index])))
+    dimension_errors = [
+        abs(float(left_dimensions[index]) - float(right_dimensions[index]))
+        for index in range(3)
+    ]
+    max_error = max(center_errors + dimension_errors)
+    return {
+        "type": "symmetry",
+        "passed": max_error <= tolerance,
+        "left_object": left.name,
+        "right_object": right.name,
+        "axis": axis,
+        "mirror_coordinate": mirror_coordinate,
+        "left_center": left_center,
+        "right_center": right_center,
+        "center_error": _round_vector(center_errors),
+        "dimension_error": _round_vector(dimension_errors),
+        "max_error": round(max_error, 6),
+        "tolerance": tolerance,
+    }
+
+
+def _quality_proportion(check: dict) -> dict:
+    obj = _quality_object(check.get("object_name"), "object_name")
+    axis_a, axis_a_index = _quality_axis(check.get("axis_a"), "axis_a")
+    tolerance = _quality_tolerance(check, default=0.02)
+    try:
+        expected_ratio = float(check.get("expected_ratio"))
+    except (TypeError, ValueError):
+        raise ValueError("expected_ratio must be a number")
+    if not (expected_ratio >= 0):
+        raise ValueError("expected_ratio must be non-negative")
+
+    world_space = bool(check.get("world_space", False))
+    object_dimensions = (
+        _world_extents(obj)["dimensions"]
+        if world_space
+        else _round_vector(obj.dimensions)
+    )
+    numerator = float(object_dimensions[axis_a_index])
+
+    reference_name = str(check.get("reference_object") or "").strip()
+    if reference_name:
+        reference = _quality_object(reference_name, "reference_object")
+        reference_axis, reference_axis_index = _quality_axis(
+            check.get("reference_axis"), "reference_axis"
+        )
+        reference_dimensions = (
+            _world_extents(reference)["dimensions"]
+            if world_space
+            else _round_vector(reference.dimensions)
+        )
+        denominator = float(reference_dimensions[reference_axis_index])
+        denominator_label = f"{reference.name}.{reference_axis}"
+    else:
+        axis_b, axis_b_index = _quality_axis(check.get("axis_b"), "axis_b")
+        denominator = float(object_dimensions[axis_b_index])
+        denominator_label = f"{obj.name}.{axis_b}"
+
+    if abs(denominator) <= 1e-12:
+        raise ValueError("proportion denominator is zero")
+
+    actual_ratio = numerator / denominator
+    error = abs(actual_ratio - expected_ratio)
+    return {
+        "type": "proportion",
+        "passed": error <= tolerance,
+        "object_name": obj.name,
+        "numerator": f"{obj.name}.{axis_a}",
+        "denominator": denominator_label,
+        "world_space": world_space,
+        "expected_ratio": expected_ratio,
+        "actual_ratio": round(actual_ratio, 6),
+        "absolute_error": round(error, 6),
+        "tolerance": tolerance,
+    }
+
+
+def _quality_containment(check: dict) -> dict:
+    inner = _quality_object(check.get("inner_object"), "inner_object")
+    outer = _quality_object(check.get("outer_object"), "outer_object")
+    tolerance = _quality_tolerance(check)
+    try:
+        min_clearance = float(check.get("min_clearance", 0.0))
+    except (TypeError, ValueError):
+        raise ValueError("min_clearance must be a number")
+    if min_clearance < 0:
+        raise ValueError("min_clearance must be non-negative")
+
+    inner_bounds = _world_extents(inner)
+    outer_bounds = _world_extents(outer)
+    lower_clearance = [
+        float(inner_bounds["min"][i]) - float(outer_bounds["min"][i])
+        for i in range(3)
+    ]
+    upper_clearance = [
+        float(outer_bounds["max"][i]) - float(inner_bounds["max"][i])
+        for i in range(3)
+    ]
+    clearances = lower_clearance + upper_clearance
+    minimum_actual = min(clearances)
+    deficit = max(0.0, min_clearance - minimum_actual)
+    passed = minimum_actual + tolerance >= min_clearance
+    return {
+        "type": "containment",
+        "passed": passed,
+        "method": "world_aabb",
+        "inner_object": inner.name,
+        "outer_object": outer.name,
+        "required_clearance": min_clearance,
+        "minimum_actual_clearance": round(minimum_actual, 6),
+        "clearance_deficit": round(deficit, 6),
+        "lower_clearance": _round_vector(lower_clearance),
+        "upper_clearance": _round_vector(upper_clearance),
+        "tolerance": tolerance,
+    }
+
+
+def _quality_gate(command: dict) -> None:
+    command_id = command["id"]
+    checks = command.get("checks")
+    if not isinstance(checks, list) or not checks:
+        _response(command_id, False, "checks must be a non-empty list")
+        return
+    if len(checks) > 100:
+        _response(command_id, False, "quality gate is limited to 100 checks")
+        return
+
+    results = []
+    evaluators = {
+        "dimensions": _quality_dimensions,
+        "symmetry": _quality_symmetry,
+        "proportion": _quality_proportion,
+        "containment": _quality_containment,
+    }
+    for index, check in enumerate(checks):
+        if not isinstance(check, dict):
+            _response(command_id, False, f"quality check {index} must be an object")
+            return
+        if any(key in check for key in ("passed", "ok", "result")):
+            _response(
+                command_id,
+                False,
+                f"quality check {index} cannot provide its own completion claim",
+            )
+            return
+        kind = str(check.get("type") or "").strip().lower()
+        if kind not in _QUALITY_TYPES:
+            _response(
+                command_id,
+                False,
+                f"quality check {index} type must be one of: {', '.join(sorted(_QUALITY_TYPES))}",
+            )
+            return
+        try:
+            result = evaluators[kind](check)
+        except ValueError as error:
+            _response(
+                command_id,
+                False,
+                f"quality check {index} is invalid: {error}",
+                failed_check=index,
+                check_type=kind,
+            )
+            return
+        results.append(result)
+
+    failed = [result for result in results if not result["passed"]]
+    passed = not failed
+    _response(
+        command_id,
+        passed,
+        "Blender deterministic quality gate passed"
+        if passed
+        else "Blender deterministic quality gate failed",
+        passed=passed,
+        total_checks=len(results),
+        passed_checks=len(results) - len(failed),
+        failed_checks=len(failed),
+        checks=results,
+    )
 
 def _checkpoint_name(label: str, command_id: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", label.strip()).strip("-._")
@@ -1573,6 +1860,8 @@ def _process(path: Path) -> None:
             _object_inspect(command)
         elif operation == "contact_audit":
             _contact_audit(command)
+        elif operation == "quality_gate":
+            _quality_gate(command)
         elif operation == "object_transform":
             _object_transform(command)
         elif operation == "object_metadata":
