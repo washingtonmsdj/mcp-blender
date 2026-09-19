@@ -2,6 +2,8 @@
 
 Para cadastrar imagens-alvo e consultar referência e modelo juntos, veja
 [Etapa 3 — revisão por referências](REFERENCE_REVIEW.md).
+Para modificar objetos sem scripts livres, veja
+[Etapa 4 — ferramentas de modelagem](BLENDER_MODELING.md).
 
 Ações novas: `blender.live_status`, `blender.live_inspect`, `blender.live_capture`,
 `blender.live_run_python`, `blender.live_result`. Disponíveis pelo mesmo dispatcher

@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from .models import ActionResult
+from .assets.blender_modeling import SCHEMAS, validate
 
 
 class BlenderLive:
@@ -60,6 +61,38 @@ class BlenderLive:
 
 
 class BlenderLiveActions:
+    def blender_modeling_tools(self, payload):
+        project = self._project(payload)
+        return ActionResult(True, 'Explicit modeling schemas; inspect before changing objects', {
+            'project': project.slug, 'enabled_locally': project.blender.get('allow_modeling') is True,
+            'tools': {f'blender.model_{name}': schema for name, schema in SCHEMAS.items()},
+            'coordinates': 'object-local transforms; rotation input in XYZ degrees; lengths in scene units',
+            'safety': 'No delete, apply modifier, file save or automatic retry. Check live_result after timeout.'})
+
+    def blender_object_info(self, payload):
+        name = payload.get('object')
+        if not isinstance(name, str) or not name or len(name.encode('utf-8')) > 63:
+            raise ValueError('object must be a valid object name')
+        return BlenderLive(self._project(payload)).request('object_info', {'object': name})
+
+    def _blender_model(self, operation, payload):
+        project = self._project(payload)
+        if project.blender.get('allow_modeling') is not True:
+            raise ValueError('Modeling requires allow_modeling: true in local project settings')
+        arguments = {key: value for key, value in payload.items() if key not in ('project', 'timeout_seconds')}
+        validate(operation, arguments)
+        return BlenderLive(project).request('model', {'operation': operation, 'arguments': arguments},
+                                            payload.get('timeout_seconds', 60))
+
+    def blender_model_create(self, payload):
+        return self._blender_model('create', payload)
+
+    def blender_model_transform(self, payload):
+        return self._blender_model('transform', payload)
+
+    def blender_model_modifier(self, payload):
+        return self._blender_model('modifier', payload)
+
     def _live_capture_artifacts(self, project, result):
         if not result.ok or 'views' not in result.data:
             return result

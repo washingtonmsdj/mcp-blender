@@ -45,6 +45,16 @@ def _dispatch(request):
     if request['action'] == 'capture':
         capture = runpy.run_path(str(Path(__file__).with_name('blender_multiview.py')))['capture']
         return capture(args, state['ipc'] / 'captures' / request['id'])
+    if request['action'] in ('object_info', 'model'):
+        if request['action'] == 'model' and not state['allow_modeling']:
+            raise ValueError('Modeling is not authorized in this Blender session')
+        modeling = runpy.run_path(str(Path(__file__).with_name('blender_modeling.py')))
+        if request['action'] == 'object_info':
+            obj = bpy.context.scene.objects.get(args['object'])
+            if obj is None:
+                raise ValueError('Object not found in the current scene')
+            return {'object': modeling['info'](obj)}
+        return modeling['execute'](args['operation'], args['arguments'])
     if request['action'] != 'run_script' or not state['allow_scripts']:
         raise ValueError('Action not allowed by this local companion')
     script = Path(args['script']).resolve()
@@ -66,8 +76,9 @@ def _tick():
         _write(state['ipc'] / 'presence.json', {
             'session': state['session'], 'project_root': str(state['project']),
             'file': bpy.data.filepath, 'allow_scripts': state['allow_scripts'],
+            'allow_modeling': state['allow_modeling'],
             'blender_version': bpy.app.version_string, 'observed_at': time.time(),
-            'actions': ['inspect', 'capture'] + (['run_script'] if state['allow_scripts'] else []),
+            'actions': ['inspect', 'capture', 'object_info'] + (['model'] if state['allow_modeling'] else []) + (['run_script'] if state['allow_scripts'] else []),
         })
         # One command per timer tick keeps the event loop available between commands.
         for path in sorted((state['ipc'] / 'inbox').glob('*.json')):
@@ -82,6 +93,7 @@ def _tick():
                 continue  # Never replay a command, including after an uncertain crash.
             path.replace(claimed)
             started = time.monotonic()
+            request = {}
             try:
                 request = json.loads(claimed.read_text(encoding='utf-8'))
                 if request.get('id') != path.stem:
@@ -90,6 +102,8 @@ def _tick():
                 ok, summary = True, 'Blender live command completed'
             except Exception as error:
                 ok, summary, data = False, f'{type(error).__name__}: {error}', {}
+                if isinstance(request, dict) and request.get('action') in ('model', 'run_script'):
+                    data['changes_may_be_partial'] = True
             data.update(command_id=path.stem, session=state['session'], transport='blender-live',
                         duration_seconds=round(time.monotonic() - started, 3))
             _write(response, {'ok': ok, 'summary': summary, 'data': data})
@@ -99,7 +113,7 @@ def _tick():
     return .2
 
 
-def start(project_root, *, allow_scripts=False, scripts_dir='automation/blender'):
+def start(project_root, *, allow_scripts=False, allow_modeling=False, scripts_dir='automation/blender'):
     """Explicitly pair this Blender instance. Existing scene is never loaded or saved."""
     global _STATE
     if _STATE is not None:
@@ -134,6 +148,7 @@ def start(project_root, *, allow_scripts=False, scripts_dir='automation/blender'
         lock.close()
         raise RuntimeError('Another Blender companion already owns this project')
     _STATE = {'project': project, 'scripts': scripts, 'ipc': ipc, 'lock': lock,
+              'allow_modeling': allow_modeling is True,
               'session': uuid.uuid4().hex, 'allow_scripts': bool(allow_scripts)}
     try:
         bpy.app.timers.register(_tick, first_interval=.2, persistent=True)
