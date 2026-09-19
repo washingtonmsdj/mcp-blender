@@ -22,7 +22,9 @@ Acceptance requires all of the following:
    (`IoU=1`, `MAE=0`, changed pixels `=0`);
 5. the controlled geometry mutation is rejected by the silhouette comparison;
 6. the comparison reports at least one failed view;
-7. world-bounds evidence reports the known dimension change.
+7. world-bounds evidence reports the known dimension change;
+8. a valid 0–1 UV fixture passes zero-area, overlap and shape-distortion gates;
+9. a deliberately collapsed UV fixture is rejected as a negative control.
 
 The benchmark intentionally uses a primitive rather than a production asset.
 Its purpose is to detect regressions in transport, Blender runtime behavior,
