@@ -41,6 +41,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_scene_reset", result.data["actions"])
             self.assertIn("blender.live_object_inspect", result.data["actions"])
             self.assertIn("blender.live_contact_audit", result.data["actions"])
+            self.assertIn("blender.live_quality_gate", result.data["actions"])
             self.assertIn("blender.live_object_transform", result.data["actions"])
             self.assertIn("blender.live_object_metadata", result.data["actions"])
             self.assertIn("blender.live_api_schema", result.data["actions"])
@@ -64,6 +65,38 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.asset_search", result.data["actions"])
             self.assertIn("blender.asset_manifest", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
+
+
+    def test_quality_gate_rejects_model_supplied_completion_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            registry = ActionRegistry(self.make_config(Path(raw)))
+            result = registry.execute(
+                "blender.live_quality_gate",
+                {
+                    "checks": [
+                        {
+                            "type": "dimensions",
+                            "object_name": "Bed",
+                            "expected": [2.0, 1.6, 0.5],
+                            "passed": True,
+                        }
+                    ]
+                },
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("cannot provide its own completion claim", result.summary)
+
+    def test_quality_gate_rejects_unsupported_check_type(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            registry = ActionRegistry(self.make_config(Path(raw)))
+            result = registry.execute(
+                "blender.live_quality_gate",
+                {"checks": [{"type": "looks_good"}]},
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("type must be one of", result.summary)
 
 
 if __name__ == "__main__":
