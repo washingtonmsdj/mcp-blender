@@ -125,6 +125,9 @@ class ActionRegistry(ObservationActions):
             "blender.live_start": self.blender_live_start,
             "blender.live_status": self.blender_live_status,
             "blender.live_inspect": self.blender_live_inspect,
+            "blender.live_scene_snapshot": self.blender_live_scene_snapshot,
+            "blender.live_object_inspect": self.blender_live_object_inspect,
+            "blender.live_contact_audit": self.blender_live_contact_audit,
             "blender.live_result": self.blender_live_result,
             "blender.live_run_script": self.blender_live_run_script,
             "blender.live_capture": self.blender_live_capture,
@@ -1303,6 +1306,55 @@ class ActionRegistry(ObservationActions):
             "inspect",
             {"max_objects": int(payload.get("max_objects", 200))},
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_scene_snapshot(self, payload: dict[str, Any]) -> ActionResult:
+        request = {
+            "max_objects": int(payload.get("max_objects", 200)),
+        }
+        object_names = payload.get("object_names")
+        if object_names is not None:
+            if not isinstance(object_names, list) or not all(isinstance(name, str) for name in object_names):
+                return ActionResult(False, "object_names must be a list of object names")
+            request["object_names"] = object_names[:500]
+
+        return self._blender_live(payload).request(
+            "scene_snapshot",
+            request,
+            timeout_seconds=float(payload.get("timeout_seconds", 45)),
+        )
+
+    def blender_live_object_inspect(self, payload: dict[str, Any]) -> ActionResult:
+        name = str(payload.get("object_name") or "").strip()
+        if not name:
+            return ActionResult(False, "object_name is required")
+        return self._blender_live(payload).request(
+            "object_inspect",
+            {"object_name": name},
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_contact_audit(self, payload: dict[str, Any]) -> ActionResult:
+        pairs = payload.get("pairs")
+        if not isinstance(pairs, list) or not pairs:
+            return ActionResult(False, "pairs must be a non-empty list of [object_a, object_b]")
+        if len(pairs) > 200:
+            return ActionResult(False, "pairs is limited to 200 object pairs")
+
+        normalized = []
+        for item in pairs:
+            if (
+                not isinstance(item, list)
+                or len(item) != 2
+                or not all(isinstance(name, str) and name.strip() for name in item)
+            ):
+                return ActionResult(False, "each contact pair must contain exactly two non-empty object names")
+            normalized.append([item[0].strip(), item[1].strip()])
+
+        return self._blender_live(payload).request(
+            "contact_audit",
+            {"pairs": normalized},
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
         )
 
     def blender_live_result(self, payload: dict[str, Any]) -> ActionResult:
