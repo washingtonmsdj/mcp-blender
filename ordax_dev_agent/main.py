@@ -109,25 +109,30 @@ def main() -> int:
 
     control = ControlPlane(config)
 
-    try:
-        paired_now = control.pair_if_needed(
-            registry.names,
-            agent_version=__version__,
-            metadata=_agent_metadata(config),
-        )
-        runtime["paired"] = True
-        if paired_now:
-            print("OrdaX Dev Agent paired with Supabase control plane.")
-    except Exception as error:
-        runtime["state"] = "pairing-error"
-        runtime["last_result"] = {"ok": False, "summary": str(error)}
-        print(f"pairing error: {error}", file=sys.stderr)
+    while not stop and not runtime["paired"]:
         try:
-            while not stop:
-                time.sleep(5)
-        finally:
-            status_server.shutdown()
-        return 2
+            paired_now = control.pair_if_needed(
+                registry.names,
+                agent_version=__version__,
+                metadata=_agent_metadata(config),
+            )
+            runtime["paired"] = True
+            runtime["state"] = "ready"
+            runtime["last_result"] = {
+                "ok": True,
+                "summary": "agent paired" if paired_now else "agent token loaded",
+            }
+            if paired_now:
+                print("OrdaX Dev Agent paired with Supabase control plane.")
+        except Exception as error:
+            runtime["state"] = "pairing-error"
+            runtime["last_result"] = {"ok": False, "summary": str(error)}
+            print(f"pairing error: {error}", file=sys.stderr)
+            time.sleep(max(5.0, config.poll_seconds))
+
+    if stop:
+        status_server.shutdown()
+        return 0
 
     next_heartbeat = 0.0
 
