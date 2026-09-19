@@ -1,9 +1,11 @@
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 // Portable companion: no game-specific types, scene names or assets.
@@ -22,8 +24,14 @@ namespace OrdaX.EditorTools
             public string id, summary, artifact, snapshotPath;
             public bool ok, compiling, playing;
             public string unityVersion = Application.unityVersion;
-            public string protocol = "ordax-generic-v1";
+            public string protocol = "ordax-generic-v2";
             public int errorCount, warningCount;
+            public string activeScene, renderPipeline;
+            public int gameObjectCount, activeGameObjectCount;
+            public int rigidbodyCount, colliderCount, meshColliderCount;
+            public int rendererCount, cameraCount, lightCount, canvasCount;
+            public int rigidbodyWithoutColliderCount, dynamicNonConvexMeshColliderCount;
+            public string[] auditWarnings;
         }
         [Serializable] private class SceneObject
         {
@@ -108,12 +116,80 @@ namespace OrdaX.EditorTools
                         EditorApplication.isPlaying = command.action == "play_start";
                         return;
                     case "capture": Capture(command, reply); break;
+                    case "scene_summary": SceneSummary(reply, false); break;
+                    case "physics_audit": SceneSummary(reply, true); break;
                     default: throw new InvalidOperationException("Unsupported companion action: " + command.action);
                 }
             }
             catch (Exception error) { reply = State(id, false, error.GetType().Name + ": " + error.Message); }
             Write(Path.Combine(Root, "responses", id + ".json"), reply);
         }
+        private static void SceneSummary(Reply reply, bool physicsAudit)
+        {
+            var sceneObjects = Resources.FindObjectsOfTypeAll<GameObject>()
+                .Where(go => go != null && go.scene.IsValid() && go.scene.isLoaded)
+                .ToArray();
+            var rigidbodies = Resources.FindObjectsOfTypeAll<Rigidbody>()
+                .Where(rb => rb != null && rb.gameObject.scene.IsValid() && rb.gameObject.scene.isLoaded)
+                .ToArray();
+            var colliders = Resources.FindObjectsOfTypeAll<Collider>()
+                .Where(col => col != null && col.gameObject.scene.IsValid() && col.gameObject.scene.isLoaded)
+                .ToArray();
+            var meshColliders = Resources.FindObjectsOfTypeAll<MeshCollider>()
+                .Where(col => col != null && col.gameObject.scene.IsValid() && col.gameObject.scene.isLoaded)
+                .ToArray();
+
+            int rigidbodyWithoutCollider = 0;
+            int dynamicNonConvexMeshCollider = 0;
+            var auditWarnings = new List<string>();
+
+            foreach (var body in rigidbodies)
+            {
+                var attached = body.GetComponentsInChildren<Collider>(true);
+                if (attached.Length == 0)
+                {
+                    rigidbodyWithoutCollider++;
+                    auditWarnings.Add("Rigidbody without Collider: " + body.gameObject.name);
+                }
+
+                if (!body.isKinematic)
+                {
+                    foreach (var meshCollider in attached.OfType<MeshCollider>())
+                    {
+                        if (!meshCollider.convex)
+                        {
+                            dynamicNonConvexMeshCollider++;
+                            auditWarnings.Add("Dynamic Rigidbody uses non-convex MeshCollider: " + body.gameObject.name);
+                        }
+                    }
+                }
+            }
+
+            var pipeline = GraphicsSettings.currentRenderPipeline;
+            reply.ok = !physicsAudit || (rigidbodyWithoutCollider == 0 && dynamicNonConvexMeshCollider == 0);
+            reply.summary = physicsAudit
+                ? (reply.ok ? "Physics audit passed" : "Physics audit found issues")
+                : "Scene summary ready";
+            reply.activeScene = SceneManager.GetActiveScene().path;
+            reply.renderPipeline = pipeline != null ? pipeline.GetType().Name : "Built-in";
+            reply.gameObjectCount = sceneObjects.Length;
+            reply.activeGameObjectCount = sceneObjects.Count(go => go.activeInHierarchy);
+            reply.rigidbodyCount = rigidbodies.Length;
+            reply.colliderCount = colliders.Length;
+            reply.meshColliderCount = meshColliders.Length;
+            reply.rendererCount = Resources.FindObjectsOfTypeAll<Renderer>()
+                .Count(r => r != null && r.gameObject.scene.IsValid() && r.gameObject.scene.isLoaded);
+            reply.cameraCount = Resources.FindObjectsOfTypeAll<Camera>()
+                .Count(cam => cam != null && cam.gameObject.scene.IsValid() && cam.gameObject.scene.isLoaded);
+            reply.lightCount = Resources.FindObjectsOfTypeAll<Light>()
+                .Count(light => light != null && light.gameObject.scene.IsValid() && light.gameObject.scene.isLoaded);
+            reply.canvasCount = Resources.FindObjectsOfTypeAll<Canvas>()
+                .Count(canvas => canvas != null && canvas.gameObject.scene.IsValid() && canvas.gameObject.scene.isLoaded);
+            reply.rigidbodyWithoutColliderCount = rigidbodyWithoutCollider;
+            reply.dynamicNonConvexMeshColliderCount = dynamicNonConvexMeshCollider;
+            reply.auditWarnings = auditWarnings.Take(200).ToArray();
+        }
+
         private static string Hierarchy(Transform transform)
         {
             string path = transform.name;
