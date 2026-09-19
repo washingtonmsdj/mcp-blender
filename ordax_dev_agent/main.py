@@ -38,7 +38,16 @@ def _upload_result_artifacts(
     candidates: list[tuple[str, str]] = []
     artifact = result.data.get("artifact")
     if isinstance(artifact, str) and artifact:
-        candidates.append((artifact, "visual-image"))
+        suffix = Path(artifact).suffix.lower()
+        if job.action == "blender.live_export" or suffix in {".glb", ".gltf", ".fbx"}:
+            artifact_kind = "model-export"
+        elif suffix == ".blend":
+            artifact_kind = "blender-scene"
+        elif suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+            artifact_kind = "visual-image"
+        else:
+            artifact_kind = "artifact"
+        candidates.append((artifact, artifact_kind))
 
     snapshot_path = result.data.get("snapshot_path")
     if isinstance(snapshot_path, str) and snapshot_path:
