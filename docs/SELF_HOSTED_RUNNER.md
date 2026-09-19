@@ -35,17 +35,26 @@ Escolha Windows / x64 e execute exatamente os comandos temporários mostrados pe
 
 O token de registro é temporário. Não grave esse token no repositório, em issues ou em arquivos .env.
 
-## Primeira execução
+## Execução persistente obrigatória
 
-Para o primeiro teste, rode o runner de forma interativa:
+`run.cmd` interativo é permitido apenas para diagnóstico inicial. Não é o estado operacional do OrdaX.
+
+Depois que o runner estiver configurado uma vez com o token temporário do GitHub, instale/hardenize o runner existente como Windows Service:
 
 ```powershell
-.\run.cmd
+.\scripts\windows\ordax-runner-service.ps1
 ```
 
-Isso mantém o mesmo perfil de usuário do Windows que já possui a ativação do Unity.
+O script:
 
-Depois que a validação estiver funcionando, o runner pode ser convertido em serviço usando a conta Windows adequada.
+- reutiliza o runner já configurado; não grava token no repositório;
+- instala o serviço somente se ele ainda não existir;
+- define inicialização automática;
+- configura recuperação pelo Windows Service Control Manager;
+- reinicia após falhas em 5 s, 15 s e 30 s;
+- inicia o serviço e valida o estado.
+
+O runner passa a existir independentemente de login no Windows. Isso é o canal de recuperação fora do processo do OrdaX Agent.
 
 ## Testar o toolchain
 
@@ -91,3 +100,27 @@ Não armazene no repositório:
 - credenciais GitHub;
 - chaves de API;
 - dados de licença.
+
+
+## Bootstrap de resiliência
+
+A instalação recomendada para a máquina OrdaX é:
+
+```powershell
+.\scripts\windows\ordax-resilience-install.ps1
+```
+
+Execute uma vez em PowerShell elevado. O bootstrap configura dois mecanismos independentes:
+
+1. **GitHub Actions runner** como Windows Service automático;
+2. **OrdaX Dev Agent** como Scheduled Task no usuário interativo, com restart-on-failure.
+
+O runner de serviço pode recuperar o Agent quando ele cai. O Agent continua rodando na sessão interativa correta para controlar Blender e Unity visíveis.
+
+Para diagnóstico local sem modificar nada:
+
+```powershell
+.\scripts\windows\ordax-resilience-status.ps1
+```
+
+Um sistema saudável deve mostrar o serviço `actions.runner.*` em `Running/Auto`, a tarefa `OrdaX Dev Agent` instalada e o endpoint local `127.0.0.1:8765/status` respondendo.
