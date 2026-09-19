@@ -52,7 +52,7 @@ RESULTS = CONTROL_ROOT / "results"
 INFLIGHT = CONTROL_ROOT / "inflight"
 PRESENCE = CONTROL_ROOT / "presence.json"
 
-PROTOCOL_VERSION = 6
+PROTOCOL_VERSION = 7
 CAPABILITIES = [
     "ping",
     "inspect",
@@ -2193,7 +2193,11 @@ def _multiview_bounds(corners: list[Vector]) -> dict:
     }
 
 
-def _multiview_render_engine(scene) -> tuple[str, str]:
+def _multiview_render_engine(
+    scene,
+    *,
+    require_workbench: bool = False,
+) -> tuple[str, str]:
     original = str(scene.render.engine)
     for candidate in ("BLENDER_WORKBENCH_NEXT", "BLENDER_WORKBENCH"):
         try:
@@ -2202,7 +2206,72 @@ def _multiview_render_engine(scene) -> tuple[str, str]:
         except Exception:
             continue
     scene.render.engine = original
+    if require_workbench:
+        raise RuntimeError(
+            "silhouette multiview requires a supported Blender Workbench render engine"
+        )
     return original, original
+
+
+def _multiview_shading_state(scene) -> tuple[object | None, dict]:
+    display = getattr(scene, "display", None)
+    shading = getattr(display, "shading", None) if display is not None else None
+    if shading is None:
+        return None, {}
+    state = {}
+    for field in (
+        "light",
+        "color_type",
+        "single_color",
+        "background_type",
+        "background_color",
+        "show_shadows",
+        "show_cavity",
+        "show_specular_highlight",
+    ):
+        if not hasattr(shading, field):
+            continue
+        try:
+            value = getattr(shading, field)
+            if field in {"single_color", "background_color"}:
+                value = tuple(float(item) for item in value)
+            state[field] = value
+        except Exception:
+            continue
+    return shading, state
+
+
+def _multiview_restore_shading(shading, state: dict) -> None:
+    if shading is None:
+        return
+    for field, value in state.items():
+        try:
+            setattr(shading, field, value)
+        except Exception:
+            pass
+
+
+def _multiview_apply_silhouette(scene) -> None:
+    display = getattr(scene, "display", None)
+    shading = getattr(display, "shading", None) if display is not None else None
+    if shading is None:
+        raise RuntimeError("silhouette multiview requires scene display shading")
+    required = {
+        "light": "FLAT",
+        "color_type": "SINGLE",
+        "single_color": (0.0, 0.0, 0.0),
+        "background_type": "VIEWPORT",
+        "background_color": (1.0, 1.0, 1.0),
+        "show_shadows": False,
+        "show_cavity": False,
+        "show_specular_highlight": False,
+    }
+    for field, value in required.items():
+        if not hasattr(shading, field):
+            raise RuntimeError(
+                f"silhouette multiview requires Workbench shading property: {field}"
+            )
+        setattr(shading, field, value)
 
 
 def _multiview_capture(command: dict) -> None:
@@ -2241,6 +2310,11 @@ def _multiview_capture(command: dict) -> None:
             return
         views.append(view)
 
+    mode = str(command.get("mode") or "material").strip().lower()
+    if mode not in {"material", "silhouette"}:
+        _response(command_id, False, "multiview mode must be material or silhouette")
+        return
+
     try:
         width = int(command.get("width", 768))
         height = int(command.get("height", 768))
@@ -2276,6 +2350,7 @@ def _multiview_capture(command: dict) -> None:
     old_resolution_percentage = scene.render.resolution_percentage
     old_film_transparent = bool(getattr(scene.render, "film_transparent", False))
     old_engine = str(scene.render.engine)
+    shading, shading_state = _multiview_shading_state(scene)
 
     camera_data = None
     camera = None
@@ -2311,7 +2386,12 @@ def _multiview_capture(command: dict) -> None:
         if hasattr(scene.render, "film_transparent"):
             scene.render.film_transparent = False
 
-        _, engine_used = _multiview_render_engine(scene)
+        _, engine_used = _multiview_render_engine(
+            scene,
+            require_workbench=(mode == "silhouette"),
+        )
+        if mode == "silhouette":
+            _multiview_apply_silhouette(scene)
         distance = max(diagonal * 2.5, 2.0)
         aspect = float(width) / float(height)
 
@@ -2365,6 +2445,7 @@ def _multiview_capture(command: dict) -> None:
             "margin": margin,
             "projection": "orthographic",
             "render_engine": engine_used,
+            "mode": mode,
         }
         manifest_path = output_dir / "multiview.json"
         _write_json_atomic(manifest_path, manifest)
@@ -2377,6 +2458,7 @@ def _multiview_capture(command: dict) -> None:
         scene.render.resolution_x = old_resolution_x
         scene.render.resolution_y = old_resolution_y
         scene.render.resolution_percentage = old_resolution_percentage
+        _multiview_restore_shading(shading, shading_state)
         try:
             scene.render.engine = old_engine
         except Exception:
@@ -2409,6 +2491,7 @@ def _multiview_capture(command: dict) -> None:
             artifacts=records,
             bounds=bounds,
             render_engine=engine_used,
+            mode=mode,
         )
         return
 
@@ -2430,6 +2513,7 @@ def _multiview_capture(command: dict) -> None:
         margin=margin,
         projection="orthographic",
         render_engine=engine_used,
+        mode=mode,
     )
 
 
