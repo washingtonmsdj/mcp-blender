@@ -76,16 +76,19 @@ Later:
 
 ## Supabase
 
-A dedicated project is preferred. Do not mix the agent tables with a customer
-application database.
+For the temporary integration, use the active Supabase project **Ordax-2026-1**.
+The control-plane tables are isolated with the `ordax_dev_` prefix so they do
+not overlap the existing application's tables. This is temporary: later we can
+migrate the control plane to a dedicated Supabase project without changing the
+local agent protocol.
 
 Suggested tables:
 
-- `dev_agents`: registered machines/capabilities/heartbeat
-- `dev_projects`: allowed local projects per agent
-- `dev_jobs`: typed commands and state
-- `dev_job_events`: append-only logs/progress
-- `dev_artifacts`: screenshots, JSON snapshots, logs and hashes
+- `ordax_dev_agents`: registered machines/capabilities/heartbeat
+- `ordax_dev_projects`: allowed local projects per agent
+- `ordax_dev_jobs`: typed commands and state
+- `ordax_dev_job_events`: append-only logs/progress
+- `ordax_dev_artifacts`: screenshots, JSON snapshots, logs and hashes
 
 Use RLS for client-visible tables. The agent should authenticate as a dedicated
 machine identity. Realtime can then wake the agent as new jobs arrive, with
