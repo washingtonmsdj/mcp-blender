@@ -216,6 +216,7 @@ class ActionRegistry(ObservationActions):
             "agent.self_test": self.agent_self_test,
             "artifact.preview": self.artifact_preview,
             "git.status": self.git_status,
+            "git.diff": self.git_diff,
             "git.sync": self.git_sync,
             "unity.editor_status": self.unity_editor_status,
             "unity.editor_start": self.unity_editor_start,
@@ -908,6 +909,34 @@ class ActionRegistry(ObservationActions):
     def git_status(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
         return _run(["git", "-C", str(project), "status", "--short"], timeout=60)
+
+    def git_diff(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project_path(payload)
+        raw_paths = payload.get("paths", [])
+        if raw_paths is None:
+            raw_paths = []
+        if not isinstance(raw_paths, list) or len(raw_paths) > 50:
+            return ActionResult(False, "paths must be a list with at most 50 entries")
+
+        paths: list[str] = []
+        project_root = project.resolve()
+        for raw in raw_paths:
+            if not isinstance(raw, str) or not raw.strip():
+                return ActionResult(False, "paths must contain only non-empty strings")
+            candidate = (project_root / raw.strip()).resolve()
+            try:
+                candidate.relative_to(project_root)
+            except ValueError:
+                return ActionResult(False, f"path escapes project root: {raw}")
+            paths.append(raw.strip().replace("\\", "/"))
+
+        command = ["git", "-C", str(project), "diff", "--no-ext-diff", "--no-color"]
+        if paths:
+            command += ["--", *paths]
+        result = _run(command, timeout=60)
+        if result.ok:
+            result.summary = "tracked Git diff inspected"
+        return result
 
     def git_sync(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
