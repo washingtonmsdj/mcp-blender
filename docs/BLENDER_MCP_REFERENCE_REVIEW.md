@@ -60,6 +60,27 @@ loose-vertex, degenerate-face and zero-length-edge counts; it can also require
 a minimum quad ratio plus UV and material presence. Every check returns measured
 evidence from the live Blender session and refuses client-supplied completion
 claims such as `passed`, `ok`, or `result`.
+### UV quality acceptance
+
+- `blender.live_quality_gate` with `type=uv_quality`
+
+UV presence alone is not considered game-ready evidence. The UV verifier reads
+the selected/active UV layer using the Blender 5.x corner-attribute API with a
+legacy fallback, triangulates the mesh, and reports:
+
+- UV min/max bounds and loops outside the 0–1 tile;
+- zero-area UV faces and degenerate UV triangles;
+- scale-invariant triangle shape distortion (maximum and mean);
+- optional positive-area triangle overlap pairs with bounded pair testing and
+  concrete overlap examples.
+
+Rules remain project policy: callers explicitly declare limits such as
+`max_overlap_pairs`, `max_zero_area_faces`, `max_shape_distortion`,
+`max_mean_shape_distortion` or `require_unit_tile`. Intentional stacked/mirrored
+UVs can therefore be permitted instead of the agent assuming every overlap is
+wrong. `max_analysis_triangles` and `max_overlap_pair_tests` put deterministic
+ceilings on expensive analysis rather than allowing a pathological mesh to
+stall the live Blender session.
 
 `blender.live_generation_pass` accepts `quality_checks`; a failed deterministic
 gate rejects the pass and uses the existing managed rollback when enabled.
