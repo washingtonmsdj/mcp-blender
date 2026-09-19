@@ -96,3 +96,18 @@ a capability/knowledge map; Unity CLI + Pipeline is treated as the execution
 surface when available. Existing OrdaX Editor companions remain valid for
 project-specific capture, validation and workflows not represented in the
 Pipeline catalog.
+
+## 0.7.2 Editor refresh and Git reconciliation
+
+Unity refresh now prefers a typed `refresh` command inside the already-open
+Editor companion. The companion acknowledges the command before calling
+`AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport)`, because the
+refresh may trigger a domain reload. The controller then waits for a newer
+presence heartbeat with compilation settled. Window activation / Ctrl+R remains
+only as a recovery fallback when no companion is reachable.
+
+`git.sync` also recognizes a narrow safe case produced by trusted local tools:
+if tracked files are locally modified but those exact modified paths already
+match the authorized remote branch and there are no local commits ahead, the
+worktree can be reconciled to that remote before the fast-forward. Real local
+divergence remains a hard refusal.
