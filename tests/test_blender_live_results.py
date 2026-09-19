@@ -62,6 +62,34 @@ class BlenderLiveResultTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertIn("canonical", result.summary)
 
+    def test_missing_result_reports_inflight_command(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            bridge = self.make_bridge(Path(raw))
+            bridge._ensure_dirs()
+            command_id = uuid.uuid4().hex
+            (bridge.inflight / f"{command_id}.json").write_text(
+                json.dumps({"id": command_id, "operation": "run_script"}),
+                encoding="utf-8",
+            )
+
+            result = bridge.result(command_id)
+
+            self.assertFalse(result.ok)
+            self.assertTrue(result.data["retryable"])
+            self.assertTrue(result.data["in_progress"])
+
+    def test_status_lists_inflight_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            bridge = self.make_bridge(Path(raw))
+            bridge._ensure_dirs()
+            command_id = uuid.uuid4().hex
+            (bridge.inflight / f"{command_id}.json").write_text("{}", encoding="utf-8")
+
+            status = bridge.status()
+
+            self.assertIn(command_id, status["inflight_commands"])
+            self.assertEqual(str(bridge.inflight), status["inflight_root"])
+
 
 if __name__ == "__main__":
     unittest.main()
