@@ -22,6 +22,7 @@ class BlenderLiveBridge:
         self.inbox = self.root / "inbox"
         self.responses = self.root / "responses"
         self.results = self.root / "results"
+        self.inflight = self.root / "inflight"
         self.presence = self.root / "presence.json"
         self.artifacts_root = (config.state_dir / "artifacts" / project.slug).resolve()
         self.scripts_root = project.path(
@@ -38,6 +39,7 @@ class BlenderLiveBridge:
         self.inbox.mkdir(parents=True, exist_ok=True)
         self.responses.mkdir(parents=True, exist_ok=True)
         self.results.mkdir(parents=True, exist_ok=True)
+        self.inflight.mkdir(parents=True, exist_ok=True)
         self.artifacts_root.mkdir(parents=True, exist_ok=True)
 
     def presence_is_fresh(self, max_age_seconds: float = 5.0) -> bool:
@@ -54,6 +56,8 @@ class BlenderLiveBridge:
             "presence_path": str(self.presence),
             "control_root": str(self.root),
             "results_root": str(self.results),
+            "inflight_root": str(self.inflight),
+            "inflight_commands": sorted(p.stem for p in self.inflight.glob("*.json")),
             "scripts_root": str(self.scripts_root),
         }
         if self.presence.is_file():
@@ -85,11 +89,12 @@ class BlenderLiveBridge:
             return ActionResult(False, f"Blender live companion missing: {self.companion}")
 
         self._ensure_dirs()
-        for stale in self.inbox.glob("*.json"):
-            try:
-                stale.unlink()
-            except OSError:
-                pass
+        for folder in (self.inbox, self.inflight):
+            for stale in folder.glob("*.json"):
+                try:
+                    stale.unlink()
+                except OSError:
+                    pass
 
         command = [
             str(blender),
@@ -168,6 +173,7 @@ class BlenderLiveBridge:
         command_path = self.inbox / f"{command_id}.json"
         temp_path = self.inbox / f"{command_id}.tmp"
         response_path = self.responses / f"{command_id}.json"
+        inflight_path = self.inflight / f"{command_id}.json"
 
         body = {"id": command_id, "operation": operation, **(payload or {})}
         temp_path.write_text(json.dumps(body), encoding="utf-8")
@@ -196,22 +202,31 @@ class BlenderLiveBridge:
                     },
                 )
 
-            if not self.presence_is_fresh(max_age_seconds=12.0):
+            # Heavy Blender operations block the main UI thread, so the normal
+            # presence heartbeat cannot advance while they run. The companion
+            # writes a per-command inflight marker immediately before execution.
+            # If that marker exists, stale presence means "busy", not "dead".
+            if not inflight_path.is_file() and not self.presence_is_fresh(max_age_seconds=12.0):
                 return ActionResult(
                     False,
                     "Blender live session stopped responding",
                     {
                         "command_id": command_id,
                         "result_query": "blender.live_result",
+                        "inflight": False,
                         **self.status(),
                     },
                 )
             time.sleep(0.2)
 
-        try:
-            command_path.unlink()
-        except OSError:
-            pass
+        inflight = inflight_path.is_file()
+        # Delete only commands that were never consumed. Once inflight, the
+        # Blender companion owns the command and may still finish after timeout.
+        if not inflight:
+            try:
+                command_path.unlink()
+            except OSError:
+                pass
 
         return ActionResult(
             False,
@@ -220,6 +235,7 @@ class BlenderLiveBridge:
                 "command_id": command_id,
                 "result_query": "blender.live_result",
                 "retry_without_querying_result": False,
+                "inflight": inflight,
                 **self.status(),
             },
         )
@@ -239,12 +255,14 @@ class BlenderLiveBridge:
         if not path.is_relative_to(self.results.resolve()):
             return ActionResult(False, "result path escaped managed directory")
         if not path.is_file():
+            inflight = (self.inflight / f"{normalized}.json").is_file()
             return ActionResult(
                 False,
                 "Blender live result is not available",
                 {
                     "command_id": normalized,
                     "retryable": True,
+                    "in_progress": inflight,
                     "presence_fresh": self.presence_is_fresh(),
                 },
             )
