@@ -48,6 +48,19 @@ metadata and OrdaX semantic properties.
 Critical object pairs are checked using evaluated Blender mesh BVHs. This is
 the final acceptance gate for no-intersection rules; AABBs remain broad-phase
 diagnostics only.
+### Deterministic quality gates
+
+- \`blender.live_quality_gate\`
+
+One grouped typed operation evaluates geometry contracts without asking the
+model to decide whether its own work passed. The first verifier set covers
+dimensions, bilateral symmetry, dimension ratios, and world-AABB containment.
+Every check returns measured error or clearance evidence from the live Blender
+session and refuses client-supplied completion claims such as `passed`, `ok`,
+or `result`.
+
+`blender.live_generation_pass` accepts `quality_checks`; a failed deterministic
+gate rejects the pass and uses the existing managed rollback when enabled.
 
 ### Companion capabilities
 
@@ -97,13 +110,14 @@ providers. They are not core dependencies.
 3. inspect the component by stable semantic ID/name;
 4. run rich scene snapshot;
 5. run contact audit for protected pairs;
-6. correct dimensions/contact;
-7. capture viewport;
-8. compare to reference;
-9. repeat until validation passes;
-10. assemble validated components;
-11. run final contact/structural validation;
-12. save artifact.
+6. run deterministic geometry quality gates;
+7. correct measured dimensions/contact/proportion failures;
+8. capture viewport;
+9. compare to reference;
+10. repeat until validation passes;
+11. assemble validated components;
+12. run final contact/structural validation;
+13. save artifact.
 
 This loop is the default baseline for future OrdaX Blender generation work.
 
@@ -116,11 +130,12 @@ asset/component iteration:
 2. run one approved project script;
 3. collect a rich scene snapshot;
 4. run declared BVH contact checks;
-5. capture the visible viewport;
-6. save the accepted .blend when requested.
+5. run declared deterministic quality checks;
+6. capture the visible viewport;
+7. save the accepted .blend when requested.
 
-If the generation script, snapshot, contact audit, required capture, or final
-save fails, the pass is rejected. With \`rollback_on_failure=true\` the managed
+If the generation script, snapshot, contact audit, deterministic quality gate,
+required capture, or final save fails, the pass is rejected. With \`rollback_on_failure=true\` the managed
 checkpoint is restored explicitly.
 
 This keeps iteration fast without making failed geometry part of the accepted
