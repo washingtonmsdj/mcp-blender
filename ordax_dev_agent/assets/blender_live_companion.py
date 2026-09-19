@@ -34,6 +34,14 @@ def _args():
     parser.add_argument("--ordax-scripts-root", required=True)
     parser.add_argument("--ordax-artifacts-root", required=True)
     parser.add_argument("--ordax-project-slug", required=True)
+    parser.add_argument("--ordax-smoke-output-dir")
+    parser.add_argument(
+        "--ordax-smoke-mode",
+        choices=("material", "silhouette"),
+        default="silhouette",
+    )
+    parser.add_argument("--ordax-smoke-width", type=int, default=320)
+    parser.add_argument("--ordax-smoke-height", type=int, default=320)
     return parser.parse_args(argv)
 
 
@@ -2721,6 +2729,45 @@ for stale in INFLIGHT.glob("*.json"):
     except OSError:
         pass
 
-_write_presence(force=True)
-if not bpy.app.timers.is_registered(_tick):
-    bpy.app.timers.register(_tick, first_interval=0.10, persistent=True)
+if CFG.ordax_smoke_output_dir:
+    smoke_id = "smoke"
+    _multiview_capture(
+        {
+            "id": smoke_id,
+            "output_dir": str(Path(CFG.ordax_smoke_output_dir).resolve()),
+            "mode": CFG.ordax_smoke_mode,
+            "width": CFG.ordax_smoke_width,
+            "height": CFG.ordax_smoke_height,
+            "views": ["front", "right", "top", "three_quarter"],
+        }
+    )
+    smoke_result_path = RESULTS / f"{smoke_id}.json"
+    if not smoke_result_path.is_file():
+        raise RuntimeError("multiview smoke did not create a durable result")
+    smoke_result = json.loads(
+        smoke_result_path.read_text(encoding="utf-8-sig")
+    )
+    if not bool(smoke_result.get("ok")):
+        raise RuntimeError(
+            "multiview smoke failed: "
+            + str(smoke_result.get("summary") or "unknown failure")
+        )
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "mode": smoke_result.get("mode"),
+                "manifest": smoke_result.get("manifest"),
+                "views": [
+                    item.get("view")
+                    for item in smoke_result.get("artifacts", [])
+                ],
+                "render_engine": smoke_result.get("render_engine"),
+            },
+            indent=2,
+        )
+    )
+else:
+    _write_presence(force=True)
+    if not bpy.app.timers.is_registered(_tick):
+        bpy.app.timers.register(_tick, first_interval=0.10, persistent=True)
