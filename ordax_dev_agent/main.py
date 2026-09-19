@@ -81,7 +81,11 @@ def main() -> int:
         return base
 
     status_server = start_status_server(status_payload)
-    runtime["state"] = "ready"
+    runtime["state"] = (
+        "pairing"
+        if config.supabase_url and config.publishable_key
+        else "local-ready"
+    )
     print(json.dumps(status_payload(), indent=2))
 
     stop = False
