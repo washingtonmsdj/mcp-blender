@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -50,6 +51,7 @@ class ActionRegistry:
             "git.sync": self.git_sync,
             "unity.editor_status": self.unity_editor_status,
             "unity.refresh_editor": self.unity_refresh_editor,
+            "unity.stop_play": self.unity_stop_play,
             "unity.compile": self.unity_compile,
             "unity.validate": self.unity_validate,
             "unity.capture": self.unity_capture,
@@ -290,6 +292,61 @@ class ActionRegistry:
             if ready
             else "Unity Editor refresh sent, but companion did not become ready",
             status,
+        )
+
+    def unity_stop_play(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project_path(payload)
+        editor = UnityEditorBridge(project)
+        status = editor.status()
+        presence = status.get("presence") or {}
+
+        if not bool(presence.get("playing")):
+            return ActionResult(
+                True,
+                "Unity Editor is already outside Play Mode",
+                status,
+            )
+
+        script = self._bridge_script("unity-editor-toggle-play.ps1")
+        toggle = _run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+                "-ProjectPath",
+                str(project),
+            ],
+            timeout=60,
+        )
+        if not toggle.ok:
+            return toggle
+
+        deadline = time.monotonic() + float(payload.get("wait_seconds", 30))
+        while time.monotonic() < deadline:
+            current = editor.status()
+            current_presence = current.get("presence") or {}
+            if editor.presence_is_fresh(max_age_seconds=8.0) and not bool(
+                current_presence.get("playing")
+            ):
+                current["toggle_stdout"] = toggle.data.get("stdout", "")
+                current["toggle_stderr"] = toggle.data.get("stderr", "")
+                return ActionResult(
+                    True,
+                    "Unity Editor exited Play Mode",
+                    current,
+                )
+            time.sleep(0.35)
+
+        final_status = editor.status()
+        final_status["toggle_stdout"] = toggle.data.get("stdout", "")
+        final_status["toggle_stderr"] = toggle.data.get("stderr", "")
+        return ActionResult(
+            False,
+            "Play toggle was sent, but Unity did not leave Play Mode in time",
+            final_status,
         )
 
     def unity_compile(self, payload: dict[str, Any]) -> ActionResult:
