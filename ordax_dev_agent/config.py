@@ -32,13 +32,14 @@ class AgentConfig:
 
         settings_path = state_dir / "agent-settings.json"
         settings: dict = {}
+        settings_error: str | None = None
         if settings_path.is_file():
             try:
                 settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
-            except Exception:
-                settings = {}
+            except Exception as error:
+                settings_error = f"{type(error).__name__}: {error}"
 
-        return cls(
+        config = cls(
             agent_name=os.environ.get(
                 "ORDAX_AGENT_NAME",
                 settings.get("agent_name") or socket.gethostname(),
@@ -80,6 +81,17 @@ class AgentConfig:
                 )
             ),
         )
+
+        if settings_error:
+            warning = state_dir / "settings-error.txt"
+            warning.write_text(settings_error + "\n", encoding="utf-8")
+        else:
+            try:
+                (state_dir / "settings-error.txt").unlink()
+            except OSError:
+                pass
+
+        return config
 
     def public_status(self) -> dict:
         return {
