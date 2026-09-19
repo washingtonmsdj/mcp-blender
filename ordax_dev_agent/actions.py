@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
@@ -9,6 +10,7 @@ from mcp_blender_unity.config import find_blender
 
 from .config import AgentConfig
 from .models import ActionResult
+from .unity_editor_bridge import UnityEditorBridge
 
 
 Action = Callable[[dict[str, Any]], ActionResult]
@@ -43,6 +45,7 @@ class ActionRegistry:
         self.config = config
         self._actions: dict[str, Action] = {
             "agent.status": self.agent_status,
+            "agent.update": self.agent_update,
             "git.status": self.git_status,
             "git.sync": self.git_sync,
             "unity.compile": self.unity_compile,
@@ -70,6 +73,72 @@ class ActionRegistry:
             {
                 **self.config.public_status(),
                 "actions": self.names,
+            },
+        )
+
+    def agent_update(self, payload: dict[str, Any]) -> ActionResult:
+        repo = self.config.agent_repo_path.resolve()
+        if not (repo / ".git").is_dir():
+            return ActionResult(False, f"managed agent repository not found: {repo}")
+
+        branch = "feat/ordax-dev-agent"
+        status = _run(
+            ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=no"],
+            timeout=60,
+        )
+        if not status.ok:
+            return status
+        if status.data.get("stdout", "").strip():
+            return ActionResult(
+                False,
+                "managed agent has local tracked changes; update refused",
+                {"status": status.data["stdout"]},
+            )
+
+        fetch = _run(
+            ["git", "-C", str(repo), "fetch", "--quiet", "origin", branch],
+            timeout=180,
+        )
+        if not fetch.ok:
+            return fetch
+
+        current = _run(
+            ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
+            timeout=30,
+        )
+        if not current.ok:
+            return current
+
+        if current.data.get("stdout", "").strip() != branch:
+            checkout = _run(
+                ["git", "-C", str(repo), "checkout", "-B", branch, f"origin/{branch}"],
+                timeout=120,
+            )
+            if not checkout.ok:
+                return checkout
+        else:
+            merge = _run(
+                ["git", "-C", str(repo), "merge", "--ff-only", "--quiet", f"origin/{branch}"],
+                timeout=120,
+            )
+            if not merge.ok:
+                return merge
+
+        install = _run(
+            [sys.executable, "-m", "pip", "install", "-e", str(repo)],
+            timeout=600,
+        )
+        if not install.ok:
+            return install
+
+        head = _run(["git", "-C", str(repo), "rev-parse", "HEAD"], timeout=30)
+        return ActionResult(
+            head.ok,
+            "agent updated; restart required" if head.ok else "agent update completed but HEAD lookup failed",
+            {
+                "branch": branch,
+                "head": head.data.get("stdout", "").strip(),
+                "restart_required": True,
             },
         )
 
@@ -154,6 +223,18 @@ class ActionRegistry:
 
     def unity_compile(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
+        timeout = int(payload.get("timeout_seconds", 1800))
+
+        editor = UnityEditorBridge(project)
+        editor_result = editor.request(
+            "validate",
+            timeout_seconds=min(timeout, 600),
+        )
+        if editor_result is not None:
+            if editor_result.ok:
+                editor_result.summary = "Unity Editor loaded current scripts and validation passed"
+            return editor_result
+
         script = self._bridge_script("unity-run.ps1")
         return _run(
             [
@@ -166,15 +247,25 @@ class ActionRegistry:
                 "-ProjectPath",
                 str(project),
             ],
-            timeout=int(payload.get("timeout_seconds", 1800)),
+            timeout=timeout,
         )
 
     def unity_validate(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
-        script = self._bridge_script("unity-run.ps1")
+        timeout = int(payload.get("timeout_seconds", 1800))
         method = payload.get("execute_method", "HORDAX.EditorTools.CiValidation.Run")
         if method != "HORDAX.EditorTools.CiValidation.Run":
             return ActionResult(False, f"execute method not allowed: {method}")
+
+        editor = UnityEditorBridge(project)
+        editor_result = editor.request(
+            "validate",
+            timeout_seconds=min(timeout, 600),
+        )
+        if editor_result is not None:
+            return editor_result
+
+        script = self._bridge_script("unity-run.ps1")
         return _run(
             [
                 "powershell",
@@ -188,14 +279,40 @@ class ActionRegistry:
                 "-ExecuteMethod",
                 method,
             ],
-            timeout=int(payload.get("timeout_seconds", 1800)),
+            timeout=timeout,
         )
 
     def unity_capture(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
-        script = self._bridge_script("unity-capture.ps1")
         output = self.config.state_dir / "artifacts" / "hordax-prototype.png"
         output.parent.mkdir(parents=True, exist_ok=True)
+
+        editor = UnityEditorBridge(project)
+        editor_result = editor.request(
+            "capture",
+            {
+                "outputPath": str(output),
+                "width": int(payload.get("width", 1280)),
+                "height": int(payload.get("height", 720)),
+                "warmupFrames": int(payload.get("warmup_frames", 120)),
+            },
+            timeout_seconds=float(payload.get("timeout_seconds", 900)),
+        )
+        if editor_result is not None:
+            if editor_result.ok:
+                editor_result.data["artifact"] = str(output)
+                snapshot = output.with_suffix(".json")
+                if snapshot.is_file():
+                    try:
+                        editor_result.data["snapshot"] = json.loads(
+                            snapshot.read_text(encoding="utf-8-sig")
+                        )
+                        editor_result.data["snapshot_path"] = str(snapshot)
+                    except Exception as error:
+                        editor_result.data["snapshot_error"] = str(error)
+            return editor_result
+
+        script = self._bridge_script("unity-capture.ps1")
         result = _run(
             [
                 "powershell",
