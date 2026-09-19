@@ -44,11 +44,14 @@ def action_execute(action: str, project: str, arguments: dict | None = None) -> 
 Examples: project.observe {app:unity}, blender.inspect {blend_file:scene.blend},
 blender.render_preview {blend_file:scene.blend,width:1280,height:720},
 blender.live_status {}, blender.live_inspect {limit:64} (paired OPEN Blender scene),
+blender.live_capture {objects:[Cube],views:[front,right,top,perspective],size:512},
 blender.live_run_python {script_path:automation/blender/edit.py} (local opt-in),
 blender.live_result {command_id:...} (query after timeout; never blindly repeat edits),
 observation.capture {app:unity,frames:3,interval_seconds:1},
 git.sync {branch:main}, unity.install_companion {} (adds an Editor script).
 Read artifact_image using data.artifact or observations[].artifact to see results.
+For live multiview captures, read each data.views[].artifact; these are geometry
+previews, not the user's viewport or a final material/lighting render.
 """
     payload = {**(arguments or {}), "project": project}
     result = registry().execute(action, payload)

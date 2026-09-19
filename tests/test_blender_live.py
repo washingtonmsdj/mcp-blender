@@ -9,7 +9,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from ordax_dev_agent.blender_live import BlenderLive
+from ordax_dev_agent.blender_live import BlenderLive, BlenderLiveActions
+from ordax_dev_agent.models import ActionResult
 from ordax_dev_agent.projects import Project
 
 COMPANION = Path(__file__).resolve().parents[1] / 'ordax_dev_agent/assets/blender_live_companion.py'
@@ -88,6 +89,44 @@ class BlenderLiveTests(unittest.TestCase):
         self.assertTrue(result.data['outcome_unknown'])
         with self.assertRaises(ValueError):
             self.client.result('../escape')
+
+    def capture_result(self):
+        command_id = uuid.uuid4().hex
+        folder = self.root / '.ordax/blender/captures' / command_id
+        folder.mkdir(parents=True)
+        (folder / 'front.png').write_bytes(b'\x89PNG\r\n\x1a\nexample')
+        result = ActionResult(True, 'capture', {'command_id': command_id,
+                                              'views': [{'view': 'front', 'filename': 'front.png'}]})
+        agent = BlenderLiveActions()
+        agent.config = SimpleNamespace(state_dir=self.root / 'state')
+        return agent, result, folder
+
+    def test_capture_images_are_exported_to_mcp_artifact_root(self):
+        agent, result, _ = self.capture_result()
+        exported = agent._live_capture_artifacts(self.client.project, result)
+        image = Path(exported.data['views'][0]['artifact'])
+        self.assertTrue(image.is_relative_to(agent.config.state_dir / 'artifacts/test'))
+        self.assertEqual(len(exported.data['artifacts']), 2)
+        self.assertTrue(Path(exported.data['snapshot_path']).is_file())
+
+    def test_rejects_capture_view_path_traversal(self):
+        agent, result, _ = self.capture_result()
+        result.data['views'][0]['view'] = '../secret'
+        with self.assertRaises(ValueError):
+            agent._live_capture_artifacts(self.client.project, result)
+
+    def test_rejects_invalid_image_content(self):
+        agent, result, folder = self.capture_result()
+        (folder / 'front.png').write_bytes(b'not an image')
+        with self.assertRaises(ValueError):
+            agent._live_capture_artifacts(self.client.project, result)
+
+    def test_late_capture_result_exports_images(self):
+        agent, result, _ = self.capture_result()
+        agent._project = lambda payload: self.client.project
+        with patch.object(BlenderLive, 'result', return_value=result):
+            exported = agent.blender_live_result({'command_id': result.data['command_id']})
+        self.assertTrue(Path(exported.data['artifact']).is_file())
 
 
 if __name__ == '__main__':

@@ -63,6 +63,7 @@ class ActionRegistry(ObservationActions, BlenderLiveActions):
             "blender.inspect": self.blender_inspect,
             "blender.live_status": self.blender_live_status,
             "blender.live_inspect": self.blender_live_inspect,
+            "blender.live_capture": self.blender_live_capture,
             "blender.live_run_python": self.blender_live_run_python,
             "blender.live_result": self.blender_live_result,
             "blender.render_preview": self.blender_render_preview,

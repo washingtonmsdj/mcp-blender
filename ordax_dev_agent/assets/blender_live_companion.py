@@ -4,6 +4,7 @@ runpy.run_path(COMPANION_PATH)['start'](PROJECT_ROOT)
 """
 import hashlib
 import json
+import runpy
 import time
 import uuid
 from pathlib import Path
@@ -41,6 +42,9 @@ def _dispatch(request):
     args = request.get('arguments', {})
     if request['action'] == 'inspect':
         return _scene(max(1, min(1000, int(args.get('limit', 64)))))
+    if request['action'] == 'capture':
+        capture = runpy.run_path(str(Path(__file__).with_name('blender_multiview.py')))['capture']
+        return capture(args, state['ipc'] / 'captures' / request['id'])
     if request['action'] != 'run_script' or not state['allow_scripts']:
         raise ValueError('Action not allowed by this local companion')
     script = Path(args['script']).resolve()
@@ -63,7 +67,7 @@ def _tick():
             'session': state['session'], 'project_root': str(state['project']),
             'file': bpy.data.filepath, 'allow_scripts': state['allow_scripts'],
             'blender_version': bpy.app.version_string, 'observed_at': time.time(),
-            'actions': ['inspect'] + (['run_script'] if state['allow_scripts'] else []),
+            'actions': ['inspect', 'capture'] + (['run_script'] if state['allow_scripts'] else []),
         })
         # One command per timer tick keeps the event loop available between commands.
         for path in sorted((state['ipc'] / 'inbox').glob('*.json')):
