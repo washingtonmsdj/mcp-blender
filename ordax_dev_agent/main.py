@@ -31,8 +31,9 @@ def _start_local_watchdog(config: AgentConfig) -> subprocess.Popen | None:
     if sys.platform != "win32":
         return None
 
+    repo_root = Path(__file__).resolve().parents[1]
     script = (
-        Path(config.bridge_path).resolve()
+        repo_root
         / "scripts"
         / "windows"
         / "ordax-agent-watchdog.ps1"
@@ -55,7 +56,7 @@ def _start_local_watchdog(config: AgentConfig) -> subprocess.Popen | None:
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         process = subprocess.Popen(
             command,
-            cwd=str(Path(config.bridge_path).resolve()),
+            cwd=str(repo_root),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
