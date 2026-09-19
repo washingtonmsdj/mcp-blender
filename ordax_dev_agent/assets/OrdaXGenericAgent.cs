@@ -16,7 +16,7 @@ namespace OrdaX.EditorTools
     {
         [Serializable] private class Command
         {
-            public string id, action, outputPath;
+            public string id, action, outputPath, scenePath;
             public int width = 1280, height = 720;
         }
         [Serializable] private class Reply
@@ -116,6 +116,7 @@ namespace OrdaX.EditorTools
                         EditorApplication.isPlaying = command.action == "play_start";
                         return;
                     case "capture": Capture(command, reply); break;
+                    case "scene_open": OpenScene(command, reply); break;
                     case "scene_summary": SceneSummary(reply, false); break;
                     case "physics_audit": SceneSummary(reply, true); break;
                     default: throw new InvalidOperationException("Unsupported companion action: " + command.action);
@@ -188,6 +189,26 @@ namespace OrdaX.EditorTools
             reply.rigidbodyWithoutColliderCount = rigidbodyWithoutCollider;
             reply.dynamicNonConvexMeshColliderCount = dynamicNonConvexMeshCollider;
             reply.auditWarnings = auditWarnings.Take(200).ToArray();
+        }
+
+        private static void OpenScene(Command command, Reply reply)
+        {
+            if (string.IsNullOrWhiteSpace(command.scenePath) ||
+                !command.scenePath.StartsWith("Assets/", StringComparison.Ordinal) ||
+                !command.scenePath.EndsWith(".unity", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("scenePath must be a project-relative Assets/*.unity path");
+
+            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+            string fullPath = Path.GetFullPath(Path.Combine(projectRoot, command.scenePath));
+            if (!fullPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase) || !File.Exists(fullPath))
+                throw new InvalidOperationException("Scene does not exist inside the project");
+
+            var active = SceneManager.GetActiveScene();
+            if (active.IsValid() && active.isDirty)
+                throw new InvalidOperationException("Active scene has unsaved changes");
+
+            UnityEditor.SceneManagement.EditorSceneManager.OpenScene(command.scenePath, UnityEditor.SceneManagement.OpenSceneMode.Single);
+            reply.summary = "Scene opened: " + command.scenePath;
         }
 
         private static string Hierarchy(Transform transform)
