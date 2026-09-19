@@ -10,6 +10,7 @@ class AgentJob:
     action: str
     payload: dict[str, Any] = field(default_factory=dict)
     project_slug: str | None = None
+    lease_token: str | None = None
 
 
 @dataclass(slots=True)
