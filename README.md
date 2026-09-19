@@ -169,8 +169,9 @@ The visible Blender companion now exposes a richer typed perception loop:
 - \`blender.live_object_inspect\` — full inspection for one stable object name.
 - \`blender.live_contact_audit\` — evaluated mesh BVH intersection checks for
   protected object pairs.
-- \`blender.live_quality_gate\` — deterministic dimensions, symmetry, proportion
-  and containment checks with measured error/clearance evidence.
+- \`blender.live_quality_gate\` — deterministic dimensions, symmetry, proportion,
+  containment and mesh-quality checks (topology budgets, manifold/degenerate
+  geometry, quad ratio, UV/material presence) with measured evidence.
 - \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
 - \`blender.asset_manifest\` — provider file manifest/provenance lookup.
 
