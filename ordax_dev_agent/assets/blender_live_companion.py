@@ -484,7 +484,7 @@ def _fingerprint_selector(selector: dict) -> tuple[str, object]:
 
 def _object_fingerprint_entry(selector: dict) -> dict:
     key, obj = _fingerprint_selector(selector)
-    evaluated = bool(selector.get("evaluated", False))
+    evaluated = bool(selector.get("evaluated", True))
     transform_sha256 = _transform_fingerprint(obj)
     geometry_sha256, mesh_counts = _mesh_fingerprint(obj, evaluated=evaluated)
 
