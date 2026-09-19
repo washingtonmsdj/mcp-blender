@@ -246,7 +246,8 @@ class ActionRegistry:
         project = self._project_path(payload)
         editor = UnityEditorBridge(project)
 
-        if editor.presence_is_fresh():
+        force = bool(payload.get("force", False))
+        if editor.presence_is_fresh() and not force:
             return ActionResult(
                 True,
                 "Unity Editor companion already ready",
