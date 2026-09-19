@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import os
 from pathlib import Path
 from typing import Any
 
@@ -59,29 +60,45 @@ def asset_inventory(
     counts: Counter[str] = Counter()
     total = 0
 
-    for path in assets.rglob("*"):
-        if not path.is_file() or path.suffix.lower() == ".meta":
+    # os.walk preserves the textual root that was supplied. This matters on
+    # Windows, where tempfile / CI paths can be represented simultaneously as
+    # an 8.3 alias (RUNNER~1) and a long path (runneradmin). Path.rglob may
+    # surface the long spelling and make relative_to() reject the same physical
+    # directory as unrelated.
+    for current_root, _, file_names in os.walk(str(assets)):
+        current = Path(current_root)
+        try:
+            inside_assets = current.relative_to(assets)
+        except ValueError:
+            # Defensive fallback: the walk must never escape Assets.
             continue
-        total += 1
-        suffix = path.suffix.lower()
-        kind = CLASS_BY_SUFFIX.get(suffix, "other")
-        counts[kind] += 1
-        rel = str(path.relative_to(project_root)).replace("\\", "/")
-        haystack = rel.lower()
-        if normalized_terms and not all(term in haystack for term in normalized_terms):
-            continue
-        if len(matches) < max_results:
-            try:
-                size = path.stat().st_size
-            except OSError:
-                size = None
-            matches.append({
-                "path": rel,
-                "name": path.name,
-                "kind": kind,
-                "extension": suffix,
-                "size_bytes": size,
-            })
+
+        for file_name in file_names:
+            path = current / file_name
+            if path.suffix.lower() == ".meta":
+                continue
+            total += 1
+            suffix = path.suffix.lower()
+            kind = CLASS_BY_SUFFIX.get(suffix, "other")
+            counts[kind] += 1
+
+            rel_path = Path("Assets") / inside_assets / file_name
+            rel = rel_path.as_posix()
+            haystack = rel.lower()
+            if normalized_terms and not all(term in haystack for term in normalized_terms):
+                continue
+            if len(matches) < max_results:
+                try:
+                    size = path.stat().st_size
+                except OSError:
+                    size = None
+                matches.append({
+                    "path": rel,
+                    "name": path.name,
+                    "kind": kind,
+                    "extension": suffix,
+                    "size_bytes": size,
+                })
 
     return {
         "assets_root": str(assets),
