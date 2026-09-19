@@ -129,6 +129,11 @@ class ActionRegistry(ObservationActions):
             "blender.live_scene_snapshot": self.blender_live_scene_snapshot,
             "blender.live_object_inspect": self.blender_live_object_inspect,
             "blender.live_contact_audit": self.blender_live_contact_audit,
+            "blender.live_object_transform": self.blender_live_object_transform,
+            "blender.live_checkpoint_create": self.blender_live_checkpoint_create,
+            "blender.live_checkpoint_list": self.blender_live_checkpoint_list,
+            "blender.live_checkpoint_restore": self.blender_live_checkpoint_restore,
+            "blender.live_trajectory": self.blender_live_trajectory,
             "blender.live_result": self.blender_live_result,
             "blender.live_run_script": self.blender_live_run_script,
             "blender.live_capture": self.blender_live_capture,
@@ -1358,6 +1363,70 @@ class ActionRegistry(ObservationActions):
             "contact_audit",
             {"pairs": normalized},
             timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+
+    def blender_live_object_transform(self, payload: dict[str, Any]) -> ActionResult:
+        request: dict[str, Any] = {}
+        object_name = str(payload.get("object_name") or "").strip()
+        object_id = str(payload.get("ordax_object_id") or "").strip()
+        if bool(object_name) == bool(object_id):
+            return ActionResult(False, "provide exactly one of object_name or ordax_object_id")
+        if object_name:
+            request["object_name"] = object_name
+        else:
+            request["ordax_object_id"] = object_id
+
+        for key in ("location", "rotation_euler", "scale", "dimensions"):
+            if key not in payload:
+                continue
+            value = payload.get(key)
+            if (
+                not isinstance(value, list)
+                or len(value) != 3
+                or not all(isinstance(item, (int, float)) for item in value)
+            ):
+                return ActionResult(False, f"{key} must be a list of three numbers")
+            request[key] = [float(item) for item in value]
+
+        if not any(key in request for key in ("location", "rotation_euler", "scale", "dimensions")):
+            return ActionResult(False, "at least one transform field is required")
+
+        return self._blender_live(payload).request(
+            "object_transform",
+            request,
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_checkpoint_create(self, payload: dict[str, Any]) -> ActionResult:
+        label = str(payload.get("label") or "checkpoint").strip()
+        return self._blender_live(payload).request(
+            "checkpoint_create",
+            {"label": label},
+            timeout_seconds=float(payload.get("timeout_seconds", 120)),
+        )
+
+    def blender_live_checkpoint_list(self, payload: dict[str, Any]) -> ActionResult:
+        return self._blender_live(payload).request(
+            "checkpoint_list",
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_checkpoint_restore(self, payload: dict[str, Any]) -> ActionResult:
+        checkpoint_id = str(payload.get("checkpoint_id") or "").strip()
+        if not checkpoint_id:
+            return ActionResult(False, "checkpoint_id is required")
+        return self._blender_live(payload).request(
+            "checkpoint_restore",
+            {
+                "checkpoint_id": checkpoint_id,
+                "discard_unsaved": bool(payload.get("discard_unsaved", False)),
+            },
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_trajectory(self, payload: dict[str, Any]) -> ActionResult:
+        return self._blender_live(payload).trajectory(
+            limit=int(payload.get("limit", 50)),
         )
 
     def blender_live_result(self, payload: dict[str, Any]) -> ActionResult:
