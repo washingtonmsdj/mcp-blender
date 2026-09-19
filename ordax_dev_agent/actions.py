@@ -220,6 +220,7 @@ class ActionRegistry(ObservationActions):
             "git.diff": self.git_diff,
             "git.sync": self.git_sync,
             "unity.editor_status": self.unity_editor_status,
+            "unity.editor_diagnostics": self.unity_editor_diagnostics,
             "unity.editor_start": self.unity_editor_start,
             "unity.refresh_editor": self.unity_refresh_editor,
             "unity.play_start": self.unity_play_start,
@@ -1391,6 +1392,51 @@ class ActionRegistry(ObservationActions):
             ready,
             "Unity Editor companion ready" if ready else "Unity Editor companion not ready",
             status,
+        )
+
+    def unity_editor_diagnostics(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        editor = self._editor(payload)
+        process_ids = _unity_process_ids_for_project(project.root)
+
+        if sys.platform == "win32":
+            base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+            log_path = base / "Unity" / "Editor" / "Editor.log"
+        elif sys.platform == "darwin":
+            log_path = Path.home() / "Library" / "Logs" / "Unity" / "Editor.log"
+        else:
+            log_path = Path.home() / ".config" / "unity3d" / "Editor.log"
+
+        max_lines = max(20, min(int(payload.get("max_lines", 160)), 500))
+        max_chars = max(4096, min(int(payload.get("max_chars", 60000)), 200000))
+        tail = ""
+        log_size = None
+        log_mtime = None
+        if log_path.is_file():
+            try:
+                log_size = log_path.stat().st_size
+                log_mtime = log_path.stat().st_mtime
+                lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                tail = "\n".join(lines[-max_lines:])
+                if len(tail) > max_chars:
+                    tail = tail[-max_chars:]
+            except OSError as error:
+                tail = f"<could not read Unity Editor.log: {error}>"
+
+        status = editor.status()
+        data = {
+            **status,
+            "unity_process_ids": process_ids,
+            "editor_log_path": str(log_path),
+            "editor_log_exists": log_path.is_file(),
+            "editor_log_size_bytes": log_size,
+            "editor_log_mtime": log_mtime,
+            "editor_log_tail": tail,
+        }
+        return ActionResult(
+            True,
+            "Unity Editor diagnostics ready",
+            data,
         )
 
     def unity_refresh_editor(self, payload: dict[str, Any]) -> ActionResult:
