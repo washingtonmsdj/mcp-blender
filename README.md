@@ -85,12 +85,18 @@ reported as invalid instead of silently falling back when its installation is in
 - `unity_compile_project`
 - `unity_validate_project`
 - `unity_run_method`
+- `unity_capture_project`
 
 `unity_compile_project` abre/importa o projeto em batch mode e inspeciona o log por erros de compilação.
 
 `unity_validate_project` também executa, por padrão:
 
 `HORDAX.EditorTools.CiValidation.Run`
+
+`unity_capture_project` abre o HORDAX em Play Mode por automação, espera alguns
+frames para a cena se estabilizar e renderiza uma captura PNG da câmera do jogo.
+Isso permite validar visualmente câmera, HUD, hordas e composição sem depender de
+uma captura manual feita no Editor.
 
 For a project-specific toolchain report, pass its path to the Windows smoke test:
 
@@ -119,6 +125,24 @@ Blender:
 ```powershell
 .\scripts\windows\blender-run.ps1 -PythonScript "C:\dev\scripts\generate_asset.py"
 ```
+
+## HORDAX Unity Autopilot
+
+A branch de desenvolvimento do HORDAX pode ser observada automaticamente pelo
+workflow `HORDAX Unity Autopilot`. Em um runner Windows self-hosted ele:
+
+1. detecta quando o commit alvo mudou;
+2. escolhe uma instalação Unity saudável;
+3. compila o projeto;
+4. executa `HORDAX.EditorTools.CiValidation.Run`;
+5. abre o protótipo em Play Mode por automação;
+6. gera `prototype.png` em 1280x720;
+7. publica screenshot, logs e `report.json` como artifact do workflow.
+
+O alvo é controlado por `config/hordax-autopilot.json`, portanto pode ser
+alterado remotamente sem editar scripts no computador do runner. O último SHA
+validado fica apenas na máquina do runner, em `LOCALAPPDATA\HORDAX-Autopilot`,
+para evitar executar Unity novamente quando não houve mudança de código.
 
 ## GitHub self-hosted runner
 
