@@ -10,6 +10,7 @@ on:
       - "scripts/windows/ordax-agent-start.cmd"
       - "pyproject.toml"
       - ".github/workflows/ordax-agent-recovery.yml"
+      - ".github/ordax-recovery-request.json"
   workflow_dispatch:
 
 permissions:
@@ -41,11 +42,12 @@ jobs:
             throw "Candidate agent code does not compile. Local managed agent was not touched."
           }
 
-      - name: Recover managed agent only when process is absent
+      - name: Recover managed agent safely
         shell: pwsh
         run: |
           $branch = "feat/ordax-dev-agent"
           $repo = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent\src"
+          $requestPath = Join-Path $env:GITHUB_WORKSPACE ".github\ordax-recovery-request.json"
 
           if (-not (Test-Path (Join-Path $repo ".git"))) {
             throw "Managed OrdaX agent repository not found at $repo"
@@ -58,27 +60,66 @@ jobs:
               $_.CommandLine -like "*OrdaX*DevAgent*"
             }
 
+          $request = $null
+          if (Test-Path $requestPath) {
+            try {
+              $request = Get-Content $requestPath -Raw | ConvertFrom-Json
+            } catch {
+              throw "Invalid recovery request JSON: $requestPath"
+            }
+          }
+
           if ($running) {
-            Write-Host "OrdaX agent process is already running. Recovery will not disturb it."
-            exit 0
+            $status = $null
+            try {
+              $status = Invoke-RestMethod -Uri "http://127.0.0.1:8765/status" -TimeoutSec 3
+            } catch {
+              Write-Host "Agent process exists but local status endpoint is unavailable."
+            }
+
+            $requestedJob = if ($request) { [string]$request.job_id } else { "" }
+            $activeJob = if ($status -and $status.runtime) { [string]$status.runtime.last_job_id } else { "" }
+            $activeState = if ($status -and $status.runtime) { [string]$status.runtime.state } else { "" }
+
+            if (
+              $requestedJob -and
+              $activeJob -eq $requestedJob -and
+              $activeState -eq "busy"
+            ) {
+              Write-Host "Explicit recovery request matches stuck job $activeJob. Stopping agent process tree."
+              foreach ($process in $running) {
+                & taskkill.exe /PID $process.ProcessId /T /F | Out-Null
+              }
+              Start-Sleep -Seconds 2
+              $running = @()
+            } else {
+              Write-Host "OrdaX agent is already running and no matching recovery request exists. Leaving it untouched."
+              exit 0
+            }
           }
 
-          $dirty = git -C $repo status --porcelain --untracked-files=no
-          if ($LASTEXITCODE -ne 0) { throw "Could not read managed agent Git status." }
-          if ($dirty) {
-            throw "Managed agent has tracked local changes. Recovery refuses to overwrite them."
+          git -c core.fsmonitor=false -C $repo diff-files --quiet --
+          if ($LASTEXITCODE -gt 1) { throw "Could not check managed agent unstaged changes." }
+          if ($LASTEXITCODE -eq 1) {
+            throw "Managed agent has unstaged tracked changes. Recovery refuses to overwrite them."
           }
 
-          git -C $repo fetch --quiet origin $branch
+          git -c core.fsmonitor=false -C $repo diff-index --cached --quiet HEAD --
+          if ($LASTEXITCODE -gt 1) { throw "Could not check managed agent staged changes." }
+          if ($LASTEXITCODE -eq 1) {
+            throw "Managed agent has staged tracked changes. Recovery refuses to overwrite them."
+          }
+
+          git -c core.fsmonitor=false -C $repo fetch --quiet origin $branch
           if ($LASTEXITCODE -ne 0) { throw "Could not fetch agent recovery branch." }
 
-          $current = (git -C $repo rev-parse --abbrev-ref HEAD).Trim()
+          $current = (git -c core.fsmonitor=false -C $repo rev-parse --abbrev-ref HEAD).Trim()
           if ($current -ne $branch) {
-            git -C $repo checkout $branch
+            git -c core.fsmonitor=false -C $repo checkout $branch
             if ($LASTEXITCODE -ne 0) { throw "Could not checkout $branch safely." }
           }
 
-          git -C $repo merge --ff-only --quiet "origin/$branch"
+          git -c core.fsmonitor=false -C $repo merge --ff-only --quiet "origin/$branch"
           if ($LASTEXITCODE -ne 0) {
             throw "Managed agent is not fast-forwardable. Recovery stopped without force."
           }
@@ -96,15 +137,16 @@ jobs:
           $taskName = "OrdaX Dev Agent"
           $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
           if (-not $task) {
-            throw "OrdaX scheduled task is not installed. Run scripts/windows/ordax-resilience-install.ps1 once from the interactive Windows account."
+            throw "OrdaX scheduled task is not installed."
           }
 
-          $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName
-          if ($task.State -ne "Running") {
-            Start-ScheduledTask -TaskName $taskName
-            Start-Sleep -Seconds 3
+          if ($task.State -eq "Running") {
+            Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
           }
+          Start-ScheduledTask -TaskName $taskName
+          Start-Sleep -Seconds 4
 
           $task = Get-ScheduledTask -TaskName $taskName
           Write-Host ("OrdaX scheduled task state: " + $task.State)
-          Write-Host "Recovery requested through the interactive Windows task; no Session-0 desktop process was launched."
+          Write-Host "Recovery requested through the interactive Windows task."
