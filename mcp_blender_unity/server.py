@@ -295,6 +295,8 @@ def _unity_command(
     log_file: Path,
     upm_log_file: Path,
     execute_method: str | None = None,
+    *,
+    quit_editor: bool = True,
 ) -> list[str]:
     resolution = resolve_unity(project)
     selected = resolution.get("selected_path")
@@ -309,14 +311,19 @@ def _unity_command(
     command = [
         str(unity),
         "-batchmode",
-        "-quit",
+    ]
+
+    if quit_editor:
+        command.append("-quit")
+
+    command.extend([
         "-projectPath",
         str(project),
         "-logFile",
         str(log_file),
         "-upmLogFile",
         str(upm_log_file),
-    ]
+    ])
 
     if execute_method:
         command.extend(["-executeMethod", execute_method])
@@ -413,6 +420,75 @@ def unity_validate_project(
 
     command = _unity_command(project, log_file, upm_log_file, execute_method)
     return _unity_result(command, project, log_file, upm_log_file, timeout_seconds)
+
+
+@mcp.tool()
+def unity_capture_project(
+    project_path: str | None = None,
+    output_path: str | None = None,
+    width: int = 1280,
+    height: int = 720,
+    warmup_frames: int = 120,
+    timeout_seconds: int = 900,
+) -> dict:
+    """Run HORDAX in Play Mode and render a deterministic gameplay screenshot."""
+    project = _required_project(project_path)
+    logs = project / "Logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    captures = project / "Artifacts" / "UnityCaptures"
+    captures.mkdir(parents=True, exist_ok=True)
+
+    capture = (
+        Path(output_path).expanduser().resolve()
+        if output_path
+        else captures / "prototype-latest.png"
+    )
+
+    width = max(320, min(3840, int(width)))
+    height = max(180, min(2160, int(height)))
+    warmup_frames = max(1, min(1200, int(warmup_frames)))
+
+    log_file = logs / "unity-mcp-capture.log"
+    upm_log_file = logs / "unity-mcp-capture-upm.log"
+
+    try:
+        capture.unlink(missing_ok=True)
+    except TypeError:
+        if capture.exists():
+            capture.unlink()
+
+    command = _unity_command(
+        project,
+        log_file,
+        upm_log_file,
+        "HORDAX.EditorTools.AutomationCapture.CapturePrototype",
+        quit_editor=False,
+    )
+    command.extend(
+        [
+            "-hordaxCapturePath",
+            str(capture),
+            "-hordaxCaptureWidth",
+            str(width),
+            "-hordaxCaptureHeight",
+            str(height),
+            "-hordaxCaptureWarmupFrames",
+            str(warmup_frames),
+        ]
+    )
+
+    result = _unity_result(command, project, log_file, upm_log_file, timeout_seconds)
+    capture_available = capture.is_file() and capture.stat().st_size > 0
+    result["capture_file"] = str(capture)
+    result["capture_available"] = capture_available
+    result["capture_size_bytes"] = capture.stat().st_size if capture_available else 0
+
+    if not capture_available:
+        result["ok"] = False
+        if result.get("failure_classification") == "none":
+            result["failure_classification"] = "visual_capture"
+
+    return result
 
 
 @mcp.tool()
