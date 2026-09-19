@@ -189,3 +189,38 @@ The companion now writes a per-command file under `blender-live/<project>/inflig
 - restarting a fresh companion clears abandoned inflight markers.
 
 `blender.live_inspect` also returns filtered `ordax_*` custom properties for scene objects and the scene itself. Generated asset pipelines should use these fields for stable component/role identification and validation reports instead of relying only on display names.
+
+
+## Windows resilience model
+
+The local Windows machine must not depend on one foreground process.
+
+### Recovery channel A — GitHub runner service
+
+The already-configured GitHub Actions runner is installed as a Windows Service with automatic startup and Service Control Manager restart-on-failure. It remains available without an interactive sign-in and is the out-of-band recovery path for the OrdaX Agent.
+
+### Recovery channel B — OrdaX interactive scheduled task
+
+The OrdaX Agent runs through the Windows Scheduled Task named `OrdaX Dev Agent` under the interactive Windows user. Task Scheduler restarts the launcher after failure, while the launcher itself performs safe fast-forward updates and retries non-zero exits.
+
+The Agent intentionally remains in the interactive session because visible Blender and Unity workflows must not be launched in Windows Session 0.
+
+### Why two channels
+
+If the Agent crashes, the GitHub runner can fast-forward its checkout and request the scheduled task to start. If the runner process crashes, Windows Service Control Manager restarts it independently of the Agent.
+
+The cloud must not launch Blender/Unity desktop automation directly from the runner Windows Service.
+
+### Installation
+
+One-time resilient bootstrap:
+
+```powershell
+.\scripts\windows\ordax-resilience-install.ps1
+```
+
+Read-only health report:
+
+```powershell
+.\scripts\windows\ordax-resilience-status.ps1
+```
