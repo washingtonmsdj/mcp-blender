@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import subprocess
 import sys
@@ -47,6 +49,7 @@ class ActionRegistry:
         self._actions: dict[str, Action] = {
             "agent.status": self.agent_status,
             "agent.update": self.agent_update,
+            "artifact.preview": self.artifact_preview,
             "git.status": self.git_status,
             "git.sync": self.git_sync,
             "unity.editor_status": self.unity_editor_status,
@@ -143,6 +146,50 @@ class ActionRegistry:
                 "branch": branch,
                 "head": head.data.get("stdout", "").strip(),
                 "restart_required": True,
+            },
+        )
+
+    def artifact_preview(self, payload: dict[str, Any]) -> ActionResult:
+        name = str(payload.get("artifact_name", "hordax-prototype.png"))
+        allowed = {
+            "hordax-prototype.png",
+            "hordax-prototype.json",
+        }
+        if name not in allowed:
+            return ActionResult(False, f"artifact not allowed: {name}")
+
+        path = (self.config.state_dir / "artifacts" / name).resolve()
+        root = (self.config.state_dir / "artifacts").resolve()
+        try:
+            path.relative_to(root)
+        except ValueError:
+            return ActionResult(False, "artifact path escaped managed directory")
+
+        if not path.is_file():
+            return ActionResult(False, f"artifact not found: {path}")
+
+        data = path.read_bytes()
+        max_bytes = int(payload.get("max_bytes", 65536))
+        max_bytes = max(1024, min(max_bytes, 131072))
+        if len(data) > max_bytes:
+            return ActionResult(
+                False,
+                f"artifact is too large for inline preview: {len(data)} > {max_bytes}",
+                {
+                    "path": str(path),
+                    "size_bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                },
+            )
+
+        return ActionResult(
+            True,
+            "artifact preview ready",
+            {
+                "artifact_name": name,
+                "size_bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "base64": base64.b64encode(data).decode("ascii"),
             },
         )
 
