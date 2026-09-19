@@ -93,8 +93,18 @@ jobs:
             throw "Managed checkout failed compile verification after fast-forward."
           }
 
-          $launcher = Join-Path $repo "scripts\windows\ordax-agent-start.cmd"
-          if (-not (Test-Path $launcher)) { throw "Agent launcher not found: $launcher" }
+          $taskName = "OrdaX Dev Agent"
+          $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+          if (-not $task) {
+            throw "OrdaX scheduled task is not installed. Run scripts/windows/ordax-resilience-install.ps1 once from the interactive Windows account."
+          }
 
-          Start-Process -FilePath $env:ComSpec -ArgumentList "/c", ('"' + $launcher + '"') -WorkingDirectory $repo -WindowStyle Hidden
-          Write-Host "OrdaX recovery launcher started from $repo"
+          $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName
+          if ($task.State -ne "Running") {
+            Start-ScheduledTask -TaskName $taskName
+            Start-Sleep -Seconds 3
+          }
+
+          $task = Get-ScheduledTask -TaskName $taskName
+          Write-Host ("OrdaX scheduled task state: " + $task.State)
+          Write-Host "Recovery requested through the interactive Windows task; no Session-0 desktop process was launched."
