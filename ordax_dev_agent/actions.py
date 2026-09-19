@@ -132,6 +132,9 @@ class ActionRegistry(ObservationActions):
             "blender.live_contact_audit": self.blender_live_contact_audit,
             "blender.live_object_transform": self.blender_live_object_transform,
             "blender.live_object_metadata": self.blender_live_object_metadata,
+            "blender.live_api_schema": self.blender_live_api_schema,
+            "blender.live_node_schema": self.blender_live_node_schema,
+            "blender.live_export": self.blender_live_export,
             "blender.live_checkpoint_create": self.blender_live_checkpoint_create,
             "blender.live_checkpoint_list": self.blender_live_checkpoint_list,
             "blender.live_checkpoint_restore": self.blender_live_checkpoint_restore,
@@ -1440,6 +1443,78 @@ class ActionRegistry(ObservationActions):
             "object_metadata",
             request,
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+
+    def blender_live_api_schema(self, payload: dict[str, Any]) -> ActionResult:
+        type_name = str(payload.get("type_name") or "").strip()
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", type_name):
+            return ActionResult(False, "type_name must be a bpy.types class name")
+        return self._blender_live(payload).request(
+            "api_schema",
+            {
+                "type_name": type_name,
+                "max_properties": int(payload.get("max_properties", 200)),
+            },
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_node_schema(self, payload: dict[str, Any]) -> ActionResult:
+        node_type = str(payload.get("node_type") or "").strip()
+        tree_type = str(payload.get("tree_type") or "ShaderNodeTree").strip()
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", node_type):
+            return ActionResult(False, "node_type must be a Blender node bl_idname")
+        if tree_type not in {"ShaderNodeTree", "GeometryNodeTree", "CompositorNodeTree"}:
+            return ActionResult(
+                False,
+                "tree_type must be ShaderNodeTree, GeometryNodeTree, or CompositorNodeTree",
+            )
+        return self._blender_live(payload).request(
+            "node_schema",
+            {"node_type": node_type, "tree_type": tree_type},
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_export(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        raw_output = str(payload.get("output_path") or "").strip()
+        if not raw_output:
+            return ActionResult(False, "output_path is required")
+        output = project.path(raw_output, must_exist=False)
+        export_format = str(
+            payload.get("format") or output.suffix.lstrip(".")
+        ).strip().lower()
+        expected = {"glb": ".glb", "fbx": ".fbx"}.get(export_format)
+        if expected is None:
+            return ActionResult(False, "format must be glb or fbx")
+        if output.suffix.lower() != expected:
+            return ActionResult(False, f"output_path must end with {expected}")
+
+        object_names = payload.get("object_names")
+        if object_names is not None and (
+            not isinstance(object_names, list)
+            or len(object_names) > 500
+            or not all(isinstance(name, str) and name.strip() for name in object_names)
+        ):
+            return ActionResult(
+                False,
+                "object_names must be a list of at most 500 object names",
+            )
+
+        request = {
+            "output_path": str(output),
+            "format": export_format,
+            "selected_only": bool(payload.get("selected_only", False)),
+            "animations": bool(payload.get("animations", True)),
+            "apply_modifiers": bool(payload.get("apply_modifiers", True)),
+        }
+        if object_names is not None:
+            request["object_names"] = [name.strip() for name in object_names]
+
+        return self._blender_live(payload).request(
+            "export_scene",
+            request,
+            timeout_seconds=float(payload.get("timeout_seconds", 180)),
         )
 
 
