@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -162,10 +163,33 @@ def main() -> int:
                 runtime["last_job_action"] = job.action
                 control.append_event(job.id, "info", f"starting {job.action}")
 
+                keepalive_stop = threading.Event()
+
+                def _keep_job_alive() -> None:
+                    while not keepalive_stop.wait(20.0):
+                        try:
+                            control.renew(job)
+                        except Exception as error:
+                            print(
+                                f"job keepalive error for {job.id}: {error}",
+                                file=sys.stderr,
+                            )
+
+                keepalive_thread = threading.Thread(
+                    target=_keep_job_alive,
+                    name=f"ordax-job-{job.id[:8]}-keepalive",
+                    daemon=True,
+                )
+                keepalive_thread.start()
+
                 try:
-                    result = registry.execute(job.action, job.payload)
-                except Exception as error:
-                    result = ActionResult(False, f"{type(error).__name__}: {error}")
+                    try:
+                        result = registry.execute(job.action, job.payload)
+                    except Exception as error:
+                        result = ActionResult(False, f"{type(error).__name__}: {error}")
+                finally:
+                    keepalive_stop.set()
+                    keepalive_thread.join(timeout=2.0)
 
                 if result.ok:
                     try:
