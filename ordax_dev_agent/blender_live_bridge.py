@@ -171,15 +171,22 @@ class BlenderLiveBridge:
         )
 
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        process = subprocess.Popen(
-            command,
-            cwd=str(self.project.root),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            shell=False,
-            creationflags=creationflags,
-        )
+        startup_log = self.root / "blender-startup.log"
+        startup_log.parent.mkdir(parents=True, exist_ok=True)
+        with startup_log.open("a", encoding="utf-8", errors="replace") as log_handle:
+            log_handle.write(
+                f"\n--- OrdaX Blender start {time.time():.3f} ---\n"
+            )
+            log_handle.flush()
+            process = subprocess.Popen(
+                command,
+                cwd=str(self.project.root),
+                stdin=subprocess.DEVNULL,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                shell=False,
+                creationflags=creationflags,
+            )
 
         deadline = time.monotonic() + max(3.0, wait_seconds)
         while time.monotonic() < deadline:
@@ -187,20 +194,29 @@ class BlenderLiveBridge:
                 data = self.status()
                 if data.get("protocol_compatible") and data.get("companion_current"):
                     data["pid"] = process.pid
+                    data["log_file"] = str(startup_log)
                     data["transport"] = "blender-visible-companion"
                     return ActionResult(True, "Visible Blender live session started", data)
             if process.poll() is not None:
                 return ActionResult(
                     False,
                     f"Blender exited before live companion became ready: {process.returncode}",
-                    {"pid": process.pid, "returncode": process.returncode},
+                    {
+                        "pid": process.pid,
+                        "returncode": process.returncode,
+                        "log_file": str(startup_log),
+                    },
                 )
             time.sleep(0.35)
 
         return ActionResult(
             False,
             "Blender opened but live companion did not become ready in time",
-            {"pid": process.pid, **self.status()},
+            {
+                "pid": process.pid,
+                "log_file": str(startup_log),
+                **self.status(),
+            },
         )
 
     def request(
