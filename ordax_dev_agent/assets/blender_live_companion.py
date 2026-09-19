@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import json
 import re
 import runpy
@@ -48,7 +49,7 @@ RESULTS = CONTROL_ROOT / "results"
 INFLIGHT = CONTROL_ROOT / "inflight"
 PRESENCE = CONTROL_ROOT / "presence.json"
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 CAPABILITIES = [
     "ping",
     "inspect",
@@ -58,6 +59,9 @@ CAPABILITIES = [
     "contact_audit",
     "object_transform",
     "object_metadata",
+    "api_schema",
+    "node_schema",
+    "export_scene",
     "checkpoint_create",
     "checkpoint_restore",
     "checkpoint_list",
@@ -951,6 +955,33 @@ def _inspect(command: dict) -> None:
     )
 
 
+
+def _purge_script_modules() -> list[str]:
+    """Drop cached project-script modules before a live generation pass.
+
+    Blender Live is intentionally persistent. Python's normal import cache would
+    otherwise keep modules loaded before a Git sync, making a newly-synced
+    generation script execute stale dependencies until Blender restarts.
+    """
+    importlib.invalidate_caches()
+    removed: list[str] = []
+    scripts_root = SCRIPTS_ROOT.resolve()
+    for name, module in list(sys.modules.items()):
+        if not name or module is None:
+            continue
+        raw_file = getattr(module, "__file__", None)
+        if not raw_file:
+            continue
+        try:
+            module_path = Path(raw_file).expanduser().resolve()
+            module_path.relative_to(scripts_root)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        sys.modules.pop(name, None)
+        removed.append(name)
+    importlib.invalidate_caches()
+    return sorted(set(removed))
+
 def _run_script(command: dict) -> None:
     command_id = command["id"]
     raw = str(command.get("script_path") or "")
@@ -965,12 +996,14 @@ def _run_script(command: dict) -> None:
 
     before = _scene_snapshot()
     try:
+        reloaded_modules = _purge_script_modules()
         runpy.run_path(str(script), run_name="__main__")
         _response(
             command_id,
             True,
             "Live Blender script executed",
             script_path=str(script),
+            reloaded_modules=reloaded_modules,
             before=before,
         )
     except Exception as error:
@@ -982,6 +1015,258 @@ def _run_script(command: dict) -> None:
             before=before,
         )
 
+
+
+def _serialize_rna_value(value):
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    try:
+        return [float(item) for item in value]
+    except Exception:
+        return str(value)
+
+
+def _rna_property_schema(prop) -> dict:
+    data = {
+        "identifier": str(getattr(prop, "identifier", "")),
+        "name": str(getattr(prop, "name", "")),
+        "description": str(getattr(prop, "description", "")),
+        "type": str(getattr(prop, "type", "")),
+        "subtype": str(getattr(prop, "subtype", "")),
+        "is_readonly": bool(getattr(prop, "is_readonly", False)),
+        "is_array": bool(getattr(prop, "is_array", False)),
+        "array_length": int(getattr(prop, "array_length", 0) or 0),
+    }
+    if hasattr(prop, "default"):
+        try:
+            data["default"] = _serialize_rna_value(prop.default)
+        except Exception:
+            pass
+    if str(getattr(prop, "type", "")) == "ENUM":
+        try:
+            data["enum_items"] = [
+                {
+                    "identifier": item.identifier,
+                    "name": item.name,
+                    "description": item.description,
+                    "value": int(item.value),
+                }
+                for item in prop.enum_items
+            ][:200]
+        except Exception:
+            pass
+    for key in ("hard_min", "hard_max", "soft_min", "soft_max"):
+        if hasattr(prop, key):
+            try:
+                data[key] = float(getattr(prop, key))
+            except Exception:
+                pass
+    return data
+
+
+def _api_schema(command: dict) -> None:
+    command_id = command["id"]
+    type_name = str(command.get("type_name") or "").strip()
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", type_name):
+        _response(command_id, False, "type_name must be a bpy.types class name")
+        return
+    blender_type = getattr(bpy.types, type_name, None)
+    rna = getattr(blender_type, "bl_rna", None)
+    if blender_type is None or rna is None:
+        _response(command_id, False, f"Unknown Blender RNA type: {type_name}")
+        return
+    try:
+        limit = max(1, min(500, int(command.get("max_properties", 200))))
+    except (TypeError, ValueError):
+        _response(command_id, False, "max_properties must be an integer")
+        return
+
+    properties = [
+        _rna_property_schema(prop)
+        for prop in list(rna.properties)
+        if str(getattr(prop, "identifier", "")) != "rna_type"
+    ]
+    _response(
+        command_id,
+        True,
+        "Blender RNA schema ready",
+        type_name=type_name,
+        base=str(getattr(rna, "base", None)),
+        property_count=len(properties),
+        truncated=len(properties) > limit,
+        properties=properties[:limit],
+    )
+
+
+def _socket_schema(socket) -> dict:
+    data = {
+        "name": str(getattr(socket, "name", "")),
+        "identifier": str(getattr(socket, "identifier", "")),
+        "bl_idname": str(getattr(socket, "bl_idname", "")),
+        "enabled": bool(getattr(socket, "enabled", True)),
+        "hide": bool(getattr(socket, "hide", False)),
+        "is_linked": bool(getattr(socket, "is_linked", False)),
+    }
+    if hasattr(socket, "default_value"):
+        try:
+            data["default_value"] = _serialize_rna_value(socket.default_value)
+        except Exception:
+            pass
+    for key in ("min_value", "max_value"):
+        if hasattr(socket, key):
+            try:
+                data[key] = float(getattr(socket, key))
+            except Exception:
+                pass
+    return data
+
+
+def _node_schema(command: dict) -> None:
+    command_id = command["id"]
+    node_type = str(command.get("node_type") or "").strip()
+    tree_type = str(command.get("tree_type") or "ShaderNodeTree").strip()
+    allowed_trees = {"ShaderNodeTree", "GeometryNodeTree", "CompositorNodeTree"}
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", node_type):
+        _response(command_id, False, "node_type must be a Blender node bl_idname")
+        return
+    if tree_type not in allowed_trees:
+        _response(command_id, False, "tree_type must be ShaderNodeTree, GeometryNodeTree, or CompositorNodeTree")
+        return
+
+    group = None
+    try:
+        group = bpy.data.node_groups.new(
+            name=f"__ORDAX_SCHEMA_{command_id[:8]}",
+            type=tree_type,
+        )
+        node = group.nodes.new(node_type)
+        _response(
+            command_id,
+            True,
+            "Blender node schema ready",
+            node_type=node_type,
+            tree_type=tree_type,
+            node_name=node.name,
+            label=str(getattr(node, "bl_label", "")),
+            inputs=[_socket_schema(socket) for socket in node.inputs],
+            outputs=[_socket_schema(socket) for socket in node.outputs],
+        )
+    except Exception as error:
+        _response(command_id, False, f"{type(error).__name__}: {error}")
+    finally:
+        if group is not None:
+            try:
+                bpy.data.node_groups.remove(group)
+            except Exception:
+                pass
+
+
+def _export_scene(command: dict) -> None:
+    command_id = command["id"]
+    raw = str(command.get("output_path") or "").strip()
+    output = Path(raw).expanduser().resolve()
+    export_format = str(command.get("format") or output.suffix.lstrip(".")).lower()
+
+    expected_suffix = {"glb": ".glb", "fbx": ".fbx"}.get(export_format)
+    if expected_suffix is None:
+        _response(command_id, False, "format must be glb or fbx")
+        return
+    if output.suffix.lower() != expected_suffix:
+        _response(command_id, False, f"output_path must end with {expected_suffix}")
+        return
+    if not _inside(output, PROJECT_ROOT):
+        _response(command_id, False, "Export target must be inside registered project")
+        return
+
+    requested = command.get("object_names")
+    if requested is not None and (
+        not isinstance(requested, list)
+        or len(requested) > 500
+        or not all(isinstance(name, str) and name.strip() for name in requested)
+    ):
+        _response(command_id, False, "object_names must be a list of at most 500 object names")
+        return
+
+    previous_selected = []
+    previous_active = None
+    try:
+        previous_selected = [obj.name for obj in bpy.context.selected_objects]
+        previous_active = bpy.context.view_layer.objects.active.name if bpy.context.view_layer.objects.active else None
+    except Exception:
+        pass
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    exported_names = []
+    try:
+        use_selection = False
+        if requested is not None:
+            bpy.ops.object.select_all(action="DESELECT")
+            missing = []
+            for name in requested:
+                obj = bpy.context.scene.objects.get(name.strip())
+                if obj is None:
+                    missing.append(name.strip())
+                    continue
+                obj.select_set(True)
+                exported_names.append(obj.name)
+            if missing:
+                _response(command_id, False, "Some export objects were not found", missing=missing)
+                return
+            use_selection = True
+        elif bool(command.get("selected_only", False)):
+            use_selection = True
+            exported_names = [obj.name for obj in bpy.context.selected_objects]
+
+        animations = bool(command.get("animations", True))
+        if export_format == "glb":
+            bpy.ops.export_scene.gltf(
+                filepath=str(output),
+                check_existing=False,
+                export_format="GLB",
+                use_selection=use_selection,
+                export_extras=True,
+                export_apply=bool(command.get("apply_modifiers", False)),
+                export_animations=animations,
+            )
+        else:
+            bpy.ops.export_scene.fbx(
+                filepath=str(output),
+                check_existing=False,
+                use_selection=use_selection,
+                use_custom_props=True,
+                use_mesh_modifiers=bool(command.get("apply_modifiers", True)),
+                bake_anim=animations,
+                add_leaf_bones=False,
+            )
+
+        ok = output.is_file() and output.stat().st_size > 0
+        _response(
+            command_id,
+            ok,
+            "Blender scene exported" if ok else "Blender export did not create a file",
+            artifact=str(output),
+            format=export_format,
+            size_bytes=output.stat().st_size if ok else 0,
+            sha256=hashlib.sha256(output.read_bytes()).hexdigest() if ok else None,
+            exported_objects=exported_names,
+            selection_only=use_selection,
+        )
+    except Exception as error:
+        _response(command_id, False, f"{type(error).__name__}: {error}")
+    finally:
+        try:
+            bpy.ops.object.select_all(action="DESELECT")
+            for name in previous_selected:
+                obj = bpy.context.scene.objects.get(name)
+                if obj is not None:
+                    obj.select_set(True)
+            bpy.context.view_layer.objects.active = (
+                bpy.context.scene.objects.get(previous_active)
+                if previous_active
+                else None
+            )
+        except Exception:
+            pass
 
 def _capture_viewport(command: dict) -> None:
     command_id = command["id"]
@@ -1105,6 +1390,12 @@ def _process(path: Path) -> None:
             _object_transform(command)
         elif operation == "object_metadata":
             _object_metadata(command)
+        elif operation == "api_schema":
+            _api_schema(command)
+        elif operation == "node_schema":
+            _node_schema(command)
+        elif operation == "export_scene":
+            _export_scene(command)
         elif operation == "checkpoint_create":
             _checkpoint_create(command)
         elif operation == "checkpoint_restore":
