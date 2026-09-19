@@ -174,3 +174,18 @@ Blender has already accepted a command, the timeout includes `command_id`. Call
 `blender.live_result` with that ID before deciding whether to retry. The companion keeps
 the 200 most recent small JSON results per project; scene files and assets are not copied
 or uploaded by this mechanism.
+
+
+## Long-running Blender Live operations
+
+Blender physics, render, bake and other heavy operations can block Blender's main UI thread. The Live bridge must not interpret that expected silence as a crashed session.
+
+The companion now writes a per-command file under `blender-live/<project>/inflight/` immediately before executing a command and removes it only after the durable result/response has been written. While that marker exists:
+
+- stale presence heartbeat means **busy**, not dead;
+- the caller still obeys the requested total timeout;
+- a timed-out command must be queried with `blender.live_result` before any retry;
+- a missing durable result reports whether the command is still `in_progress`;
+- restarting a fresh companion clears abandoned inflight markers.
+
+`blender.live_inspect` also returns filtered `ordax_*` custom properties for scene objects and the scene itself. Generated asset pipelines should use these fields for stable component/role identification and validation reports instead of relying only on display names.
