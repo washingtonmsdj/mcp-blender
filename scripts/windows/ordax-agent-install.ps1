@@ -12,7 +12,8 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $python = Join-Path $repoRoot ".venv\Scripts\python.exe"
 $startup = [Environment]::GetFolderPath("Startup")
-$linkPath = Join-Path $startup "OrdaX Dev Agent.lnk"
+$legacyLinkPath = Join-Path $startup "OrdaX Dev Agent.lnk"
+$taskName = "OrdaX Dev Agent"
 $launcher = Join-Path $repoRoot "scripts\windows\ordax-agent-start.cmd"
 $stateDir = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent"
 $settingsPath = Join-Path $stateDir "agent-settings.json"
@@ -61,16 +62,40 @@ if ($PairingCode) {
     Set-Content -Path $pairingPath -Value $PairingCode -Encoding ASCII
 }
 
-$shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut($linkPath)
-$shortcut.TargetPath = $launcher
-$shortcut.WorkingDirectory = $repoRoot
-$shortcut.Description = "OrdaX Dev Agent - Unity, Blender, Git and diagnostics"
-$shortcut.WindowStyle = 7
-$shortcut.Save()
+if (Test-Path $legacyLinkPath) {
+    Remove-Item -Force $legacyLinkPath
+}
+
+Import-Module ScheduledTasks -ErrorAction Stop
+
+$userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+
+$actionParams = @{
+    Execute = $env:ComSpec
+    Argument = ('/d /c "' + $launcher + '"')
+    WorkingDirectory = $repoRoot
+}
+$action = New-ScheduledTaskAction @actionParams
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
+
+$settingsParams = @{
+    MultipleInstances = "IgnoreNew"
+    RestartCount = 999
+    RestartInterval = (New-TimeSpan -Minutes 1)
+    StartWhenAvailable = $true
+    AllowStartIfOnBatteries = $true
+    DontStopIfGoingOnBatteries = $true
+    ExecutionTimeLimit = [TimeSpan]::Zero
+}
+$settings = New-ScheduledTaskSettingsSet @settingsParams
+$principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType InteractiveToken -RunLevel Limited
+$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "OrdaX Dev Agent - persistent interactive Unity/Blender control plane"
+Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
 
 Write-Host "OrdaX Dev Agent installed."
-Write-Host "Startup shortcut: $linkPath"
+Write-Host "Scheduled task: $taskName"
+Write-Host "Run context: $userId (interactive desktop)"
+Write-Host "Restart policy: 999 attempts, 1 minute interval"
 Write-Host "Local status endpoint: http://127.0.0.1:8765/status"
 
 if ($SupabaseUrl -and $PublishableKey) {
@@ -84,5 +109,5 @@ if ($PairingCode) {
 }
 
 if ($StartNow) {
-    Start-Process -FilePath $launcher -WorkingDirectory $repoRoot -WindowStyle Minimized
+    Start-ScheduledTask -TaskName $taskName
 }
