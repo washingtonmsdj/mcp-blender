@@ -494,10 +494,10 @@ def _contact_audit(command: dict) -> None:
 
     def geometry_for(obj):
         if obj.name not in cache:
-            if obj.type != "MESH":
-                cache[obj.name] = (None, [])
-            else:
+            try:
                 cache[obj.name] = _evaluated_world_bvh(obj, depsgraph)
+            except (RuntimeError, TypeError, ValueError, ReferenceError):
+                cache[obj.name] = (None, [])
         return cache[obj.name]
 
     results = []
@@ -537,7 +537,7 @@ def _contact_audit(command: dict) -> None:
                     "a": left.name,
                     "b": right.name,
                     "ok": False,
-                    "error": "mesh_required",
+                    "error": "evaluated_geometry_required",
                 }
             )
             continue
