@@ -126,3 +126,26 @@ checkpoint is restored explicitly.
 This keeps iteration fast without making failed geometry part of the accepted
 asset state.
 
+## 0.7.0 additions from the second reference pass
+
+The bed benchmark exposed a persistent-Blender correctness issue: Python modules
+imported by one generation pass remained in `sys.modules` after a Git sync.
+The live companion now invalidates import caches and removes modules loaded from
+the registered Blender scripts directory immediately before each `run_script`.
+Projects no longer need ad-hoc reload code in their entrypoints.
+
+The reference MCP's newer API/node discovery ideas are now covered natively:
+
+- `blender.live_api_lookup` resolves Blender RNA types, properties, functions
+  and `bpy.ops` operators against the running Blender version, including
+  parameter/default/enum metadata and typo suggestions;
+- `blender.live_api_schema` returns broader RNA class schemas;
+- `blender.live_node_schema` reports the sockets that actually exist on a
+  Shader, Geometry or Compositor node;
+- `property_overrides` may be applied before node introspection so dynamic
+  sockets are discovered after mode/data-type changes;
+- `blender.live_export` performs controlled GLB/FBX export inside the
+  registered project and reports hash/size evidence.
+
+This keeps OrdaX model-agnostic while removing a major source of Blender API
+guesswork.
