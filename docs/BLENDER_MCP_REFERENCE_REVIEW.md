@@ -106,3 +106,23 @@ providers. They are not core dependencies.
 12. save artifact.
 
 This loop is the default baseline for future OrdaX Blender generation work.
+
+### Recoverable generation pass
+
+\`blender.live_generation_pass\` is the preferred high-level operation for one
+asset/component iteration:
+
+1. create a managed checkpoint;
+2. run one approved project script;
+3. collect a rich scene snapshot;
+4. run declared BVH contact checks;
+5. capture the visible viewport;
+6. save the accepted .blend when requested.
+
+If the generation script, snapshot, contact audit, required capture, or final
+save fails, the pass is rejected. With \`rollback_on_failure=true\` the managed
+checkpoint is restored explicitly.
+
+This keeps iteration fast without making failed geometry part of the accepted
+asset state.
+
