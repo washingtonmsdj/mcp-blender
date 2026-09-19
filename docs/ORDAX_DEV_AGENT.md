@@ -110,3 +110,23 @@ For Unity/HORDAX:
 
 This is the target closed loop that removes repeated manual screenshots and
 PowerShell commands.
+
+
+## Background Unity playtests
+
+The agent can keep HORDAX running even when Unity is not the foreground
+application.
+
+- `unity.play_start` enters Play Mode through the in-Editor companion.
+- `unity.play_stop` exits Play Mode through the companion.
+- `unity.capture` can capture the already-running Game View without stopping it.
+- development runtime sets `Application.runInBackground = true`.
+- normal background play control does not require the user to click the Unity
+  window or Game tab.
+
+For source-code iterations, the preferred chain is:
+
+`play_stop -> git.sync -> refresh -> validate -> play_start`
+
+This gives the user a persistent development preview while still allowing safe
+script recompilation between iterations.
