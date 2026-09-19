@@ -35,26 +35,26 @@ Escolha Windows / x64 e execute exatamente os comandos temporários mostrados pe
 
 O token de registro é temporário. Não grave esse token no repositório, em issues ou em arquivos .env.
 
-## Execução persistente obrigatória
+## Execução persistente
 
-`run.cmd` interativo é permitido apenas para diagnóstico inicial. Não é o estado operacional do OrdaX.
+`run.cmd` interativo é adequado para diagnóstico e para o primeiro registro do runner.
 
-Depois que o runner estiver configurado uma vez com o token temporário do GitHub, instale/hardenize o runner existente como Windows Service:
+No Windows, o modo serviço é escolhido durante a configuração oficial do runner. Se o runner já foi configurado sem serviço, a documentação do GitHub exige remover/reconfigurar o runner e escolher service mode; o OrdaX não tenta contornar esse fluxo.
+
+Depois que um serviço oficial `actions.runner.*` existir, use:
 
 ```powershell
 .\scripts\windows\ordax-runner-service.ps1
 ```
 
-O script:
+Esse script apenas endurece o serviço já suportado pelo GitHub:
 
-- reutiliza o runner já configurado; não grava token no repositório;
-- instala o serviço somente se ele ainda não existir;
-- define inicialização automática;
-- configura recuperação pelo Windows Service Control Manager;
-- reinicia após falhas em 5 s, 15 s e 30 s;
-- inicia o serviço e valida o estado.
+- inicialização automática;
+- recovery pelo Windows Service Control Manager;
+- restart após 5 s, 15 s e 30 s;
+- validação de estado.
 
-O runner passa a existir independentemente de login no Windows. Isso é o canal de recuperação fora do processo do OrdaX Agent.
+O GitHub runner é uma segunda camada de recuperação/CI. A disponibilidade normal do OrdaX Agent não depende dele.
 
 ## Testar o toolchain
 
@@ -110,12 +110,15 @@ A instalação recomendada para a máquina OrdaX é:
 .\scripts\windows\ordax-resilience-install.ps1
 ```
 
-Execute uma vez em PowerShell elevado. O bootstrap configura dois mecanismos independentes:
+O bootstrap instala/atualiza o **OrdaX Dev Agent** como Scheduled Task do usuário interativo, com restart-on-failure e launcher auto-recuperável.
 
-1. **GitHub Actions runner** como Windows Service automático;
-2. **OrdaX Dev Agent** como Scheduled Task no usuário interativo, com restart-on-failure.
+Por padrão ele não reconfigura o GitHub runner. Se um runner oficial já estiver configurado como Windows Service, use `-HardenRunnerService` para aplicar a política adicional de recovery:
 
-O runner de serviço pode recuperar o Agent quando ele cai. O Agent continua rodando na sessão interativa correta para controlar Blender e Unity visíveis.
+```powershell
+.\scripts\windows\ordax-resilience-install.ps1 -HardenRunnerService
+```
+
+O Agent continua rodando na sessão interativa correta para controlar Blender e Unity visíveis.
 
 Para diagnóstico local sem modificar nada:
 
