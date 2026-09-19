@@ -276,6 +276,59 @@ class ActionRegistry:
                 return script
         raise FileNotFoundError(candidates[0])
 
+    def _request_live_unity_editor(
+        self,
+        editor: UnityEditorBridge,
+        action: str,
+        payload: dict[str, Any] | None,
+        *,
+        timeout_seconds: float,
+    ) -> ActionResult | None:
+        """Use the already-open Unity Editor safely.
+
+        Returns None only when the project is not open, which allows the caller
+        to use the batch-mode fallback. If the project is open, batch mode is
+        deliberately never attempted because Unity forbids two Editors on the
+        same project.
+        """
+        if not editor.project_appears_open():
+            return None
+
+        deadline = time.monotonic() + max(5.0, timeout_seconds)
+        nudged = False
+
+        while time.monotonic() < deadline:
+            status = editor.status()
+            presence = status.get("presence") or {}
+            ready = (
+                editor.presence_is_fresh(max_age_seconds=12.0)
+                and not bool(presence.get("compiling"))
+            )
+            if ready:
+                remaining = max(5.0, deadline - time.monotonic())
+                result = editor.request(
+                    action,
+                    payload or {},
+                    timeout_seconds=remaining,
+                )
+                if result is not None:
+                    return result
+
+            if not nudged:
+                editor.nudge_companion(
+                    wait_seconds=min(15.0, max(1.0, deadline - time.monotonic()))
+                )
+                nudged = True
+
+            time.sleep(0.5)
+
+        return ActionResult(
+            False,
+            "Unity Editor is open but its OrdaX companion did not become ready; "
+            "batch fallback was refused to avoid a second Unity instance",
+            editor.status(),
+        )
+
     def unity_editor_status(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
         editor = UnityEditorBridge(project)
@@ -328,16 +381,30 @@ class ActionRegistry:
             return refresh
 
         wait_seconds = float(payload.get("wait_seconds", 45))
-        ready = editor.nudge_companion(wait_seconds=wait_seconds)
+        deadline = time.monotonic() + max(2.0, wait_seconds)
+        editor.nudge_companion(wait_seconds=min(wait_seconds, 15.0))
+
+        ready = False
         status = editor.status()
+        while time.monotonic() < deadline:
+            status = editor.status()
+            presence = status.get("presence") or {}
+            ready = (
+                editor.presence_is_fresh(max_age_seconds=12.0)
+                and not bool(presence.get("compiling"))
+            )
+            if ready:
+                break
+            time.sleep(0.5)
+
         status["refresh_stdout"] = refresh.data.get("stdout", "")
         status["refresh_stderr"] = refresh.data.get("stderr", "")
 
         return ActionResult(
             ready,
-            "Unity Editor refreshed and companion ready"
+            "Unity Editor refreshed, scripts settled, and companion ready"
             if ready
-            else "Unity Editor refresh sent, but companion did not become ready",
+            else "Unity Editor refresh sent, but scripts did not settle in time",
             status,
         )
 
@@ -401,10 +468,10 @@ class ActionRegistry:
         timeout = int(payload.get("timeout_seconds", 1800))
 
         editor = UnityEditorBridge(project)
-        if not editor.presence_is_fresh() and editor.project_appears_open():
-            editor.nudge_companion(wait_seconds=min(timeout, 45))
-        editor_result = editor.request(
+        editor_result = self._request_live_unity_editor(
+            editor,
             "validate",
+            {},
             timeout_seconds=min(timeout, 600),
         )
         if editor_result is not None:
@@ -435,10 +502,10 @@ class ActionRegistry:
             return ActionResult(False, f"execute method not allowed: {method}")
 
         editor = UnityEditorBridge(project)
-        if not editor.presence_is_fresh() and editor.project_appears_open():
-            editor.nudge_companion(wait_seconds=min(timeout, 45))
-        editor_result = editor.request(
+        editor_result = self._request_live_unity_editor(
+            editor,
             "validate",
+            {},
             timeout_seconds=min(timeout, 600),
         )
         if editor_result is not None:
@@ -467,11 +534,8 @@ class ActionRegistry:
         output.parent.mkdir(parents=True, exist_ok=True)
 
         editor = UnityEditorBridge(project)
-        if not editor.presence_is_fresh() and editor.project_appears_open():
-            editor.nudge_companion(
-                wait_seconds=min(float(payload.get("timeout_seconds", 900)), 45.0)
-            )
-        editor_result = editor.request(
+        editor_result = self._request_live_unity_editor(
+            editor,
             "capture",
             {
                 "outputPath": str(output),
