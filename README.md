@@ -160,7 +160,7 @@ O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório iso
 
 Os workflows são manuais por segurança.
 
-## Blender Live 1.2.0
+## Blender Live 1.2.1
 
 The visible Blender companion now exposes a richer typed perception loop:
 
@@ -191,6 +191,8 @@ sessions may restart automatically; unsaved Blender work is preserved.
 
 See \`docs/BLENDER_MCP_REFERENCE_REVIEW.md\` for the design review that informed
 this layer and the capabilities intentionally not copied.
+
+`python scripts/verify_visual_agent.py` now runs both the existing isolated render smoke and the real companion deterministic silhouette-multiview path. On the Windows self-hosted recovery runner this candidate smoke runs before the managed agent is touched.
 
 
 ## Segurança
