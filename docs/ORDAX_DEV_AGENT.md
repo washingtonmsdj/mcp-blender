@@ -130,3 +130,34 @@ For source-code iterations, the preferred chain is:
 
 This gives the user a persistent development preview while still allowing safe
 script recompilation between iterations.
+
+
+## Visible Blender live workspace
+
+The agent can keep a normal Blender window open on the user's desktop while
+automation changes the scene. This is intentionally different from the existing
+background render/inspection path.
+
+Actions:
+
+- `blender.live_start`: opens one managed interactive Blender session for the project.
+- `blender.live_status`: reads heartbeat and scene telemetry without changing the scene.
+- `blender.live_run_script`: executes only a Python file inside the project's approved
+  Blender automation directory, in the already-open Blender process.
+- `blender.live_capture`: captures the currently visible 3D viewport and publishes it
+  through the normal artifact pipeline.
+- `blender.live_save`: saves only to a `.blend` path inside the registered project.
+- `blender.live_stop`: closes only the managed visible Blender session.
+
+The Blender companion uses a project-scoped file inbox/response protocol under
+the OrdaX Dev Agent state directory. It does not expose a generic remote Python
+console or arbitrary shell execution. The user can watch mesh, material, camera
+and scene changes appear in the Blender viewport as the approved scripts run.
+
+This gives the development loop two visible modes:
+
+`Unity Editor open -> live gameplay changes`
+
+`Blender open -> live asset / scene changes`
+
+Background CLI observation remains available when a visible window is not needed.
