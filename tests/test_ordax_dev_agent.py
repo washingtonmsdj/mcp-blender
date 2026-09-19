@@ -1,6 +1,8 @@
 import json
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -94,6 +96,38 @@ class AgentActionRegistryTests(unittest.TestCase):
 
             self.assertFalse(result.ok)
             self.assertIn("cannot provide its own completion claim", result.summary)
+
+    def test_quality_gate_accepts_uv_quality_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={"operation": operation, "checks": payload["checks"]},
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.execute(
+                    "blender.live_quality_gate",
+                    {
+                        "checks": [
+                            {
+                                "type": "uv_quality",
+                                "object_name": "UVProbe",
+                                "max_zero_area_faces": 0,
+                                "max_overlap_pairs": 0,
+                            }
+                        ]
+                    },
+                )
+
+            self.assertTrue(result.ok)
+            self.assertEqual("quality_gate", result.data["operation"])
+            self.assertEqual("uv_quality", result.data["checks"][0]["type"])
 
     def test_quality_gate_rejects_unsupported_check_type(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
