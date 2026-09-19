@@ -135,6 +135,7 @@ class ActionRegistry(ObservationActions):
             "blender.live_checkpoint_list": self.blender_live_checkpoint_list,
             "blender.live_checkpoint_restore": self.blender_live_checkpoint_restore,
             "blender.live_trajectory": self.blender_live_trajectory,
+            "blender.live_generation_pass": self.blender_live_generation_pass,
             "blender.live_result": self.blender_live_result,
             "blender.live_run_script": self.blender_live_run_script,
             "blender.live_capture": self.blender_live_capture,
@@ -1459,6 +1460,197 @@ class ActionRegistry(ObservationActions):
     def blender_live_trajectory(self, payload: dict[str, Any]) -> ActionResult:
         return self._blender_live(payload).trajectory(
             limit=int(payload.get("limit", 50)),
+        )
+
+    def blender_live_generation_pass(self, payload: dict[str, Any]) -> ActionResult:
+        """Run one recoverable Blender generation pass in the visible session."""
+        project = self._project(payload)
+        raw_script = payload.get("script_path")
+        if not raw_script:
+            return ActionResult(False, "script_path is required")
+
+        script = project.path(str(raw_script))
+        allowed_root = project.path(
+            project.blender.get("scripts_dir", "automation/blender"),
+            must_exist=False,
+        ).resolve()
+        try:
+            script.relative_to(allowed_root)
+        except ValueError:
+            return ActionResult(
+                False,
+                f"Blender live script must be inside {allowed_root}",
+            )
+        if script.suffix.lower() != ".py":
+            return ActionResult(False, "Blender live script must be a .py file")
+
+        pairs = payload.get("contact_pairs", [])
+        if pairs is None:
+            pairs = []
+        if not isinstance(pairs, list) or len(pairs) > 200:
+            return ActionResult(False, "contact_pairs must be a list with at most 200 pairs")
+        normalized_pairs = []
+        for item in pairs:
+            if (
+                not isinstance(item, list)
+                or len(item) != 2
+                or not all(isinstance(name, str) and name.strip() for name in item)
+            ):
+                return ActionResult(
+                    False,
+                    "each contact pair must contain exactly two non-empty object names",
+                )
+            normalized_pairs.append([item[0].strip(), item[1].strip()])
+
+        save_target = None
+        raw_save_target = payload.get("save_target_path")
+        if raw_save_target:
+            save_target = project.path(str(raw_save_target), must_exist=False)
+            if save_target.suffix.lower() != ".blend":
+                return ActionResult(False, "save_target_path must be a .blend file")
+
+        live = BlenderLiveBridge(self.config, project)
+        phases: dict[str, Any] = {}
+        rollback_on_failure = bool(payload.get("rollback_on_failure", True))
+        timeout = float(payload.get("timeout_seconds", 300))
+
+        checkpoint = live.request(
+            "checkpoint_create",
+            {"label": str(payload.get("label") or script.stem)},
+            timeout_seconds=min(timeout, 120),
+        )
+        phases["checkpoint"] = {
+            "ok": checkpoint.ok,
+            "summary": checkpoint.summary,
+            "data": checkpoint.data,
+        }
+        if not checkpoint.ok:
+            return ActionResult(
+                False,
+                "Blender generation pass could not create a checkpoint",
+                {"phases": phases},
+            )
+
+        checkpoint_data = checkpoint.data.get("checkpoint") or {}
+        checkpoint_id = str(checkpoint_data.get("id") or "").strip()
+
+        def fail(summary: str, failed: ActionResult | None = None) -> ActionResult:
+            if failed is not None:
+                phases["failure"] = {
+                    "ok": failed.ok,
+                    "summary": failed.summary,
+                    "data": failed.data,
+                }
+            if rollback_on_failure and checkpoint_id:
+                rollback = live.request(
+                    "checkpoint_restore",
+                    {
+                        "checkpoint_id": checkpoint_id,
+                        "discard_unsaved": True,
+                    },
+                    timeout_seconds=30,
+                )
+                phases["rollback"] = {
+                    "ok": rollback.ok,
+                    "summary": rollback.summary,
+                    "data": rollback.data,
+                }
+            return ActionResult(
+                False,
+                summary,
+                {
+                    "checkpoint_id": checkpoint_id,
+                    "rollback_requested": rollback_on_failure,
+                    "phases": phases,
+                },
+            )
+
+        generated = live.request(
+            "run_script",
+            {"script_path": str(script)},
+            timeout_seconds=timeout,
+        )
+        phases["generation"] = {
+            "ok": generated.ok,
+            "summary": generated.summary,
+            "data": generated.data,
+        }
+        if not generated.ok:
+            return fail("Blender generation script failed; pass rejected")
+
+        snapshot = live.request(
+            "scene_snapshot",
+            {"max_objects": int(payload.get("max_objects", 300))},
+            timeout_seconds=min(timeout, 60),
+        )
+        phases["snapshot"] = {
+            "ok": snapshot.ok,
+            "summary": snapshot.summary,
+            "data": snapshot.data,
+        }
+        if not snapshot.ok:
+            return fail("Blender rich snapshot failed; pass rejected")
+
+        if normalized_pairs:
+            audit = live.request(
+                "contact_audit",
+                {"pairs": normalized_pairs},
+                timeout_seconds=min(timeout, 120),
+            )
+            phases["contact_audit"] = {
+                "ok": audit.ok,
+                "summary": audit.summary,
+                "data": audit.data,
+            }
+            if not audit.ok:
+                return fail(
+                    "Blender contact audit failed; pass rejected and rollback requested",
+                )
+
+        artifact = None
+        if bool(payload.get("capture", True)):
+            output = self._capture_output(payload, "blender-generation-pass.png")
+            capture = live.request(
+                "capture_viewport",
+                {"output_path": str(output)},
+                timeout_seconds=min(timeout, 120),
+            )
+            phases["capture"] = {
+                "ok": capture.ok,
+                "summary": capture.summary,
+                "data": capture.data,
+            }
+            if not capture.ok or not output.is_file() or output.stat().st_size == 0:
+                if bool(payload.get("capture_required", True)):
+                    return fail("Blender viewport capture failed; pass rejected")
+            else:
+                artifact = str(output)
+                self._record_capture(payload, output)
+
+        if save_target is not None:
+            saved = live.request(
+                "save",
+                {"target_path": str(save_target)},
+                timeout_seconds=min(timeout, 120),
+            )
+            phases["save"] = {
+                "ok": saved.ok,
+                "summary": saved.summary,
+                "data": saved.data,
+            }
+            if not saved.ok:
+                return fail("Blender final save failed; pass rejected")
+
+        return ActionResult(
+            True,
+            "Blender generation pass accepted",
+            {
+                "checkpoint_id": checkpoint_id,
+                "script_path": str(script),
+                "artifact": artifact,
+                "save_target_path": str(save_target) if save_target else None,
+                "phases": phases,
+            },
         )
 
     def blender_live_result(self, payload: dict[str, Any]) -> ActionResult:
