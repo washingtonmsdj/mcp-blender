@@ -14,6 +14,7 @@ class AgentConfig:
     publishable_key: str | None
     poll_seconds: float
     state_dir: Path
+    agent_repo_path: Path
     hordax_path: Path
     bridge_path: Path
 
@@ -62,6 +63,12 @@ class AgentConfig:
                 ),
             ),
             state_dir=state_dir,
+            agent_repo_path=Path(
+                os.environ.get(
+                    "ORDAX_AGENT_REPO_PATH",
+                    settings.get("agent_repo_path", state_dir / "src"),
+                )
+            ),
             hordax_path=Path(
                 os.environ.get(
                     "ORDAX_HORDAX_PATH",
@@ -98,6 +105,7 @@ class AgentConfig:
             "agent_name": self.agent_name,
             "poll_seconds": self.poll_seconds,
             "state_dir": str(self.state_dir),
+            "agent_repo_path": str(self.agent_repo_path),
             "hordax_path": str(self.hordax_path),
             "bridge_path": str(self.bridge_path),
             "supabase_configured": bool(self.supabase_url and self.publishable_key),
