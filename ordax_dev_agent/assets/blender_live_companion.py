@@ -42,6 +42,20 @@ RESULTS = CONTROL_ROOT / "results"
 INFLIGHT = CONTROL_ROOT / "inflight"
 PRESENCE = CONTROL_ROOT / "presence.json"
 
+PROTOCOL_VERSION = 2
+CAPABILITIES = [
+    "ping",
+    "inspect",
+    "scene_snapshot",
+    "object_inspect",
+    "contact_audit",
+    "run_script",
+    "capture_viewport",
+    "save",
+    "quit",
+]
+_LAST_PRESENCE_AT = 0.0
+
 for path in (CONTROL_ROOT, INBOX, RESPONSES, RESULTS, INFLIGHT, ARTIFACTS_ROOT):
     path.mkdir(parents=True, exist_ok=True)
 
@@ -80,15 +94,22 @@ def _scene_snapshot() -> dict:
     }
 
 
-def _write_presence() -> None:
+def _write_presence(force: bool = False) -> None:
+    global _LAST_PRESENCE_AT
+    now = time.time()
+    if not force and now - _LAST_PRESENCE_AT < 1.0:
+        return
     _write_json_atomic(
         PRESENCE,
         {
             "ok": True,
             "summary": "OrdaX visible Blender companion ready",
+            "protocol_version": PROTOCOL_VERSION,
+            "capabilities": CAPABILITIES,
             **_scene_snapshot(),
         },
     )
+    _LAST_PRESENCE_AT = now
 
 
 def _prune_results(limit: int = 200) -> None:
@@ -624,12 +645,12 @@ def _tick():
         commands = sorted(INBOX.glob("*.json"))
         if commands:
             _process(commands[0])
-            _write_presence()
+            _write_presence(force=True)
     except Exception:
         # Keep the visible Blender session alive; the next presence write will
         # show whether the companion recovered.
         pass
-    return 0.5
+    return 0.1
 
 
 for stale in INFLIGHT.glob("*.json"):
@@ -638,6 +659,6 @@ for stale in INFLIGHT.glob("*.json"):
     except OSError:
         pass
 
-_write_presence()
+_write_presence(force=True)
 if not bpy.app.timers.is_registered(_tick):
-    bpy.app.timers.register(_tick, first_interval=0.25, persistent=True)
+    bpy.app.timers.register(_tick, first_interval=0.10, persistent=True)
