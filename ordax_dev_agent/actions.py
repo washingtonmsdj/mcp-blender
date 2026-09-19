@@ -75,6 +75,8 @@ class ActionRegistry(ObservationActions):
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
             "unity.skill_catalog": self.unity_skill_catalog,
+            "unity.scene_summary": self.unity_scene_summary,
+            "unity.physics_audit": self.unity_physics_audit,
             "agent.status": self.agent_status,
             "agent.update": self.agent_update,
             "agent.self_test": self.agent_self_test,
@@ -462,6 +464,43 @@ class ActionRegistry(ObservationActions):
             True,
             "Unity first-party capability catalog ready; no Codex runtime dependency",
             unity_skill_catalog(),
+        )
+
+    def _unity_live_inspection(
+        self,
+        payload: dict[str, Any],
+        action: str,
+        summary: str,
+    ) -> ActionResult:
+        editor = self._editor(payload)
+        result = self._request_live_unity_editor(
+            editor,
+            action,
+            {},
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+        if result is None:
+            return ActionResult(
+                False,
+                "Unity Editor must be open for live scene inspection",
+                editor.status(),
+            )
+        if result.ok:
+            result.summary = summary
+        return result
+
+    def unity_scene_summary(self, payload: dict[str, Any]) -> ActionResult:
+        return self._unity_live_inspection(
+            payload,
+            "scene_summary",
+            "Unity live scene summary ready",
+        )
+
+    def unity_physics_audit(self, payload: dict[str, Any]) -> ActionResult:
+        return self._unity_live_inspection(
+            payload,
+            "physics_audit",
+            "Unity physics audit passed",
         )
 
     def git_status(self, payload: dict[str, Any]) -> ActionResult:
