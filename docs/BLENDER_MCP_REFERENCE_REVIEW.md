@@ -126,7 +126,7 @@ checkpoint is restored explicitly.
 This keeps iteration fast without making failed geometry part of the accepted
 asset state.
 
-## 0.7.0 additions from the second reference pass
+## 0.7.3 additions from the second reference pass
 
 The bed benchmark exposed a persistent-Blender correctness issue: Python modules
 imported by one generation pass remained in `sys.modules` after a Git sync.
@@ -149,3 +149,12 @@ The reference MCP's newer API/node discovery ideas are now covered natively:
 
 This keeps OrdaX model-agnostic while removing a major source of Blender API
 guesswork.
+
+
+### Benchmark policy
+
+The bed model is a tooling benchmark, not a production asset target. It is used
+to stress persistent-session correctness, dependency hot reload, cloth
+simulation, BVH validation, viewport evidence, rollback, and export. Once those
+behaviors are verified, effort moves back to general Blender/Unity tooling
+instead of polishing the benchmark indefinitely.
