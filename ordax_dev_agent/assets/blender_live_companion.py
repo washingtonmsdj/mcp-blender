@@ -234,7 +234,12 @@ def _process(path: Path) -> None:
         _save(command)
     elif operation == "quit":
         _response(command_id, True, "Visible Blender session closing")
-        bpy.app.timers.register(lambda: bpy.ops.wm.quit_blender() or None, first_interval=0.15)
+
+        def _quit_later():
+            bpy.ops.wm.quit_blender()
+            return None
+
+        bpy.app.timers.register(_quit_later, first_interval=0.15)
     else:
         _response(command_id, False, f"Unsupported Blender live operation: {operation}")
 
