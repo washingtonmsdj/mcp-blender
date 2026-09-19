@@ -44,6 +44,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_object_transform", result.data["actions"])
             self.assertIn("blender.live_object_metadata", result.data["actions"])
             self.assertIn("blender.live_api_schema", result.data["actions"])
+            self.assertIn("blender.live_api_lookup", result.data["actions"])
             self.assertIn("blender.live_node_schema", result.data["actions"])
             self.assertIn("blender.live_export", result.data["actions"])
             self.assertIn("unity.cli_status", result.data["actions"])
