@@ -69,7 +69,9 @@ class AgentActionRegistryTests(unittest.TestCase):
 
     def test_quality_gate_rejects_model_supplied_completion_claim(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
-            registry = ActionRegistry(self.make_config(Path(raw)))
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
             result = registry.execute(
                 "blender.live_quality_gate",
                 {
@@ -89,7 +91,9 @@ class AgentActionRegistryTests(unittest.TestCase):
 
     def test_quality_gate_rejects_unsupported_check_type(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
-            registry = ActionRegistry(self.make_config(Path(raw)))
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
             result = registry.execute(
                 "blender.live_quality_gate",
                 {"checks": [{"type": "looks_good"}]},
