@@ -52,7 +52,9 @@ if ($SupabaseUrl -and $PublishableKey) {
         bridge_path = $BridgePath
     }
 
-    $settings | ConvertTo-Json | Set-Content -Path $settingsPath -Encoding UTF8
+    $settingsJson = $settings | ConvertTo-Json
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($settingsPath, $settingsJson, $utf8NoBom)
 }
 
 if ($PairingCode) {
