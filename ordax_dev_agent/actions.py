@@ -179,6 +179,7 @@ class ActionRegistry(ObservationActions):
             "blender.live_scene_snapshot": self.blender_live_scene_snapshot,
             "blender.live_scene_reset": self.blender_live_scene_reset,
             "blender.live_object_inspect": self.blender_live_object_inspect,
+            "blender.live_object_fingerprints": self.blender_live_object_fingerprints,
             "blender.live_contact_audit": self.blender_live_contact_audit,
             "blender.live_quality_gate": self.blender_live_quality_gate,
             "blender.live_object_transform": self.blender_live_object_transform,
@@ -1830,6 +1831,46 @@ class ActionRegistry(ObservationActions):
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
 
+
+    def blender_live_object_fingerprints(self, payload: dict[str, Any]) -> ActionResult:
+        raw = payload.get("selectors")
+        if not isinstance(raw, list) or not raw:
+            return ActionResult(False, "selectors must be a non-empty list")
+        if len(raw) > 100:
+            return ActionResult(False, "fingerprint request is limited to 100 objects")
+
+        selectors: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for index, item in enumerate(raw):
+            if isinstance(item, str):
+                item = {"object_name": item}
+            if not isinstance(item, dict):
+                return ActionResult(False, f"fingerprint selector {index} must be a string or object")
+            object_name = str(item.get("object_name") or "").strip()
+            object_id = str(item.get("ordax_object_id") or "").strip()
+            if bool(object_name) == bool(object_id):
+                return ActionResult(
+                    False,
+                    f"fingerprint selector {index} must provide exactly one of object_name or ordax_object_id",
+                )
+            key = f"name:{object_name}" if object_name else f"id:{object_id}"
+            if key in seen:
+                return ActionResult(False, f"duplicate fingerprint selector: {key}")
+            seen.add(key)
+            selector = (
+                {"object_name": object_name}
+                if object_name
+                else {"ordax_object_id": object_id}
+            )
+            selector["evaluated"] = bool(item.get("evaluated", False))
+            selectors.append(selector)
+
+        return self._blender_live(payload).request(
+            "object_fingerprints",
+            {"selectors": selectors},
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+
     def blender_live_contact_audit(self, payload: dict[str, Any]) -> ActionResult:
         pairs = payload.get("pairs")
         if not isinstance(pairs, list) or not pairs:
@@ -2147,6 +2188,51 @@ class ActionRegistry(ObservationActions):
                 )
             quality_checks.append({**check, "type": kind})
 
+
+
+        raw_protected = payload.get("protected_objects", [])
+        if raw_protected is None:
+            raw_protected = []
+        if not isinstance(raw_protected, list) or len(raw_protected) > 100:
+            return ActionResult(
+                False,
+                "protected_objects must be a list with at most 100 selectors",
+            )
+        protected_objects: list[dict[str, Any]] = []
+        protected_keys: set[str] = set()
+        for index, item in enumerate(raw_protected):
+            if isinstance(item, str):
+                item = {"object_name": item}
+            if not isinstance(item, dict):
+                return ActionResult(
+                    False,
+                    f"protected object {index} must be a string or object",
+                )
+            object_name = str(item.get("object_name") or "").strip()
+            object_id = str(item.get("ordax_object_id") or "").strip()
+            if bool(object_name) == bool(object_id):
+                return ActionResult(
+                    False,
+                    f"protected object {index} must provide exactly one of object_name or ordax_object_id",
+                )
+            key = f"name:{object_name}" if object_name else f"id:{object_id}"
+            if key in protected_keys:
+                return ActionResult(False, f"duplicate protected object: {key}")
+            protected_keys.add(key)
+            selector = (
+                {"object_name": object_name}
+                if object_name
+                else {"ordax_object_id": object_id}
+            )
+            selector["evaluated"] = bool(item.get("evaluated", False))
+            protected_objects.append(selector)
+
+        if protected_objects and bool(payload.get("reset_scene", False)):
+            return ActionResult(
+                False,
+                "protected_objects cannot be used with reset_scene=true",
+            )
+
         save_target = None
         raw_save_target = payload.get("save_target_path")
         if raw_save_target:
@@ -2264,6 +2350,29 @@ class ActionRegistry(ObservationActions):
                 },
             )
 
+
+        protected_before: dict[str, Any] = {}
+        if protected_objects:
+            before_lock = live.request(
+                "object_fingerprints",
+                {"selectors": protected_objects},
+                timeout_seconds=min(timeout, 120),
+            )
+            phases["protected_before"] = {
+                "ok": before_lock.ok,
+                "summary": before_lock.summary,
+                "data": before_lock.data,
+            }
+            if not before_lock.ok:
+                return fail(
+                    "Blender protected-object baseline could not be captured",
+                    before_lock,
+                )
+            for entry in before_lock.data.get("fingerprints", []):
+                key = str(entry.get("selector_key") or "")
+                if key:
+                    protected_before[key] = entry
+
         generated = live.request(
             "run_script",
             {"script_path": str(script)},
@@ -2276,6 +2385,72 @@ class ActionRegistry(ObservationActions):
         }
         if not generated.ok:
             return fail("Blender generation script failed; pass rejected")
+
+
+        if protected_objects:
+            after_lock = live.request(
+                "object_fingerprints",
+                {"selectors": protected_objects},
+                timeout_seconds=min(timeout, 120),
+            )
+            phases["protected_after"] = {
+                "ok": after_lock.ok,
+                "summary": after_lock.summary,
+                "data": after_lock.data,
+            }
+            if not after_lock.ok:
+                return fail(
+                    "A protected Blender object is missing or cannot be fingerprinted",
+                    after_lock,
+                )
+
+            protected_after = {
+                str(entry.get("selector_key") or ""): entry
+                for entry in after_lock.data.get("fingerprints", [])
+                if str(entry.get("selector_key") or "")
+            }
+            changed = []
+            for key, before_entry in protected_before.items():
+                after_entry = protected_after.get(key)
+                if after_entry is None:
+                    changed.append({
+                        "selector_key": key,
+                        "reason": "missing_after_generation",
+                    })
+                    continue
+                if before_entry.get("combined_sha256") != after_entry.get("combined_sha256"):
+                    changed.append({
+                        "selector_key": key,
+                        "reason": "fingerprint_changed",
+                        "before": {
+                            "object_name": before_entry.get("object_name"),
+                            "transform_sha256": before_entry.get("transform_sha256"),
+                            "geometry_sha256": before_entry.get("geometry_sha256"),
+                            "combined_sha256": before_entry.get("combined_sha256"),
+                        },
+                        "after": {
+                            "object_name": after_entry.get("object_name"),
+                            "transform_sha256": after_entry.get("transform_sha256"),
+                            "geometry_sha256": after_entry.get("geometry_sha256"),
+                            "combined_sha256": after_entry.get("combined_sha256"),
+                        },
+                    })
+
+            phases["protected_objects"] = {
+                "ok": not changed,
+                "protected_count": len(protected_before),
+                "changed_count": len(changed),
+                "changed": changed,
+            }
+            if changed:
+                return fail(
+                    "Blender generation modified protected approved objects; pass rejected",
+                    ActionResult(
+                        False,
+                        "protected object fingerprint changed",
+                        {"changed": changed},
+                    ),
+                )
 
         snapshot = live.request(
             "scene_snapshot",
