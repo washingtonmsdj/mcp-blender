@@ -247,7 +247,7 @@ class ControlPlane:
             **(metadata or {}),
         }
 
-        self._call(
+        finalized = self._call(
             "artifact_done",
             {
                 "job_id": job.id,
@@ -264,4 +264,5 @@ class ControlPlane:
             "storage_path": storage_path,
             "sha256": digest,
             "size_bytes": size,
+            "signed_url": finalized.get("signed_url"),
         }
