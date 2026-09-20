@@ -84,10 +84,12 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.reference_review", result.data["actions"])
             self.assertIn("blender.reference_generation_pass", result.data["actions"])
             self.assertIn("blender.reference_decision", result.data["actions"])
+            self.assertIn("blender.live_create_primitive", result.data["actions"])
+            self.assertIn("blender.live_add_modifier", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
-    def test_modeling_plan_normalizes_cube_and_keeps_it_non_executable(self) -> None:
+    def test_modeling_plan_normalizes_available_cube_action(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             (root / "hordax").mkdir()
@@ -102,10 +104,11 @@ class AgentActionRegistryTests(unittest.TestCase):
             )
 
             self.assertTrue(result.ok)
-            self.assertFalse(result.data["executable"])
+            self.assertTrue(result.data["executable"])
+            self.assertEqual("available", result.data["execution"])
             self.assertEqual(
-                "disabled_pending_real_blender_smoke",
-                result.data["execution"],
+                "blender.live_create_primitive",
+                result.data["action"],
             )
             self.assertEqual(
                 {
@@ -173,7 +176,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("unsupported field(s): unexpected", result.summary)
             live.assert_not_called()
 
-    def test_modeling_schema_exposes_only_transform_as_available(self) -> None:
+    def test_modeling_schema_exposes_validated_mutations_as_available(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             (root / "hordax").mkdir()
@@ -187,18 +190,131 @@ class AgentActionRegistryTests(unittest.TestCase):
                 "blender.live_object_transform",
                 tools["object_transform"]["action"],
             )
+            self.assertEqual("available", tools["create_primitive"]["status"])
             self.assertEqual(
-                "pending_blender_smoke",
-                tools["create_primitive"]["status"],
+                "blender.live_create_primitive",
+                tools["create_primitive"]["action"],
+            )
+            self.assertEqual("available", tools["add_modifier"]["status"])
+            self.assertEqual(
+                "blender.live_add_modifier",
+                tools["add_modifier"]["action"],
             )
             self.assertEqual(
-                "pending_blender_smoke",
-                tools["add_modifier"]["status"],
-            )
-            self.assertEqual(
-                "disabled_pending_real_blender_smoke",
+                "available",
                 result.data["mutation_policy"]["create_primitive"],
             )
+            self.assertEqual(
+                "available",
+                result.data["mutation_policy"]["add_modifier"],
+            )
+
+    def test_create_primitive_normalizes_and_dispatches(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.execute(
+                    "blender.live_create_primitive",
+                    {
+                        "name": "Block",
+                        "primitive": "cube",
+                        "size": 2,
+                    },
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("create_primitive", result.data["operation"])
+        self.assertEqual(
+            {
+                "name": "Block",
+                "primitive": "cube",
+                "location": [0.0, 0.0, 0.0],
+                "size": 2.0,
+            },
+            result.data["payload"],
+        )
+
+    def test_add_modifier_normalizes_and_dispatches(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.execute(
+                    "blender.live_add_modifier",
+                    {
+                        "object_name": "Block",
+                        "name": "Edges",
+                        "type": "bevel",
+                    },
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("add_modifier", result.data["operation"])
+        self.assertEqual(
+            {
+                "object_name": "Block",
+                "name": "Edges",
+                "type": "BEVEL",
+                "width": 0.05,
+                "segments": 2,
+            },
+            result.data["payload"],
+        )
+
+    def test_promoted_modeling_mutations_remain_closed_world(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                create = registry.execute(
+                    "blender.live_create_primitive",
+                    {
+                        "name": "Block",
+                        "primitive": "cube",
+                        "code": "anything",
+                    },
+                )
+                modifier = registry.execute(
+                    "blender.live_add_modifier",
+                    {
+                        "object_name": "Block",
+                        "name": "Edges",
+                        "type": "BEVEL",
+                        "levels": 2,
+                    },
+                )
+
+        self.assertFalse(create.ok)
+        self.assertIn("unsupported field(s): code", create.summary)
+        self.assertFalse(modifier.ok)
+        self.assertIn("unsupported field(s) for BEVEL", modifier.summary)
+        live.assert_not_called()
 
     def test_object_transform_rejects_nonfinite_boolean_and_invalid_scale(self) -> None:
         invalid_payloads = [
