@@ -309,6 +309,16 @@ jobs:
             }
           }
 
+          $bootstrapInstaller = Join-Path $repo "scripts\windows\ordax-agent-bootstrap-install.ps1"
+          if (-not (Test-Path $bootstrapInstaller)) {
+            throw "External bootstrap installer is missing after managed update: $bootstrapInstaller"
+          }
+
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $bootstrapInstaller -RepoRoot $repo -TaskName $taskName -RetargetTask
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not install/retarget the external OrdaX bootstrap."
+          }
+
           $task = Get-ScheduledTask -TaskName $taskName
           if ($task.State -eq "Running") {
             Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -339,3 +349,4 @@ jobs:
           Write-Host ("OrdaX scheduled task state: " + $task.State)
           Write-Host ("Managed agent HEAD: " + (git -C $repo rev-parse HEAD).Trim())
           Write-Host ("Install contract refreshed: " + $installContractChanged)
+          Write-Host ("External bootstrap: " + (Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent\bootstrap\ordax-agent-bootstrap.ps1"))

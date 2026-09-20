@@ -163,6 +163,143 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             agent_actions,
         )
 
+    def test_external_bootstrap_is_independent_from_managed_checkout_launcher(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        bootstrap = (
+            root / "scripts" / "windows" / "ordax-agent-bootstrap.ps1"
+        ).read_text(encoding="utf-8")
+        installer = (
+            root / "scripts" / "windows" / "ordax-agent-bootstrap-install.ps1"
+        ).read_text(encoding="utf-8")
+        agent_installer = (
+            root / "scripts" / "windows" / "ordax-agent-install.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            '$stateDir = Join-Path $env:LOCALAPPDATA "OrdaX\\DevAgent"',
+            bootstrap,
+        )
+        self.assertIn(
+            '$bootstrapDir = Join-Path $stateDir "bootstrap"',
+            bootstrap,
+        )
+        self.assertIn(
+            'refs/heads/${Branch}:$remoteRef',
+            bootstrap,
+        )
+        self.assertIn(
+            'merge-base --is-ancestor $beforeHead $remoteHead',
+            bootstrap,
+        )
+        self.assertIn(
+            'Restore-ManagedCheckout',
+            bootstrap,
+        )
+        self.assertIn(
+            'function Sync-ExternalBootstrapFromRepo',
+            bootstrap,
+        )
+        self.assertIn(
+            '[void](Sync-ExternalBootstrapFromRepo)',
+            bootstrap,
+        )
+        self.assertIn(
+            '[void][ScriptBlock]::Create($bootstrapText)',
+            bootstrap,
+        )
+        self.assertIn(
+            'ast.parse(open(sys.argv[1]',
+            bootstrap,
+        )
+        self.assertNotIn(
+            '-m py_compile $policySource',
+            bootstrap,
+        )
+        self.assertIn(
+            '--compare-install-contract',
+            bootstrap,
+        )
+        self.assertIn(
+            'ordax_dev_agent.main',
+            bootstrap,
+        )
+        self.assertNotIn(
+            'if (-not $updated',
+            bootstrap,
+        )
+
+        self.assertIn(
+            '$bootstrapDir = Join-Path $stateDir "bootstrap"',
+            installer,
+        )
+        self.assertIn(
+            '$bootstrapPath = Join-Path $bootstrapDir '
+            '"ordax-agent-bootstrap.ps1"',
+            installer,
+        )
+        self.assertIn(
+            '$policyPath = Join-Path $bootstrapDir "update_policy.py"',
+            installer,
+        )
+        self.assertIn(
+            'Set-ScheduledTask -TaskName $TaskName -Action $action',
+            installer,
+        )
+
+        self.assertIn(
+            '$bootstrapInstaller = Join-Path $repoRoot '
+            '"scripts\\windows\\ordax-agent-bootstrap-install.ps1"',
+            agent_installer,
+        )
+        self.assertIn(
+            '$bootstrapPath = Join-Path $stateDir '
+            '"bootstrap\\ordax-agent-bootstrap.ps1"',
+            agent_installer,
+        )
+        self.assertIn(
+            'Execute = $powershellPath',
+            agent_installer,
+        )
+        self.assertNotIn(
+            'Execute = $env:ComSpec',
+            agent_installer,
+        )
+
+    def test_recovery_retargets_task_to_external_bootstrap(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        recovery = (
+            root / ".github" / "workflows" / "ordax-agent-recovery.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'ordax-agent-bootstrap-install.ps1',
+            recovery,
+        )
+        self.assertIn(
+            '-RetargetTask',
+            recovery,
+        )
+        retarget_index = recovery.index(
+            'ordax-agent-bootstrap-install.ps1'
+        )
+        start_index = recovery.index(
+            'Start-ScheduledTask -TaskName $taskName',
+            retarget_index,
+        )
+        self.assertLess(retarget_index, start_index)
+
+    def test_resilience_status_reports_external_bootstrap(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        status = (
+            root / "scripts" / "windows" / "ordax-resilience-status.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("external_bootstrap", status)
+        self.assertIn("script_exists", status)
+        self.assertIn("policy_exists", status)
+        self.assertIn("scheduled_task", status)
+        self.assertIn("actions = @(", status)
+
 
 if __name__ == "__main__":
     unittest.main()
