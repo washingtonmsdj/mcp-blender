@@ -9,11 +9,18 @@ description = "Local MCP bridge for Blender CLI and Unity CLI"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "mcp>=1.0.0,<2.0.0"
+  "mcp>=1.0.0,<2.0.0",
+  "supabase>=2.18.0,<3.0.0",
+  "Pillow>=10.0.0,<12.0.0"
 ]
 
 [project.scripts]
 mcp-blender-unity = "mcp_blender_unity.server:main"
+ordax-dev-agent = "ordax_dev_agent.main:main"
+ordax-project-mcp = "ordax_dev_agent.mcp_server:main"
 
 [tool.setuptools.packages.find]
-include = ["mcp_blender_unity*"]
+include = ["mcp_blender_unity*", "ordax_dev_agent*"]
+
+[tool.setuptools.package-data]
+ordax_dev_agent = ["assets/*.py", "assets/*.cs"]

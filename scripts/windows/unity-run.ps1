@@ -63,8 +63,15 @@ Write-Host "Project:          $ProjectPath"
 Write-Host "Method:           $ExecuteMethod"
 Write-Host "Log:              $LogFile"
 
+if (Test-Path $LogFile) {
+    Remove-Item $LogFile -Force -ErrorAction SilentlyContinue
+}
+
 & $unity @argsList
 $exitCode = $LASTEXITCODE
+if ($null -eq $exitCode) {
+    $exitCode = 1
+}
 
 $compilerErrors = $false
 $errorMatches = @()
@@ -76,6 +83,9 @@ if (Test-Path $LogFile) {
         "Scripts have compiler errors",
         "Compilation failed",
         "Aborting batchmode due to failure",
+        "Aborting batchmode due to fatal error",
+        "another Unity instance is running with this project open",
+        "Multiple Unity instances cannot open the same project",
         "executeMethod.*could not be found"
     )
 

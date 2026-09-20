@@ -12,7 +12,10 @@ permissions:
 
 jobs:
   python:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -23,10 +26,17 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install package
+        run: python -m pip install -e .
+
       - name: Compile Python sources
-        run: python -m compileall -q mcp_blender_unity
+        run: python -m compileall -q mcp_blender_unity ordax_dev_agent scripts/verify_visual_agent.py scripts/blender_benchmark.py
+
+      - name: Run Python unit tests
+        run: python -m unittest discover -s tests -p "test_*.py"
 
       - name: Validate package metadata
+        shell: bash
         run: |
           python - <<'PY'
           import tomllib
@@ -69,6 +79,19 @@ jobs:
           }
 
           if ($failed) { exit 1 }
+
+      - name: Validate ScheduledTask enums and object construction
+        shell: pwsh
+        run: |
+          Import-Module ScheduledTasks -ErrorAction Stop
+          $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+          $action = New-ScheduledTaskAction -Execute $env:ComSpec -Argument '/d /c "echo ordax"' -WorkingDirectory $env:RUNNER_TEMP
+          $trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
+          $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+          $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
+          $task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "OrdaX CI validation"
+          if (-not $task) { throw "ScheduledTask object construction failed." }
+          Write-Host "ScheduledTask enum/object construction OK."
 
       - name: Ensure old app files are gone
         shell: pwsh

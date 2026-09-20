@@ -1,5 +1,13 @@
 # MCP Blender + Unity CLI
 
+## OrdaX multi-projeto (0.3)
+
+O agente aceita projetos locais cadastrados, companion Unity genérico, inspeção e
+preview Blender, sequências de capturas com snapshots e imagens entregues ao modelo
+por MCP. A fila Supabase existente continua atendendo clientes remotos.
+Veja [configuração e limites](docs/MULTI_PROJECT_AGENT.md) e
+[exemplo de projetos](config/projects.example.json).
+
 Ponte local para controlar **Blender CLI** e **Unity CLI** por MCP e para executar validações pelo GitHub em um self-hosted runner.
 
 O antigo Ordax Engine foi removido da `main`. O snapshot anterior está preservado em:
@@ -151,6 +159,48 @@ Veja `docs/SELF_HOSTED_RUNNER.md`.
 O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório isolado, roda o Unity em batch mode e publica o log como artifact.
 
 Os workflows são manuais por segurança.
+
+## Blender Live 1.4.0
+
+The visible Blender companion now exposes a richer typed perception loop:
+
+- \`blender.live_scene_snapshot\` — world-space bounds, dimensions, relations,
+  materials, modifiers, constraints, mesh counts and semantic OrdaX properties.
+- \`blender.live_object_inspect\` — full inspection for one stable object name.
+- \`blender.live_object_fingerprints\` — deterministic transform/base-mesh or evaluated-mesh hashes for approved-component revision guards.
+- \`blender.live_multiview_capture\` — deterministic orthographic front/back/left/right/top/3⁄4 evidence with automatic framing, hashes and a manifest; explicit object lists are isolated during capture.
+  Supports `mode=material` and deterministic `mode=silhouette`; silhouette requires Workbench and does not silently fall back to a material render.
+- `blender.multiview_compare` — compare two OrdaX multiview manifests with normalized MAE/RMS, changed-pixel ratio, bounds deltas, optional diff images and explicit thresholds.
+  Silhouette manifests additionally expose IoU and may gate with `min_silhouette_iou`.
+- \`blender.live_contact_audit\` — evaluated mesh BVH intersection checks for
+  protected object pairs.
+- \`blender.live_quality_gate\` — deterministic dimensions, symmetry, proportion,
+  containment, mesh-quality and UV-quality checks. UV quality measures collapsed
+  faces/triangles, out-of-tile loops, scale-invariant shape distortion and
+  optional exact triangle-overlap evidence under a bounded analysis budget.
+- \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
+- \`blender.asset_manifest\` — provider file manifest/provenance lookup.
+
+The companion advertises a protocol version and capabilities, polls commands at
+low latency, and refuses silent use of an outdated companion. Clean outdated
+sessions may restart automatically; unsaved Blender work is preserved.
+
+- `blender.live_object_metadata` — stable semantic IDs and provenance.
+- `blender.live_checkpoint_create/list/restore` — managed rollback points.
+- `blender.live_trajectory` — durable before/after operation journal.
+- `blender.live_generation_pass` — checkpoint → fingerprint protected approved objects → generate → verify locks → inspect → contact audit → deterministic quality gate → optional deterministic multiview → optional baseline comparison → capture → save, with rollback on failure.
+- `blender.live_export` — export through the visible companion when the UI session must be used.
+- `blender.export_headless` — export a saved `.blend` in an isolated Blender background process with a hard process timeout; intended for final GLB/FBX delivery so exporter stalls cannot block the visible companion.
+
+On Windows, the Dev Agent also launches an independent local watchdog process. The watchdog probes the local status endpoint, tracks the active job independently of the Python worker, and terminates only the Dev Agent process tree after repeated health failures or a single unchanged busy job exceeding the bounded 15-minute safety window. The existing launcher/Scheduled Task then restarts the agent and performs the normal safe fast-forward update.
+
+See \`docs/BLENDER_MCP_REFERENCE_REVIEW.md\` for the design review that informed
+this layer and the capabilities intentionally not copied.
+
+`python scripts/verify_visual_agent.py` now runs both the existing isolated render smoke and the real companion deterministic silhouette-multiview path. On the Windows self-hosted recovery runner this candidate smoke runs before the managed agent is touched.
+
+`python scripts/blender_benchmark.py` adds an end-to-end regression: exact baseline self-comparison must pass, while a controlled geometry mutation must fail silhouette IoU and expose the expected bounds delta. See `docs/BLENDERBENCH.md`. The benchmark also contains valid/invalid UV fixtures so the Blender 5.x UV API and `uv_quality` implementation are exercised in the real runtime.
+
 
 ## Segurança
 
