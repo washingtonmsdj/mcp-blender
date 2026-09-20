@@ -4,7 +4,9 @@ param(
     [int]$StartupGraceSeconds = 60,
     [int]$ProbeIntervalSeconds = 10,
     [int]$MaxConsecutiveFailures = 6,
-    [int]$MaxBusyMinutes = 15
+    [int]$MaxBusyMinutes = 15,
+    [string]$RestartTaskName = "OrdaX Dev Agent",
+    [int]$RestartDelaySeconds = 5
 )
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -23,7 +25,46 @@ function Stop-AgentTree([string]$Reason) {
     & taskkill.exe /PID $AgentPid /T /F | Out-Null
 }
 
-Write-WatchdogLog "START pid=$AgentPid grace=$StartupGraceSeconds interval=$ProbeIntervalSeconds maxBusyMinutes=$MaxBusyMinutes"
+function Request-AgentRestartIfNeeded {
+    Start-Sleep -Seconds $RestartDelaySeconds
+
+    $successor = Get-CimInstance Win32_Process |
+        Where-Object {
+            $_.ProcessId -ne $AgentPid -and
+            $_.CommandLine -and
+            $_.CommandLine -like "*ordax_dev_agent.main*" -and
+            $_.CommandLine -like "*OrdaX*DevAgent*"
+        } |
+        Select-Object -First 1
+
+    if ($successor) {
+        Write-WatchdogLog "SUCCESSOR pid=$($successor.ProcessId); scheduled restart not needed"
+        return
+    }
+
+    $task = Get-ScheduledTask -TaskName $RestartTaskName -ErrorAction SilentlyContinue
+    if (-not $task) {
+        Write-WatchdogLog "RESTART_SKIP scheduled task missing name=$RestartTaskName"
+        return
+    }
+    if ($task.State -eq "Disabled") {
+        Write-WatchdogLog "RESTART_SKIP scheduled task disabled name=$RestartTaskName"
+        return
+    }
+    if ($task.State -eq "Running") {
+        Write-WatchdogLog "RESTART_SKIP scheduled task already running name=$RestartTaskName"
+        return
+    }
+
+    try {
+        Start-ScheduledTask -TaskName $RestartTaskName -ErrorAction Stop
+        Write-WatchdogLog "RESTART_REQUEST task=$RestartTaskName"
+    } catch {
+        Write-WatchdogLog "RESTART_FAIL task=$RestartTaskName error=$($_.Exception.Message)"
+    }
+}
+
+Write-WatchdogLog "START pid=$AgentPid grace=$StartupGraceSeconds interval=$ProbeIntervalSeconds maxBusyMinutes=$MaxBusyMinutes restartTask=$RestartTaskName"
 
 Start-Sleep -Seconds $StartupGraceSeconds
 
@@ -35,6 +76,7 @@ while ($true) {
     $process = Get-Process -Id $AgentPid -ErrorAction SilentlyContinue
     if (-not $process) {
         Write-WatchdogLog "EXIT parent process ended pid=$AgentPid"
+        Request-AgentRestartIfNeeded
         exit 0
     }
 
