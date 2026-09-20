@@ -3209,11 +3209,13 @@ def _process(path: Path) -> None:
         elif (
             operation == "__smoke_create_primitive"
             and CFG.ordax_smoke_modeling_fixture
+            and bool(CFG.ordax_smoke_output_dir)
         ):
             _modeling_create_primitive_unregistered(command)
         elif (
             operation == "__smoke_add_modifier"
             and CFG.ordax_smoke_modeling_fixture
+            and bool(CFG.ordax_smoke_output_dir)
         ):
             _modeling_add_modifier_unregistered(command)
         elif operation == "object_metadata":
