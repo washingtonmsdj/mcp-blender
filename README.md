@@ -167,6 +167,7 @@ implementations are composed as mixins rather than accumulating in one module:
 
 - `actions.py` — registry, agent, Git and Unity orchestration;
 - `blender_actions.py` — Blender/Blender Live typed actions;
+- `unity_actions.py` — Unity CLI/editor/play/capture typed actions;
 - `references.py` — Reference Contract and reference-guided generation;
 - `observations.py` — project-scoped visual evidence;
 - `process_runner.py` — shared bounded subprocess execution.

@@ -196,7 +196,7 @@ class ProjectTests(unittest.TestCase):
 
         with (
             patch.object(registry, "_editor", return_value=editor),
-            patch("ordax_dev_agent.actions._run") as foreground_helper,
+            patch("ordax_dev_agent.unity_actions._run") as foreground_helper,
         ):
             result = registry.unity_refresh_editor(
                 {"project": "model", "force": True, "wait_seconds": 5}
