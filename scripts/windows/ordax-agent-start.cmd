@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 set "ROOT=%~dp0\..\.."
 set "PYTHON=%ROOT%\.venv\Scripts\python.exe"
-set "BRANCH=feat/ordax-dev-agent"
+set "BRANCH=main"
 set /a RETRY_SECONDS=10
 set "SKIP_SAFE_UPDATE=0"
 
