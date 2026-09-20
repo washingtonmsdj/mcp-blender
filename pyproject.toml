@@ -23,4 +23,4 @@ ordax-project-mcp = "ordax_dev_agent.mcp_server:main"
 include = ["mcp_blender_unity*", "ordax_dev_agent*"]
 
 [tool.setuptools.package-data]
-ordax_dev_agent = ["assets/*.py", "assets/*.cs"]
+ordax_dev_agent = ["assets/*.py", "assets/*.cs", "assets/*.json"]
