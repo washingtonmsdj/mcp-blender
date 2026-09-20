@@ -162,18 +162,49 @@ def _run_companion_smoke(
     modeling_invalid_path = (
         control_root / "results" / "smoke-model-invalid.json"
     )
-    if (
-        not modeling_valid_path.is_file()
-        or not modeling_invalid_path.is_file()
+    modeling_create_path = (
+        control_root / "results" / "smoke-model-create.json"
+    )
+    modeling_create_duplicate_path = (
+        control_root / "results" / "smoke-model-create-duplicate.json"
+    )
+    modeling_modifier_path = (
+        control_root / "results" / "smoke-model-modifier.json"
+    )
+    modeling_modifier_duplicate_path = (
+        control_root / "results" / "smoke-model-modifier-duplicate.json"
+    )
+    if not all(
+        path.is_file()
+        for path in (
+            modeling_valid_path,
+            modeling_invalid_path,
+            modeling_create_path,
+            modeling_create_duplicate_path,
+            modeling_modifier_path,
+            modeling_modifier_duplicate_path,
+        )
     ):
         raise RuntimeError(
-            "modeling fixture did not produce both durable results"
+            "modeling fixture did not produce all durable results"
         )
     modeling_valid = json.loads(
         modeling_valid_path.read_text(encoding="utf-8-sig")
     )
     modeling_invalid = json.loads(
         modeling_invalid_path.read_text(encoding="utf-8-sig")
+    )
+    modeling_create = json.loads(
+        modeling_create_path.read_text(encoding="utf-8-sig")
+    )
+    modeling_create_duplicate = json.loads(
+        modeling_create_duplicate_path.read_text(encoding="utf-8-sig")
+    )
+    modeling_modifier = json.loads(
+        modeling_modifier_path.read_text(encoding="utf-8-sig")
+    )
+    modeling_modifier_duplicate = json.loads(
+        modeling_modifier_duplicate_path.read_text(encoding="utf-8-sig")
     )
     if not modeling_valid.get("ok"):
         raise RuntimeError(
@@ -184,6 +215,40 @@ def _run_companion_smoke(
         raise RuntimeError(
             "modeling negative control was incorrectly accepted"
         )
+
+    if not modeling_create.get("ok"):
+        raise RuntimeError(
+            "primitive creation smoke failed: "
+            + json.dumps(modeling_create, indent=2)
+        )
+    if modeling_create_duplicate.get("ok"):
+        raise RuntimeError(
+            "duplicate primitive name was incorrectly accepted"
+        )
+    if not modeling_modifier.get("ok"):
+        raise RuntimeError(
+            "modifier insertion smoke failed: "
+            + json.dumps(modeling_modifier, indent=2)
+        )
+    if modeling_modifier_duplicate.get("ok"):
+        raise RuntimeError(
+            "duplicate modifier name was incorrectly accepted"
+        )
+
+    created_object = modeling_create.get("object") or {}
+    if (created_object.get("mesh") or {}).get("vertices") != 8:
+        raise RuntimeError(
+            "smoke cube did not expose 8 vertices"
+        )
+
+    modifier_object = modeling_modifier.get("object") or {}
+    if not any(
+        item.get("name") == "SmokeBevel" and item.get("type") == "BEVEL"
+        for item in (modifier_object.get("modifiers") or [])
+    ):
+        raise RuntimeError("smoke BEVEL modifier is missing")
+    if not (modeling_modifier.get("runtime_budget") or {}).get("allowed"):
+        raise RuntimeError("smoke modifier exceeded runtime budget")
 
     modeled_object = modeling_valid.get("object") or {}
     if modeled_object.get("location") != [1.25, -0.5, 0.75]:
@@ -213,6 +278,10 @@ def _run_companion_smoke(
     if not {
         "smoke-model-transform",
         "smoke-model-invalid",
+        "smoke-model-create",
+        "smoke-model-create-duplicate",
+        "smoke-model-modifier",
+        "smoke-model-modifier-duplicate",
     }.issubset(trajectory_ids):
         raise RuntimeError(
             "modeling fixture commands are missing from trajectory evidence"
@@ -221,9 +290,17 @@ def _run_companion_smoke(
     data["modeling"] = {
         "positive_control": True,
         "negative_control_detected": True,
+        "create_positive": True,
+        "create_duplicate_detected": True,
+        "modifier_positive": True,
+        "modifier_duplicate_detected": True,
         "dispatcher_journaled": True,
         "valid": modeling_valid,
         "invalid": modeling_invalid,
+        "create": modeling_create,
+        "create_duplicate": modeling_create_duplicate,
+        "modifier": modeling_modifier,
+        "modifier_duplicate": modeling_modifier_duplicate,
     }
 
     after = hashlib.sha256(scene.read_bytes()).hexdigest()
