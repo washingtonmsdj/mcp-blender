@@ -14,7 +14,7 @@ from typing import Any
 
 from mcp_blender_unity.config import find_blender
 
-from .assets.blender_modeling_contracts import modeling_schemas, normalize_transform_fields
+from .assets.blender_modeling_contracts import modeling_schemas, plan_modeling_operation
 from .blender_asset_sources import polyhaven_file_manifest, search_polyhaven
 from .blender_live_bridge import BlenderLiveBridge
 from .models import ActionResult
@@ -208,25 +208,39 @@ class BlenderActions:
             },
         )
 
-    def blender_live_object_transform(self, payload: dict[str, Any]) -> ActionResult:
-        request: dict[str, Any] = {}
-        object_name = str(payload.get("object_name") or "").strip()
-        object_id = str(payload.get("ordax_object_id") or "").strip()
-        if bool(object_name) == bool(object_id):
-            return ActionResult(False, "provide exactly one of object_name or ordax_object_id")
-        if object_name:
-            request["object_name"] = object_name
-        else:
-            request["ordax_object_id"] = object_id
-
+    def blender_live_modeling_plan(self, payload: dict[str, Any]) -> ActionResult:
+        operation = payload.get("operation")
+        arguments = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"operation"}
+        }
         try:
-            request.update(normalize_transform_fields(payload))
+            plan = plan_modeling_operation(operation, arguments)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        return ActionResult(
+            True,
+            "Typed Blender modeling plan",
+            {
+                **plan,
+                "execution": (
+                    "available"
+                    if plan["executable"]
+                    else "disabled_pending_real_blender_smoke"
+                ),
+            },
+        )
+
+    def blender_live_object_transform(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            plan = plan_modeling_operation("object_transform", payload)
         except ValueError as error:
             return ActionResult(False, str(error))
 
         return self._blender_live(payload).request(
             "object_transform",
-            request,
+            plan["arguments"],
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
 
