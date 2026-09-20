@@ -24,7 +24,7 @@ namespace OrdaX.EditorTools
             public string id, summary, artifact, snapshotPath;
             public bool ok, compiling, playing;
             public string unityVersion = Application.unityVersion;
-            public string protocol = "ordax-generic-v4";
+            public string protocol = "ordax-generic-v5";
             public int errorCount, warningCount;
             public string activeScene, renderPipeline;
             public int gameObjectCount, activeGameObjectCount;
@@ -33,10 +33,13 @@ namespace OrdaX.EditorTools
             public int rigidbodyWithoutColliderCount, dynamicNonConvexMeshColliderCount;
             public int mirroredTransformCount, nearZeroScaleCount, extremeScaleCount;
             public int extremePositionCount, nonFiniteTransformCount, invertedRootCount;
-            public int cameraInsideColliderCount;
+            public int cameraInsideColliderCount, cameraBoundsContainingColliderCount;
             public bool cameraBelowRenderBounds;
+            public float cameraGroundDistance = -1f;
             public Vector3 renderBoundsCenter, renderBoundsSize;
-            public Vector3 cameraPosition, cameraEulerAngles;
+            public Vector3 cameraPosition, cameraEulerAngles, cameraGroundPoint;
+            public string cameraGroundCollider;
+            public string[] cameraInsideColliderNames, cameraBoundsContainingColliderNames;
             public string[] auditWarnings;
         }
         [Serializable] private class SceneObject
@@ -294,21 +297,73 @@ namespace OrdaX.EditorTools
             Camera camera = Camera.main;
             if (camera == null) camera = Camera.allCameras.FirstOrDefault();
             int cameraInsideCollider = 0;
+            int cameraBoundsContainingCollider = 0;
             bool cameraBelowBounds = false;
+            var cameraInsideNames = new List<string>();
+            var cameraBoundsContainingNames = new List<string>();
             if (camera != null)
             {
-                reply.cameraPosition = camera.transform.position;
+                Vector3 cameraPosition = camera.transform.position;
+                reply.cameraPosition = cameraPosition;
                 reply.cameraEulerAngles = camera.transform.eulerAngles;
+
                 foreach (var collider in colliders)
                 {
                     if (!collider.enabled || !collider.gameObject.activeInHierarchy) continue;
-                    if (collider.bounds.Contains(camera.transform.position)) cameraInsideCollider++;
+
+                    if (collider.bounds.Contains(cameraPosition))
+                    {
+                        cameraBoundsContainingCollider++;
+                        cameraBoundsContainingNames.Add(Hierarchy(collider.transform));
+                    }
+
+                    Vector3 closest = collider.ClosestPoint(cameraPosition);
+                    if ((closest - cameraPosition).sqrMagnitude <= 0.000001f)
+                    {
+                        cameraInsideCollider++;
+                        cameraInsideNames.Add(Hierarchy(collider.transform));
+                    }
+                }
+
+                var hits = Physics.RaycastAll(
+                        cameraPosition + Vector3.up * 0.25f,
+                        Vector3.down,
+                        10000f,
+                        ~0,
+                        QueryTriggerInteraction.Ignore)
+                    .Where(hit =>
+                        hit.collider != null &&
+                        hit.collider.enabled &&
+                        hit.collider.gameObject.activeInHierarchy &&
+                        !hit.collider.transform.IsChildOf(camera.transform.root))
+                    .OrderBy(hit => hit.distance)
+                    .ToArray();
+
+                if (hits.Length > 0)
+                {
+                    var ground = hits[0];
+                    reply.cameraGroundPoint = ground.point;
+                    reply.cameraGroundCollider = Hierarchy(ground.collider.transform);
+                    reply.cameraGroundDistance = Mathf.Max(0f, cameraPosition.y - ground.point.y);
+                    if (reply.cameraGroundDistance > 5f)
+                    {
+                        auditWarnings.Add(
+                            "Active camera is " +
+                            reply.cameraGroundDistance.ToString("F2") +
+                            " m above the nearest collider below (" +
+                            reply.cameraGroundCollider +
+                            ").");
+                    }
+                }
+                else
+                {
+                    auditWarnings.Add("No collider was found below the active camera within 10,000 m.");
                 }
 
                 if (hasBounds)
                 {
                     float margin = Mathf.Max(1f, worldBounds.size.y * 0.02f);
-                    cameraBelowBounds = camera.transform.position.y < worldBounds.min.y - margin;
+                    cameraBelowBounds = cameraPosition.y < worldBounds.min.y - margin;
                     if (cameraBelowBounds)
                     {
                         auditWarnings.Add("Active camera is below the visible renderer bounds.");
@@ -316,7 +371,11 @@ namespace OrdaX.EditorTools
                 }
                 if (cameraInsideCollider > 0)
                 {
-                    auditWarnings.Add("Active camera lies inside " + cameraInsideCollider + " collider bounds.");
+                    auditWarnings.Add(
+                        "Active camera is physically inside " +
+                        cameraInsideCollider +
+                        " collider(s): " +
+                        string.Join(", ", cameraInsideNames.Take(8).ToArray()));
                 }
             }
 
@@ -331,6 +390,9 @@ namespace OrdaX.EditorTools
             reply.nonFiniteTransformCount = nonFinite;
             reply.invertedRootCount = invertedRoots;
             reply.cameraInsideColliderCount = cameraInsideCollider;
+            reply.cameraBoundsContainingColliderCount = cameraBoundsContainingCollider;
+            reply.cameraInsideColliderNames = cameraInsideNames.Take(50).ToArray();
+            reply.cameraBoundsContainingColliderNames = cameraBoundsContainingNames.Take(50).ToArray();
             reply.cameraBelowRenderBounds = cameraBelowBounds;
             if (hasBounds)
             {
