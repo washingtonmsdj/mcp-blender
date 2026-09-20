@@ -16,9 +16,9 @@ Veja [configuração e limites](docs/MULTI_PROJECT_AGENT.md) e
 
 Ponte local para controlar **Blender CLI** e **Unity CLI** por MCP e para executar validações pelo GitHub em um self-hosted runner.
 
-O antigo Ordax Engine foi removido da `main`. O snapshot anterior está preservado em:
-
-`archive/ordax-engine-before-cleanup-2026-09-17`
+Implementações históricas removidas da linha ativa são preservadas sob
+`archive/*` quando ainda têm valor de diagnóstico/projeto. O índice e a política
+de reutilização seletiva estão em [docs/ARCHIVES.md](docs/ARCHIVES.md).
 
 ## Arquitetura
 
