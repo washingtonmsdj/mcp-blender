@@ -72,7 +72,7 @@ if not defined PREV_SHA (
   goto :eof
 )
 
-git -c core.fsmonitor=false fetch --quiet origin "%BRANCH%" 2>nul
+git -c core.fsmonitor=false fetch --quiet origin "refs/heads/%BRANCH%:refs/remotes/origin/%BRANCH%" 2>nul
 if errorlevel 1 (
   echo OrdaX Dev Agent: remoto indisponivel; iniciando codigo local.
   goto :eof
