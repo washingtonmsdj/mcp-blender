@@ -229,11 +229,16 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         )
 
         self.assertIn(
-            'bootstrap\\ordax-agent-bootstrap.ps1',
+            '$bootstrapDir = Join-Path $stateDir "bootstrap"',
             installer,
         )
         self.assertIn(
-            'bootstrap\\update_policy.py',
+            '$bootstrapPath = Join-Path $bootstrapDir '
+            '"ordax-agent-bootstrap.ps1"',
+            installer,
+        )
+        self.assertIn(
+            '$policyPath = Join-Path $bootstrapDir "update_policy.py"',
             installer,
         )
         self.assertIn(
