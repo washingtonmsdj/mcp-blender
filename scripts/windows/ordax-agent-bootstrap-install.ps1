@@ -38,15 +38,15 @@ if ($RetargetTask) {
         throw "Scheduled task not found: $TaskName"
     }
 
-    $powershellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
-    $argument = (
-        '-NoProfile -ExecutionPolicy Bypass -File "' +
-        $bootstrapPath +
-        '" -RepoRoot "' +
-        $repoRootResolved +
-        '"'
-    )
-    $action = New-ScheduledTaskAction -Execute $powershellPath -Argument $argument -WorkingDirectory $stateDir
+    $python = Join-Path $repoRootResolved ".venv\Scripts\python.exe"
+    if (-not (Test-Path $python)) {
+        throw "Managed agent Python missing: $python"
+    }
+
+    $action = New-ScheduledTaskAction `
+        -Execute $python `
+        -Argument '-m ordax_dev_agent.main' `
+        -WorkingDirectory $repoRootResolved
     Set-ScheduledTask -TaskName $TaskName -Action $action | Out-Null
 }
 
