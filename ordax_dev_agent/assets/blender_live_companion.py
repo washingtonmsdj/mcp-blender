@@ -45,6 +45,7 @@ def _args():
     parser.add_argument("--ordax-smoke-width", type=int, default=320)
     parser.add_argument("--ordax-smoke-height", type=int, default=320)
     parser.add_argument("--ordax-smoke-quality-fixture", action="store_true")
+    parser.add_argument("--ordax-smoke-modeling-fixture", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -3112,6 +3113,127 @@ def _tick():
     return 0.1
 
 
+def _run_modeling_smoke_fixture() -> dict:
+    object_name = "BenchmarkBody"
+    obj = bpy.context.scene.objects.get(object_name)
+    if obj is None:
+        raise RuntimeError(
+            f"modeling smoke requires object in scene: {object_name}"
+        )
+
+    positive_id = "smoke-model-transform"
+    positive_path = INBOX / f"{positive_id}.json"
+    _write_json_atomic(
+        positive_path,
+        {
+            "id": positive_id,
+            "operation": "object_transform",
+            "object_name": object_name,
+            "location": [1.25, -0.5, 0.75],
+            "rotation_euler": [0.0, 0.0, 0.25],
+            "scale": [1.0, 1.25, 0.75],
+        },
+    )
+    _process(positive_path)
+
+    positive_result_path = RESULTS / f"{positive_id}.json"
+    if not positive_result_path.is_file():
+        raise RuntimeError(
+            "modeling smoke positive control did not create a durable result"
+        )
+    positive = json.loads(
+        positive_result_path.read_text(encoding="utf-8-sig")
+    )
+    if not bool(positive.get("ok")):
+        raise RuntimeError(
+            "modeling smoke positive control failed: "
+            + str(positive.get("summary") or "unknown failure")
+        )
+
+    transformed = positive.get("object") or {}
+    expected_location = [1.25, -0.5, 0.75]
+    expected_scale = [1.0, 1.25, 0.75]
+    if transformed.get("location") != expected_location:
+        raise RuntimeError(
+            "modeling smoke location mismatch: "
+            + repr(transformed.get("location"))
+        )
+    if transformed.get("scale") != expected_scale:
+        raise RuntimeError(
+            "modeling smoke scale mismatch: "
+            + repr(transformed.get("scale"))
+        )
+
+    invalid_id = "smoke-model-invalid"
+    invalid_path = INBOX / f"{invalid_id}.json"
+    _write_json_atomic(
+        invalid_path,
+        {
+            "id": invalid_id,
+            "operation": "object_transform",
+            "object_name": object_name,
+            "scale": [1.0, 0.0, 1.0],
+        },
+    )
+    _process(invalid_path)
+
+    invalid_result_path = RESULTS / f"{invalid_id}.json"
+    if not invalid_result_path.is_file():
+        raise RuntimeError(
+            "modeling smoke negative control did not create a durable result"
+        )
+    invalid = json.loads(
+        invalid_result_path.read_text(encoding="utf-8-sig")
+    )
+    if bool(invalid.get("ok")):
+        raise RuntimeError(
+            "modeling smoke negative control was incorrectly accepted"
+        )
+
+    current = _object_details(obj)
+    if current.get("location") != expected_location:
+        raise RuntimeError(
+            "negative modeling smoke changed object location unexpectedly"
+        )
+    if current.get("scale") != expected_scale:
+        raise RuntimeError(
+            "negative modeling smoke changed object scale unexpectedly"
+        )
+
+    trajectory_ids = set()
+    if TRAJECTORY.is_file():
+        for line in TRAJECTORY.read_text(encoding="utf-8-sig").splitlines():
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            identifier = str(entry.get("id") or "")
+            if identifier:
+                trajectory_ids.add(identifier)
+
+    missing = sorted(
+        {positive_id, invalid_id} - trajectory_ids
+    )
+    if missing:
+        raise RuntimeError(
+            "modeling smoke dispatcher did not journal command(s): "
+            + ", ".join(missing)
+        )
+
+    return {
+        "positive_control": True,
+        "negative_control_detected": True,
+        "dispatcher_journaled": True,
+        "object_name": object_name,
+        "location": current.get("location"),
+        "scale": current.get("scale"),
+        "positive_result": str(positive_result_path),
+        "negative_result": str(invalid_result_path),
+    }
+
+
 for stale in INFLIGHT.glob("*.json"):
     try:
         stale.unlink()
@@ -3120,6 +3242,9 @@ for stale in INFLIGHT.glob("*.json"):
 
 if CFG.ordax_smoke_output_dir:
     quality_summary = None
+    modeling_summary = None
+    if CFG.ordax_smoke_modeling_fixture:
+        modeling_summary = _run_modeling_smoke_fixture()
     if CFG.ordax_smoke_quality_fixture:
         valid_quality_id = "smoke-quality-valid"
         _quality_gate(
@@ -3214,6 +3339,7 @@ if CFG.ordax_smoke_output_dir:
                 ],
                 "render_engine": smoke_result.get("render_engine"),
                 "quality_fixture": quality_summary,
+                "modeling_fixture": modeling_summary,
             },
             indent=2,
         )
