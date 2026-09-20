@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from ordax_dev_agent.actions import ActionRegistry
+from ordax_dev_agent.main import _start_local_watchdog
 from ordax_dev_agent.config import AgentConfig
 
 
@@ -54,10 +55,14 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_api_lookup", result.data["actions"])
             self.assertIn("blender.live_node_schema", result.data["actions"])
             self.assertIn("blender.live_export", result.data["actions"])
+            self.assertIn("blender.export_headless", result.data["actions"])
             self.assertIn("unity.cli_status", result.data["actions"])
             self.assertIn("unity.pipeline_install", result.data["actions"])
             self.assertIn("unity.pipeline_catalog", result.data["actions"])
             self.assertIn("unity.pipeline_command", result.data["actions"])
+            self.assertIn("unity.asset_inventory", result.data["actions"])
+            self.assertIn("unity.asset_import", result.data["actions"])
+            self.assertIn("unity.editor_diagnostics", result.data["actions"])
             self.assertIn("blender.live_checkpoint_create", result.data["actions"])
             self.assertIn("blender.live_checkpoint_list", result.data["actions"])
             self.assertIn("blender.live_checkpoint_restore", result.data["actions"])
@@ -361,6 +366,37 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertLess(result.data["views"][0]["silhouette_iou"], 0.9)
             self.assertEqual(["front"], result.data["failed_views"])
+
+
+    def test_headless_export_requires_existing_blend_file(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch(
+                "ordax_dev_agent.actions.find_blender",
+                return_value=Path("/fake/blender"),
+            ):
+                result = registry.execute(
+                    "blender.export_headless",
+                    {
+                        "project": "hordax",
+                        "blend_file": "missing.blend",
+                        "output_path": "Artifacts/test.glb",
+                        "format": "glb",
+                    },
+                )
+
+            self.assertFalse(result.ok)
+            self.assertIn("existing .blend", result.summary)
+
+    def test_local_watchdog_is_windows_only(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            config = self.make_config(Path(raw))
+            with patch("ordax_dev_agent.main.sys.platform", "linux"):
+                process = _start_local_watchdog(config)
+
+            self.assertIsNone(process)
 
 
 if __name__ == "__main__":
