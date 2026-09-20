@@ -200,6 +200,26 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             bootstrap,
         )
         self.assertIn(
+            'function Read-GitValue([string[]]$CommandArgs)',
+            bootstrap,
+        )
+        self.assertIn(
+            'Read-GitValue -CommandArgs @("rev-parse", "HEAD")',
+            bootstrap,
+        )
+        self.assertIn(
+            'Read-GitValue -CommandArgs @("rev-parse", "--abbrev-ref", "HEAD")',
+            bootstrap,
+        )
+        self.assertIn(
+            'Read-GitValue -CommandArgs @("rev-parse", $remoteRef)',
+            bootstrap,
+        )
+        self.assertIn(
+            'LAUNCH_READY repo=$repoRootResolved',
+            bootstrap,
+        )
+        self.assertIn(
             'merge-base --is-ancestor $beforeHead $remoteHead',
             bootstrap,
         )
