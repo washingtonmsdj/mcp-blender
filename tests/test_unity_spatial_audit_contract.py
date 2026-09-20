@@ -60,6 +60,7 @@ class UnitySpatialAuditContractTests(unittest.TestCase):
             editor = Mock()
             editor.project_appears_open.return_value = True
             editor.presence_is_fresh.return_value = True
+            editor.status.return_value = {"presence": {"compiling": False}}
             editor.request.return_value = ActionResult(
                 True,
                 "Spatial audit completed with warnings",
