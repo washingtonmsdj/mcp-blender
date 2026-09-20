@@ -235,7 +235,7 @@ this layer and the capabilities intentionally not copied.
 
 `python scripts/verify_visual_agent.py` now runs both the existing isolated render smoke and the real companion deterministic silhouette-multiview path. On the Windows self-hosted recovery runner this candidate smoke runs before the managed agent is touched.
 
-`python scripts/blender_benchmark.py` adds an end-to-end regression: exact baseline self-comparison must pass, while a controlled geometry mutation must fail silhouette IoU and expose the expected bounds delta. See `docs/BLENDERBENCH.md`. The benchmark also contains valid/invalid UV fixtures so the Blender 5.x UV API and `uv_quality` implementation are exercised in the real runtime.
+`python scripts/blender_benchmark.py` adds an end-to-end regression: exact baseline self-comparison must pass, while a controlled geometry mutation must fail silhouette IoU and expose the expected bounds delta. See `docs/BLENDERBENCH.md`. The benchmark also contains valid/invalid UV fixtures and a real companion-dispatch modeling fixture: `object_transform` must mutate the temporary scene in memory, a zero-scale negative control must be rejected, both commands must be journaled, and the source `.blend` must remain byte-for-byte unchanged on disk.
 
 ### Reference Contract
 
