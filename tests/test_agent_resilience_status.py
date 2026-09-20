@@ -120,7 +120,7 @@ class AgentResilienceStatusTests(unittest.TestCase):
                 / "windows"
                 / "ordax-resilience-status.ps1"
             )
-            script.unlink()
+            script.unlink(missing_ok=True)
             with patch("ordax_dev_agent.agent_actions.sys.platform", "win32"):
                 result = registry.execute("agent.resilience_status", {})
 
