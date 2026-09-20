@@ -20,7 +20,7 @@ from .config import AgentConfig
 from .models import ActionResult
 from .unity_editor_bridge import UnityEditorBridge
 from .unity_knowledge import capability_report as unity_capability_report, project_profile as unity_project_profile, skill_catalog as unity_skill_catalog
-from .unity_assets import asset_inventory as unity_asset_inventory
+from .unity_assets import asset_inventory as unity_asset_inventory, import_project_asset as unity_import_project_asset
 from .unity_cli import (
     cli_status as unity_cli_status,
     install_pipeline as unity_install_pipeline,
@@ -188,6 +188,7 @@ class ActionRegistry(ObservationActions):
             "blender.live_api_lookup": self.blender_live_api_lookup,
             "blender.live_node_schema": self.blender_live_node_schema,
             "blender.live_export": self.blender_live_export,
+            "blender.export_headless": self.blender_export_headless,
             "blender.live_checkpoint_create": self.blender_live_checkpoint_create,
             "blender.live_checkpoint_list": self.blender_live_checkpoint_list,
             "blender.live_checkpoint_restore": self.blender_live_checkpoint_restore,
@@ -211,6 +212,7 @@ class ActionRegistry(ObservationActions):
             "unity.pipeline_catalog": self.unity_pipeline_catalog,
             "unity.pipeline_command": self.unity_pipeline_command,
             "unity.asset_inventory": self.unity_asset_inventory,
+            "unity.asset_import": self.unity_asset_import,
             "unity.scene_open": self.unity_scene_open,
             "unity.scene_summary": self.unity_scene_summary,
             "unity.physics_audit": self.unity_physics_audit,
@@ -223,6 +225,7 @@ class ActionRegistry(ObservationActions):
             "git.diff": self.git_diff,
             "git.sync": self.git_sync,
             "unity.editor_status": self.unity_editor_status,
+            "unity.editor_diagnostics": self.unity_editor_diagnostics,
             "unity.editor_start": self.unity_editor_start,
             "unity.refresh_editor": self.unity_refresh_editor,
             "unity.play_start": self.unity_play_start,
@@ -801,6 +804,37 @@ class ActionRegistry(ObservationActions):
             {"project": project.slug, **report},
         )
 
+    def unity_asset_import(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        source_raw = str(payload.get("source_path") or "").strip()
+        destination_raw = str(payload.get("destination_path") or "").strip()
+        if not source_raw or not destination_raw:
+            return ActionResult(False, "source_path and destination_path are required")
+
+        try:
+            source = project.path(source_raw)
+            destination = project.path(destination_raw, must_exist=False)
+            assets_root = (project.root / "Assets").resolve()
+            destination.resolve().relative_to(assets_root)
+        except (ValueError, FileNotFoundError) as error:
+            return ActionResult(False, str(error))
+
+        try:
+            report = unity_import_project_asset(
+                project.root,
+                source_path=source,
+                destination_path=destination,
+                overwrite=bool(payload.get("overwrite", False)),
+            )
+        except (ValueError, FileNotFoundError, FileExistsError, OSError) as error:
+            return ActionResult(False, f"{type(error).__name__}: {error}")
+
+        return ActionResult(
+            True,
+            "Unity project asset imported" if report.get("imported") else "Unity project asset already current",
+            {"project": project.slug, **report},
+        )
+
     def _unity_live_inspection(
         self,
         payload: dict[str, Any],
@@ -1363,6 +1397,51 @@ class ActionRegistry(ObservationActions):
             ready,
             "Unity Editor companion ready" if ready else "Unity Editor companion not ready",
             status,
+        )
+
+    def unity_editor_diagnostics(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        editor = self._editor(payload)
+        process_ids = _unity_process_ids_for_project(project.root)
+
+        if sys.platform == "win32":
+            base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+            log_path = base / "Unity" / "Editor" / "Editor.log"
+        elif sys.platform == "darwin":
+            log_path = Path.home() / "Library" / "Logs" / "Unity" / "Editor.log"
+        else:
+            log_path = Path.home() / ".config" / "unity3d" / "Editor.log"
+
+        max_lines = max(20, min(int(payload.get("max_lines", 160)), 500))
+        max_chars = max(4096, min(int(payload.get("max_chars", 60000)), 200000))
+        tail = ""
+        log_size = None
+        log_mtime = None
+        if log_path.is_file():
+            try:
+                log_size = log_path.stat().st_size
+                log_mtime = log_path.stat().st_mtime
+                lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                tail = "\n".join(lines[-max_lines:])
+                if len(tail) > max_chars:
+                    tail = tail[-max_chars:]
+            except OSError as error:
+                tail = f"<could not read Unity Editor.log: {error}>"
+
+        status = editor.status()
+        data = {
+            **status,
+            "unity_process_ids": process_ids,
+            "editor_log_path": str(log_path),
+            "editor_log_exists": log_path.is_file(),
+            "editor_log_size_bytes": log_size,
+            "editor_log_mtime": log_mtime,
+            "editor_log_tail": tail,
+        }
+        return ActionResult(
+            True,
+            "Unity Editor diagnostics ready",
+            data,
         )
 
     def unity_refresh_editor(self, payload: dict[str, Any]) -> ActionResult:
@@ -2090,6 +2169,129 @@ class ActionRegistry(ObservationActions):
             timeout_seconds=float(payload.get("timeout_seconds", 180)),
         )
 
+
+
+    def blender_export_headless(self, payload: dict[str, Any]) -> ActionResult:
+        blender = find_blender()
+        if blender is None:
+            return ActionResult(False, "Blender executable not found")
+
+        project = self._project(payload)
+        raw_blend = str(payload.get("blend_file") or "").strip()
+        if not raw_blend:
+            return ActionResult(False, "blend_file is required")
+        try:
+            blend_file = project.path(raw_blend)
+        except FileNotFoundError:
+            return ActionResult(False, "blend_file must be an existing .blend file")
+        if blend_file.suffix.lower() != ".blend" or not blend_file.is_file():
+            return ActionResult(False, "blend_file must be an existing .blend file")
+
+        raw_output = str(payload.get("output_path") or "").strip()
+        if not raw_output:
+            return ActionResult(False, "output_path is required")
+        output = project.path(raw_output, must_exist=False)
+        export_format = str(
+            payload.get("format") or output.suffix.lstrip(".")
+        ).strip().lower()
+        expected = {"glb": ".glb", "fbx": ".fbx"}.get(export_format)
+        if expected is None:
+            return ActionResult(False, "format must be glb or fbx")
+        if output.suffix.lower() != expected:
+            return ActionResult(False, f"output_path must end with {expected}")
+
+        object_names = payload.get("object_names")
+        if object_names is not None and (
+            not isinstance(object_names, list)
+            or len(object_names) > 500
+            or not all(isinstance(name, str) and name.strip() for name in object_names)
+        ):
+            return ActionResult(
+                False,
+                "object_names must be a list of at most 500 object names",
+            )
+
+        timeout = int(payload.get("timeout_seconds", 300))
+        if timeout < 10 or timeout > 3600:
+            return ActionResult(False, "timeout_seconds must be between 10 and 3600")
+
+        helper = (
+            Path(__file__).resolve().parent
+            / "assets"
+            / "blender_export_headless.py"
+        )
+        if not helper.is_file():
+            return ActionResult(False, f"headless Blender export helper missing: {helper}")
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            output.unlink(missing_ok=True)
+        except OSError as error:
+            return ActionResult(False, f"could not clear previous export: {error}")
+
+        command = [
+            str(blender),
+            "--background",
+            str(blend_file),
+            "--disable-autoexec",
+            "--python-exit-code",
+            "1",
+            "--python",
+            str(helper),
+            "--",
+            "--output",
+            str(output),
+            "--format",
+            export_format,
+        ]
+        if bool(payload.get("selected_only", True)):
+            command.append("--selected-only")
+        if bool(payload.get("animations", False)):
+            command.append("--animations")
+        if bool(payload.get("apply_modifiers", True)):
+            command.append("--apply-modifiers")
+        if object_names is not None:
+            for name in object_names:
+                command.extend(["--object-name", name.strip()])
+
+        result = _run(
+            command,
+            cwd=project.root,
+            timeout=timeout,
+        )
+        if not result.ok:
+            result.summary = (
+                "Headless Blender export timed out"
+                if result.data.get("timed_out")
+                else "Headless Blender export failed"
+            )
+            return result
+
+        if not output.is_file() or output.stat().st_size <= 0:
+            return ActionResult(
+                False,
+                "Headless Blender export completed without a non-empty artifact",
+                {
+                    **result.data,
+                    "artifact": str(output),
+                },
+            )
+
+        digest = hashlib.sha256(output.read_bytes()).hexdigest()
+        return ActionResult(
+            True,
+            "Headless Blender export completed",
+            {
+                **result.data,
+                "artifact": str(output),
+                "format": export_format,
+                "size_bytes": output.stat().st_size,
+                "sha256": digest,
+                "blend_file": str(blend_file),
+                "selection_only": bool(payload.get("selected_only", True)),
+                "isolated_process": True,
+            },
+        )
 
     def blender_live_checkpoint_create(self, payload: dict[str, Any]) -> ActionResult:
         label = str(payload.get("label") or "checkpoint").strip()
