@@ -160,7 +160,7 @@ O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório iso
 
 Os workflows são manuais por segurança.
 
-## Blender Live 1.5.0
+## Blender Live 1.6.0
 
 The visible Blender companion now exposes a richer typed perception loop:
 
@@ -206,6 +206,7 @@ this layer and the capabilities intentionally not copied.
 - `project.references` validates a versioned project-local visual brief without copying images.
 - `project.reference_images` materializes selected PNG/JPEG references into the managed artifact root with manifest/image hashes.
 - `blender.reference_review` pairs those references with deterministic Blender multiview captures for explicit object names.
+- `blender.reference_generation_pass` preflights reference integrity, runs the recoverable generation pass, checks declared physical dimensions, defers `.blend` saving until deterministic gates pass, and restores the checkpoint when a required deterministic reference constraint fails. Arbitrary visual similarity remains explicitly pending for pixel inspection.
 - Blender Live protocol v9 reports declared scene unit metadata so physical dimensions are checked only when the scene actually defines a usable scale.
 - Arbitrary source/reference images do **not** receive a fabricated similarity score; camera/lens/crop/pose correspondence remains explicit evidence that must be reviewed.
 
