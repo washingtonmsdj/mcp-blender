@@ -77,12 +77,32 @@ true:
 2. host-side contract tests pass;
 3. the companion rejects unsupported parameters and unsafe scene state;
 4. rollback/checkpoint behavior is verified;
-5. a real Blender 5.x smoke executes the operation and validates the resulting
-   scene state;
-6. the normal Bridge CI remains green.
+5. a real Blender 5.x smoke executes the operation through the current
+   companion dispatcher and validates the resulting scene state;
+6. the smoke proves a negative control is rejected, both commands are written to
+   the durable trajectory, and the source `.blend` on disk remains unchanged;
+7. the normal Bridge CI remains green.
 
 Until that happens, the schema is discoverable but execution remains
 unavailable.
 
 This is intentional fail-closed behavior: capability discovery may move ahead of
 runtime enablement, but unverified scene mutation may not.
+
+## Current real-smoke coverage
+
+`scripts/blender_benchmark.py` now asks the current companion to run an
+optional modeling fixture in a temporary Blender scene. The fixture:
+
+- writes an `object_transform` command to the companion inbox;
+- processes it through the same `_process` dispatcher used by live commands;
+- requires the positive transform result to be durable;
+- sends a zero-scale negative control and requires rejection;
+- requires both command IDs in `trajectory.jsonl`;
+- relies on BlenderBench's existing before/after SHA-256 check to prove the
+  source `.blend` was not saved or overwritten.
+
+This validates the already-supported transform path when the self-hosted Blender
+runner is online. It does **not** promote `create_primitive` or `add_modifier`;
+those still require their own implementation and real smoke before registration.
+

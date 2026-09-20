@@ -123,6 +123,7 @@ def _run_companion_smoke(
             "--ordax-smoke-height",
             "384",
             "--ordax-smoke-quality-fixture",
+            "--ordax-smoke-modeling-fixture",
         ],
         timeout_seconds=180,
     )
@@ -153,6 +154,76 @@ def _run_companion_smoke(
         "negative_control_detected": True,
         "valid": valid_quality,
         "invalid": invalid_quality,
+    }
+
+    modeling_valid_path = (
+        control_root / "results" / "smoke-model-transform.json"
+    )
+    modeling_invalid_path = (
+        control_root / "results" / "smoke-model-invalid.json"
+    )
+    if (
+        not modeling_valid_path.is_file()
+        or not modeling_invalid_path.is_file()
+    ):
+        raise RuntimeError(
+            "modeling fixture did not produce both durable results"
+        )
+    modeling_valid = json.loads(
+        modeling_valid_path.read_text(encoding="utf-8-sig")
+    )
+    modeling_invalid = json.loads(
+        modeling_invalid_path.read_text(encoding="utf-8-sig")
+    )
+    if not modeling_valid.get("ok"):
+        raise RuntimeError(
+            "modeling positive control failed: "
+            + json.dumps(modeling_valid, indent=2)
+        )
+    if modeling_invalid.get("ok"):
+        raise RuntimeError(
+            "modeling negative control was incorrectly accepted"
+        )
+
+    modeled_object = modeling_valid.get("object") or {}
+    if modeled_object.get("location") != [1.25, -0.5, 0.75]:
+        raise RuntimeError(
+            "modeling fixture location mismatch: "
+            + repr(modeled_object.get("location"))
+        )
+    if modeled_object.get("scale") != [1.0, 1.25, 0.75]:
+        raise RuntimeError(
+            "modeling fixture scale mismatch: "
+            + repr(modeled_object.get("scale"))
+        )
+
+    trajectory_path = control_root / "trajectory.jsonl"
+    if not trajectory_path.is_file():
+        raise RuntimeError("modeling fixture did not create trajectory evidence")
+    trajectory_ids = set()
+    for line in trajectory_path.read_text(
+        encoding="utf-8-sig"
+    ).splitlines():
+        if not line.strip():
+            continue
+        entry = json.loads(line)
+        identifier = str(entry.get("id") or "")
+        if identifier:
+            trajectory_ids.add(identifier)
+    if not {
+        "smoke-model-transform",
+        "smoke-model-invalid",
+    }.issubset(trajectory_ids):
+        raise RuntimeError(
+            "modeling fixture commands are missing from trajectory evidence"
+        )
+
+    data["modeling"] = {
+        "positive_control": True,
+        "negative_control_detected": True,
+        "dispatcher_journaled": True,
+        "valid": modeling_valid,
+        "invalid": modeling_invalid,
     }
 
     after = hashlib.sha256(scene.read_bytes()).hexdigest()
@@ -271,6 +342,17 @@ def run(root: Path) -> dict:
             ),
             "invalid_metrics": (
                 (baseline["uv_quality"]["invalid"].get("checks") or [{}])[0].get("metrics")
+            ),
+        },
+        "modeling_dispatch": {
+            "positive_control": baseline["modeling"]["positive_control"],
+            "negative_control_detected": baseline["modeling"]["negative_control_detected"],
+            "dispatcher_journaled": baseline["modeling"]["dispatcher_journaled"],
+            "location": (
+                (baseline["modeling"]["valid"].get("object") or {}).get("location")
+            ),
+            "scale": (
+                (baseline["modeling"]["valid"].get("object") or {}).get("scale")
             ),
         },
         "self_comparison": {
