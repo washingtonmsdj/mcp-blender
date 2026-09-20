@@ -59,6 +59,25 @@ report:
 python scripts/blender_benchmark.py --output-dir .artifacts/blenderbench
 ```
 
+## Dev Agent action
+
+The same benchmark is available through the strict action registry as
+`blender.benchmark`.
+
+The action accepts only:
+
+- `project` — registered project scope used by the central action policy;
+- `timeout_seconds` — integer between 60 and 3600.
+
+It always executes the repository-owned `scripts/blender_benchmark.py`, writes
+its working set and `benchmark-report.json` under the OrdaX agent state
+directory, and requires all staged modeling evidence before returning success.
+No caller-controlled script, command line, executable or output directory is
+accepted.
+
+This route exists so an online Dev Agent can run the same real Blender proof even
+when the GitHub self-hosted runner service is unavailable.
+
 ## CI role
 
 Hosted Bridge CI compiles the benchmark script but cannot validate Blender
