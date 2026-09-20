@@ -79,6 +79,77 @@ class ProjectTextActionTests(unittest.TestCase):
         self.assertIn("stale overwrite", result.summary)
         self.assertEqual("human edit\n", target.read_text(encoding="utf-8"))
 
+
+    def test_sha_guarded_exact_patch(self) -> None:
+        target = self.project / "Assets" / "Scripts" / "World.cs"
+        target.write_text(
+            "class World { int Version = 1; int Count = 1; }\n",
+            encoding="utf-8",
+        )
+        read = self.registry.execute(
+            "project.text_read",
+            {"path": "Assets/Scripts/World.cs"},
+        )
+
+        patch_result = self.registry.execute(
+            "project.text_patch",
+            {
+                "path": "Assets/Scripts/World.cs",
+                "expected_sha256": read.data["sha256"],
+                "replacements": [
+                    {
+                        "old": "int Version = 1;",
+                        "new": "int Version = 2;",
+                        "expected_count": 1,
+                    },
+                    {
+                        "old": "int Count = 1;",
+                        "new": "int Count = 3;",
+                    },
+                ],
+            },
+        )
+
+        self.assertTrue(patch_result.ok)
+        self.assertEqual(2, patch_result.data["replacement_count"])
+        self.assertEqual(
+            "class World { int Version = 2; int Count = 3; }\n",
+            target.read_text(encoding="utf-8"),
+        )
+
+    def test_patch_refuses_ambiguous_or_stale_matches(self) -> None:
+        target = self.project / "Assets" / "Scripts" / "World.cs"
+        target.write_text("x x\n", encoding="utf-8")
+        read = self.registry.execute(
+            "project.text_read",
+            {"path": "Assets/Scripts/World.cs"},
+        )
+
+        ambiguous = self.registry.execute(
+            "project.text_patch",
+            {
+                "path": "Assets/Scripts/World.cs",
+                "expected_sha256": read.data["sha256"],
+                "replacements": [{"old": "x", "new": "y", "expected_count": 1}],
+            },
+        )
+        self.assertFalse(ambiguous.ok)
+        self.assertIn("ambiguous patch", ambiguous.summary)
+        self.assertEqual("x x\n", target.read_text(encoding="utf-8"))
+
+        target.write_text("human edit\n", encoding="utf-8")
+        stale = self.registry.execute(
+            "project.text_patch",
+            {
+                "path": "Assets/Scripts/World.cs",
+                "expected_sha256": read.data["sha256"],
+                "replacements": [{"old": "human", "new": "remote"}],
+            },
+        )
+        self.assertFalse(stale.ok)
+        self.assertIn("stale patch", stale.summary)
+        self.assertEqual("human edit\n", target.read_text(encoding="utf-8"))
+
     def test_create_requires_explicit_flag(self) -> None:
         payload = {
             "path": "Assets/Scripts/NewTool.cs",
