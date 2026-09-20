@@ -127,9 +127,10 @@ jobs:
             }
             $candidatePythonArgs = @("-3")
           }
+          $candidatePythonPath = $candidatePython.Source
 
-          $cleanArgs = @($policyScript, "--check-clean", $repo)
-          & $candidatePython.Source @candidatePythonArgs @cleanArgs | Write-Host
+          $cleanArgs = @($candidatePythonArgs) + @($policyScript, "--check-clean", $repo)
+          & $candidatePythonPath @cleanArgs | Write-Host
           $preflightCode = $LASTEXITCODE
           if ($preflightCode -gt 1) {
             throw "Could not verify managed agent tracked changes with candidate policy."
@@ -167,7 +168,8 @@ jobs:
               "--before-ref", $beforeHead,
               "--after-ref", "origin/$branch"
             )
-            & $candidatePython.Source @candidatePythonArgs @contractArgs | Write-Host
+            $contractInvokeArgs = @($candidatePythonArgs) + $contractArgs
+            & $candidatePythonPath @contractInvokeArgs | Write-Host
             $contractCode = $LASTEXITCODE
             if ($contractCode -gt 1) {
               throw "Could not compare managed agent install contract."
