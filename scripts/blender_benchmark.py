@@ -459,6 +459,10 @@ def main() -> None:
         "--output-dir",
         help="Keep benchmark files in this directory instead of a temporary directory.",
     )
+    parser.add_argument(
+        "--report-file",
+        help="Write the final structured benchmark report to this JSON file.",
+    )
     args = parser.parse_args()
 
     if args.output_dir:
@@ -469,7 +473,12 @@ def main() -> None:
         with tempfile.TemporaryDirectory(prefix="ordax-blenderbench-") as raw:
             report = run(Path(raw))
 
-    print(json.dumps(report, indent=2))
+    rendered = json.dumps(report, indent=2)
+    if args.report_file:
+        report_file = Path(args.report_file).expanduser().resolve()
+        report_file.parent.mkdir(parents=True, exist_ok=True)
+        report_file.write_text(rendered, encoding="utf-8")
+    print(rendered)
 
 
 if __name__ == "__main__":
