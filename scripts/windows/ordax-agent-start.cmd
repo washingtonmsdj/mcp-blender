@@ -56,7 +56,7 @@ if !RETRY_SECONDS! GTR 300 set /a RETRY_SECONDS=300
 goto :eof
 
 :safe_update
-git -c core.fsmonitor=false diff-files --quiet -- 2>nul
+"%PYTHON%" -m ordax_dev_agent.update_policy --check-worktree "%ROOT%" >nul 2>nul
 if errorlevel 2 (
   echo OrdaX Dev Agent: falha ao verificar alteracoes locais; iniciando codigo local.
   goto :eof
