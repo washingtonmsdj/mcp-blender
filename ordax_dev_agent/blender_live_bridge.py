@@ -23,6 +23,55 @@ LEGACY_MAINTENANCE_OPERATIONS = {
 }
 
 
+BUNDLE_MANIFEST_NAME = "blender_companion_bundle.json"
+BUNDLE_FORMAT_VERSION = 1
+
+
+def blender_companion_bundle_fingerprint(asset_root: Path) -> str:
+    root = asset_root.resolve()
+    manifest_path = (root / BUNDLE_MANIFEST_NAME).resolve()
+    if not manifest_path.is_relative_to(root):
+        raise ValueError("Blender companion bundle manifest escaped asset root")
+
+    data = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    if not isinstance(data, dict) or data.get("version") != BUNDLE_FORMAT_VERSION:
+        raise ValueError(
+            f"Blender companion bundle must use version {BUNDLE_FORMAT_VERSION}"
+        )
+
+    raw_files = data.get("files")
+    if (
+        not isinstance(raw_files, list)
+        or not raw_files
+        or len(raw_files) > 32
+        or not all(isinstance(name, str) and name.strip() for name in raw_files)
+    ):
+        raise ValueError("Blender companion bundle files must be a non-empty bounded list")
+
+    names = [name.strip().replace("\\", "/") for name in raw_files]
+    if len(set(names)) != len(names):
+        raise ValueError("Blender companion bundle files must be unique")
+
+    digest = hashlib.sha256()
+    digest.update(b"ordax-blender-companion-bundle\0")
+    digest.update(str(BUNDLE_FORMAT_VERSION).encode("ascii"))
+    digest.update(b"\0")
+
+    for name in sorted(names):
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f"invalid Blender companion bundle path: {name}")
+        path = (root / relative).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            raise FileNotFoundError(path)
+        content = path.read_bytes()
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(content).digest())
+
+    return digest.hexdigest()
+
+
 class BlenderLiveBridge:
     """File-protocol bridge to one visible Blender session per registered project."""
 
@@ -41,16 +90,17 @@ class BlenderLiveBridge:
             project.blender.get("scripts_dir", "automation/blender"),
             must_exist=False,
         )
+        self.assets_root = (
+            Path(__file__).resolve().parent / "assets"
+        ).resolve()
         self.companion = (
-            Path(__file__).resolve().parent
-            / "assets"
-            / "blender_live_companion.py"
+            self.assets_root / "blender_live_companion.py"
         )
 
     def _companion_fingerprint(self) -> str | None:
         try:
-            return hashlib.sha256(self.companion.read_bytes()).hexdigest()
-        except OSError:
+            return blender_companion_bundle_fingerprint(self.assets_root)
+        except (OSError, ValueError, json.JSONDecodeError):
             return None
 
     def _ensure_dirs(self) -> None:
@@ -138,6 +188,18 @@ class BlenderLiveBridge:
             return ActionResult(False, "Blender executable not found")
         if not self.companion.is_file():
             return ActionResult(False, f"Blender live companion missing: {self.companion}")
+        expected_fingerprint = self._companion_fingerprint()
+        if not expected_fingerprint:
+            return ActionResult(
+                False,
+                "Blender live companion bundle is missing or invalid",
+                {
+                    "companion": str(self.companion),
+                    "bundle_manifest": str(
+                        self.assets_root / BUNDLE_MANIFEST_NAME
+                    ),
+                },
+            )
 
         self._ensure_dirs()
         for folder in (self.inbox, self.inflight):
