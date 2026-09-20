@@ -174,6 +174,8 @@ implementations are composed as mixins rather than accumulating in one module:
 - `references.py` — Reference Contract and reference-guided generation;
 - `observations.py` — project-scoped visual evidence;
 - `process_runner.py` — shared bounded subprocess execution.
+- `assets/blender_companion_bundle.json` — explicit fingerprinted runtime bundle for the Blender companion and its helper modules; changes to any listed helper invalidate the loaded companion.
+- `assets/blender_uv_math.py` — pure deterministic 2D UV/triangle math extracted from the Blender runtime for ordinary unit testing.
 
 Moving a method into a domain module does not add an action. An operation becomes
 remotely callable only when `ActionRegistry._actions` explicitly registers it.
