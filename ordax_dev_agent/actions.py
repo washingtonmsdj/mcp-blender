@@ -98,6 +98,7 @@ class ActionRegistry(
             "unity.scene_open": self.unity_scene_open,
             "unity.scene_summary": self.unity_scene_summary,
             "unity.physics_audit": self.unity_physics_audit,
+            "unity.spatial_audit": self.unity_spatial_audit,
             "unity.benchmark_islands_generate": self.unity_benchmark_islands_generate,
             "agent.status": self.agent_status,
             "agent.update": self.agent_update,
