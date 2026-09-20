@@ -55,6 +55,64 @@ def install_contract_changed(before_text: str, after_text: str) -> bool:
     return install_contract(before_text) != install_contract(after_text)
 
 
+def install_contract_changed_between_refs(
+    repo: str | Path,
+    before_ref: str,
+    after_ref: str,
+    *,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    root = Path(repo).resolve()
+    git = ["git", "-c", "core.fsmonitor=false", "-C", str(root)]
+
+    def read_pyproject(ref: str) -> tuple[str | None, str | None]:
+        try:
+            completed = subprocess.run(
+                [*git, "show", f"{ref}:pyproject.toml"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout,
+                shell=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            return None, f"timed out after {error.timeout} seconds"
+        if completed.returncode != 0:
+            return None, completed.stderr[-4000:]
+        return completed.stdout, None
+
+    before_text, before_error = read_pyproject(before_ref)
+    after_text, after_error = read_pyproject(after_ref)
+    if before_error or after_error or before_text is None or after_text is None:
+        return {
+            "ok": False,
+            "changed": None,
+            "before_ref": before_ref,
+            "after_ref": after_ref,
+            "before_error": before_error,
+            "after_error": after_error,
+        }
+
+    try:
+        changed = install_contract_changed(before_text, after_text)
+    except ValueError as error:
+        return {
+            "ok": False,
+            "changed": None,
+            "before_ref": before_ref,
+            "after_ref": after_ref,
+            "error": str(error),
+        }
+
+    return {
+        "ok": True,
+        "changed": changed,
+        "before_ref": before_ref,
+        "after_ref": after_ref,
+    }
+
+
 def staged_index_check(
     repo: str | Path,
     *,
@@ -299,17 +357,33 @@ def managed_repo_clean_check(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--check-clean", metavar="REPO")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--check-clean", metavar="REPO")
+    mode.add_argument("--compare-install-contract", metavar="REPO")
+    parser.add_argument("--before-ref")
+    parser.add_argument("--after-ref")
     args = parser.parse_args(argv)
 
-    if not args.check_clean:
-        parser.error("--check-clean is required")
+    if args.check_clean:
+        result = managed_repo_clean_check(args.check_clean)
+        print(json.dumps(result, separators=(",", ":")))
+        if not result.get("ok"):
+            return 2
+        return 0 if result.get("clean") else 1
 
-    result = managed_repo_clean_check(args.check_clean)
+    if not args.before_ref or not args.after_ref:
+        parser.error(
+            "--compare-install-contract requires --before-ref and --after-ref"
+        )
+    result = install_contract_changed_between_refs(
+        args.compare_install_contract,
+        args.before_ref,
+        args.after_ref,
+    )
     print(json.dumps(result, separators=(",", ":")))
     if not result.get("ok"):
         return 2
-    return 0 if result.get("clean") else 1
+    return 1 if result.get("changed") else 0
 
 
 if __name__ == "__main__":
