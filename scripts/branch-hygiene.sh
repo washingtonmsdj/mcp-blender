@@ -7,7 +7,7 @@ repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 
 is_transient_branch() {
   case "$1" in
-    feat/*|fix/*|refactor/*|ci/*|integration/*|codex/*|blender-bridge) return 0 ;;
+    feat/*|fix/*|refactor/*|ci/*|integration/*|codex/*|docs/*|blender-bridge) return 0 ;;
     *) return 1 ;;
   esac
 }
