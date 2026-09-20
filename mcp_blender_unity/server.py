@@ -383,7 +383,9 @@ def blender_run_python(
             raise FileNotFoundError(f"Blend file not found: {blend}")
         command.append(str(blend))
 
-    command.extend(["--python", str(script)])
+    # Blender otherwise returns 0 even when the supplied Python raises.
+    # This must precede --python: Blender evaluates CLI arguments in order.
+    command.extend(["--python-exit-code", "1", "--python", str(script)])
     return run_process(command, timeout_seconds=max(1, timeout_seconds))
 
 

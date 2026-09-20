@@ -27,6 +27,8 @@ def run_process(
             list(command),
             cwd=str(cwd) if cwd is not None else None,
             capture_output=True,
+            # Child tools must not inherit the MCP JSON-RPC input pipe.
+            stdin=subprocess.DEVNULL,
             text=True,
             shell=False,
             timeout=timeout_seconds,
