@@ -133,6 +133,27 @@ class BlenderLiveResultTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertIn("protocol is outdated", result.summary)
 
+    def test_companion_uses_shared_transform_contract(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        companion = (
+            root / "ordax_dev_agent" / "assets" / "blender_live_companion.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            '"blender_modeling_contracts.py"',
+            companion,
+        )
+        self.assertIn(
+            "_normalize_transform_request = "
+            "_MODELING_CONTRACTS.normalize_transform_request",
+            companion,
+        )
+        self.assertIn(
+            'transport_fields={"id", "operation"}',
+            companion,
+        )
+        self.assertNotIn("def _coerce_vector(", companion)
+
 
 if __name__ == "__main__":
     unittest.main()
