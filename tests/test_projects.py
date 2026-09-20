@@ -46,6 +46,23 @@ class ProjectTests(unittest.TestCase):
             (self.project / 'Assets/Editor/Custom.cs').resolve(),
         )
 
+
+    def test_generic_project_never_falls_back_to_hordax_companion(self):
+        registry = ActionRegistry(self.config)
+        self.assertEqual(
+            registry._editor({}).companion_source_path,
+            (self.project / 'Assets/OrdaX/Editor/OrdaXGenericAgent.cs').resolve(),
+        )
+
+    def test_hordax_profile_routes_to_dedicated_companion(self):
+        registry = ActionRegistry(replace(self.config, projects={'model': {
+            'path': str(self.project), 'apps': ['unity'],
+            'unity': {'profile': 'hordax'}}}))
+        self.assertEqual(
+            registry._editor({}).companion_source_path,
+            (self.project / 'Assets/HORDAX/Editor/OrdaXEditorAgent.cs').resolve(),
+        )
+
     def test_jobs_route_to_registered_project_without_git(self):
         job = AgentJob('id', 'project.observe', project_slug='model')
         registry = ActionRegistry(self.config)
