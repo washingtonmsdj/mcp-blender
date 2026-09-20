@@ -165,9 +165,12 @@ Os workflows são manuais por segurança.
 The central `ActionRegistry` remains the only allow-list surface, but domain
 implementations are composed as mixins rather than accumulating in one module:
 
-- `actions.py` — registry, agent, Git and Unity orchestration;
+- `actions.py` — composition root, explicit allow-list, locking and project resolution;
 - `blender_actions.py` — Blender/Blender Live typed actions;
 - `unity_actions.py` — Unity CLI/editor/play/capture typed actions;
+- `agent_actions.py` — agent status, self-test and managed self-update;
+- `artifact_actions.py` — bounded project artifact preview;
+- `git_actions.py` — safe Git status/diff/fast-forward synchronization;
 - `references.py` — Reference Contract and reference-guided generation;
 - `observations.py` — project-scoped visual evidence;
 - `process_runner.py` — shared bounded subprocess execution.
