@@ -473,6 +473,15 @@ class ReferenceContractTests(unittest.TestCase):
             ),
             patch.object(
                 self.registry,
+                "_reference_candidate_visual_hashes",
+                return_value=ActionResult(
+                    True,
+                    "visuals unchanged",
+                    {"verified_views": ["front"]},
+                ),
+            ),
+            patch.object(
+                self.registry,
                 "blender_live_save",
                 return_value=saved,
             ) as save,
@@ -540,6 +549,68 @@ class ReferenceContractTests(unittest.TestCase):
         save.assert_not_called()
         state = json.loads(pass_path.read_text(encoding="utf-8"))
         self.assertEqual("rejected", state["status"])
+
+    def test_reference_decision_blocks_accept_after_pixels_changed(self) -> None:
+        target = str((self.project / "boat.blend").resolve())
+        pass_path = self._write_reference_pass_fixture(save_target=target)
+        current = ActionResult(
+            True,
+            "fingerprinted",
+            {
+                "fingerprints": [
+                    {
+                        "selector_key": "name:Hull",
+                        "object_name": "Hull",
+                        "combined_sha256": "c" * 64,
+                    }
+                ]
+            },
+        )
+        visual = ActionResult(
+            False,
+            "Rendered candidate changed after visual evidence was reviewed",
+            {
+                "changed_views": ["front"],
+                "expected_sha256": {"front": "1" * 64},
+                "current_sha256": {"front": "2" * 64},
+            },
+        )
+
+        with (
+            patch.object(
+                self.registry,
+                "_reference_candidate_fingerprints",
+                return_value=current,
+            ),
+            patch.object(
+                self.registry,
+                "_reference_candidate_visual_hashes",
+                return_value=visual,
+            ),
+            patch.object(
+                self.registry,
+                "blender_live_save",
+            ) as save,
+        ):
+            result = self.registry.execute(
+                "blender.reference_decision",
+                {
+                    "project": "model",
+                    "reference_pass_path": str(pass_path),
+                    "decision": "accept",
+                    "assessment": "The earlier visual evidence looked acceptable.",
+                },
+            )
+
+        self.assertFalse(result.ok)
+        self.assertIn("visual state changed after review", result.summary)
+        self.assertEqual(
+            ["front"],
+            result.data["visual_consistency"]["changed_views"],
+        )
+        save.assert_not_called()
+        state = json.loads(pass_path.read_text(encoding="utf-8"))
+        self.assertEqual("pending_visual_review", state["status"])
 
     def test_reference_decision_blocks_accept_after_scene_changed(self) -> None:
         target = str((self.project / "boat.blend").resolve())
