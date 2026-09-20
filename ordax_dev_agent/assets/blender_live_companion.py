@@ -109,6 +109,7 @@ _triangle_area_2d = _UV_MATH.triangle_area_2d
 _signed_area_2d = _UV_MATH.signed_area_2d
 _line_intersection_2d = _UV_MATH.line_intersection_2d
 _triangle_overlap_area_2d = _UV_MATH.triangle_overlap_area_2d
+_triangle_shape_distortion = _UV_MATH.triangle_shape_distortion
 
 CFG = _args()
 CONTROL_ROOT = Path(CFG.ordax_control_root).resolve()
@@ -1462,33 +1463,6 @@ def _uv_coordinate(layer, loop_index: int) -> tuple[float, float]:
     raise ValueError("could not read UV coordinates from the selected UV layer")
 
 
-def _triangle_shape_distortion(mesh, loop_indices, uv_points, epsilon: float) -> float | None:
-    vertices = [
-        mesh.vertices[mesh.loops[index].vertex_index].co
-        for index in loop_indices
-    ]
-    geometry_lengths = [
-        float((vertices[1] - vertices[0]).length),
-        float((vertices[2] - vertices[1]).length),
-        float((vertices[0] - vertices[2]).length),
-    ]
-    uv_lengths = [
-        ((uv_points[1][0] - uv_points[0][0]) ** 2 + (uv_points[1][1] - uv_points[0][1]) ** 2) ** 0.5,
-        ((uv_points[2][0] - uv_points[1][0]) ** 2 + (uv_points[2][1] - uv_points[1][1]) ** 2) ** 0.5,
-        ((uv_points[0][0] - uv_points[2][0]) ** 2 + (uv_points[0][1] - uv_points[2][1]) ** 2) ** 0.5,
-    ]
-    geometry_total = sum(geometry_lengths)
-    uv_total = sum(uv_lengths)
-    if geometry_total <= epsilon or uv_total <= epsilon:
-        return None
-    geometry_normalized = [value / geometry_total for value in geometry_lengths]
-    uv_normalized = [value / uv_total for value in uv_lengths]
-    return max(
-        abs(geometry_normalized[index] - uv_normalized[index])
-        for index in range(3)
-    )
-
-
 def _quality_uv(check: dict) -> dict:
     obj = _quality_object(check.get("object_name"), "object_name")
     if obj.type != "MESH":
@@ -1586,9 +1560,17 @@ def _quality_uv(check: dict) -> dict:
                 face_uv_area[polygon_index] += uv_area
             if uv_area <= epsilon:
                 degenerate_uv_triangles += 1
+            geometry_points = tuple(
+                tuple(
+                    float(value)
+                    for value in mesh.vertices[
+                        mesh.loops[index].vertex_index
+                    ].co
+                )
+                for index in loop_indices
+            )
             distortion = _triangle_shape_distortion(
-                mesh,
-                loop_indices,
+                geometry_points,
                 uv_points,
                 epsilon,
             )
