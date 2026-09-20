@@ -26,8 +26,7 @@ class UnityEditorBridge:
     def companion_source_path(self) -> Path:
         if self._companion_source:
             return self._companion_source
-        generic = self.project / "Assets/OrdaX/Editor/OrdaXGenericAgent.cs"
-        return generic if generic.is_file() else self.project / "Assets/HORDAX/Editor/OrdaXEditorAgent.cs"
+        return self.project / "Assets/OrdaX/Editor/OrdaXGenericAgent.cs"
 
     def project_appears_open(self) -> bool:
         return self.project_lock_path.exists()
