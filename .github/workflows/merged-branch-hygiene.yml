@@ -37,7 +37,6 @@ jobs:
           bash scripts/branch-hygiene.sh branch "${{ github.event.pull_request.head.ref }}"
 
       - name: Sweep previously merged transient branches
-        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
