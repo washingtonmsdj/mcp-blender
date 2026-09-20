@@ -519,7 +519,17 @@ class ReferenceActions:
         """
         self._validated_reference_object_names(payload)
 
-        reference = self.project_reference_images(payload)
+        try:
+            reference = self.project_reference_images(payload)
+        except ValueError as error:
+            return ActionResult(
+                False,
+                "Reference preflight failed; Blender was not modified",
+                {
+                    "phase": "reference_preflight",
+                    "error": str(error),
+                },
+            )
         if not reference.ok:
             return ActionResult(
                 False,
@@ -677,9 +687,10 @@ class ReferenceActions:
 
         return ActionResult(
             True,
-            "Reference-guided Blender generation accepted",
+            "Reference-guided Blender generation passed deterministic gates; visual assessment pending",
             {
                 "checkpoint_id": checkpoint_id or None,
+                "visual_review_pending": True,
                 "reference": reference.data,
                 "generation": generation.data,
                 "review": review.data,
