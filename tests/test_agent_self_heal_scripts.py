@@ -121,6 +121,48 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertGreater(restart_index, exit_index)
 
 
+    def test_all_managed_main_fetches_write_remote_tracking_ref(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        launcher = (
+            root / "scripts" / "windows" / "ordax-agent-start.cmd"
+        ).read_text(encoding="utf-8")
+        recovery = (
+            root / ".github" / "workflows" / "ordax-agent-recovery.yml"
+        ).read_text(encoding="utf-8")
+        agent_actions = (
+            root / "ordax_dev_agent" / "agent_actions.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'refs/heads/%BRANCH%:refs/remotes/origin/%BRANCH%',
+            launcher,
+        )
+        self.assertIn(
+            'refs/heads/main:refs/remotes/origin/main',
+            recovery,
+        )
+        self.assertIn(
+            'refs/heads/$branch:refs/remotes/origin/$branch',
+            recovery,
+        )
+        self.assertIn(
+            'f"refs/heads/{branch}:refs/remotes/origin/{branch}"',
+            agent_actions,
+        )
+
+        self.assertNotIn(
+            'fetch --quiet origin "%BRANCH%"',
+            launcher,
+        )
+        self.assertNotIn(
+            'git fetch --quiet origin main',
+            recovery,
+        )
+        self.assertNotIn(
+            '[*git, "fetch", "--quiet", "origin", branch]',
+            agent_actions,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
