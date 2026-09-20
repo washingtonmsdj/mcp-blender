@@ -3,11 +3,11 @@ name: OrdaX Agent Recovery
 on:
   push:
     branches:
-      - feat/ordax-dev-agent
+      - main
     paths:
       - "ordax_dev_agent/**"
       - "mcp_blender_unity/**"
-      - "scripts/windows/ordax-agent-start.cmd"
+      - "scripts/windows/**"
       - "scripts/verify_visual_agent.py"
       - "scripts/blender_benchmark.py"
       - "pyproject.toml"
@@ -17,7 +17,7 @@ on:
     paths:
       - "ordax_dev_agent/**"
       - "mcp_blender_unity/**"
-      - "scripts/windows/ordax-agent-start.cmd"
+      - "scripts/windows/**"
       - "scripts/verify_visual_agent.py"
       - "scripts/blender_benchmark.py"
       - "pyproject.toml"
@@ -88,9 +88,10 @@ jobs:
           }
 
       - name: Recover managed agent safely
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
         run: |
-          $branch = "feat/ordax-dev-agent"
+          $branch = "main"
           $repo = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent\src"
           $requestPath = Join-Path $env:GITHUB_WORKSPACE ".github\ordax-recovery-request.json"
 
