@@ -161,3 +161,8 @@ Para diagnóstico local sem modificar nada:
 ```
 
 Um sistema saudável deve mostrar o serviço `actions.runner.*` em `Running/Auto`, a tarefa `OrdaX Dev Agent` instalada e o endpoint local `127.0.0.1:8765/status` respondendo.
+
+Quando o Dev Agent estiver online, o mesmo relatório pode ser solicitado
+remotamente com a ação tipada `agent.resilience_status`. Ela não modifica
+serviços/tarefas e não aceita comandos arbitrários; serve apenas para transportar
+o JSON produzido pelo script de diagnóstico versionado.
