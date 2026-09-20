@@ -17,6 +17,7 @@ from .unity_actions import UnityActions
 from .agent_actions import AgentActions
 from .artifact_actions import ArtifactActions
 from .git_actions import GitActions
+from .project_text_actions import ProjectTextActions
 from .execution_lock import ExecutionLock
 
 
@@ -31,6 +32,7 @@ class ActionRegistry(
     AgentActions,
     ArtifactActions,
     GitActions,
+    ProjectTextActions,
 ):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
@@ -44,6 +46,8 @@ class ActionRegistry(
             "project.observe": self.project_observe,
             "project.references": self.project_references,
             "project.reference_images": self.project_reference_images,
+            "project.text_read": self.project_text_read,
+            "project.text_write": self.project_text_write,
             "observation.capture": self.observation_capture,
             "blender.inspect": self.blender_inspect,
             "blender.benchmark": self.blender_benchmark,
