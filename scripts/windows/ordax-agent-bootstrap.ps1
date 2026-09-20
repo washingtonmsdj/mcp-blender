@@ -127,7 +127,7 @@ function Invoke-SafeUpdate {
     }
 
     $remoteRef = "refs/remotes/origin/$Branch"
-    $fetchRefspec = "refs/heads/$Branch:$remoteRef"
+    $fetchRefspec = "refs/heads/${Branch}:$remoteRef"
     & git -c core.fsmonitor=false -C $repoRootResolved fetch --quiet origin $fetchRefspec
     if ($LASTEXITCODE -ne 0) {
         Write-BootstrapLog "UPDATE_SKIP fetch failed branch=$Branch"
