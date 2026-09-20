@@ -550,6 +550,54 @@ class ReferenceContractTests(unittest.TestCase):
         state = json.loads(pass_path.read_text(encoding="utf-8"))
         self.assertEqual("rejected", state["status"])
 
+    def test_visual_hash_guard_recaptures_same_views_and_parameters(self) -> None:
+        reviewed = {
+            "capture": {
+                "artifacts": [
+                    {"view": "front", "sha256": "1" * 64},
+                    {"view": "right", "sha256": "2" * 64},
+                ],
+                "resolution": [640, 480],
+                "margin": 1.25,
+                "mode": "material",
+            }
+        }
+        state = {
+            "project": "model",
+            "object_names": ["Hull"],
+        }
+        recaptured = ActionResult(
+            True,
+            "captured",
+            {
+                "artifacts": [
+                    {"view": "front", "sha256": "1" * 64},
+                    {"view": "right", "sha256": "2" * 64},
+                ]
+            },
+        )
+
+        with patch.object(
+            self.registry,
+            "blender_live_multiview_capture",
+            return_value=recaptured,
+        ) as capture:
+            result = self.registry._reference_candidate_visual_hashes(
+                {"project": "model"},
+                state,
+                reviewed,
+            )
+
+        self.assertTrue(result.ok)
+        request = capture.call_args.args[0]
+        self.assertEqual(["front", "right"], request["views"])
+        self.assertEqual(["Hull"], request["object_names"])
+        self.assertEqual(640, request["width"])
+        self.assertEqual(480, request["height"])
+        self.assertEqual(1.25, request["margin"])
+        self.assertEqual("material", request["mode"])
+        self.assertEqual(["front", "right"], result.data["verified_views"])
+
     def test_reference_decision_blocks_accept_after_pixels_changed(self) -> None:
         target = str((self.project / "boat.blend").resolve())
         pass_path = self._write_reference_pass_fixture(save_target=target)
