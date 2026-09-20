@@ -14,10 +14,11 @@ $python = Join-Path $repoRoot ".venv\Scripts\python.exe"
 $startup = [Environment]::GetFolderPath("Startup")
 $legacyLinkPath = Join-Path $startup "OrdaX Dev Agent.lnk"
 $taskName = "OrdaX Dev Agent"
-$launcher = Join-Path $repoRoot "scripts\windows\ordax-agent-start.cmd"
+$bootstrapInstaller = Join-Path $repoRoot "scripts\windows\ordax-agent-bootstrap-install.ps1"
 $stateDir = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent"
 $settingsPath = Join-Path $stateDir "agent-settings.json"
 $pairingPath = Join-Path $stateDir "pairing-code.txt"
+$bootstrapPath = Join-Path $stateDir "bootstrap\ordax-agent-bootstrap.ps1"
 
 if (-not $BridgePath) {
     $BridgePath = $repoRoot
@@ -66,14 +67,33 @@ if (Test-Path $legacyLinkPath) {
     Remove-Item -Force $legacyLinkPath
 }
 
+if (-not (Test-Path $bootstrapInstaller)) {
+    throw "Missing external bootstrap installer: $bootstrapInstaller"
+}
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $bootstrapInstaller -RepoRoot $repoRoot
+if ($LASTEXITCODE -ne 0) {
+    throw "External OrdaX bootstrap installation failed with exit code $LASTEXITCODE"
+}
+if (-not (Test-Path $bootstrapPath)) {
+    throw "External OrdaX bootstrap was not installed: $bootstrapPath"
+}
+
 Import-Module ScheduledTasks -ErrorAction Stop
 
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 
+$powershellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
+$bootstrapArguments = (
+    '-NoProfile -ExecutionPolicy Bypass -File "' +
+    $bootstrapPath +
+    '" -RepoRoot "' +
+    $repoRoot +
+    '"'
+)
 $actionParams = @{
-    Execute = $env:ComSpec
-    Argument = ('/d /c "' + $launcher + '"')
-    WorkingDirectory = $repoRoot
+    Execute = $powershellPath
+    Argument = $bootstrapArguments
+    WorkingDirectory = $stateDir
 }
 $action = New-ScheduledTaskAction @actionParams
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
@@ -89,7 +109,7 @@ $settingsParams = @{
 }
 $settings = New-ScheduledTaskSettingsSet @settingsParams
 $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
-$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "OrdaX Dev Agent - persistent interactive Unity/Blender control plane"
+$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "OrdaX Dev Agent - external bootstrap + persistent interactive Unity/Blender control plane"
 Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
 
 Write-Host "OrdaX Dev Agent installed."
@@ -97,6 +117,7 @@ Write-Host "Scheduled task: $taskName"
 Write-Host "Run context: $userId (interactive desktop)"
 Write-Host "Restart policy: 999 attempts, 1 minute interval"
 Write-Host "Local status endpoint: http://127.0.0.1:8765/status"
+Write-Host ("External bootstrap: " + $bootstrapPath)
 
 if ($SupabaseUrl -and $PublishableKey) {
     Write-Host "Supabase control plane configured."
