@@ -25,16 +25,27 @@ de reutilização seletiva estão em [docs/ARCHIVES.md](docs/ARCHIVES.md).
 ```text
 ChatGPT / cliente MCP
         |
-        v
-mcp-blender-unity
+        +--> mcp-blender-unity 0.3.x
+        |       +--> Blender CLI / headless export
+        |       +--> Unity CLI
         |
-        +--> Blender CLI
-        |
-        +--> Unity CLI
-                 |
-                 +--> HORDAX-game
+        +--> ordax-project-mcp / OrdaX Dev Agent
+                |
+                +--> ActionRegistry tipado (allow-list)
+                +--> projetos locais cadastrados
+                +--> Blender Live companion (janela visível)
+                +--> Unity companion / Editor
+                +--> Reference Contract + evidência visual
+                +--> Git / artifacts / observações
+                |
+                +--> Supabase control plane (fila remota opcional)
+
+Blender Live companion <--> inbox/results/trajectory locais versionados por protocolo
+Unity CLI / companion   <--> HORDAX-game e outros projetos Unity cadastrados
 ```
 
+A `main` é a única linha ativa de integração. Implementações históricas ficam
+sob `archive/*` e não participam de updates, recovery ou deploy normal.
 O HORDAX permanece no repositório `washingtonmsdj/HORDAX-game`.
 
 ## Estrutura
@@ -45,18 +56,49 @@ mcp_blender_unity/
   process.py
   server.py
 
-scripts/windows/
-  blender-run.ps1
-  mcp-start.ps1
-  toolchain-status.ps1
-  unity-run.ps1
+ordax_dev_agent/
+  actions.py
+  blender_actions.py
+  unity_actions.py
+  agent_actions.py
+  artifact_actions.py
+  git_actions.py
+  references.py
+  observations.py
+  versioning.py
+  blender_live_bridge.py
+  assets/
+    blender_live_companion.py
+    blender_companion_bundle.json
+    blender_uv_math.py
+    blender_spatial_math.py
+    blender_quality_rules.py
+    blender_modeling_contracts.py
+
+control-plane/supabase/
+  migrations + Edge Function do Dev Agent
+
+scripts/
+  blender_benchmark.py
+  verify_visual_agent.py
+  verify_packaged_companion_bundle.py
+  windows/
 
 .github/workflows/
+  bridge-ci.yml
+  ordax-agent-recovery.yml
+  merged-branch-hygiene.yml
+  hordax-autopilot.yml
   toolchain-smoke.yml
   unity-hordax-validate.yml
 
 docs/
+  VERSIONING.md
+  ARCHIVES.md
   SELF_HOSTED_RUNNER.md
+  BLENDERBENCH.md
+  BLENDER_MODELING_CONTRACTS.md
+  REFERENCE_CONTRACT.md
 ```
 
 ## MCP local
@@ -158,13 +200,27 @@ alterado remotamente sem editar scripts no computador do runner. O último SHA
 validado fica apenas na máquina do runner, em `LOCALAPPDATA\HORDAX-Autopilot`,
 para evitar executar Unity novamente quando não houve mudança de código.
 
-## GitHub self-hosted runner
+## GitHub workflows e self-hosted runner
 
 Veja `docs/SELF_HOSTED_RUNNER.md`.
 
-O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório isolado, roda o Unity em batch mode e publica o log como artifact.
+- **Bridge CI** — automático em PRs e pushes para `main`; roda unit tests em
+  Ubuntu/Windows, valida PowerShell, package metadata e o wheel real do companion.
+- **Merged Branch Hygiene** — automático após avanço da `main`, PR mesclado e
+  também por agenda; remove apenas branches transitórias com PR mesclado, sem PR
+  aberto e totalmente contidas na `main`.
+- **OrdaX Agent Recovery** — automático em pushes relevantes da `main` e manual;
+  usa runner Windows self-hosted para compile/smokes/recovery somente quando o
+  commit ainda é o head atual.
+- **HORDAX Unity Autopilot** — agendado e manual; observa o commit configurado do
+  HORDAX e só executa Unity quando houver SHA novo.
+- **Toolchain smoke** — manual; verifica Blender/Unity instalados no runner.
+- **Validate HORDAX in Unity** — manual; valida um ref escolhido do HORDAX e
+  publica o log como artifact.
 
-Os workflows são manuais por segurança.
+O runner self-hosted é necessário apenas para operações que realmente dependem
+do Blender/Unity instalado na estação. CI hospedado continua validando código,
+contratos, packaging e scripts mesmo quando a estação local está offline.
 
 ## Action domain architecture
 
