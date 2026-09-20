@@ -167,3 +167,134 @@ class ProjectTextActions:
                 "encoding": "utf-8-sig" if keep_bom else "utf-8",
             },
         )
+
+    def project_text_patch(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        raw = str(payload.get("path") or "")
+        path, relative = _relative_project_path(project, raw, must_exist=True)
+
+        if path.suffix.lower() not in _WRITABLE_SUFFIXES:
+            return ActionResult(
+                False,
+                f"text file extension is not writable: {path.suffix or '<none>'}",
+            )
+        if not path.is_file():
+            return ActionResult(False, f"path is not a file: {relative.as_posix()}")
+
+        before_bytes = path.read_bytes()
+        if len(before_bytes) > _MAX_READ_BYTES:
+            return ActionResult(
+                False,
+                f"text file is too large to patch: {len(before_bytes)} > {_MAX_READ_BYTES}",
+                {"path": relative.as_posix(), "size_bytes": len(before_bytes)},
+            )
+
+        before_sha = _sha256(before_bytes)
+        expected = str(payload.get("expected_sha256") or "").strip().lower()
+        if not expected:
+            return ActionResult(
+                False,
+                "expected_sha256 is required when patching an existing file",
+                {"path": relative.as_posix(), "current_sha256": before_sha},
+            )
+        if expected != before_sha:
+            return ActionResult(
+                False,
+                "text file changed since it was read; refusing stale patch",
+                {
+                    "path": relative.as_posix(),
+                    "expected_sha256": expected,
+                    "current_sha256": before_sha,
+                },
+            )
+
+        try:
+            content = before_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError as error:
+            return ActionResult(False, f"file is not valid UTF-8 text: {error}")
+
+        replacements = payload.get("replacements")
+        if not isinstance(replacements, list) or not replacements or len(replacements) > 50:
+            return ActionResult(
+                False,
+                "replacements must be a non-empty list with at most 50 items",
+            )
+
+        applied: list[dict[str, Any]] = []
+        patched = content
+        for index, replacement in enumerate(replacements):
+            if not isinstance(replacement, dict):
+                return ActionResult(False, f"replacement {index} must be an object")
+            old = replacement.get("old")
+            new = replacement.get("new")
+            if not isinstance(old, str) or not old:
+                return ActionResult(False, f"replacement {index}.old must be a non-empty string")
+            if not isinstance(new, str):
+                return ActionResult(False, f"replacement {index}.new must be a string")
+            try:
+                expected_count = int(replacement.get("expected_count", 1))
+            except (TypeError, ValueError):
+                return ActionResult(False, f"replacement {index}.expected_count must be an integer")
+            if expected_count < 1 or expected_count > 1000:
+                return ActionResult(False, f"replacement {index}.expected_count must be between 1 and 1000")
+
+            actual_count = patched.count(old)
+            if actual_count != expected_count:
+                return ActionResult(
+                    False,
+                    f"replacement {index} matched {actual_count} occurrence(s), expected {expected_count}; refusing ambiguous patch",
+                    {
+                        "path": relative.as_posix(),
+                        "replacement_index": index,
+                        "actual_count": actual_count,
+                        "expected_count": expected_count,
+                        "current_sha256": before_sha,
+                    },
+                )
+            patched = patched.replace(old, new)
+            applied.append(
+                {
+                    "index": index,
+                    "expected_count": expected_count,
+                    "old_length": len(old),
+                    "new_length": len(new),
+                }
+            )
+
+        keep_bom = before_bytes.startswith(b"\xef\xbb\xbf")
+        encoded = patched.encode("utf-8-sig" if keep_bom else "utf-8")
+        if len(encoded) > _MAX_WRITE_BYTES:
+            return ActionResult(
+                False,
+                f"patched text is too large to write: {len(encoded)} > {_MAX_WRITE_BYTES}",
+                {"path": relative.as_posix(), "size_bytes": len(encoded)},
+            )
+
+        temp = path.with_name(path.name + f".ordax-{uuid.uuid4().hex}.tmp")
+        try:
+            temp.write_bytes(encoded)
+            if temp.read_bytes() != encoded:
+                raise IOError("temporary file verification failed")
+            temp.replace(path)
+        finally:
+            try:
+                temp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        after_bytes = path.read_bytes()
+        return ActionResult(
+            True,
+            "project text file patched",
+            {
+                "project": project.slug,
+                "path": relative.as_posix(),
+                "before_sha256": before_sha,
+                "sha256": _sha256(after_bytes),
+                "size_bytes": len(after_bytes),
+                "encoding": "utf-8-sig" if keep_bom else "utf-8",
+                "replacement_count": len(applied),
+                "replacements": applied,
+            },
+        )
+
