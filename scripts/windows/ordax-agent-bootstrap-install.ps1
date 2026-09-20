@@ -39,13 +39,15 @@ if ($RetargetTask) {
     }
 
     $python = Join-Path $repoRootResolved ".venv\Scripts\python.exe"
+    $pythonw = Join-Path $repoRootResolved ".venv\Scripts\pythonw.exe"
     if (-not (Test-Path $python)) {
         throw "Managed agent Python missing: $python"
     }
+    $taskPython = if (Test-Path $pythonw) { $pythonw } else { $python }
 
     $action = New-ScheduledTaskAction `
-        -Execute $python `
-        -Argument '-m ordax_dev_agent.main' `
+        -Execute $taskPython `
+        -Argument '-m ordax_dev_agent.task_entry' `
         -WorkingDirectory $repoRootResolved
     Set-ScheduledTask -TaskName $TaskName -Action $action | Out-Null
 }
