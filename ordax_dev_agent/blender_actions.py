@@ -28,6 +28,13 @@ class BlenderActions:
         return BlenderLiveBridge(self.config, self._project(payload))
 
     def blender_benchmark(self, payload: dict[str, Any]) -> ActionResult:
+        unsupported = sorted(set(payload) - {"project", "timeout_seconds"})
+        if unsupported:
+            return ActionResult(
+                False,
+                "unsupported field(s): " + ", ".join(unsupported),
+            )
+
         blender = find_blender()
         if blender is None:
             return ActionResult(False, "Blender executable not found")
