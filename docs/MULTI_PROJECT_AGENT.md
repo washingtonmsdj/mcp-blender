@@ -188,3 +188,8 @@ capturas reais, conferindo que o `.blend` original permanece intacto.
 
 Referências: [Blender CLI](https://docs.blender.org/manual/en/latest/advanced/command_line/arguments.html),
 [Unity RenderTexture](https://docs.unity.com/en-us/engine/6000.7/script-reference/unityengine/rendertexture).
+
+
+`project.text_patch` aplica substituições textuais exatas e limitadas com o mesmo
+precondition SHA-256. Cada substituição declara a contagem esperada de ocorrências;
+qualquer ambiguidade ou mudança concorrente aborta o patch antes de escrever.
