@@ -137,5 +137,33 @@ class BlenderUvMathTests(unittest.TestCase):
         )
 
 
+    def test_shape_distortion_is_zero_for_uniform_uv_scale(self) -> None:
+        geometry = [(0.0, 0.0, 0.0), (2.0, 0.0, 0.0), (0.0, 2.0, 0.0)]
+        uv = [(0.0, 0.0), (5.0, 0.0), (0.0, 5.0)]
+        self.assertAlmostEqual(
+            0.0,
+            self.uv.triangle_shape_distortion(geometry, uv, 1e-12),
+            places=12,
+        )
+
+    def test_shape_distortion_detects_changed_edge_proportions(self) -> None:
+        geometry = [(0.0, 0.0, 0.0), (2.0, 0.0, 0.0), (0.0, 2.0, 0.0)]
+        uv = [(0.0, 0.0), (4.0, 0.0), (0.0, 1.0)]
+        distortion = self.uv.triangle_shape_distortion(
+            geometry,
+            uv,
+            1e-12,
+        )
+        self.assertIsNotNone(distortion)
+        self.assertGreater(distortion, 0.1)
+
+    def test_shape_distortion_returns_none_for_degenerate_triangle(self) -> None:
+        geometry = [(0.0, 0.0, 0.0)] * 3
+        uv = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)]
+        self.assertIsNone(
+            self.uv.triangle_shape_distortion(geometry, uv, 1e-12)
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
