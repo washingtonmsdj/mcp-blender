@@ -7,6 +7,7 @@ import argparse
 import difflib
 import hashlib
 import importlib
+import importlib.util
 import json
 import math
 import re
@@ -47,7 +48,67 @@ def _args():
     return parser.parse_args(argv)
 
 
-COMPANION_FINGERPRINT = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+def _companion_bundle_fingerprint() -> str:
+    root = Path(__file__).resolve().parent
+    manifest_path = (root / "blender_companion_bundle.json").resolve()
+    if not manifest_path.is_relative_to(root):
+        raise RuntimeError("Blender companion bundle manifest escaped asset root")
+
+    data = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    if not isinstance(data, dict) or data.get("version") != 1:
+        raise RuntimeError("Blender companion bundle manifest version is invalid")
+    raw_files = data.get("files")
+    if (
+        not isinstance(raw_files, list)
+        or not raw_files
+        or len(raw_files) > 32
+        or not all(isinstance(name, str) and name.strip() for name in raw_files)
+    ):
+        raise RuntimeError("Blender companion bundle files are invalid")
+
+    names = [name.strip().replace("\\", "/") for name in raw_files]
+    if len(set(names)) != len(names):
+        raise RuntimeError("Blender companion bundle files must be unique")
+
+    digest = hashlib.sha256()
+    digest.update(b"ordax-blender-companion-bundle\0")
+    digest.update(b"1\0")
+    for name in sorted(names):
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise RuntimeError(f"invalid Blender companion bundle path: {name}")
+        path = (root / relative).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            raise RuntimeError(f"Blender companion bundle file missing: {name}")
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
+
+
+COMPANION_FINGERPRINT = _companion_bundle_fingerprint()
+
+
+def _load_companion_asset_module(filename: str, module_name: str):
+    path = (Path(__file__).resolve().parent / filename).resolve()
+    if not path.is_relative_to(Path(__file__).resolve().parent):
+        raise RuntimeError(f"companion helper escaped asset root: {filename}")
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load companion helper: {filename}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_UV_MATH = _load_companion_asset_module(
+    "blender_uv_math.py",
+    "_ordax_blender_uv_math",
+)
+_triangle_area_2d = _UV_MATH.triangle_area_2d
+_signed_area_2d = _UV_MATH.signed_area_2d
+_line_intersection_2d = _UV_MATH.line_intersection_2d
+_triangle_overlap_area_2d = _UV_MATH.triangle_overlap_area_2d
 
 CFG = _args()
 CONTROL_ROOT = Path(CFG.ordax_control_root).resolve()
@@ -1399,86 +1460,6 @@ def _uv_coordinate(layer, loop_index: int) -> tuple[float, float]:
             pass
 
     raise ValueError("could not read UV coordinates from the selected UV layer")
-
-
-def _triangle_area_2d(points) -> float:
-    (ax, ay), (bx, by), (cx, cy) = points
-    return abs(
-        (bx - ax) * (cy - ay)
-        - (by - ay) * (cx - ax)
-    ) * 0.5
-
-
-def _signed_area_2d(points) -> float:
-    area = 0.0
-    for index, point in enumerate(points):
-        next_point = points[(index + 1) % len(points)]
-        area += point[0] * next_point[1] - next_point[0] * point[1]
-    return area * 0.5
-
-
-def _line_intersection_2d(p1, p2, q1, q2):
-    px = p2[0] - p1[0]
-    py = p2[1] - p1[1]
-    qx = q2[0] - q1[0]
-    qy = q2[1] - q1[1]
-    denominator = px * qy - py * qx
-    if abs(denominator) <= 1e-15:
-        return p2
-    t = (
-        (q1[0] - p1[0]) * qy
-        - (q1[1] - p1[1]) * qx
-    ) / denominator
-    return (p1[0] + t * px, p1[1] + t * py)
-
-
-def _triangle_overlap_area_2d(subject, clip) -> float:
-    output = list(subject)
-    orientation = 1.0 if _signed_area_2d(clip) >= 0 else -1.0
-
-    def inside(point, edge_a, edge_b) -> bool:
-        cross = (
-            (edge_b[0] - edge_a[0]) * (point[1] - edge_a[1])
-            - (edge_b[1] - edge_a[1]) * (point[0] - edge_a[0])
-        )
-        return orientation * cross >= -1e-12
-
-    for index, edge_a in enumerate(clip):
-        edge_b = clip[(index + 1) % len(clip)]
-        if not output:
-            return 0.0
-        input_points = output
-        output = []
-        previous = input_points[-1]
-        previous_inside = inside(previous, edge_a, edge_b)
-        for current in input_points:
-            current_inside = inside(current, edge_a, edge_b)
-            if current_inside:
-                if not previous_inside:
-                    output.append(
-                        _line_intersection_2d(
-                            previous,
-                            current,
-                            edge_a,
-                            edge_b,
-                        )
-                    )
-                output.append(current)
-            elif previous_inside:
-                output.append(
-                    _line_intersection_2d(
-                        previous,
-                        current,
-                        edge_a,
-                        edge_b,
-                    )
-                )
-            previous = current
-            previous_inside = current_inside
-
-    if len(output) < 3:
-        return 0.0
-    return abs(_signed_area_2d(output))
 
 
 def _triangle_shape_distortion(mesh, loop_indices, uv_points, epsilon: float) -> float | None:

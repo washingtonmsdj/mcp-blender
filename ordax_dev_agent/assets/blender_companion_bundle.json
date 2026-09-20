@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "files": [
+    "blender_live_companion.py",
+    "blender_uv_math.py"
+  ]
+}
