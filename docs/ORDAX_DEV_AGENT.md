@@ -204,17 +204,40 @@ The companion now writes a per-command file under `blender-live/<project>/inflig
 
 The OrdaX Agent must remain available without depending on the GitHub runner.
 
-### Primary uptime — OrdaX interactive scheduled task
+### Primary uptime — external bootstrap + interactive scheduled task
 
-The OrdaX Agent runs through the Windows Scheduled Task named `OrdaX Dev Agent` under the interactive Windows user.
+The OrdaX Agent runs through the Windows Scheduled Task named `OrdaX Dev Agent`
+under the interactive Windows user, but the task no longer points at a launcher
+inside the managed Git checkout.
 
-- Task Scheduler runs the interactive launcher and remains the authoritative restart entrypoint.
-- The launcher retries non-zero exits with bounded exponential backoff.
-- Before every start it performs the same non-refreshing tracked-file/index-tree preflight used by `agent.update`.
-- Fast-forward updates reinstall the editable package only when the semantic install contract changes (dependencies, entry points, build backend/package discovery), not for a version-only or package-data-only change.
+Installation copies two small bootstrap files to:
+
+`%LOCALAPPDATA%\OrdaX\DevAgent\bootstrap\`
+
+- `ordax-agent-bootstrap.ps1`
+- `update_policy.py`
+
+The Scheduled Task executes that external bootstrap. This breaks the circular
+dependency where an old/broken agent could not update the very checkout needed
+to fix itself.
+
+- The bootstrap retries non-zero agent exits with bounded exponential backoff.
+- Before every start it runs the external copy of the same non-refreshing
+  tracked-file/index-tree preflight used by `agent.update`.
+- It fetches `main` with an explicit
+  `refs/heads/main:refs/remotes/origin/main` refspec, so recovery does not depend
+  on pre-existing remote-tracking configuration.
+- It only accepts fast-forward ancestry.
+- It refreshes the editable install only when the semantic install contract
+  changes (dependencies, entry points, build backend/package discovery).
 - Updated Python is compiled before launch.
-- If a newly fast-forwarded update fails the compile gate, the managed checkout is restored to the previous known-compilable commit.
-- The watchdog first looks for a successor `ordax_dev_agent.main` process when its parent exits; only if no successor exists does it request the enabled, non-running `OrdaX Dev Agent` Scheduled Task to start again.
+- If install/compile validation fails, the checkout is restored to the previous
+  known-compilable commit and the prior editable install is restored when needed.
+- The legacy `ordax-agent-start.cmd` remains a manual fallback, not the normal
+  Scheduled Task entrypoint.
+- The watchdog first looks for a successor `ordax_dev_agent.main` process when
+  its parent exits; only if no successor exists does it request the enabled,
+  non-running `OrdaX Dev Agent` Scheduled Task to start again.
 
 The Agent intentionally runs in the interactive session because visible Blender and Unity workflows must not be launched in Windows Session 0.
 
@@ -223,6 +246,11 @@ The Agent intentionally runs in the interactive session because visible Blender 
 If the GitHub self-hosted runner is configured officially as a Windows Service, it can provide an independent CI/recovery channel. OrdaX only hardens an already-supported service configuration; it does not bypass GitHub's Windows runner registration flow.
 
 A runner configured interactively is not a requirement for Agent uptime.
+
+When the self-hosted recovery channel is available, a successful managed
+fast-forward also installs/refreshes the external bootstrap and retargets the
+Scheduled Task before restarting the agent. This migrates older installations
+without requiring the old agent process to know the new update code.
 
 ### Local recovery entrypoint
 
