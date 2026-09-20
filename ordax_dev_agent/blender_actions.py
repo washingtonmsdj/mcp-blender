@@ -35,10 +35,6 @@ class BlenderActions:
                 "unsupported field(s): " + ", ".join(unsupported),
             )
 
-        blender = find_blender()
-        if blender is None:
-            return ActionResult(False, "Blender executable not found")
-
         try:
             timeout = int(payload.get("timeout_seconds", 1200))
         except (TypeError, ValueError):
@@ -48,6 +44,10 @@ class BlenderActions:
                 False,
                 "timeout_seconds must be between 60 and 3600",
             )
+
+        blender = find_blender()
+        if blender is None:
+            return ActionResult(False, "Blender executable not found")
 
         source_root = Path(__file__).resolve().parents[1]
         managed_root = self.config.agent_repo_path.resolve()
