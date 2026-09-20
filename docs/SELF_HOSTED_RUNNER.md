@@ -56,6 +56,24 @@ Esse script apenas endurece o serviço já suportado pelo GitHub:
 
 O GitHub runner é uma segunda camada de recuperação/CI. A disponibilidade normal do OrdaX Agent não depende dele.
 
+A partir do Dev Agent 1.16, a tarefa agendada usa um bootstrap copiado para
+`%LOCALAPPDATA%\OrdaX\DevAgent\bootstrap`, fora do checkout gerenciado. O
+runner self-hosted continua importante para validar Blender/Unity reais e pode
+migrar instalações antigas para esse bootstrap, mas deixa de ser necessário
+para o ciclo normal de auto-update depois que a migração foi concluída.
+
+O bootstrap externo:
+
+- verifica alterações rastreadas com a cópia externa de `update_policy.py`;
+- busca `main` com refspec remoto explícito;
+- aceita somente fast-forward;
+- atualiza dependências apenas quando o contrato de instalação muda;
+- compila antes de iniciar o agente;
+- restaura o commit/instalação anterior em falha;
+- após um update validado, atualiza atomicamente sua própria cópia externa para
+  a próxima inicialização.
+
+
 ### Política da fila self-hosted
 
 O workflow `OrdaX Agent Recovery` não é mais aberto automaticamente para cada pull request. Pull requests usam o `Bridge CI` hospedado para compilação, testes Python/Windows/Linux e parsing PowerShell.
@@ -126,7 +144,7 @@ A instalação recomendada para a máquina OrdaX é:
 .\scripts\windows\ordax-resilience-install.ps1
 ```
 
-O bootstrap instala/atualiza o **OrdaX Dev Agent** como Scheduled Task do usuário interativo, com restart-on-failure e launcher auto-recuperável.
+O bootstrap instala/atualiza o **OrdaX Dev Agent** como Scheduled Task do usuário interativo, com restart-on-failure e um bootstrap externo auto-recuperável. A ação da tarefa aponta para a cópia em `%LOCALAPPDATA%`, não diretamente para um script dentro do checkout Git.
 
 Por padrão ele não reconfigura o GitHub runner. Se um runner oficial já estiver configurado como Windows Service, use `-HardenRunnerService` para aplicar a política adicional de recovery:
 
