@@ -154,7 +154,7 @@ class BlenderLiveResultTests(unittest.TestCase):
         )
         self.assertNotIn("def _coerce_vector(", companion)
 
-    def test_staged_modeling_mutations_are_smoke_only_and_not_advertised(self) -> None:
+    def test_validated_modeling_mutations_are_advertised_and_use_normal_dispatch(self) -> None:
         root = Path(__file__).resolve().parents[1]
         companion = (
             root / "ordax_dev_agent" / "assets" / "blender_live_companion.py"
@@ -166,17 +166,18 @@ class BlenderLiveResultTests(unittest.TestCase):
         start = companion.index("CAPABILITIES = [")
         end = companion.index("_LAST_PRESENCE_AT", start)
         capabilities = companion[start:end]
-        self.assertNotIn("__smoke_create_primitive", capabilities)
-        self.assertNotIn("__smoke_add_modifier", capabilities)
+        self.assertIn('"create_primitive"', capabilities)
+        self.assertIn('"add_modifier"', capabilities)
+        self.assertNotIn("__smoke_create_primitive", companion)
+        self.assertNotIn("__smoke_add_modifier", companion)
+        self.assertNotIn("smoke_only_unregistered", companion)
 
-        self.assertIn("def _modeling_create_primitive_unregistered", companion)
-        self.assertIn("def _modeling_add_modifier_unregistered", companion)
-        self.assertIn("and CFG.ordax_smoke_modeling_fixture", companion)
-        self.assertIn("and bool(CFG.ordax_smoke_output_dir)", companion)
-        self.assertIn('"smoke-model-create"', companion)
-        self.assertIn('"smoke-model-modifier"', companion)
-        self.assertIn('"smoke-model-create-duplicate"', companion)
-        self.assertIn('"smoke-model-modifier-duplicate"', companion)
+        self.assertIn("def _modeling_create_primitive(", companion)
+        self.assertIn("def _modeling_add_modifier(", companion)
+        self.assertIn('operation == "create_primitive"', companion)
+        self.assertIn('operation == "add_modifier"', companion)
+        self.assertIn('"operation": "create_primitive"', companion)
+        self.assertIn('"operation": "add_modifier"', companion)
 
         self.assertIn('"smoke-model-create.json"', benchmark)
         self.assertIn('"smoke-model-modifier.json"', benchmark)
