@@ -25,7 +25,10 @@ class ProjectRegistrationScriptTests(unittest.TestCase):
 
     def test_project_path_and_apps_are_validated(self) -> None:
         self.assertIn("Resolve-Path -LiteralPath $Path", self.script)
-        self.assertIn('[ValidateSet("unity", "blender")]', self.script)
+        self.assertIn('[string[]]$Apps = @("unity", "blender")', self.script)
+        self.assertIn('[string]$value -split "[,;]"', self.script)
+        self.assertIn('$allowedApps = @("unity", "blender")', self.script)
+        self.assertIn('Unsupported application', self.script)
         self.assertIn(
             "Unity project needs Assets and ProjectSettings directories",
             self.script,
@@ -34,6 +37,10 @@ class ProjectRegistrationScriptTests(unittest.TestCase):
             "BlenderFile must remain inside the registered project",
             self.script,
         )
+
+    def test_comma_separated_apps_from_powershell_file_invocation_are_supported(self) -> None:
+        self.assertIn('$normalizedApps = @(', self.script)
+        self.assertIn('$Apps = @($normalizedApps)', self.script)
 
     def test_restart_is_explicit_and_refuses_busy_agent_by_default(self) -> None:
         self.assertIn("[switch]$RestartAgent", self.script)
