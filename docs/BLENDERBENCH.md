@@ -31,10 +31,10 @@ Acceptance requires all of the following:
     and scale;
 12. a zero-scale transform is rejected as a modeling negative control;
 13. both transform command IDs are present in `trajectory.jsonl`;
-14. smoke-only cube creation succeeds and duplicate object names are rejected;
-15. smoke-only BEVEL insertion succeeds and duplicate modifier names are rejected;
-16. the staged modifier reports an allowed runtime budget;
-17. all staged modeling command IDs are present in `trajectory.jsonl`;
+14. production `create_primitive` cube creation succeeds and duplicate object names are rejected;
+15. production `add_modifier` BEVEL insertion succeeds and duplicate modifier names are rejected;
+16. the modifier reports an allowed runtime budget;
+17. all modeling command IDs are present in `trajectory.jsonl`;
 18. the temporary smoke object is removed before multiview capture;
 19. despite all in-memory modeling operations, the source `.blend` remains
     byte-for-byte unchanged on disk.
@@ -84,11 +84,13 @@ Hosted Bridge CI compiles the benchmark script but cannot validate Blender
 runtime behavior. The Windows self-hosted recovery workflow runs BlenderBench
 before it is allowed to touch the managed OrdaX agent.
 
-The modeling fixture validates the supported typed transform path and also
-executes staged create/modifier code behind a smoke-only dispatcher gate.
-Those staged operations remain absent from normal capabilities and remain
-`pending_blender_smoke` until this benchmark succeeds on the self-hosted
-Blender 5.x runner and a separate promotion PR explicitly registers them.
+The modeling fixture validates the three production typed mutation paths:
+`object_transform`, `create_primitive` and `add_modifier`. The same normal
+dispatcher operations and runtime guards used by live sessions are exercised in
+the benchmark.
 
-A benchmark failure therefore blocks recovery/update of the managed agent
-instead of allowing an unverified Blender control layer onto the workstation.
+The September 20, 2026 benchmark job
+`53b9b1ef-81de-406f-966e-576599c257e2` passed on Blender 5.2.2 LTS and was
+the promotion evidence for create/modifier. A benchmark failure continues to
+block recovery/update of the managed agent instead of allowing an unverified
+Blender control layer onto the workstation.
