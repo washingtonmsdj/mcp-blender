@@ -84,3 +84,54 @@ def triangle_overlap_area_2d(subject, clip) -> float:
     if len(output) < 3:
         return 0.0
     return abs(signed_area_2d(output))
+
+def triangle_shape_distortion(
+    geometry_points,
+    uv_points,
+    epsilon: float,
+) -> float | None:
+    """Compare normalized triangle edge proportions in 3D and UV space."""
+    if len(geometry_points) != 3 or len(uv_points) != 3:
+        raise ValueError("triangle_shape_distortion requires exactly three points")
+
+    geometry_lengths = []
+    for index in range(3):
+        first = geometry_points[index]
+        second = geometry_points[(index + 1) % 3]
+        if len(first) < 3 or len(second) < 3:
+            raise ValueError("geometry points must contain x, y and z")
+        geometry_lengths.append(
+            (
+                (float(second[0]) - float(first[0])) ** 2
+                + (float(second[1]) - float(first[1])) ** 2
+                + (float(second[2]) - float(first[2])) ** 2
+            ) ** 0.5
+        )
+
+    uv_lengths = []
+    for index in range(3):
+        first = uv_points[index]
+        second = uv_points[(index + 1) % 3]
+        uv_lengths.append(
+            (
+                (float(second[0]) - float(first[0])) ** 2
+                + (float(second[1]) - float(first[1])) ** 2
+            ) ** 0.5
+        )
+
+    geometry_total = sum(geometry_lengths)
+    uv_total = sum(uv_lengths)
+    if geometry_total <= epsilon or uv_total <= epsilon:
+        return None
+
+    geometry_normalized = [
+        value / geometry_total for value in geometry_lengths
+    ]
+    uv_normalized = [
+        value / uv_total for value in uv_lengths
+    ]
+    return max(
+        abs(geometry_normalized[index] - uv_normalized[index])
+        for index in range(3)
+    )
+
