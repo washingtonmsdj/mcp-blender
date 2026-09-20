@@ -339,7 +339,7 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             installer,
         )
         self.assertIn(
-            "-Argument '-m ordax_dev_agent.main'",
+            "-Argument '-m ordax_dev_agent.task_entry'",
             installer,
         )
         self.assertIn(
