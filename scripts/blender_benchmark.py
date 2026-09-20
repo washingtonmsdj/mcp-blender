@@ -62,19 +62,29 @@ uv_probe("UVProbe", invalid=False)
 uv_probe("UVProbeBad", invalid=True)
 bpy.ops.wm.save_as_mainfile(filepath={str(scene)!r})
 """
-    expression = "exec(" + repr(script) + ")"
-    result = run_process(
-        [
-            str(blender),
-            "--background",
-            "--factory-startup",
-            "--python-exit-code",
-            "1",
-            "--python-expr",
-            expression,
-        ],
-        timeout_seconds=120,
-    )
+    scene.parent.mkdir(parents=True, exist_ok=True)
+    fixture_script = scene.with_suffix(".fixture.py")
+    fixture_script.write_text(script, encoding="utf-8")
+    try:
+        result = run_process(
+            [
+                str(blender),
+                "--background",
+                "--factory-startup",
+                "--disable-autoexec",
+                "--python-exit-code",
+                "1",
+                "--python",
+                str(fixture_script),
+            ],
+            timeout_seconds=120,
+        )
+    finally:
+        try:
+            fixture_script.unlink()
+        except OSError:
+            pass
+
     if not result["ok"]:
         raise RuntimeError(json.dumps(result, indent=2))
 

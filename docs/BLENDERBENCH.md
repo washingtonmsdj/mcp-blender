@@ -44,6 +44,11 @@ Its purpose is to detect regressions in transport, Blender runtime behavior,
 camera framing, Workbench silhouette rendering, artifact persistence and
 comparison metrics without conflating those failures with modeling quality.
 
+Fixture scenes are generated through a short temporary `.py` file passed with
+Blender's `--python` option (plus `--factory-startup --disable-autoexec`).
+The launcher deliberately avoids a large Windows `--python-expr` command line;
+the temporary script is deleted in a `finally` block after Blender exits.
+
 ## Running locally
 
 From the repository environment:
