@@ -24,20 +24,26 @@ namespace OrdaX.EditorTools
             public string id, summary, artifact, snapshotPath;
             public bool ok, compiling, playing;
             public string unityVersion = Application.unityVersion;
-            public string protocol = "ordax-generic-v3";
+            public string protocol = "ordax-generic-v4";
             public int errorCount, warningCount;
             public string activeScene, renderPipeline;
             public int gameObjectCount, activeGameObjectCount;
             public int rigidbodyCount, colliderCount, meshColliderCount;
             public int rendererCount, cameraCount, lightCount, canvasCount;
             public int rigidbodyWithoutColliderCount, dynamicNonConvexMeshColliderCount;
+            public int mirroredTransformCount, nearZeroScaleCount, extremeScaleCount;
+            public int extremePositionCount, nonFiniteTransformCount, invertedRootCount;
+            public int cameraInsideColliderCount;
+            public bool cameraBelowRenderBounds;
+            public Vector3 renderBoundsCenter, renderBoundsSize;
+            public Vector3 cameraPosition, cameraEulerAngles;
             public string[] auditWarnings;
         }
         [Serializable] private class SceneObject
         {
             public string name, path;
             public bool active;
-            public Vector3 position, scale;
+            public Vector3 position, rotation, scale;
         }
         [Serializable] private class Snapshot
         {
@@ -126,6 +132,7 @@ namespace OrdaX.EditorTools
                     case "scene_open": OpenScene(command, reply); break;
                     case "scene_summary": SceneSummary(reply, false); break;
                     case "physics_audit": SceneSummary(reply, true); break;
+                    case "spatial_audit": SpatialAudit(reply); break;
                     default: throw new InvalidOperationException("Unsupported companion action: " + command.action);
                 }
             }
@@ -198,6 +205,147 @@ namespace OrdaX.EditorTools
             reply.auditWarnings = auditWarnings.Take(200).ToArray();
         }
 
+        private static bool Finite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        private static bool Finite(Vector3 value)
+        {
+            return Finite(value.x) && Finite(value.y) && Finite(value.z);
+        }
+
+        private static void SpatialAudit(Reply reply)
+        {
+            var transforms = Resources.FindObjectsOfTypeAll<Transform>()
+                .Where(t => t != null && t.gameObject.scene.IsValid() && t.gameObject.scene.isLoaded)
+                .ToArray();
+            var renderers = Resources.FindObjectsOfTypeAll<Renderer>()
+                .Where(r => r != null && r.gameObject.scene.IsValid() && r.gameObject.scene.isLoaded)
+                .ToArray();
+            var colliders = Resources.FindObjectsOfTypeAll<Collider>()
+                .Where(c => c != null && c.gameObject.scene.IsValid() && c.gameObject.scene.isLoaded)
+                .ToArray();
+
+            int mirrored = 0;
+            int nearZero = 0;
+            int extremeScale = 0;
+            int extremePosition = 0;
+            int nonFinite = 0;
+            int invertedRoots = 0;
+            var auditWarnings = new List<string>();
+
+            foreach (var transform in transforms)
+            {
+                Vector3 position = transform.position;
+                Vector3 scale = transform.lossyScale;
+                Vector3 euler = transform.eulerAngles;
+
+                if (!Finite(position) || !Finite(scale) || !Finite(euler))
+                {
+                    nonFinite++;
+                    auditWarnings.Add("Non-finite transform: " + Hierarchy(transform));
+                    continue;
+                }
+
+                if ((scale.x * scale.y * scale.z) < 0f)
+                {
+                    mirrored++;
+                    auditWarnings.Add("Mirrored transform (negative determinant): " + Hierarchy(transform));
+                }
+                if (Mathf.Abs(scale.x) < 0.0001f || Mathf.Abs(scale.y) < 0.0001f || Mathf.Abs(scale.z) < 0.0001f)
+                {
+                    nearZero++;
+                    auditWarnings.Add("Near-zero world scale: " + Hierarchy(transform));
+                }
+                if (Mathf.Abs(scale.x) > 10000f || Mathf.Abs(scale.y) > 10000f || Mathf.Abs(scale.z) > 10000f)
+                {
+                    extremeScale++;
+                    auditWarnings.Add("Extreme world scale (>10000): " + Hierarchy(transform));
+                }
+                if (Mathf.Abs(position.x) > 1000000f || Mathf.Abs(position.y) > 1000000f || Mathf.Abs(position.z) > 1000000f)
+                {
+                    extremePosition++;
+                    auditWarnings.Add("Extreme world position (>1,000,000): " + Hierarchy(transform));
+                }
+                if (transform.parent == null && Vector3.Dot(transform.up, Vector3.up) < -0.5f)
+                {
+                    invertedRoots++;
+                    auditWarnings.Add("Root transform is upside down: " + Hierarchy(transform));
+                }
+            }
+
+            bool hasBounds = false;
+            Bounds worldBounds = default;
+            foreach (var renderer in renderers)
+            {
+                if (!renderer.enabled || !renderer.gameObject.activeInHierarchy) continue;
+                if (!hasBounds)
+                {
+                    worldBounds = renderer.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    worldBounds.Encapsulate(renderer.bounds);
+                }
+            }
+
+            Camera camera = Camera.main;
+            if (camera == null) camera = Camera.allCameras.FirstOrDefault();
+            int cameraInsideCollider = 0;
+            bool cameraBelowBounds = false;
+            if (camera != null)
+            {
+                reply.cameraPosition = camera.transform.position;
+                reply.cameraEulerAngles = camera.transform.eulerAngles;
+                foreach (var collider in colliders)
+                {
+                    if (!collider.enabled || !collider.gameObject.activeInHierarchy) continue;
+                    if (collider.bounds.Contains(camera.transform.position)) cameraInsideCollider++;
+                }
+
+                if (hasBounds)
+                {
+                    float margin = Mathf.Max(1f, worldBounds.size.y * 0.02f);
+                    cameraBelowBounds = camera.transform.position.y < worldBounds.min.y - margin;
+                    if (cameraBelowBounds)
+                    {
+                        auditWarnings.Add("Active camera is below the visible renderer bounds.");
+                    }
+                }
+                if (cameraInsideCollider > 0)
+                {
+                    auditWarnings.Add("Active camera lies inside " + cameraInsideCollider + " collider bounds.");
+                }
+            }
+
+            reply.activeScene = SceneManager.GetActiveScene().path;
+            reply.gameObjectCount = transforms.Length;
+            reply.rendererCount = renderers.Length;
+            reply.colliderCount = colliders.Length;
+            reply.mirroredTransformCount = mirrored;
+            reply.nearZeroScaleCount = nearZero;
+            reply.extremeScaleCount = extremeScale;
+            reply.extremePositionCount = extremePosition;
+            reply.nonFiniteTransformCount = nonFinite;
+            reply.invertedRootCount = invertedRoots;
+            reply.cameraInsideColliderCount = cameraInsideCollider;
+            reply.cameraBelowRenderBounds = cameraBelowBounds;
+            if (hasBounds)
+            {
+                reply.renderBoundsCenter = worldBounds.center;
+                reply.renderBoundsSize = worldBounds.size;
+            }
+            reply.auditWarnings = auditWarnings.Take(200).ToArray();
+
+            bool severe = nonFinite > 0 || extremePosition > 0;
+            reply.ok = !severe;
+            reply.summary = severe
+                ? "Spatial audit found invalid world transforms"
+                : (auditWarnings.Count > 0 ? "Spatial audit completed with warnings" : "Spatial audit passed");
+        }
+
         private static void OpenScene(Command command, Reply reply)
         {
             if (string.IsNullOrWhiteSpace(command.scenePath) ||
@@ -262,7 +410,7 @@ namespace OrdaX.EditorTools
                 objectsTruncated = transforms.Length > 1000,
                 objects = transforms.Take(1000).Select(t => new SceneObject { name = t.name,
                     path = Hierarchy(t), active = t.gameObject.activeInHierarchy,
-                    position = t.position, scale = t.lossyScale }).ToArray() };
+                    position = t.position, rotation = t.eulerAngles, scale = t.lossyScale }).ToArray() };
             reply.artifact = command.outputPath;
             reply.snapshotPath = Path.ChangeExtension(command.outputPath, ".json");
             Write(reply.snapshotPath, snapshot);
