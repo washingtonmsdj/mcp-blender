@@ -1,5 +1,5 @@
 {
-  "job_id": "aa966e42-7fee-49f1-9761-832d31504057",
-  "reason": "stuck blender.live_export blocking OrdaX agent after validated boat export preparation",
+  "job_id": "b7b72b5b-5ac6-41b2-b26b-c62522d7412e",
+  "reason": "stuck unity.editor_status while onboarding Salvador-Lacerda-2D for MVP development",
   "requested_by": "ChatGPT OrdaX control loop"
 }
