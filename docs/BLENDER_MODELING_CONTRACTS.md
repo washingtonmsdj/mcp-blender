@@ -57,6 +57,22 @@ The contracts also describe:
 Both report `pending_blender_smoke`. No remote action is registered for either
 mutation yet.
 
+The planner also preserves runtime preconditions and rollback guarantees from
+the useful part of the historical prototype.
+
+For `create_primitive` the future executor must prove Object Mode, no active
+render job and a unique object name. If creation fails after allocating Blender
+data, the partial object and mesh must be removed.
+
+For `add_modifier` the future executor must prove Object Mode, no active render
+job, a local/non-linked mesh target and a unique modifier name. Animated or
+constrained targets require a dedicated workflow instead of silently reusing the
+generic modifier path. If insertion/configuration fails, the newly-created
+modifier must be removed and the pre-existing modifier stack preserved.
+
+These are contract requirements only; they do not make either mutation
+executable.
+
 `add_modifier` also publishes deterministic runtime guards inherited from the
 earlier modeling prototype:
 
@@ -73,6 +89,12 @@ scene when the executor is eventually enabled.
 The historical `codex/blender-live-session` branch contains an earlier
 implementation of these operations, but that code targets an older companion
 architecture. It is treated as design evidence, not code to merge directly.
+
+One legacy rule is intentionally **not** copied: its transform implementation
+required a local, non-linked mesh with no animation/constraints. The current
+`blender.live_object_transform` is already a supported general scene-object
+operation, so importing that old restriction would be a behavioral regression
+rather than a safety improvement.
 
 ## Promotion gate
 
