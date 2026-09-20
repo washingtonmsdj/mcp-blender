@@ -160,6 +160,20 @@ O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório iso
 
 Os workflows são manuais por segurança.
 
+## Action domain architecture
+
+The central `ActionRegistry` remains the only allow-list surface, but domain
+implementations are composed as mixins rather than accumulating in one module:
+
+- `actions.py` — registry, agent, Git and Unity orchestration;
+- `blender_actions.py` — Blender/Blender Live typed actions;
+- `references.py` — Reference Contract and reference-guided generation;
+- `observations.py` — project-scoped visual evidence;
+- `process_runner.py` — shared bounded subprocess execution.
+
+Moving a method into a domain module does not add an action. An operation becomes
+remotely callable only when `ActionRegistry._actions` explicitly registers it.
+
 ## Blender Live 1.6.0
 
 The visible Blender companion now exposes a richer typed perception loop:

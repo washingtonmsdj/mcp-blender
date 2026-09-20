@@ -378,7 +378,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             (root / "hordax").mkdir()
             registry = ActionRegistry(self.make_config(root))
             with patch(
-                "ordax_dev_agent.actions.find_blender",
+                "ordax_dev_agent.blender_actions.find_blender",
                 return_value=Path("/fake/blender"),
             ):
                 result = registry.execute(
