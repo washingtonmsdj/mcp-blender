@@ -98,20 +98,21 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertNotIn("diff-files --quiet", launcher)
         self.assertNotIn("diff-index --cached", launcher)
 
-    def test_watchdog_requests_restart_only_after_successor_check(self) -> None:
+    def test_watchdog_requests_restart_without_cim_dependency(self) -> None:
         root = Path(__file__).resolve().parents[1]
         watchdog = (
             root / "scripts" / "windows" / "ordax-agent-watchdog.ps1"
         ).read_text(encoding="utf-8")
 
         self.assertIn("function Request-AgentRestartIfNeeded", watchdog)
-        self.assertIn("*ordax_dev_agent.main*", watchdog)
+        self.assertIn("Invoke-RestMethod -Uri $healthUrl", watchdog)
         self.assertIn(
             "Start-ScheduledTask -TaskName $RestartTaskName",
             watchdog,
         )
-        self.assertIn('$task.State -eq "Running"', watchdog)
+        self.assertIn('$task.State -ne "Running"', watchdog)
         self.assertIn('$task.State -eq "Disabled"', watchdog)
+        self.assertNotIn("Get-CimInstance", watchdog)
 
         exit_index = watchdog.index("EXIT parent process ended")
         restart_index = watchdog.index(
@@ -119,6 +120,17 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             exit_index,
         )
         self.assertGreater(restart_index, exit_index)
+
+    def test_external_bootstrap_restarts_unexpected_clean_agent_exit(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        bootstrap = (
+            root / "scripts" / "windows" / "ordax-agent-bootstrap.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('if ($code -eq 0)', bootstrap)
+        self.assertIn('AGENT_RESTART clean-exit code=0', bootstrap)
+        self.assertIn('continue', bootstrap)
+        self.assertNotIn('if ($code -eq 0) {\n        exit 0', bootstrap)
 
 
     def test_all_managed_main_fetches_write_remote_tracking_ref(self) -> None:

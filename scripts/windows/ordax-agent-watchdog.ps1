@@ -28,39 +28,62 @@ function Stop-AgentTree([string]$Reason) {
 function Request-AgentRestartIfNeeded {
     Start-Sleep -Seconds $RestartDelaySeconds
 
-    $successor = Get-CimInstance Win32_Process |
-        Where-Object {
-            $_.ProcessId -ne $AgentPid -and
-            $_.CommandLine -and
-            $_.CommandLine -like "*ordax_dev_agent.main*" -and
-            $_.CommandLine -like "*OrdaX*DevAgent*"
-        } |
-        Select-Object -First 1
-
-    if ($successor) {
-        Write-WatchdogLog "SUCCESSOR pid=$($successor.ProcessId); scheduled restart not needed"
-        return
-    }
-
-    $task = Get-ScheduledTask -TaskName $RestartTaskName -ErrorAction SilentlyContinue
-    if (-not $task) {
-        Write-WatchdogLog "RESTART_SKIP scheduled task missing name=$RestartTaskName"
-        return
-    }
-    if ($task.State -eq "Disabled") {
-        Write-WatchdogLog "RESTART_SKIP scheduled task disabled name=$RestartTaskName"
-        return
-    }
-    if ($task.State -eq "Running") {
-        Write-WatchdogLog "RESTART_SKIP scheduled task already running name=$RestartTaskName"
-        return
-    }
-
+    # Avoid Win32_Process/CIM here. On the Salvador workstation WMI/CIM
+    # process queries have stalled for minutes and prevented recovery itself.
+    # The bounded localhost health endpoint is a stronger successor signal.
     try {
-        Start-ScheduledTask -TaskName $RestartTaskName -ErrorAction Stop
-        Write-WatchdogLog "RESTART_REQUEST task=$RestartTaskName"
+        $successorStatus = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 3
+        if ($successorStatus) {
+            Write-WatchdogLog "SUCCESSOR health endpoint is ready; scheduled restart not needed"
+            return
+        }
     } catch {
-        Write-WatchdogLog "RESTART_FAIL task=$RestartTaskName error=$($_.Exception.Message)"
+        # No healthy successor yet; continue with the scheduled-task state.
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds(20)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $task = Get-ScheduledTask -TaskName $RestartTaskName -ErrorAction SilentlyContinue
+        if (-not $task) {
+            Write-WatchdogLog "RESTART_SKIP scheduled task missing name=$RestartTaskName"
+            return
+        }
+        if ($task.State -eq "Disabled") {
+            Write-WatchdogLog "RESTART_SKIP scheduled task disabled name=$RestartTaskName"
+            return
+        }
+        if ($task.State -ne "Running") {
+            try {
+                Start-ScheduledTask -TaskName $RestartTaskName -ErrorAction Stop
+                Write-WatchdogLog "RESTART_REQUEST task=$RestartTaskName"
+            } catch {
+                Write-WatchdogLog "RESTART_FAIL task=$RestartTaskName error=$($_.Exception.Message)"
+            }
+            return
+        }
+
+        # The bootstrap may still be unwinding after the agent process ended.
+        # Give it a bounded grace period instead of using process enumeration.
+        Start-Sleep -Seconds 2
+        try {
+            $successorStatus = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2
+            if ($successorStatus) {
+                Write-WatchdogLog "SUCCESSOR health endpoint became ready during grace period"
+                return
+            }
+        } catch {
+        }
+    }
+
+    # Parent agent is gone, no successor health endpoint appeared, and the
+    # task is still marked Running. Restart only this dedicated scheduled task.
+    try {
+        Stop-ScheduledTask -TaskName $RestartTaskName -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+        Start-ScheduledTask -TaskName $RestartTaskName -ErrorAction Stop
+        Write-WatchdogLog "RESTART_FORCE task=$RestartTaskName"
+    } catch {
+        Write-WatchdogLog "RESTART_FORCE_FAIL task=$RestartTaskName error=$($_.Exception.Message)"
     }
 }
 
