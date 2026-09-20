@@ -22,7 +22,7 @@ class StagedIndexCheckTests(unittest.TestCase):
     def make_repo(self, root: Path) -> Path:
         repo = root / "repo"
         repo.mkdir()
-        git(repo, "init", "-q")
+        git(repo, "init", "-q", "-b", "main")
         git(repo, "config", "user.email", "tests@example.invalid")
         git(repo, "config", "user.name", "Tests")
         (repo / "tracked.txt").write_text("one\n", encoding="utf-8")
@@ -63,7 +63,7 @@ class StagedIndexCheckTests(unittest.TestCase):
             git(repo, "checkout", "-qb", "other")
             (repo / "tracked.txt").write_text("other\n", encoding="utf-8")
             git(repo, "commit", "-am", "other")
-            git(repo, "checkout", "-q", "master")
+            git(repo, "checkout", "-q", "main")
             (repo / "tracked.txt").write_text("master\n", encoding="utf-8")
             git(repo, "commit", "-am", "master")
             conflict = subprocess.run(
