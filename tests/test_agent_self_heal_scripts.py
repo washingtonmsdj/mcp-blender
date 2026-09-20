@@ -176,11 +176,15 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn(
-            'Join-Path $env:LOCALAPPDATA "OrdaX\\DevAgent\\bootstrap"',
+            '$stateDir = Join-Path $env:LOCALAPPDATA "OrdaX\\DevAgent"',
             bootstrap,
         )
         self.assertIn(
-            'refs/heads/$Branch:$remoteRef',
+            '$bootstrapDir = Join-Path $stateDir "bootstrap"',
+            bootstrap,
+        )
+        self.assertIn(
+            'refs/heads/${Branch}:$remoteRef',
             bootstrap,
         )
         self.assertIn(
