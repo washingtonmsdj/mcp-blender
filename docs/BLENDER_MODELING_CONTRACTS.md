@@ -134,6 +134,25 @@ optional modeling fixture in a temporary Blender scene. The fixture:
   source `.blend` was not saved or overwritten.
 
 This validates the already-supported transform path when the self-hosted Blender
-runner is online. It does **not** promote `create_primitive` or `add_modifier`;
-those still require their own implementation and real smoke before registration.
+runner is online.
+
+The current companion now also contains **unregistered smoke-only executors** for
+`create_primitive` and `add_modifier`. They are intentionally absent from
+`CAPABILITIES`, absent from `ActionRegistry`, and accepted by the dispatcher
+only when both the modeling-smoke flag and a smoke output directory are active.
+
+BlenderBench exercises these staged paths with:
+
+- successful cube creation;
+- duplicate object-name rejection;
+- successful BEVEL insertion;
+- duplicate modifier-name rejection;
+- runtime-budget evidence;
+- durable trajectory evidence;
+- cleanup of the temporary object before visual capture.
+
+Passing hosted CI is not enough to promote these operations. They remain
+`pending_blender_smoke` until the self-hosted Blender 5.x benchmark executes
+this exact code successfully. Promotion then requires a separate PR that
+registers normal operation names and updates the advertised capabilities.
 
