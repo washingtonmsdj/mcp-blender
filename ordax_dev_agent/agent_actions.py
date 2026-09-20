@@ -8,6 +8,7 @@ from typing import Any
 from .blender_live_bridge import BlenderLiveBridge
 from .models import ActionResult
 from .process_runner import run_command as _run
+from .update_policy import install_contract_changed, tracked_worktree_check
 from .versioning import component_versions
 
 
@@ -180,36 +181,40 @@ class AgentActions:
             except subprocess.TimeoutExpired as error:
                 return 124, f"timed out after {error.timeout} seconds"
 
-        # We only care about tracked edits. Avoid `git status` here: on some
-        # Windows worktrees its index refresh can stall behind filesystem
-        # monitors for minutes even with untracked scanning disabled.
-        unstaged_rc, unstaged_error = quiet_check(["diff-files", "--quiet", "--"])
+        # Compare tracked worktree content with index object ids without asking
+        # Git to refresh/stat the full Windows index. Staged changes remain a
+        # separate index-vs-HEAD check.
+        worktree = tracked_worktree_check(repo, timeout=60)
         staged_rc, staged_error = quiet_check(
-            ["diff-index", "--cached", "--quiet", "HEAD", "--"]
+            ["diff-index", "--cached", "--quiet", "HEAD", "--"],
+            timeout=30,
         )
-        if unstaged_rc not in (0, 1) or staged_rc not in (0, 1):
+        if not worktree.get("ok") or staged_rc not in (0, 1):
             return ActionResult(
                 False,
                 "managed agent tracked-change check failed",
                 {
-                    "unstaged_returncode": unstaged_rc,
-                    "unstaged_error": unstaged_error,
+                    "worktree": worktree,
                     "staged_returncode": staged_rc,
                     "staged_error": staged_error,
                 },
             )
-        if unstaged_rc == 1 or staged_rc == 1:
-            changed = _run(
-                [*git, "diff", "--name-status", "HEAD", "--"],
+        if not worktree.get("clean") or staged_rc == 1:
+            staged = _run(
+                [*git, "diff", "--cached", "--name-status", "HEAD", "--"],
                 timeout=30,
             )
             return ActionResult(
                 False,
                 "managed agent has local tracked changes; update refused",
                 {
-                    "status": changed.data.get("stdout", "") if changed.ok else "",
-                    "unstaged": unstaged_rc == 1,
+                    "worktree_changed_paths": worktree.get("changed_paths", []),
+                    "staged_status": (
+                        staged.data.get("stdout", "") if staged.ok else ""
+                    ),
+                    "unstaged": not bool(worktree.get("clean")),
                     "staged": staged_rc == 1,
+                    "tracked_check": worktree.get("method"),
                 },
             )
 
@@ -259,33 +264,49 @@ class AgentActions:
         dependency_refresh = False
 
         if before_head and after_head and before_head != after_head:
-            dependency_diff = subprocess.run(
-                [
-                    *git,
-                    "diff",
-                    "--quiet",
-                    before_head,
-                    after_head,
-                    "--",
-                    "pyproject.toml",
-                ],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=30,
-                shell=False,
-            )
-            if dependency_diff.returncode == 1:
-                dependency_refresh = True
-            elif dependency_diff.returncode not in (0, 1):
+            def pyproject_at(commit: str) -> tuple[str | None, str | None]:
+                try:
+                    completed = subprocess.run(
+                        [*git, "show", f"{commit}:pyproject.toml"],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=30,
+                        shell=False,
+                    )
+                except subprocess.TimeoutExpired as error:
+                    return None, f"timed out after {error.timeout} seconds"
+                if completed.returncode != 0:
+                    return None, completed.stderr[-4000:]
+                return completed.stdout, None
+
+            before_pyproject, before_error = pyproject_at(before_head)
+            after_pyproject, after_error = pyproject_at(after_head)
+            if (
+                before_error
+                or after_error
+                or before_pyproject is None
+                or after_pyproject is None
+            ):
                 return ActionResult(
                     False,
-                    "could not determine whether agent dependencies changed",
+                    "could not inspect agent install contract",
                     {
-                        "returncode": dependency_diff.returncode,
-                        "stderr": dependency_diff.stderr[-4000:],
+                        "before_error": before_error,
+                        "after_error": after_error,
                     },
+                )
+            try:
+                dependency_refresh = install_contract_changed(
+                    before_pyproject,
+                    after_pyproject,
+                )
+            except ValueError as error:
+                return ActionResult(
+                    False,
+                    "could not parse agent install contract",
+                    {"error": str(error)},
                 )
 
         if dependency_refresh:
@@ -304,7 +325,8 @@ class AgentActions:
                 "head": after_head,
                 "restart_required": True,
                 "dependencies_refreshed": dependency_refresh,
-                "tracked_check": "diff-files+diff-index",
+                "tracked_check": "index-object-hash+diff-index",
+                "install_contract_changed": dependency_refresh,
             },
         )
 
