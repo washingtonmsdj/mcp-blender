@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 
 from ordax_dev_agent.update_policy import (
+    install_contract,
+    install_contract_changed,
     managed_repo_clean_check,
     staged_index_check,
     tracked_worktree_check,
@@ -20,6 +22,73 @@ def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
         stderr=subprocess.PIPE,
         text=True,
     )
+
+
+BASE_PYPROJECT = """
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-blender-unity"
+version = "0.3.0"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=1.0.0,<2.0.0",
+  "supabase>=2.18.0,<3.0.0",
+]
+
+[project.scripts]
+ordax-dev-agent = "ordax_dev_agent.main:main"
+
+[tool.setuptools.packages.find]
+include = ["mcp_blender_unity*", "ordax_dev_agent*"]
+
+[tool.setuptools.package-data]
+ordax_dev_agent = ["assets/*.py", "assets/*.cs", "assets/*.json"]
+"""
+
+
+class InstallContractTests(unittest.TestCase):
+    def test_version_and_package_data_do_not_force_reinstall(self) -> None:
+        changed = BASE_PYPROJECT.replace(
+            'version = "0.3.0"',
+            'version = "0.4.0"',
+        ).replace(
+            '["assets/*.py", "assets/*.cs", "assets/*.json"]',
+            '["assets/*.py", "assets/*.cs", "assets/*.json", "assets/*.txt"]',
+        )
+        self.assertFalse(install_contract_changed(BASE_PYPROJECT, changed))
+
+    def test_dependency_change_requires_reinstall(self) -> None:
+        changed = BASE_PYPROJECT.replace(
+            '"supabase>=2.18.0,<3.0.0",',
+            '"supabase>=2.18.0,<3.0.0",\n  "Pillow>=10,<12",',
+        )
+        self.assertTrue(install_contract_changed(BASE_PYPROJECT, changed))
+
+    def test_entry_point_change_requires_reinstall(self) -> None:
+        changed = BASE_PYPROJECT.replace(
+            'ordax-dev-agent = "ordax_dev_agent.main:main"',
+            'ordax-dev-agent = "ordax_dev_agent.bootstrap:main"',
+        )
+        self.assertTrue(install_contract_changed(BASE_PYPROJECT, changed))
+
+    def test_build_backend_change_requires_reinstall(self) -> None:
+        changed = BASE_PYPROJECT.replace(
+            'build-backend = "setuptools.build_meta"',
+            'build-backend = "other.backend"',
+        )
+        self.assertTrue(install_contract_changed(BASE_PYPROJECT, changed))
+
+    def test_install_contract_ignores_release_metadata(self) -> None:
+        contract = install_contract(BASE_PYPROJECT)
+        self.assertNotIn("version", contract["project"])
+        self.assertNotIn("package-data", contract["tool.setuptools"])
+
+    def test_invalid_toml_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "invalid pyproject"):
+            install_contract("[project")
 
 
 class StagedIndexCheckTests(unittest.TestCase):
