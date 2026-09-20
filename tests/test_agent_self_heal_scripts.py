@@ -310,11 +310,15 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             agent_installer,
         )
         self.assertIn(
-            'Execute = $python',
+            'Execute = $taskPython',
             agent_installer,
         )
         self.assertIn(
-            "Argument = '-m ordax_dev_agent.main'",
+            '$pythonw = Join-Path $repoRoot ".venv\\Scripts\\pythonw.exe"',
+            agent_installer,
+        )
+        self.assertIn(
+            "Argument = '-m ordax_dev_agent.task_entry'",
             agent_installer,
         )
         self.assertIn(
@@ -342,6 +346,26 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             "-WorkingDirectory $repoRootResolved",
             installer,
         )
+
+    def test_task_entry_logs_before_importing_full_agent(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        entry = (
+            root / "ordax_dev_agent" / "task_entry.py"
+        ).read_text(encoding="utf-8")
+        main = (
+            root / "ordax_dev_agent" / "main.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("ENTRY_START", entry)
+        self.assertIn("IMPORT_MAIN_START", entry)
+        self.assertIn("IMPORT_MAIN_OK", entry)
+        self.assertIn("task-entry.log", entry)
+        self.assertIn("agent-startup.log", main)
+
+        server_index = main.index("start_status_server(status_payload)")
+        registry_import_index = main.index("from .actions import ActionRegistry")
+        self.assertLess(server_index, registry_import_index)
+        self.assertIn("STATUS_SERVER_READY port=8765", main)
 
     def test_recovery_retargets_task_to_direct_agent(self) -> None:
         root = Path(__file__).resolve().parents[1]

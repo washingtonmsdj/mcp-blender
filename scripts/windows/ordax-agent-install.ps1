@@ -82,9 +82,11 @@ Import-Module ScheduledTasks -ErrorAction Stop
 
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 
+$pythonw = Join-Path $repoRoot ".venv\Scripts\pythonw.exe"
+$taskPython = if (Test-Path $pythonw) { $pythonw } else { $python }
 $actionParams = @{
-    Execute = $python
-    Argument = '-m ordax_dev_agent.main'
+    Execute = $taskPython
+    Argument = '-m ordax_dev_agent.task_entry'
     WorkingDirectory = $repoRoot
 }
 $action = New-ScheduledTaskAction @actionParams
@@ -109,7 +111,7 @@ Write-Host "Scheduled task: $taskName"
 Write-Host "Run context: $userId (interactive desktop)"
 Write-Host "Restart policy: 999 attempts, 1 minute interval"
 Write-Host "Local status endpoint: http://127.0.0.1:8765/status"
-Write-Host ("Task executable: " + $python)
+Write-Host ("Task executable: " + $taskPython)
 Write-Host ("External bootstrap retained for maintenance: " + $bootstrapPath)
 
 if ($SupabaseUrl -and $PublishableKey) {
