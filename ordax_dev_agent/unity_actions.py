@@ -5,6 +5,7 @@ remote action by itself. The central ActionRegistry remains the allow-list.
 """
 from __future__ import annotations
 
+import csv
 import json
 import os
 import subprocess
@@ -51,25 +52,88 @@ def _unity_process_ids_for_project(project: Path) -> list[int]:
     """Return Unity process IDs whose command line references this project."""
     target = str(project.resolve()).replace("\\", "/").lower()
     if sys.platform == "win32":
-        completed = subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                "Get-CimInstance Win32_Process -Filter \"Name='Unity.exe'\" | "
-                "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=20,
-            shell=False,
-        )
-        if completed.returncode != 0 or not completed.stdout.strip():
+        def tasklist_unity_pids() -> list[int]:
+            try:
+                fallback = subprocess.run(
+                    [
+                        "tasklist",
+                        "/FI",
+                        "IMAGENAME eq Unity.exe",
+                        "/FO",
+                        "CSV",
+                        "/NH",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    shell=False,
+                )
+            except subprocess.TimeoutExpired as error:
+                raise OSError(
+                    "Unity process detection timed out in both CIM and tasklist"
+                ) from error
+
+            if fallback.returncode != 0:
+                raise OSError(
+                    "Unity process detection failed in both CIM and tasklist"
+                )
+
+            pids: list[int] = []
+            for row in csv.reader(fallback.stdout.splitlines()):
+                if len(row) < 2:
+                    continue
+                image = row[0].strip().lower()
+                if image != "unity.exe":
+                    continue
+                try:
+                    pids.append(int(row[1].replace(",", "").strip()))
+                except ValueError:
+                    continue
+            return pids
+
+        try:
+            completed = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "Get-CimInstance Win32_Process -Filter \"Name='Unity.exe'\" | "
+                    "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                shell=False,
+            )
+        except subprocess.TimeoutExpired:
+            fallback_pids = tasklist_unity_pids()
+            if not fallback_pids:
+                return []
+            raise OSError(
+                "Unity.exe is running, but project command lines could not be "
+                "resolved after CIM timeout; refusing unsafe stale-lock cleanup"
+            )
+
+        if completed.returncode != 0:
+            fallback_pids = tasklist_unity_pids()
+            if not fallback_pids:
+                return []
+            raise OSError(
+                "Unity.exe is running, but project command lines could not be "
+                "resolved after CIM failure; refusing unsafe stale-lock cleanup"
+            )
+        if not completed.stdout.strip():
             return []
         try:
             raw = json.loads(completed.stdout)
         except json.JSONDecodeError:
-            return []
+            fallback_pids = tasklist_unity_pids()
+            if not fallback_pids:
+                return []
+            raise OSError(
+                "Unity.exe is running, but project command lines could not be "
+                "parsed; refusing unsafe stale-lock cleanup"
+            )
         records = raw if isinstance(raw, list) else [raw]
         result: list[int] = []
         for record in records:
