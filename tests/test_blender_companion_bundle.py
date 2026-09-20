@@ -11,6 +11,7 @@ from ordax_dev_agent.assets.blender_modeling_contracts import (
     evaluate_modifier_runtime_budget,
     modeling_schemas,
     normalize_transform_fields,
+    normalize_transform_request,
     plan_modeling_operation,
 )
 
@@ -355,6 +356,60 @@ class BlenderModelingContractTests(unittest.TestCase):
                 }
             ),
         )
+
+    def test_companion_transform_validation_accepts_only_transport_metadata(self) -> None:
+        normalized = normalize_transform_request(
+            {
+                "id": "command-1",
+                "operation": "object_transform",
+                "object_name": "Hull",
+                "location": [1, 2, 3],
+                "scale": [1, 1.5, 1],
+            },
+            transport_fields={"id", "operation"},
+        )
+        self.assertEqual(
+            {
+                "object_name": "Hull",
+                "location": [1.0, 2.0, 3.0],
+                "scale": [1.0, 1.5, 1.0],
+            },
+            normalized,
+        )
+
+        with self.assertRaisesRegex(ValueError, "unsupported field"):
+            normalize_transform_request(
+                {
+                    "id": "command-1",
+                    "operation": "object_transform",
+                    "project": "model",
+                    "object_name": "Hull",
+                    "location": [0, 0, 0],
+                },
+                transport_fields={"id", "operation"},
+            )
+
+    def test_companion_transform_validation_rejects_boolean_and_zero_scale(self) -> None:
+        with self.assertRaises(ValueError):
+            normalize_transform_request(
+                {
+                    "id": "command-1",
+                    "operation": "object_transform",
+                    "object_name": "Hull",
+                    "rotation_euler": [0, True, 0],
+                },
+                transport_fields={"id", "operation"},
+            )
+        with self.assertRaises(ValueError):
+            normalize_transform_request(
+                {
+                    "id": "command-1",
+                    "operation": "object_transform",
+                    "object_name": "Hull",
+                    "scale": [1, 0, 1],
+                },
+                transport_fields={"id", "operation"},
+            )
 
 
 class BlenderSpatialMathTests(unittest.TestCase):

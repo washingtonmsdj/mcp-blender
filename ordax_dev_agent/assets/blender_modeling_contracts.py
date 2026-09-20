@@ -146,8 +146,14 @@ def _vector3(
     return normalized
 
 
-def _reject_unknown_fields(payload: dict[str, Any], allowed: set[str]) -> None:
-    unknown = sorted(set(payload) - allowed - _HOST_META_FIELDS)
+def _reject_unknown_fields(
+    payload: dict[str, Any],
+    allowed: set[str],
+    *,
+    meta_fields: set[str] | None = None,
+) -> None:
+    ignored = _HOST_META_FIELDS if meta_fields is None else set(meta_fields)
+    unknown = sorted(set(payload) - allowed - ignored)
     if unknown:
         raise ValueError("unsupported field(s): " + ", ".join(unknown))
 
@@ -200,10 +206,15 @@ def normalize_transform_fields(payload: dict[str, Any]) -> dict[str, list[float]
     return result
 
 
-def normalize_transform_request(payload: dict[str, Any]) -> dict[str, Any]:
+def normalize_transform_request(
+    payload: dict[str, Any],
+    *,
+    transport_fields: set[str] | None = None,
+) -> dict[str, Any]:
     _reject_unknown_fields(
         payload,
         {"object_name", "ordax_object_id"} | _TRANSFORM_FIELDS,
+        meta_fields=transport_fields,
     )
     return {
         **normalize_object_selector(payload),
