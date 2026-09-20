@@ -7,6 +7,10 @@ from pathlib import Path
 from ordax_dev_agent.blender_live_bridge import (
     blender_companion_bundle_fingerprint,
 )
+from ordax_dev_agent.assets.blender_modeling_contracts import (
+    modeling_schemas,
+    normalize_transform_fields,
+)
 
 
 def load_spatial_math():
@@ -127,8 +131,62 @@ class BlenderCompanionBundleTests(unittest.TestCase):
                 "blender_uv_math.py",
                 "blender_spatial_math.py",
                 "blender_quality_rules.py",
+                "blender_modeling_contracts.py",
             ],
             manifest["files"],
+        )
+
+
+class BlenderModelingContractTests(unittest.TestCase):
+    def test_schema_keeps_unverified_mutations_disabled(self) -> None:
+        schemas = modeling_schemas()
+        self.assertEqual("available", schemas["object_transform"]["status"])
+        self.assertEqual(
+            "pending_blender_smoke",
+            schemas["create_primitive"]["status"],
+        )
+        self.assertEqual(
+            "pending_blender_smoke",
+            schemas["add_modifier"]["status"],
+        )
+
+    def test_schema_copy_cannot_mutate_global_contract(self) -> None:
+        first = modeling_schemas()
+        first["object_transform"]["status"] = "changed"
+        self.assertEqual(
+            "available",
+            modeling_schemas()["object_transform"]["status"],
+        )
+
+    def test_transform_contract_rejects_nonfinite_and_boolean_values(self) -> None:
+        for payload in (
+            {"location": [0, float("nan"), 0]},
+            {"rotation_euler": [0, True, 0]},
+            {"scale": [1, float("inf"), 1]},
+        ):
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                normalize_transform_fields(payload)
+
+    def test_transform_contract_enforces_positive_scale_and_dimensions(self) -> None:
+        with self.assertRaises(ValueError):
+            normalize_transform_fields({"scale": [1, 0, 1]})
+        with self.assertRaises(ValueError):
+            normalize_transform_fields({"dimensions": [1, -1, 1]})
+
+    def test_transform_contract_normalizes_valid_values(self) -> None:
+        self.assertEqual(
+            {
+                "location": [1.0, 2.5, -3.0],
+                "rotation_euler": [0.0, 1.25, 0.0],
+                "scale": [1.0, 2.0, 1.0],
+            },
+            normalize_transform_fields(
+                {
+                    "location": [1, 2.5, -3],
+                    "rotation_euler": [0, 1.25, 0],
+                    "scale": [1, 2, 1],
+                }
+            ),
         )
 
 
