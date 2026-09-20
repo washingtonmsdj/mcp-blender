@@ -77,9 +77,15 @@ jobs:
             throw "Managed agent virtual environment is missing: $venvPython"
           }
 
-          & $venvPython (Join-Path $env:GITHUB_WORKSPACE "scripts\verify_visual_agent.py")
-          if ($LASTEXITCODE -ne 0) {
-            throw "Candidate failed isolated real Blender visual/multiview smoke."
+          $previousPythonPath = $env:PYTHONPATH
+          try {
+            $env:PYTHONPATH = $env:GITHUB_WORKSPACE
+            & $venvPython (Join-Path $env:GITHUB_WORKSPACE "scripts\verify_visual_agent.py")
+            if ($LASTEXITCODE -ne 0) {
+              throw "Candidate failed isolated real Blender visual/multiview smoke."
+            }
+          } finally {
+            $env:PYTHONPATH = $previousPythonPath
           }
 
       - name: Run OrdaX BlenderBench
@@ -97,9 +103,15 @@ jobs:
             Remove-Item $benchmarkRoot -Recurse -Force
           }
 
-          & $venvPython (Join-Path $env:GITHUB_WORKSPACE "scripts\blender_benchmark.py") --output-dir $benchmarkRoot
-          if ($LASTEXITCODE -ne 0) {
-            throw "Candidate failed OrdaX BlenderBench."
+          $previousPythonPath = $env:PYTHONPATH
+          try {
+            $env:PYTHONPATH = $env:GITHUB_WORKSPACE
+            & $venvPython (Join-Path $env:GITHUB_WORKSPACE "scripts\blender_benchmark.py") --output-dir $benchmarkRoot
+            if ($LASTEXITCODE -ne 0) {
+              throw "Candidate failed OrdaX BlenderBench."
+            }
+          } finally {
+            $env:PYTHONPATH = $previousPythonPath
           }
 
       - name: Recover managed agent safely
@@ -233,6 +245,15 @@ jobs:
             throw "Managed agent virtual environment is missing: $venvPython"
           }
 
+          function Restore-ManagedHead([string]$Reason) {
+            Write-Host "RECOVERY_ROLLBACK: $Reason"
+            git -c core.fsmonitor=false -C $repo reset --hard $beforeHead
+            if ($LASTEXITCODE -ne 0) {
+              throw "$Reason Rollback to $beforeHead also failed."
+            }
+            throw "$Reason Managed checkout restored to $beforeHead."
+          }
+
           $taskName = "OrdaX Dev Agent"
           $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
           if (-not $task) {
@@ -278,13 +299,13 @@ jobs:
             if ($installContractChanged) {
               & $venvPython -m pip install -e $repo
               if ($LASTEXITCODE -ne 0) {
-                throw "Managed agent dependency refresh failed."
+                Restore-ManagedHead "Managed agent dependency refresh failed."
               }
             }
 
             & $venvPython -m compileall -q (Join-Path $repo "mcp_blender_unity") (Join-Path $repo "ordax_dev_agent")
             if ($LASTEXITCODE -ne 0) {
-              throw "Managed checkout failed compile verification after fast-forward."
+              Restore-ManagedHead "Managed checkout failed compile verification after fast-forward."
             }
           }
 
