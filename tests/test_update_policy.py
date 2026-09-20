@@ -8,6 +8,7 @@ from pathlib import Path
 from ordax_dev_agent.update_policy import (
     install_contract,
     install_contract_changed,
+    install_contract_changed_between_refs,
     managed_repo_clean_check,
     staged_index_check,
     tracked_worktree_check,
@@ -90,6 +91,60 @@ class InstallContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid pyproject"):
             install_contract("[project")
 
+
+    def test_ref_comparison_uses_semantic_install_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            repo.mkdir()
+            git(repo, "init", "-q", "-b", "main")
+            git(repo, "config", "user.email", "tests@example.invalid")
+            git(repo, "config", "user.name", "Tests")
+
+            (repo / "pyproject.toml").write_text(
+                BASE_PYPROJECT,
+                encoding="utf-8",
+            )
+            git(repo, "add", "pyproject.toml")
+            git(repo, "commit", "-qm", "base")
+            base = git(repo, "rev-parse", "HEAD").stdout.strip()
+
+            version_only = BASE_PYPROJECT.replace(
+                'version = "0.3.0"',
+                'version = "0.3.1"',
+            )
+            (repo / "pyproject.toml").write_text(
+                version_only,
+                encoding="utf-8",
+            )
+            git(repo, "commit", "-am", "version")
+            version_ref = git(repo, "rev-parse", "HEAD").stdout.strip()
+
+            dependency = version_only.replace(
+                '"supabase>=2.18.0,<3.0.0",',
+                '"supabase>=2.18.0,<3.0.0",\n  "Pillow>=10,<12",',
+            )
+            (repo / "pyproject.toml").write_text(
+                dependency,
+                encoding="utf-8",
+            )
+            git(repo, "commit", "-am", "dependency")
+            dependency_ref = git(repo, "rev-parse", "HEAD").stdout.strip()
+
+            version_result = install_contract_changed_between_refs(
+                repo,
+                base,
+                version_ref,
+            )
+            dependency_result = install_contract_changed_between_refs(
+                repo,
+                version_ref,
+                dependency_ref,
+            )
+
+        self.assertTrue(version_result["ok"])
+        self.assertFalse(version_result["changed"])
+        self.assertTrue(dependency_result["ok"])
+        self.assertTrue(dependency_result["changed"])
 
 class StagedIndexCheckTests(unittest.TestCase):
     def make_repo(self, root: Path) -> Path:
