@@ -10,7 +10,7 @@ meanings, so each one owns a separate version.
 | Component | Version | Meaning |
 | --- | --- | --- |
 | `mcp-blender-unity` distribution / bridge | `0.3.0` | Python package and local Blender/Unity bridge release line |
-| OrdaX Dev Agent | `1.15.0` | Remote/local typed action implementation and orchestration |
+| OrdaX Dev Agent | `1.15.1` | Remote/local typed action implementation and orchestration |
 | Blender Live protocol | `9` | IPC compatibility contract between host bridge and visible Blender companion |
 | Blender companion bundle format | `1` | Manifest/fingerprint format for the multi-file Blender runtime bundle |
 | Reference Contract | `1` | Project-local visual-reference manifest schema |
@@ -35,6 +35,7 @@ package release unless packaging/runtime code also changes.
 ## Runtime visibility
 
 `agent.status` exposes a `versions` object containing all of these domains.
+It also exposes `capability_contracts`, a separate runtime view of typed feature availability. Version numbers and capability availability are related but not interchangeable diagnostics.
 This is the canonical runtime inventory for diagnostics and update decisions.
 
 The installable distribution version in `pyproject.toml` must match
