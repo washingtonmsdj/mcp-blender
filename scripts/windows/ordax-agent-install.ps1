@@ -82,18 +82,10 @@ Import-Module ScheduledTasks -ErrorAction Stop
 
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 
-$powershellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
-$bootstrapArguments = (
-    '-NoProfile -ExecutionPolicy Bypass -File "' +
-    $bootstrapPath +
-    '" -RepoRoot "' +
-    $repoRoot +
-    '"'
-)
 $actionParams = @{
-    Execute = $powershellPath
-    Argument = $bootstrapArguments
-    WorkingDirectory = $stateDir
+    Execute = $python
+    Argument = '-m ordax_dev_agent.main'
+    WorkingDirectory = $repoRoot
 }
 $action = New-ScheduledTaskAction @actionParams
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
@@ -109,7 +101,7 @@ $settingsParams = @{
 }
 $settings = New-ScheduledTaskSettingsSet @settingsParams
 $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
-$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "OrdaX Dev Agent - external bootstrap + persistent interactive Unity/Blender control plane"
+$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "OrdaX Dev Agent - direct persistent Python control plane for interactive Unity/Blender"
 Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
 
 Write-Host "OrdaX Dev Agent installed."
@@ -117,7 +109,8 @@ Write-Host "Scheduled task: $taskName"
 Write-Host "Run context: $userId (interactive desktop)"
 Write-Host "Restart policy: 999 attempts, 1 minute interval"
 Write-Host "Local status endpoint: http://127.0.0.1:8765/status"
-Write-Host ("External bootstrap: " + $bootstrapPath)
+Write-Host ("Task executable: " + $python)
+Write-Host ("External bootstrap retained for maintenance: " + $bootstrapPath)
 
 if ($SupabaseUrl -and $PublishableKey) {
     Write-Host "Supabase control plane configured."

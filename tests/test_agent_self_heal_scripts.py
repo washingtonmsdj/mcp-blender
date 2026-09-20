@@ -310,15 +310,40 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             agent_installer,
         )
         self.assertIn(
-            'Execute = $powershellPath',
+            'Execute = $python',
+            agent_installer,
+        )
+        self.assertIn(
+            "Argument = '-m ordax_dev_agent.main'",
+            agent_installer,
+        )
+        self.assertIn(
+            'WorkingDirectory = $repoRoot',
             agent_installer,
         )
         self.assertNotIn(
             'Execute = $env:ComSpec',
             agent_installer,
         )
+        self.assertNotIn(
+            'Execute = $powershellPath',
+            agent_installer,
+        )
 
-    def test_recovery_retargets_task_to_external_bootstrap(self) -> None:
+        self.assertIn(
+            '$python = Join-Path $repoRootResolved ".venv\\Scripts\\python.exe"',
+            installer,
+        )
+        self.assertIn(
+            "-Argument '-m ordax_dev_agent.main'",
+            installer,
+        )
+        self.assertIn(
+            "-WorkingDirectory $repoRootResolved",
+            installer,
+        )
+
+    def test_recovery_retargets_task_to_direct_agent(self) -> None:
         root = Path(__file__).resolve().parents[1]
         recovery = (
             root / ".github" / "workflows" / "ordax-agent-recovery.yml"
