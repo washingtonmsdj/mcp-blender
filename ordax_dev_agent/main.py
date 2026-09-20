@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -25,6 +27,48 @@ def _agent_metadata(config: AgentConfig) -> dict:
     }
 
 
+def _start_local_watchdog(config: AgentConfig) -> subprocess.Popen | None:
+    if sys.platform != "win32":
+        return None
+
+    repo_root = Path(__file__).resolve().parents[1]
+    script = (
+        repo_root
+        / "scripts"
+        / "windows"
+        / "ordax-agent-watchdog.ps1"
+    )
+    if not script.is_file():
+        print(f"local watchdog script missing: {script}", file=sys.stderr)
+        return None
+
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(script),
+        "-AgentPid",
+        str(os.getpid()),
+    ]
+    try:
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        process = subprocess.Popen(
+            command,
+            cwd=str(repo_root),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            shell=False,
+            creationflags=creationflags,
+        )
+        return process
+    except Exception as error:
+        print(f"could not start local watchdog: {error}", file=sys.stderr)
+        return None
+
+
 def _upload_result_artifacts(
     control: ControlPlane,
     job,
@@ -38,7 +82,16 @@ def _upload_result_artifacts(
     candidates: list[tuple[str, str]] = []
     artifact = result.data.get("artifact")
     if isinstance(artifact, str) and artifact:
-        candidates.append((artifact, "visual-image"))
+        suffix = Path(artifact).suffix.lower()
+        if job.action == "blender.live_export" or suffix in {".glb", ".gltf", ".fbx"}:
+            artifact_kind = "model-export"
+        elif suffix == ".blend":
+            artifact_kind = "blender-scene"
+        elif suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+            artifact_kind = "visual-image"
+        else:
+            artifact_kind = "artifact"
+        candidates.append((artifact, artifact_kind))
 
     snapshot_path = result.data.get("snapshot_path")
     if isinstance(snapshot_path, str) and snapshot_path:
@@ -90,6 +143,8 @@ def main() -> int:
         return base
 
     status_server = start_status_server(status_payload)
+    watchdog_process = _start_local_watchdog(config)
+    runtime["watchdog_pid"] = watchdog_process.pid if watchdog_process else None
     runtime["state"] = (
         "pairing"
         if config.supabase_url and config.publishable_key
