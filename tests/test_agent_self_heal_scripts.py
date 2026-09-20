@@ -56,6 +56,29 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertNotIn("diff-files --quiet", launcher)
         self.assertNotIn("diff-index --cached", launcher)
 
+    def test_watchdog_requests_restart_only_after_successor_check(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        watchdog = (
+            root / "scripts" / "windows" / "ordax-agent-watchdog.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("function Request-AgentRestartIfNeeded", watchdog)
+        self.assertIn("*ordax_dev_agent.main*", watchdog)
+        self.assertIn(
+            "Start-ScheduledTask -TaskName $RestartTaskName",
+            watchdog,
+        )
+        self.assertIn('$task.State -eq "Running"', watchdog)
+        self.assertIn('$task.State -eq "Disabled"', watchdog)
+
+        exit_index = watchdog.index("EXIT parent process ended")
+        restart_index = watchdog.index(
+            "Request-AgentRestartIfNeeded",
+            exit_index,
+        )
+        self.assertGreater(restart_index, exit_index)
+
+
 
 if __name__ == "__main__":
     unittest.main()
