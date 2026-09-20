@@ -327,7 +327,10 @@ class ReferenceActions:
             },
         )
 
-    def blender_reference_review(self, payload: dict[str, Any]) -> ActionResult:
+    def _validated_reference_object_names(
+        self,
+        payload: dict[str, Any],
+    ) -> list[str]:
         object_names = payload.get("object_names")
         if (
             not isinstance(object_names, list)
@@ -337,10 +340,17 @@ class ReferenceActions:
             raise ValueError(
                 "object_names must explicitly identify 1-200 Blender objects"
             )
+        normalized = [item.strip() for item in object_names]
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("object_names must be unique")
+        return normalized
 
-        reference = self.project_reference_images(payload)
-        if not reference.ok:
-            return reference
+    def _blender_reference_review_from_materialized(
+        self,
+        payload: dict[str, Any],
+        reference: ActionResult,
+    ) -> ActionResult:
+        object_names = self._validated_reference_object_names(payload)
 
         pairable_views: list[str] = []
         for item in reference.data["references"]:
@@ -352,7 +362,7 @@ class ReferenceActions:
         capture_payload = {
             "project": reference.data["project"],
             "views": capture_views,
-            "object_names": [item.strip() for item in object_names],
+            "object_names": object_names,
             "mode": str(payload.get("mode") or "material"),
             "width": payload.get("width", 768),
             "height": payload.get("height", 768),
@@ -428,12 +438,16 @@ class ReferenceActions:
 
         artifacts = list(reference.data["artifacts"])
         for item in capture_records:
-            path = item.get("artifact") if isinstance(item, dict) else None
-            if isinstance(path, str):
-                artifacts.append({"path": path, "kind": "model-reference-view"})
+            item_path = item.get("artifact") if isinstance(item, dict) else None
+            if isinstance(item_path, str):
+                artifacts.append(
+                    {"path": item_path, "kind": "model-reference-view"}
+                )
         manifest = capture.data.get("manifest")
         if isinstance(manifest, str):
-            artifacts.append({"path": manifest, "kind": "model-multiview-manifest"})
+            artifacts.append(
+                {"path": manifest, "kind": "model-multiview-manifest"}
+            )
 
         review = {
             "version": MANIFEST_VERSION,
@@ -444,7 +458,7 @@ class ReferenceActions:
             "components": reference.data["components"],
             "dimensions_world_m": reference.data["dimensions_world_m"],
             "tolerance_percent": reference.data["tolerance_percent"],
-            "object_names": [item.strip() for item in object_names],
+            "object_names": object_names,
             "references": reference.data["references"],
             "capture": capture.data,
             "pairs": pairs,
@@ -480,5 +494,204 @@ class ReferenceActions:
                 **review,
                 "review_path": str(review_path),
                 "artifacts": artifacts,
+            },
+        )
+
+    def blender_reference_review(self, payload: dict[str, Any]) -> ActionResult:
+        self._validated_reference_object_names(payload)
+        reference = self.project_reference_images(payload)
+        if not reference.ok:
+            return reference
+        return self._blender_reference_review_from_materialized(
+            payload,
+            reference,
+        )
+
+    def blender_reference_generation_pass(
+        self,
+        payload: dict[str, Any],
+    ) -> ActionResult:
+        """Run a generation pass and gate measurable reference constraints.
+
+        Arbitrary image similarity remains a human/model visual review step. Only
+        deterministic facts (reference integrity, capture success and explicitly
+        declared physical dimensions) can reject and roll back automatically.
+        """
+        self._validated_reference_object_names(payload)
+
+        reference = self.project_reference_images(payload)
+        if not reference.ok:
+            return ActionResult(
+                False,
+                "Reference preflight failed; Blender was not modified",
+                {
+                    "phase": "reference_preflight",
+                    "reference": reference.data,
+                },
+            )
+
+        generation_payload = dict(payload)
+        requested_save_target = generation_payload.pop("save_target_path", None)
+        generation = self.blender_live_generation_pass(generation_payload)
+        if not generation.ok:
+            return ActionResult(
+                False,
+                "Reference-guided generation failed before reference review",
+                {
+                    "phase": "generation",
+                    "reference": reference.data,
+                    "generation": generation.data,
+                    "artifacts": reference.data.get("artifacts", []),
+                },
+            )
+
+        checkpoint_id = str(
+            generation.data.get("checkpoint_id") or ""
+        ).strip()
+        review = self._blender_reference_review_from_materialized(
+            payload,
+            reference,
+        )
+
+        require_dimensions = bool(
+            payload.get("require_reference_dimensions", True)
+        )
+        require_physical_scale = bool(
+            payload.get("require_reference_physical_scale", False)
+        )
+
+        failed_dimensions = [
+            item
+            for item in review.data.get("dimension_checks", [])
+            if item.get("within_tolerance") is False
+        ]
+        unknown_dimensions = [
+            item
+            for item in review.data.get("dimension_checks", [])
+            if item.get("status") == "unknown"
+        ]
+
+        rejection_reasons: list[str] = []
+        if not review.ok:
+            rejection_reasons.append(
+                "deterministic reference capture failed"
+            )
+        if require_dimensions and failed_dimensions:
+            rejection_reasons.append(
+                "one or more declared physical dimensions are outside tolerance"
+            )
+        if (
+            require_dimensions
+            and require_physical_scale
+            and unknown_dimensions
+        ):
+            rejection_reasons.append(
+                "physical scale is required but unavailable for one or more dimensions"
+            )
+
+        rollback = None
+        if rejection_reasons:
+            if checkpoint_id:
+                rollback = self.blender_live_checkpoint_restore(
+                    {
+                        **payload,
+                        "checkpoint_id": checkpoint_id,
+                        "discard_unsaved": True,
+                        "timeout_seconds": min(
+                            float(payload.get("timeout_seconds", 240)),
+                            30.0,
+                        ),
+                    }
+                )
+            return ActionResult(
+                False,
+                "Reference-guided generation rejected: "
+                + "; ".join(rejection_reasons),
+                {
+                    "checkpoint_id": checkpoint_id or None,
+                    "reference": reference.data,
+                    "generation": generation.data,
+                    "review": review.data,
+                    "failed_dimensions": failed_dimensions,
+                    "unknown_dimensions": unknown_dimensions,
+                    "rollback": (
+                        {
+                            "ok": rollback.ok,
+                            "summary": rollback.summary,
+                            "data": rollback.data,
+                        }
+                        if rollback is not None
+                        else None
+                    ),
+                    "artifacts": review.data.get("artifacts", []),
+                },
+            )
+
+        saved = None
+        if requested_save_target:
+            saved = self.blender_live_save(
+                {
+                    **payload,
+                    "target_path": requested_save_target,
+                    "timeout_seconds": min(
+                        float(payload.get("timeout_seconds", 240)),
+                        120.0,
+                    ),
+                }
+            )
+            if not saved.ok:
+                if checkpoint_id:
+                    rollback = self.blender_live_checkpoint_restore(
+                        {
+                            **payload,
+                            "checkpoint_id": checkpoint_id,
+                            "discard_unsaved": True,
+                            "timeout_seconds": 30,
+                        }
+                    )
+                return ActionResult(
+                    False,
+                    "Reference-guided generation passed review but final save failed",
+                    {
+                        "checkpoint_id": checkpoint_id or None,
+                        "reference": reference.data,
+                        "generation": generation.data,
+                        "review": review.data,
+                        "save": {
+                            "ok": saved.ok,
+                            "summary": saved.summary,
+                            "data": saved.data,
+                        },
+                        "rollback": (
+                            {
+                                "ok": rollback.ok,
+                                "summary": rollback.summary,
+                                "data": rollback.data,
+                            }
+                            if rollback is not None
+                            else None
+                        ),
+                        "artifacts": review.data.get("artifacts", []),
+                    },
+                )
+
+        return ActionResult(
+            True,
+            "Reference-guided Blender generation accepted",
+            {
+                "checkpoint_id": checkpoint_id or None,
+                "reference": reference.data,
+                "generation": generation.data,
+                "review": review.data,
+                "save": (
+                    {
+                        "ok": saved.ok,
+                        "summary": saved.summary,
+                        "data": saved.data,
+                    }
+                    if saved is not None
+                    else None
+                ),
+                "artifacts": review.data.get("artifacts", []),
             },
         )
