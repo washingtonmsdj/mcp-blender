@@ -65,12 +65,15 @@ class BlenderActions:
         ).resolve()
         artifact_root.mkdir(parents=True, exist_ok=False)
 
+        report_path = artifact_root / "benchmark-report.json"
         result = _run(
             [
                 sys.executable,
                 str(script),
                 "--output-dir",
                 str(artifact_root),
+                "--report-file",
+                str(report_path),
             ],
             cwd=script.parents[1],
             timeout=timeout,
@@ -85,17 +88,30 @@ class BlenderActions:
             result.data["blender"] = str(blender)
             return result
 
-        stdout = str(result.data.get("stdout") or "").strip()
-        try:
-            benchmark = json.loads(stdout)
-        except json.JSONDecodeError as error:
+        if not report_path.is_file():
             return ActionResult(
                 False,
-                "BlenderBench completed but did not return a valid JSON report",
+                "BlenderBench completed but did not write its durable report",
                 {
                     **result.data,
                     "artifact_root": str(artifact_root),
                     "blender": str(blender),
+                    "report_path": str(report_path),
+                },
+            )
+        try:
+            benchmark = json.loads(
+                report_path.read_text(encoding="utf-8-sig")
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            return ActionResult(
+                False,
+                "BlenderBench durable report is not valid JSON",
+                {
+                    **result.data,
+                    "artifact_root": str(artifact_root),
+                    "blender": str(blender),
+                    "report_path": str(report_path),
                     "parse_error": str(error),
                 },
             )
@@ -107,14 +123,9 @@ class BlenderActions:
                     **result.data,
                     "artifact_root": str(artifact_root),
                     "blender": str(blender),
+                    "report_path": str(report_path),
                 },
             )
-
-        report_path = artifact_root / "benchmark-report.json"
-        report_path.write_text(
-            json.dumps(benchmark, indent=2),
-            encoding="utf-8",
-        )
 
         modeling = benchmark.get("modeling_dispatch") or {}
         required_modeling = {
