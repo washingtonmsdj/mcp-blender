@@ -7,14 +7,14 @@ repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 
 is_transient_branch() {
   case "$1" in
-    feat/*|fix/*|refactor/*|ci/*|integration/*) return 0 ;;
+    feat/*|fix/*|refactor/*|ci/*|integration/*|codex/*) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 is_protected_branch() {
   case "$1" in
-    main|archive/*|codex/*|blender-bridge) return 0 ;;
+    main|archive/*|blender-bridge) return 0 ;;
     *) return 1 ;;
   esac
 }
