@@ -214,7 +214,13 @@ class AgentActions:
         before_head = before.data.get("stdout", "").strip()
 
         fetch = _run(
-            [*git, "fetch", "--quiet", "origin", branch],
+            [
+                *git,
+                "fetch",
+                "--quiet",
+                "origin",
+                f"refs/heads/{branch}:refs/remotes/origin/{branch}",
+            ],
             timeout=180,
         )
         if not fetch.ok:
