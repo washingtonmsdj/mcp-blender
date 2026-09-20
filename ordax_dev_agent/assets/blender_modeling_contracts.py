@@ -143,22 +143,28 @@ def _reject_unknown_fields(payload: dict[str, Any], allowed: set[str]) -> None:
 
 
 def normalize_object_selector(payload: dict[str, Any]) -> dict[str, str]:
-    object_name = str(payload.get("object_name") or "").strip()
-    object_id = str(payload.get("ordax_object_id") or "").strip()
-    if bool(object_name) == bool(object_id):
+    raw_name = payload.get("object_name")
+    raw_id = payload.get("ordax_object_id")
+    name_present = raw_name is not None and raw_name != ""
+    id_present = raw_id is not None and raw_id != ""
+    if isinstance(raw_name, str) and not raw_name.strip():
+        name_present = False
+    if isinstance(raw_id, str) and not raw_id.strip():
+        id_present = False
+    if name_present == id_present:
         raise ValueError("provide exactly one of object_name or ordax_object_id")
 
-    if object_name:
+    if name_present:
         return {
             "object_name": _bounded_string(
-                object_name,
+                raw_name,
                 "object_name",
-                max_utf8_bytes=255,
+                max_utf8_bytes=63,
             )
         }
     return {
         "ordax_object_id": _bounded_string(
-            object_id,
+            raw_id,
             "ordax_object_id",
             max_utf8_bytes=255,
         )
