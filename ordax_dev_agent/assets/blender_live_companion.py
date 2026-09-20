@@ -126,6 +126,12 @@ _QUALITY_RULES = _load_companion_asset_module(
 _quality_axis = _QUALITY_RULES.quality_axis
 _quality_tolerance = _QUALITY_RULES.quality_tolerance
 
+_MODELING_CONTRACTS = _load_companion_asset_module(
+    "blender_modeling_contracts.py",
+    "_ordax_blender_modeling_contracts",
+)
+_normalize_transform_request = _MODELING_CONTRACTS.normalize_transform_request
+
 CFG = _args()
 CONTROL_ROOT = Path(CFG.ordax_control_root).resolve()
 PROJECT_ROOT = Path(CFG.ordax_project_root).resolve()
@@ -889,41 +895,22 @@ def _resolve_object(command: dict):
     return matches[0]
 
 
-def _coerce_vector(command: dict, key: str, *, allow_none: bool = True):
-    value = command.get(key)
-    if value is None and allow_none:
-        return None
-    if (
-        not isinstance(value, list)
-        or len(value) != 3
-        or not all(isinstance(item, (int, float)) for item in value)
-    ):
-        raise ValueError(f"{key} must be a list of three numbers")
-    return [float(item) for item in value]
-
-
 def _object_transform(command: dict) -> None:
     command_id = command["id"]
     try:
-        obj = _resolve_object(command)
-        location = _coerce_vector(command, "location")
-        rotation = _coerce_vector(command, "rotation_euler")
-        scale = _coerce_vector(command, "scale")
-        dimensions = _coerce_vector(command, "dimensions")
+        normalized = _normalize_transform_request(
+            command,
+            transport_fields={"id", "operation"},
+        )
+        obj = _resolve_object(normalized)
     except ValueError as error:
         _response(command_id, False, str(error))
         return
 
-    if all(value is None for value in (location, rotation, scale, dimensions)):
-        _response(command_id, False, "at least one transform field is required")
-        return
-
-    if scale is not None and any(abs(value) < 1e-8 for value in scale):
-        _response(command_id, False, "scale components must be non-zero")
-        return
-    if dimensions is not None and any(value <= 0 for value in dimensions):
-        _response(command_id, False, "dimensions components must be positive")
-        return
+    location = normalized.get("location")
+    rotation = normalized.get("rotation_euler")
+    scale = normalized.get("scale")
+    dimensions = normalized.get("dimensions")
 
     before = _object_details(obj)
     try:
