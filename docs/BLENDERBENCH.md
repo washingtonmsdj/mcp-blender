@@ -30,9 +30,14 @@ Acceptance requires all of the following:
 11. the positive modeling result is durable and reports the expected location
     and scale;
 12. a zero-scale transform is rejected as a modeling negative control;
-13. both modeling command IDs are present in `trajectory.jsonl`;
-14. despite the in-memory transform, the source `.blend` remains byte-for-byte
-    unchanged on disk.
+13. both transform command IDs are present in `trajectory.jsonl`;
+14. smoke-only cube creation succeeds and duplicate object names are rejected;
+15. smoke-only BEVEL insertion succeeds and duplicate modifier names are rejected;
+16. the staged modifier reports an allowed runtime budget;
+17. all staged modeling command IDs are present in `trajectory.jsonl`;
+18. the temporary smoke object is removed before multiview capture;
+19. despite all in-memory modeling operations, the source `.blend` remains
+    byte-for-byte unchanged on disk.
 
 The benchmark intentionally uses a primitive rather than a production asset.
 Its purpose is to detect regressions in transport, Blender runtime behavior,
@@ -60,9 +65,11 @@ Hosted Bridge CI compiles the benchmark script but cannot validate Blender
 runtime behavior. The Windows self-hosted recovery workflow runs BlenderBench
 before it is allowed to touch the managed OrdaX agent.
 
-The modeling fixture validates only the already-supported typed transform path.
-It does not enable or claim validation for primitive creation or modifier
-insertion; those remain `pending_blender_smoke`.
+The modeling fixture validates the supported typed transform path and also
+executes staged create/modifier code behind a smoke-only dispatcher gate.
+Those staged operations remain absent from normal capabilities and remain
+`pending_blender_smoke` until this benchmark succeeds on the self-hosted
+Blender 5.x runner and a separate promotion PR explicitly registers them.
 
 A benchmark failure therefore blocks recovery/update of the managed agent
 instead of allowing an unverified Blender control layer onto the workstation.
