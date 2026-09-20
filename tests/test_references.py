@@ -302,12 +302,21 @@ class ReferenceContractTests(unittest.TestCase):
         self.assertTrue(restore.call_args.args[0]["discard_unsaved"])
         save.assert_not_called()
 
-    def test_reference_generation_defers_save_until_deterministic_gates_pass(self) -> None:
+    def test_reference_generation_defers_save_until_visual_decision(self) -> None:
         generation = ActionResult(
             True,
             "generated",
             {"checkpoint_id": "checkpoint-2", "artifacts": []},
         )
+        review_dir = (
+            self.config.state_dir
+            / "artifacts"
+            / "model"
+            / "reference-review-test"
+        )
+        review_dir.mkdir(parents=True)
+        review_path = review_dir / "reference-review.json"
+        review_path.write_text('{"review": true}', encoding="utf-8")
         review = ActionResult(
             True,
             "reviewed",
@@ -320,10 +329,25 @@ class ReferenceContractTests(unittest.TestCase):
                         "within_tolerance": True,
                     }
                 ],
+                "review_path": str(review_path),
                 "artifacts": [],
             },
         )
-        saved = ActionResult(True, "saved", {"target_path": "boat.blend"})
+        fingerprints = ActionResult(
+            True,
+            "fingerprinted",
+            {
+                "fingerprints": [
+                    {
+                        "selector_key": "name:Hull",
+                        "object_name": "Hull",
+                        "transform_sha256": "a" * 64,
+                        "geometry_sha256": "b" * 64,
+                        "combined_sha256": "c" * 64,
+                    }
+                ]
+            },
+        )
 
         with (
             patch.object(
@@ -338,12 +362,16 @@ class ReferenceContractTests(unittest.TestCase):
             ),
             patch.object(
                 self.registry,
+                "_reference_candidate_fingerprints",
+                return_value=fingerprints,
+            ),
+            patch.object(
+                self.registry,
                 "blender_live_checkpoint_restore",
             ) as restore,
             patch.object(
                 self.registry,
                 "blender_live_save",
-                return_value=saved,
             ) as save,
         ):
             result = self.registry.execute(
@@ -360,14 +388,325 @@ class ReferenceContractTests(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertTrue(result.data["visual_review_pending"])
-        self.assertIn("visual assessment pending", result.summary)
+        self.assertTrue(result.data["decision_required"])
+        self.assertIn("visual decision required", result.summary)
         self.assertNotIn(
             "save_target_path",
             generation_pass.call_args.args[0],
         )
-        save.assert_called_once()
-        self.assertEqual("boat.blend", save.call_args.args[0]["target_path"])
+        save.assert_not_called()
         restore.assert_not_called()
+
+        pass_path = Path(result.data["reference_pass_path"])
+        self.assertTrue(pass_path.is_file())
+        state = json.loads(pass_path.read_text(encoding="utf-8"))
+        self.assertEqual("pending_visual_review", state["status"])
+        self.assertEqual("checkpoint-2", state["checkpoint_id"])
+        self.assertEqual(
+            str((self.project / "boat.blend").resolve()),
+            state["proposed_save_target_path"],
+        )
+        self.assertEqual(
+            "c" * 64,
+            state["candidate_fingerprints"][0]["combined_sha256"],
+        )
+
+    def _write_reference_pass_fixture(
+        self,
+        *,
+        combined_sha256: str = "c" * 64,
+        save_target: str | None = None,
+    ) -> Path:
+        evidence = self.config.state_dir / "artifacts" / "model" / "decision-test"
+        evidence.mkdir(parents=True, exist_ok=True)
+        review = evidence / "reference-review.json"
+        review.write_text('{"review": true}', encoding="utf-8")
+        state = {
+            "version": 1,
+            "status": "pending_visual_review",
+            "project": "model",
+            "asset": "boat",
+            "manifest_sha256": "d" * 64,
+            "checkpoint_id": "checkpoint-decision",
+            "review_path": str(review),
+            "review_sha256": hashlib.sha256(review.read_bytes()).hexdigest(),
+            "object_names": ["Hull"],
+            "candidate_fingerprints": [
+                {
+                    "selector_key": "name:Hull",
+                    "object_name": "Hull",
+                    "transform_sha256": "a" * 64,
+                    "geometry_sha256": "b" * 64,
+                    "combined_sha256": combined_sha256,
+                }
+            ],
+            "proposed_save_target_path": save_target,
+            "script_path": "automation/blender/boat.py",
+        }
+        path = evidence / "reference-pass.json"
+        path.write_text(json.dumps(state), encoding="utf-8")
+        return path
+
+    def test_reference_decision_accepts_unchanged_candidate_then_saves(self) -> None:
+        target = str((self.project / "boat.blend").resolve())
+        pass_path = self._write_reference_pass_fixture(save_target=target)
+        current = ActionResult(
+            True,
+            "fingerprinted",
+            {
+                "fingerprints": [
+                    {
+                        "selector_key": "name:Hull",
+                        "object_name": "Hull",
+                        "combined_sha256": "c" * 64,
+                    }
+                ]
+            },
+        )
+        saved = ActionResult(True, "saved", {"target_path": target})
+
+        with (
+            patch.object(
+                self.registry,
+                "_reference_candidate_fingerprints",
+                return_value=current,
+            ),
+            patch.object(
+                self.registry,
+                "_reference_candidate_visual_hashes",
+                return_value=ActionResult(
+                    True,
+                    "visuals unchanged",
+                    {"verified_views": ["front"]},
+                ),
+            ),
+            patch.object(
+                self.registry,
+                "blender_live_save",
+                return_value=saved,
+            ) as save,
+            patch.object(
+                self.registry,
+                "blender_live_checkpoint_restore",
+            ) as restore,
+        ):
+            result = self.registry.execute(
+                "blender.reference_decision",
+                {
+                    "project": "model",
+                    "reference_pass_path": str(pass_path),
+                    "decision": "accept",
+                    "assessment": "Hull silhouette and rope route match the reviewed references.",
+                },
+            )
+
+        self.assertTrue(result.ok)
+        self.assertIn("accepted and saved", result.summary)
+        save.assert_called_once()
+        restore.assert_not_called()
+        state = json.loads(pass_path.read_text(encoding="utf-8"))
+        self.assertEqual("accepted", state["status"])
+        self.assertEqual(target, state["saved_target_path"])
+
+    def test_reference_decision_rejects_and_restores_checkpoint(self) -> None:
+        pass_path = self._write_reference_pass_fixture(
+            save_target=str((self.project / "boat.blend").resolve())
+        )
+        restored = ActionResult(
+            True,
+            "restored",
+            {"checkpoint_id": "checkpoint-decision"},
+        )
+
+        with (
+            patch.object(
+                self.registry,
+                "blender_live_checkpoint_restore",
+                return_value=restored,
+            ) as restore,
+            patch.object(
+                self.registry,
+                "_reference_candidate_fingerprints",
+            ) as fingerprints,
+            patch.object(
+                self.registry,
+                "blender_live_save",
+            ) as save,
+        ):
+            result = self.registry.execute(
+                "blender.reference_decision",
+                {
+                    "project": "model",
+                    "reference_pass_path": str(pass_path),
+                    "decision": "reject",
+                    "assessment": "Rope no longer follows the outer gunwale.",
+                },
+            )
+
+        self.assertTrue(result.ok)
+        restore.assert_called_once()
+        fingerprints.assert_not_called()
+        save.assert_not_called()
+        state = json.loads(pass_path.read_text(encoding="utf-8"))
+        self.assertEqual("rejected", state["status"])
+
+    def test_visual_hash_guard_recaptures_same_views_and_parameters(self) -> None:
+        reviewed = {
+            "capture": {
+                "artifacts": [
+                    {"view": "front", "sha256": "1" * 64},
+                    {"view": "right", "sha256": "2" * 64},
+                ],
+                "resolution": [640, 480],
+                "margin": 1.25,
+                "mode": "material",
+            }
+        }
+        state = {
+            "project": "model",
+            "object_names": ["Hull"],
+        }
+        recaptured = ActionResult(
+            True,
+            "captured",
+            {
+                "artifacts": [
+                    {"view": "front", "sha256": "1" * 64},
+                    {"view": "right", "sha256": "2" * 64},
+                ]
+            },
+        )
+
+        with patch.object(
+            self.registry,
+            "blender_live_multiview_capture",
+            return_value=recaptured,
+        ) as capture:
+            result = self.registry._reference_candidate_visual_hashes(
+                {"project": "model"},
+                state,
+                reviewed,
+            )
+
+        self.assertTrue(result.ok)
+        request = capture.call_args.args[0]
+        self.assertEqual(["front", "right"], request["views"])
+        self.assertEqual(["Hull"], request["object_names"])
+        self.assertEqual(640, request["width"])
+        self.assertEqual(480, request["height"])
+        self.assertEqual(1.25, request["margin"])
+        self.assertEqual("material", request["mode"])
+        self.assertEqual(["front", "right"], result.data["verified_views"])
+
+    def test_reference_decision_blocks_accept_after_pixels_changed(self) -> None:
+        target = str((self.project / "boat.blend").resolve())
+        pass_path = self._write_reference_pass_fixture(save_target=target)
+        current = ActionResult(
+            True,
+            "fingerprinted",
+            {
+                "fingerprints": [
+                    {
+                        "selector_key": "name:Hull",
+                        "object_name": "Hull",
+                        "combined_sha256": "c" * 64,
+                    }
+                ]
+            },
+        )
+        visual = ActionResult(
+            False,
+            "Rendered candidate changed after visual evidence was reviewed",
+            {
+                "changed_views": ["front"],
+                "expected_sha256": {"front": "1" * 64},
+                "current_sha256": {"front": "2" * 64},
+            },
+        )
+
+        with (
+            patch.object(
+                self.registry,
+                "_reference_candidate_fingerprints",
+                return_value=current,
+            ),
+            patch.object(
+                self.registry,
+                "_reference_candidate_visual_hashes",
+                return_value=visual,
+            ),
+            patch.object(
+                self.registry,
+                "blender_live_save",
+            ) as save,
+        ):
+            result = self.registry.execute(
+                "blender.reference_decision",
+                {
+                    "project": "model",
+                    "reference_pass_path": str(pass_path),
+                    "decision": "accept",
+                    "assessment": "The earlier visual evidence looked acceptable.",
+                },
+            )
+
+        self.assertFalse(result.ok)
+        self.assertIn("visual state changed after review", result.summary)
+        self.assertEqual(
+            ["front"],
+            result.data["visual_consistency"]["changed_views"],
+        )
+        save.assert_not_called()
+        state = json.loads(pass_path.read_text(encoding="utf-8"))
+        self.assertEqual("pending_visual_review", state["status"])
+
+    def test_reference_decision_blocks_accept_after_scene_changed(self) -> None:
+        target = str((self.project / "boat.blend").resolve())
+        pass_path = self._write_reference_pass_fixture(
+            combined_sha256="c" * 64,
+            save_target=target,
+        )
+        current = ActionResult(
+            True,
+            "fingerprinted",
+            {
+                "fingerprints": [
+                    {
+                        "selector_key": "name:Hull",
+                        "object_name": "Hull",
+                        "combined_sha256": "e" * 64,
+                    }
+                ]
+            },
+        )
+
+        with (
+            patch.object(
+                self.registry,
+                "_reference_candidate_fingerprints",
+                return_value=current,
+            ),
+            patch.object(
+                self.registry,
+                "blender_live_save",
+            ) as save,
+        ):
+            result = self.registry.execute(
+                "blender.reference_decision",
+                {
+                    "project": "model",
+                    "reference_pass_path": str(pass_path),
+                    "decision": "accept",
+                    "assessment": "The captured candidate looked acceptable.",
+                },
+            )
+
+        self.assertFalse(result.ok)
+        self.assertIn("changed after visual evidence", result.summary)
+        self.assertEqual(["name:Hull"], result.data["changed_selectors"])
+        save.assert_not_called()
+        state = json.loads(pass_path.read_text(encoding="utf-8"))
+        self.assertEqual("pending_visual_review", state["status"])
 
     def test_reference_generation_can_require_declared_physical_scale(self) -> None:
         generation = ActionResult(

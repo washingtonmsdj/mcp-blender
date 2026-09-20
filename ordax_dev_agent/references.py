@@ -507,17 +507,243 @@ class ReferenceActions:
             reference,
         )
 
+    def _reference_candidate_fingerprints(
+        self,
+        payload: dict[str, Any],
+        object_names: list[str],
+    ) -> ActionResult:
+        result = self.blender_live_object_fingerprints(
+            {
+                **payload,
+                "selectors": [
+                    {"object_name": name, "evaluated": True}
+                    for name in object_names
+                ],
+                "timeout_seconds": min(
+                    float(payload.get("timeout_seconds", 240)),
+                    120.0,
+                ),
+            }
+        )
+        if not result.ok:
+            return result
+
+        compact: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for entry in result.data.get("fingerprints", []):
+            if not isinstance(entry, dict):
+                continue
+            selector_key = str(entry.get("selector_key") or "").strip()
+            combined = str(entry.get("combined_sha256") or "").strip()
+            if not selector_key or not combined or selector_key in seen:
+                continue
+            seen.add(selector_key)
+            compact.append(
+                {
+                    "selector_key": selector_key,
+                    "object_name": entry.get("object_name"),
+                    "transform_sha256": entry.get("transform_sha256"),
+                    "geometry_sha256": entry.get("geometry_sha256"),
+                    "combined_sha256": combined,
+                }
+            )
+
+        expected = {f"name:{name}" for name in object_names}
+        actual = {item["selector_key"] for item in compact}
+        if actual != expected:
+            return ActionResult(
+                False,
+                "Reference candidate fingerprints are incomplete",
+                {
+                    "expected": sorted(expected),
+                    "actual": sorted(actual),
+                    "fingerprints": compact,
+                },
+            )
+
+        return ActionResult(
+            True,
+            "Reference candidate fingerprints captured",
+            {"fingerprints": sorted(compact, key=lambda item: item["selector_key"])},
+        )
+
+    def _reference_pass_path(
+        self,
+        payload: dict[str, Any],
+    ) -> tuple[Path, dict[str, Any]]:
+        project = self._project(payload)
+        raw = str(payload.get("reference_pass_path") or "").strip()
+        if not raw:
+            raise ValueError("reference_pass_path is required")
+
+        artifact_root = (
+            self.config.state_dir / "artifacts" / project.slug
+        ).resolve()
+        candidate = Path(raw).expanduser()
+        path = (
+            candidate
+            if candidate.is_absolute()
+            else artifact_root / candidate
+        ).resolve()
+        if not path.is_relative_to(artifact_root):
+            raise ValueError(
+                "reference_pass_path must be inside the project artifact root"
+            )
+        if path.suffix.lower() != ".json" or not path.is_file():
+            raise FileNotFoundError(path)
+        if path.stat().st_size > MAX_MANIFEST_BYTES:
+            raise ValueError("reference pass exceeds 1 MiB")
+
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ValueError(f"invalid reference pass JSON: {error}") from error
+        if not isinstance(data, dict):
+            raise ValueError("reference pass must contain an object")
+        if data.get("version") != MANIFEST_VERSION:
+            raise ValueError(
+                f"reference pass must use version {MANIFEST_VERSION}"
+            )
+        if data.get("project") != project.slug:
+            raise ValueError("reference pass belongs to another project")
+        return path, data
+
+    @staticmethod
+    def _reference_fingerprint_map(
+        entries: Any,
+    ) -> dict[str, str]:
+        if not isinstance(entries, list):
+            return {}
+        result: dict[str, str] = {}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            key = str(entry.get("selector_key") or "").strip()
+            digest = str(entry.get("combined_sha256") or "").strip()
+            if key and digest:
+                result[key] = digest
+        return result
+
+    def _reference_candidate_visual_hashes(
+        self,
+        payload: dict[str, Any],
+        state: dict[str, Any],
+        review_data: dict[str, Any],
+    ) -> ActionResult:
+        capture = review_data.get("capture")
+        if not isinstance(capture, dict):
+            return ActionResult(
+                False,
+                "Reference review contains no deterministic capture evidence",
+            )
+
+        raw_artifacts = capture.get("artifacts")
+        if not isinstance(raw_artifacts, list) or not raw_artifacts:
+            return ActionResult(
+                False,
+                "Reference review contains no deterministic view artifacts",
+            )
+
+        expected: dict[str, str] = {}
+        for item in raw_artifacts:
+            if not isinstance(item, dict):
+                continue
+            view = str(item.get("view") or "").strip()
+            digest = str(item.get("sha256") or "").strip()
+            if view and digest:
+                expected[view] = digest
+        if not expected:
+            return ActionResult(
+                False,
+                "Reference review contains no deterministic view hashes",
+            )
+
+        object_names = state.get("object_names")
+        if (
+            not isinstance(object_names, list)
+            or not object_names
+            or not all(isinstance(name, str) and name.strip() for name in object_names)
+        ):
+            return ActionResult(False, "reference pass contains invalid object_names")
+
+        resolution = capture.get("resolution")
+        if (
+            not isinstance(resolution, list)
+            or len(resolution) != 2
+            or not all(isinstance(value, int) for value in resolution)
+        ):
+            resolution = [768, 768]
+
+        fresh = self.blender_live_multiview_capture(
+            {
+                "project": state["project"],
+                "views": list(expected),
+                "object_names": [name.strip() for name in object_names],
+                "mode": str(capture.get("mode") or "material"),
+                "width": resolution[0],
+                "height": resolution[1],
+                "margin": capture.get("margin", 1.15),
+                "timeout_seconds": min(
+                    float(payload.get("timeout_seconds", 240)),
+                    240.0,
+                ),
+            }
+        )
+        if not fresh.ok:
+            return ActionResult(
+                False,
+                "Could not recapture candidate visual evidence before acceptance",
+                fresh.data,
+            )
+
+        current: dict[str, str] = {}
+        for item in fresh.data.get("artifacts", []):
+            if not isinstance(item, dict):
+                continue
+            view = str(item.get("view") or "").strip()
+            digest = str(item.get("sha256") or "").strip()
+            if view and digest:
+                current[view] = digest
+
+        changed = sorted(
+            view
+            for view in set(expected) | set(current)
+            if expected.get(view) != current.get(view)
+        )
+        if changed:
+            return ActionResult(
+                False,
+                "Rendered candidate changed after visual evidence was reviewed",
+                {
+                    "changed_views": changed,
+                    "expected_sha256": expected,
+                    "current_sha256": current,
+                    "fresh_capture": fresh.data,
+                },
+            )
+
+        return ActionResult(
+            True,
+            "Rendered candidate still matches reviewed visual evidence",
+            {
+                "verified_views": sorted(expected),
+                "sha256": expected,
+                "fresh_capture": fresh.data,
+            },
+        )
+
     def blender_reference_generation_pass(
         self,
         payload: dict[str, Any],
     ) -> ActionResult:
-        """Run a generation pass and gate measurable reference constraints.
+        """Generate and measure a candidate, but defer final save to visual review.
 
-        Arbitrary image similarity remains a human/model visual review step. Only
-        deterministic facts (reference integrity, capture success and explicitly
-        declared physical dimensions) can reject and roll back automatically.
+        Automatic rejection is limited to deterministic facts. A candidate that
+        passes those facts remains unsaved and fingerprint-locked until a later
+        blender.reference_decision explicitly accepts or rejects the reviewed
+        visual evidence.
         """
-        self._validated_reference_object_names(payload)
+        object_names = self._validated_reference_object_names(payload)
 
         try:
             reference = self.project_reference_images(payload)
@@ -542,6 +768,30 @@ class ReferenceActions:
 
         generation_payload = dict(payload)
         requested_save_target = generation_payload.pop("save_target_path", None)
+        proposed_save_target = None
+        if requested_save_target:
+            try:
+                save_target = self._project(payload).path(
+                    str(requested_save_target),
+                    must_exist=False,
+                )
+            except (ValueError, FileNotFoundError) as error:
+                return ActionResult(
+                    False,
+                    "Reference preflight failed; Blender was not modified",
+                    {
+                        "phase": "reference_preflight",
+                        "error": str(error),
+                    },
+                )
+            if save_target.suffix.lower() != ".blend":
+                return ActionResult(
+                    False,
+                    "Reference preflight failed; save_target_path must be a .blend file",
+                    {"phase": "reference_preflight"},
+                )
+            proposed_save_target = str(save_target)
+
         generation = self.blender_live_generation_pass(generation_payload)
         if not generation.ok:
             return ActionResult(
@@ -558,6 +808,18 @@ class ReferenceActions:
         checkpoint_id = str(
             generation.data.get("checkpoint_id") or ""
         ).strip()
+        if not checkpoint_id:
+            return ActionResult(
+                False,
+                "Reference-guided generation produced no rollback checkpoint",
+                {
+                    "phase": "generation",
+                    "reference": reference.data,
+                    "generation": generation.data,
+                    "artifacts": reference.data.get("artifacts", []),
+                },
+            )
+
         review = self._blender_reference_review_from_materialized(
             payload,
             reference,
@@ -601,108 +863,391 @@ class ReferenceActions:
 
         rollback = None
         if rejection_reasons:
-            if checkpoint_id:
-                rollback = self.blender_live_checkpoint_restore(
-                    {
-                        **payload,
-                        "checkpoint_id": checkpoint_id,
-                        "discard_unsaved": True,
-                        "timeout_seconds": min(
-                            float(payload.get("timeout_seconds", 240)),
-                            30.0,
-                        ),
-                    }
-                )
+            rollback = self.blender_live_checkpoint_restore(
+                {
+                    **payload,
+                    "checkpoint_id": checkpoint_id,
+                    "discard_unsaved": True,
+                    "timeout_seconds": min(
+                        float(payload.get("timeout_seconds", 240)),
+                        30.0,
+                    ),
+                }
+            )
             return ActionResult(
                 False,
                 "Reference-guided generation rejected: "
                 + "; ".join(rejection_reasons),
                 {
-                    "checkpoint_id": checkpoint_id or None,
+                    "checkpoint_id": checkpoint_id,
                     "reference": reference.data,
                     "generation": generation.data,
                     "review": review.data,
                     "failed_dimensions": failed_dimensions,
                     "unknown_dimensions": unknown_dimensions,
-                    "rollback": (
-                        {
-                            "ok": rollback.ok,
-                            "summary": rollback.summary,
-                            "data": rollback.data,
-                        }
-                        if rollback is not None
-                        else None
-                    ),
+                    "rollback": {
+                        "ok": rollback.ok,
+                        "summary": rollback.summary,
+                        "data": rollback.data,
+                    },
                     "artifacts": review.data.get("artifacts", []),
                 },
             )
 
-        saved = None
-        if requested_save_target:
-            saved = self.blender_live_save(
+        fingerprints = self._reference_candidate_fingerprints(
+            payload,
+            object_names,
+        )
+        if not fingerprints.ok:
+            rollback = self.blender_live_checkpoint_restore(
                 {
                     **payload,
-                    "target_path": requested_save_target,
-                    "timeout_seconds": min(
-                        float(payload.get("timeout_seconds", 240)),
-                        120.0,
-                    ),
+                    "checkpoint_id": checkpoint_id,
+                    "discard_unsaved": True,
+                    "timeout_seconds": 30,
                 }
             )
-            if not saved.ok:
-                if checkpoint_id:
-                    rollback = self.blender_live_checkpoint_restore(
-                        {
-                            **payload,
-                            "checkpoint_id": checkpoint_id,
-                            "discard_unsaved": True,
-                            "timeout_seconds": 30,
-                        }
-                    )
-                return ActionResult(
-                    False,
-                    "Reference-guided generation passed review but final save failed",
-                    {
-                        "checkpoint_id": checkpoint_id or None,
-                        "reference": reference.data,
-                        "generation": generation.data,
-                        "review": review.data,
-                        "save": {
-                            "ok": saved.ok,
-                            "summary": saved.summary,
-                            "data": saved.data,
-                        },
-                        "rollback": (
-                            {
-                                "ok": rollback.ok,
-                                "summary": rollback.summary,
-                                "data": rollback.data,
-                            }
-                            if rollback is not None
-                            else None
-                        ),
-                        "artifacts": review.data.get("artifacts", []),
+            return ActionResult(
+                False,
+                "Reference-guided candidate could not be locked for visual review",
+                {
+                    "checkpoint_id": checkpoint_id,
+                    "fingerprints": fingerprints.data,
+                    "rollback": {
+                        "ok": rollback.ok,
+                        "summary": rollback.summary,
+                        "data": rollback.data,
                     },
-                )
+                    "artifacts": review.data.get("artifacts", []),
+                },
+            )
+
+        review_path = Path(str(review.data.get("review_path") or "")).resolve()
+        if not review_path.is_file():
+            rollback = self.blender_live_checkpoint_restore(
+                {
+                    **payload,
+                    "checkpoint_id": checkpoint_id,
+                    "discard_unsaved": True,
+                    "timeout_seconds": 30,
+                }
+            )
+            return ActionResult(
+                False,
+                "Reference review manifest is missing; candidate rolled back",
+                {
+                    "checkpoint_id": checkpoint_id,
+                    "rollback": {
+                        "ok": rollback.ok,
+                        "summary": rollback.summary,
+                        "data": rollback.data,
+                    },
+                },
+            )
+
+        review_sha256 = hashlib.sha256(review_path.read_bytes()).hexdigest()
+        pass_path = review_path.with_name("reference-pass.json")
+        pass_state = {
+            "version": MANIFEST_VERSION,
+            "status": "pending_visual_review",
+            "project": reference.data["project"],
+            "asset": reference.data["asset"],
+            "manifest_sha256": reference.data["manifest_sha256"],
+            "checkpoint_id": checkpoint_id,
+            "review_path": str(review_path),
+            "review_sha256": review_sha256,
+            "object_names": object_names,
+            "candidate_fingerprints": fingerprints.data["fingerprints"],
+            "proposed_save_target_path": proposed_save_target,
+            "script_path": str(payload.get("script_path") or ""),
+        }
+        pass_path.write_text(
+            json.dumps(pass_state, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        artifacts = list(review.data.get("artifacts", []))
+        artifacts.append(
+            {"path": str(pass_path), "kind": "reference-generation-pass"}
+        )
 
         return ActionResult(
             True,
-            "Reference-guided Blender generation passed deterministic gates; visual assessment pending",
+            "Reference-guided Blender candidate passed deterministic gates; visual decision required before save",
             {
-                "checkpoint_id": checkpoint_id or None,
+                "checkpoint_id": checkpoint_id,
                 "visual_review_pending": True,
+                "decision_required": True,
+                "reference_pass_path": str(pass_path),
+                "proposed_save_target_path": proposed_save_target,
                 "reference": reference.data,
                 "generation": generation.data,
                 "review": review.data,
-                "save": (
-                    {
-                        "ok": saved.ok,
-                        "summary": saved.summary,
-                        "data": saved.data,
-                    }
-                    if saved is not None
-                    else None
+                "candidate_fingerprints": fingerprints.data["fingerprints"],
+                "artifacts": artifacts,
+            },
+        )
+
+    def blender_reference_decision(
+        self,
+        payload: dict[str, Any],
+    ) -> ActionResult:
+        """Accept/save or reject/rollback an already-reviewed candidate."""
+        decision = str(payload.get("decision") or "").strip().lower()
+        if decision not in {"accept", "reject"}:
+            return ActionResult(False, "decision must be accept or reject")
+
+        assessment = str(payload.get("assessment") or "").strip()
+        if not assessment or len(assessment) > 4000:
+            return ActionResult(
+                False,
+                "assessment is required and must be at most 4000 characters",
+            )
+
+        try:
+            pass_path, state = self._reference_pass_path(payload)
+        except (ValueError, FileNotFoundError) as error:
+            return ActionResult(False, f"{type(error).__name__}: {error}")
+
+        if state.get("status") != "pending_visual_review":
+            return ActionResult(
+                False,
+                "reference pass is no longer pending visual review",
+                {"status": state.get("status")},
+            )
+
+        checkpoint_id = str(state.get("checkpoint_id") or "").strip()
+        if not checkpoint_id:
+            return ActionResult(False, "reference pass has no rollback checkpoint")
+
+        review_path = Path(str(state.get("review_path") or "")).expanduser().resolve()
+        artifact_root = (
+            self.config.state_dir
+            / "artifacts"
+            / self._project(payload).slug
+        ).resolve()
+        if (
+            not review_path.is_relative_to(artifact_root)
+            or not review_path.is_file()
+        ):
+            return ActionResult(False, "reference review evidence is missing")
+        review_bytes = review_path.read_bytes()
+        current_review_sha = hashlib.sha256(review_bytes).hexdigest()
+        if current_review_sha != str(state.get("review_sha256") or ""):
+            return ActionResult(
+                False,
+                "reference review evidence changed after candidate capture",
+            )
+        try:
+            review_data = json.loads(review_bytes.decode("utf-8-sig"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            return ActionResult(False, f"invalid reference review JSON: {error}")
+        if not isinstance(review_data, dict):
+            return ActionResult(False, "reference review must contain an object")
+
+        if decision == "reject":
+            rollback = self.blender_live_checkpoint_restore(
+                {
+                    **payload,
+                    "checkpoint_id": checkpoint_id,
+                    "discard_unsaved": True,
+                    "timeout_seconds": min(
+                        float(payload.get("timeout_seconds", 240)),
+                        30.0,
+                    ),
+                }
+            )
+            state["decision"] = "reject"
+            state["assessment"] = assessment
+            state["status"] = (
+                "rejected"
+                if rollback.ok
+                else "rejection_rollback_failed"
+            )
+            state["rollback"] = {
+                "ok": rollback.ok,
+                "summary": rollback.summary,
+                "data": rollback.data,
+            }
+            pass_path.write_text(
+                json.dumps(state, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            return ActionResult(
+                rollback.ok,
+                (
+                    "Reference candidate rejected and checkpoint restored"
+                    if rollback.ok
+                    else "Reference candidate rejected but rollback failed"
                 ),
-                "artifacts": review.data.get("artifacts", []),
+                {
+                    "reference_pass_path": str(pass_path),
+                    "checkpoint_id": checkpoint_id,
+                    "assessment": assessment,
+                    "rollback": state["rollback"],
+                },
+            )
+
+        object_names = state.get("object_names")
+        if (
+            not isinstance(object_names, list)
+            or not object_names
+            or not all(isinstance(name, str) and name.strip() for name in object_names)
+        ):
+            return ActionResult(False, "reference pass contains invalid object_names")
+
+        fingerprints = self._reference_candidate_fingerprints(
+            payload,
+            [name.strip() for name in object_names],
+        )
+        if not fingerprints.ok:
+            return ActionResult(
+                False,
+                "Candidate cannot be accepted because current fingerprints are unavailable",
+                {"fingerprints": fingerprints.data},
+            )
+
+        expected = self._reference_fingerprint_map(
+            state.get("candidate_fingerprints")
+        )
+        current = self._reference_fingerprint_map(
+            fingerprints.data.get("fingerprints")
+        )
+        if expected != current:
+            changed = sorted(
+                key
+                for key in set(expected) | set(current)
+                if expected.get(key) != current.get(key)
+            )
+            return ActionResult(
+                False,
+                "Candidate changed after visual evidence; generate a new reference review before accepting",
+                {
+                    "changed_selectors": changed,
+                    "expected_fingerprints": expected,
+                    "current_fingerprints": current,
+                },
+            )
+
+        visual_consistency = self._reference_candidate_visual_hashes(
+            payload,
+            state,
+            review_data,
+        )
+        if not visual_consistency.ok:
+            return ActionResult(
+                False,
+                "Candidate visual state changed after review; generate a new reference review before accepting",
+                {
+                    "visual_consistency": visual_consistency.data,
+                    "summary": visual_consistency.summary,
+                },
+            )
+
+        project = self._project(payload)
+        declared_target = str(
+            state.get("proposed_save_target_path") or ""
+        ).strip()
+        requested_target = str(payload.get("save_target_path") or "").strip()
+        if declared_target and requested_target:
+            try:
+                requested_resolved = project.path(
+                    requested_target,
+                    must_exist=False,
+                )
+            except (ValueError, FileNotFoundError) as error:
+                return ActionResult(False, str(error))
+            if requested_resolved != Path(declared_target).resolve():
+                return ActionResult(
+                    False,
+                    "save_target_path differs from the target declared before generation",
+                )
+
+        target_raw = declared_target or requested_target
+        if not target_raw:
+            return ActionResult(
+                False,
+                "save_target_path is required to accept the reviewed candidate",
+            )
+        try:
+            target = project.path(target_raw, must_exist=False)
+        except (ValueError, FileNotFoundError) as error:
+            return ActionResult(False, str(error))
+        if target.suffix.lower() != ".blend":
+            return ActionResult(False, "save_target_path must be a .blend file")
+
+        saved = self.blender_live_save(
+            {
+                **payload,
+                "target_path": str(target),
+                "timeout_seconds": min(
+                    float(payload.get("timeout_seconds", 240)),
+                    120.0,
+                ),
+            }
+        )
+        if not saved.ok:
+            rollback = self.blender_live_checkpoint_restore(
+                {
+                    **payload,
+                    "checkpoint_id": checkpoint_id,
+                    "discard_unsaved": True,
+                    "timeout_seconds": 30,
+                }
+            )
+            state["decision"] = "accept"
+            state["assessment"] = assessment
+            state["status"] = (
+                "save_failed_rolled_back"
+                if rollback.ok
+                else "save_failed_rollback_failed"
+            )
+            state["save"] = {
+                "ok": saved.ok,
+                "summary": saved.summary,
+                "data": saved.data,
+            }
+            state["rollback"] = {
+                "ok": rollback.ok,
+                "summary": rollback.summary,
+                "data": rollback.data,
+            }
+            pass_path.write_text(
+                json.dumps(state, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            return ActionResult(
+                False,
+                "Reference candidate was accepted visually but final save failed",
+                {
+                    "reference_pass_path": str(pass_path),
+                    "save": state["save"],
+                    "rollback": state["rollback"],
+                },
+            )
+
+        state["decision"] = "accept"
+        state["assessment"] = assessment
+        state["status"] = "accepted"
+        state["saved_target_path"] = str(target)
+        state["save"] = {
+            "ok": saved.ok,
+            "summary": saved.summary,
+            "data": saved.data,
+        }
+        pass_path.write_text(
+            json.dumps(state, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return ActionResult(
+            True,
+            "Reference candidate accepted and saved after visual review",
+            {
+                "reference_pass_path": str(pass_path),
+                "checkpoint_id": checkpoint_id,
+                "assessment": assessment,
+                "saved_target_path": str(target),
+                "visual_consistency": visual_consistency.data,
+                "save": state["save"],
             },
         )

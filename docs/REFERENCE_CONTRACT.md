@@ -63,15 +63,37 @@ the action performs deterministic reference review for the explicit
 - a declared physical dimension is outside the contract tolerance;
 - `require_reference_physical_scale=true` and physical scale is unavailable.
 
-A requested `save_target_path` is removed from the inner generation call and
-saved only after these deterministic reference gates pass. If the reference
-gate or final save fails, the action restores the generation checkpoint with
-`discard_unsaved=true`.
+A requested `save_target_path` is removed from the inner generation call.
+Even when every deterministic gate passes, the action **does not save the final
+`.blend`**. Instead it fingerprints the exact reviewed objects and writes a
+managed `reference-pass.json` containing the rollback checkpoint, review hash,
+candidate fingerprints and proposed save target.
 
-Passing this action does **not** mean arbitrary source photography visually
-matches the model. The result sets `visual_review_pending=true`; source/model
-pixels still need explicit inspection because camera, crop, lens, pose and
-lighting are not proven equivalent.
+The result sets `visual_review_pending=true` and
+`decision_required=true`. Source/model pixels still need explicit inspection
+because camera, crop, lens, pose and lighting are not proven equivalent.
+
+### `blender.reference_decision`
+
+This closes a pending `reference-pass.json` after visual inspection.
+
+- `decision=accept` requires a written `assessment`, verifies the review file
+  hash, fingerprints the current objects again **and recaptures the same
+  deterministic multiview**. Every reviewed view must reproduce the original
+  SHA-256 pixel hash. Geometry/transform changes are caught by fingerprints;
+  material, lighting, UV or other rendered-state changes are caught by the
+  recaptured pixels. Only the exact reviewed candidate can be accepted.
+- `decision=reject` requires an assessment and restores the generation
+  checkpoint with `discard_unsaved=true`.
+- If final save fails after an accept decision, the action rolls back to the
+  checkpoint instead of leaving a visually accepted but unsaved candidate as
+  the working state.
+- A pass can be decided only once. Accepted/rejected/failed pass manifests are
+  retained as audit evidence.
+
+This two-phase protocol deliberately separates deterministic geometry checks
+from visual judgment without allowing visual review to be bypassed by an early
+save.
 
 ### `blender.reference_review`
 
@@ -119,10 +141,13 @@ or visual fidelity.
    measurable reference constraints and rollback automatically on failure;
 6. inspect the returned paired source/result pixels and record concrete visual
    divergences;
-7. make localized corrections while protecting approved components;
-8. repeat until the declared measurable constraints and visual review are
+7. call `blender.reference_decision` with `reject` to roll back a visually
+   wrong candidate, or `accept` to fingerprint-check and save the exact
+   reviewed candidate;
+8. make localized corrections while protecting approved components;
+9. repeat until the declared measurable constraints and visual review are
    acceptable;
-9. run final quality gates and isolated headless export.
+10. run final quality gates and isolated headless export.
 
 The existing baseline-to-baseline `blender.multiview_compare` remains the
 correct tool for deterministic regression between two OrdaX captures.

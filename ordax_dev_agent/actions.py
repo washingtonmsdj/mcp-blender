@@ -74,6 +74,7 @@ class ActionRegistry(ObservationActions, ReferenceActions, BlenderActions, Unity
             "blender.multiview_compare": self.blender_multiview_compare,
             "blender.reference_review": self.blender_reference_review,
             "blender.reference_generation_pass": self.blender_reference_generation_pass,
+            "blender.reference_decision": self.blender_reference_decision,
             "unity.install_companion": self.unity_install_companion,
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
