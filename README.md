@@ -225,7 +225,7 @@ this layer and the capabilities intentionally not copied.
 - `project.reference_images` materializes selected PNG/JPEG references into the managed artifact root with manifest/image hashes.
 - `blender.reference_review` pairs those references with deterministic Blender multiview captures for explicit object names.
 - `blender.reference_generation_pass` preflights reference integrity, runs the recoverable generation pass, checks declared physical dimensions and creates a fingerprint-locked `reference-pass.json`; it **does not save the final `.blend` while visual review is pending**.
-- `blender.reference_decision` closes that pass explicitly: `accept` rechecks geometry/transform fingerprints **and recaptures deterministic multiview pixel hashes** before saving, while `reject` restores the generation checkpoint. Geometry, material, lighting or other rendered-state changes after review force a new review.
+- `blender.reference_decision` closes that pass explicitly: `accept` rechecks geometry/transform fingerprints and recaptures deterministic multiview evidence before saving. Reviewed files keep their byte-level SHA-256 integrity check, while candidate equality is decided from **decoded RGBA pixel digests**, so harmless PNG metadata/compression changes do not cause false rejection. Real geometry/material/lighting/UV/rendered-pixel changes still force a new review.
 - Blender Live protocol v9 reports declared scene unit metadata so physical dimensions are checked only when the scene actually defines a usable scale.
 - Arbitrary source/reference images do **not** receive a fabricated similarity score; camera/lens/crop/pose correspondence remains explicit evidence that must be reviewed.
 

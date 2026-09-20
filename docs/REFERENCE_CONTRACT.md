@@ -79,10 +79,14 @@ This closes a pending `reference-pass.json` after visual inspection.
 
 - `decision=accept` requires a written `assessment`, verifies the review file
   hash, fingerprints the current objects again **and recaptures the same
-  deterministic multiview**. Every reviewed view must reproduce the original
-  SHA-256 pixel hash. Geometry/transform changes are caught by fingerprints;
-  material, lighting, UV or other rendered-state changes are caught by the
-  recaptured pixels. Only the exact reviewed candidate can be accepted.
+  deterministic multiview**. The original reviewed PNG/JPEG file bytes must
+  still match their recorded SHA-256, which protects evidence integrity.
+  Candidate equality is then checked from a SHA-256 over decoded RGBA pixels
+  plus image dimensions, not from PNG container bytes. Different metadata or
+  lossless compression settings therefore do not create a false mismatch.
+  Geometry/transform changes are caught by fingerprints; material, lighting,
+  UV or other rendered-pixel changes are caught by the decoded pixel digest.
+  Only the exact reviewed visual candidate can be accepted.
 - `decision=reject` requires an assessment and restores the generation
   checkpoint with `discard_unsaved=true`.
 - If final save fails after an accept decision, the action rolls back to the
