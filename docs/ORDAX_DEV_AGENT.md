@@ -208,11 +208,13 @@ The OrdaX Agent must remain available without depending on the GitHub runner.
 
 The OrdaX Agent runs through the Windows Scheduled Task named `OrdaX Dev Agent` under the interactive Windows user.
 
-- Task Scheduler restarts the launcher after process failure.
+- Task Scheduler runs the interactive launcher and remains the authoritative restart entrypoint.
 - The launcher retries non-zero exits with bounded exponential backoff.
-- Before every start it performs a safe fast-forward check.
+- Before every start it performs the same non-refreshing tracked-file/index-tree preflight used by `agent.update`.
+- Fast-forward updates reinstall the editable package only when the semantic install contract changes (dependencies, entry points, build backend/package discovery), not for a version-only or package-data-only change.
 - Updated Python is compiled before launch.
 - If a newly fast-forwarded update fails the compile gate, the managed checkout is restored to the previous known-compilable commit.
+- The watchdog first looks for a successor `ordax_dev_agent.main` process when its parent exits; only if no successor exists does it request the enabled, non-running `OrdaX Dev Agent` Scheduled Task to start again.
 
 The Agent intentionally runs in the interactive session because visible Blender and Unity workflows must not be launched in Windows Session 0.
 
@@ -230,7 +232,7 @@ The managed checkout includes:
 .\scripts\windows\ordax-emergency-recover.ps1
 ```
 
-It refuses tracked local changes, performs only fast-forward Git updates, compiles the candidate code, rolls back a compile-invalid update, installs/starts the scheduled task and waits for the local health endpoint.
+It refuses tracked local changes using the shared hash/tree preflight, performs only fast-forward Git updates, compiles the candidate code, rolls back a compile-invalid update, installs/starts the scheduled task and waits for the local health endpoint.
 
 ### Installation
 
