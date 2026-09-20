@@ -177,6 +177,7 @@ implementations are composed as mixins rather than accumulating in one module:
 - `assets/blender_companion_bundle.json` — explicit fingerprinted runtime bundle for the Blender companion and its helper modules; changes to any listed helper invalidate the loaded companion.
 - `assets/blender_uv_math.py` — pure deterministic UV/triangle math extracted from the Blender runtime for ordinary unit testing, including overlap area and normalized 3D→UV shape distortion.
 - `assets/blender_spatial_math.py` — pure deterministic AABB overlap/containment math used by contact auditing, independently unit-tested outside Blender.
+- `assets/blender_quality_rules.py` — pure axis/tolerance validation shared by deterministic quality gates and unit-tested without Blender.
 
 Moving a method into a domain module does not add an action. An operation becomes
 remotely callable only when `ActionRegistry._actions` explicitly registers it.
