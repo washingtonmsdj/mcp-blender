@@ -223,7 +223,14 @@ while ($true) {
     Write-BootstrapLog "AGENT_EXIT code=$code"
 
     if ($code -eq 0) {
-        exit 0
+        # The scheduled task is intended to be persistent. A genuine task stop
+        # terminates this bootstrap process itself, so a child agent returning
+        # zero while the bootstrap is still alive should be treated as an
+        # unexpected clean exit and relaunched.
+        Write-BootstrapLog "AGENT_RESTART clean-exit code=0 retry=$retrySeconds"
+        Start-Sleep -Seconds $retrySeconds
+        $retrySeconds = [Math]::Min($MaxRetrySeconds, $retrySeconds * 2)
+        continue
     }
     if ($code -eq 42) {
         $retrySeconds = [Math]::Max(1, $InitialRetrySeconds)
