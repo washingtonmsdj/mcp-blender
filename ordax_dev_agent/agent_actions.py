@@ -8,6 +8,7 @@ from typing import Any
 from .blender_live_bridge import BlenderLiveBridge
 from .models import ActionResult
 from .process_runner import run_command as _run
+from .update_policy import staged_index_check
 from .versioning import component_versions
 
 
@@ -184,21 +185,18 @@ class AgentActions:
         # Windows worktrees its index refresh can stall behind filesystem
         # monitors for minutes even with untracked scanning disabled.
         unstaged_rc, unstaged_error = quiet_check(["diff-files", "--quiet", "--"])
-        staged_rc, staged_error = quiet_check(
-            ["diff-index", "--cached", "--quiet", "HEAD", "--"]
-        )
-        if unstaged_rc not in (0, 1) or staged_rc not in (0, 1):
+        staged = staged_index_check(repo, timeout=30)
+        if unstaged_rc not in (0, 1) or not staged.get("ok"):
             return ActionResult(
                 False,
                 "managed agent tracked-change check failed",
                 {
                     "unstaged_returncode": unstaged_rc,
                     "unstaged_error": unstaged_error,
-                    "staged_returncode": staged_rc,
-                    "staged_error": staged_error,
+                    "staged_check": staged,
                 },
             )
-        if unstaged_rc == 1 or staged_rc == 1:
+        if unstaged_rc == 1 or not staged.get("clean"):
             changed = _run(
                 [*git, "diff", "--name-status", "HEAD", "--"],
                 timeout=30,
@@ -209,7 +207,8 @@ class AgentActions:
                 {
                     "status": changed.data.get("stdout", "") if changed.ok else "",
                     "unstaged": unstaged_rc == 1,
-                    "staged": staged_rc == 1,
+                    "staged": not bool(staged.get("clean")),
+                    "staged_check": staged,
                 },
             )
 
@@ -304,7 +303,7 @@ class AgentActions:
                 "head": after_head,
                 "restart_required": True,
                 "dependencies_refreshed": dependency_refresh,
-                "tracked_check": "diff-files+diff-index",
+                "tracked_check": "diff-files+index-tree-hash",
             },
         )
 
