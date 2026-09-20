@@ -8,7 +8,7 @@ from typing import Any
 from .blender_live_bridge import BlenderLiveBridge
 from .models import ActionResult
 from .process_runner import run_command as _run
-from .update_policy import staged_index_check
+from .update_policy import staged_index_check, tracked_worktree_check
 from .versioning import component_versions
 
 
@@ -181,33 +181,30 @@ class AgentActions:
             except subprocess.TimeoutExpired as error:
                 return 124, f"timed out after {error.timeout} seconds"
 
-        # We only care about tracked edits. Avoid `git status` here: on some
-        # Windows worktrees its index refresh can stall behind filesystem
-        # monitors for minutes even with untracked scanning disabled.
-        unstaged_rc, unstaged_error = quiet_check(["diff-files", "--quiet", "--"])
+        # Avoid Git index/worktree refresh commands here. On the managed Windows
+        # checkout both diff-files and diff-index have been observed to block for
+        # tens of seconds. Compare tracked file content to the index and compare
+        # the index tree to HEAD instead; both checks fail closed on ambiguity.
+        worktree = tracked_worktree_check(repo, timeout=60)
         staged = staged_index_check(repo, timeout=30)
-        if unstaged_rc not in (0, 1) or not staged.get("ok"):
+        if not worktree.get("ok") or not staged.get("ok"):
             return ActionResult(
                 False,
                 "managed agent tracked-change check failed",
                 {
-                    "unstaged_returncode": unstaged_rc,
-                    "unstaged_error": unstaged_error,
+                    "worktree_check": worktree,
                     "staged_check": staged,
                 },
             )
-        if unstaged_rc == 1 or not staged.get("clean"):
-            changed = _run(
-                [*git, "diff", "--name-status", "HEAD", "--"],
-                timeout=30,
-            )
+        if not worktree.get("clean") or not staged.get("clean"):
             return ActionResult(
                 False,
                 "managed agent has local tracked changes; update refused",
                 {
-                    "status": changed.data.get("stdout", "") if changed.ok else "",
-                    "unstaged": unstaged_rc == 1,
+                    "worktree_changed_paths": worktree.get("changed_paths", []),
+                    "unstaged": not bool(worktree.get("clean")),
                     "staged": not bool(staged.get("clean")),
+                    "worktree_check": worktree,
                     "staged_check": staged,
                 },
             )
@@ -303,7 +300,7 @@ class AgentActions:
                 "head": after_head,
                 "restart_required": True,
                 "dependencies_refreshed": dependency_refresh,
-                "tracked_check": "diff-files+index-tree-hash",
+                "tracked_check": "index-object-hash+index-tree-hash",
             },
         )
 
