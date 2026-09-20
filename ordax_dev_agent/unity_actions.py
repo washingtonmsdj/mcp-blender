@@ -99,6 +99,11 @@ class UnityActions:
         source = project.unity.get("companion_source")
         if source:
             source = project.path(source, must_exist=False)
+        elif project.unity.get("profile") == "hordax":
+            source = project.path(
+                "Assets/HORDAX/Editor/OrdaXEditorAgent.cs",
+                must_exist=False,
+            )
         return UnityEditorBridge(project.root, source)
 
     def unity_project_profile(self, payload: dict[str, Any]) -> ActionResult:
