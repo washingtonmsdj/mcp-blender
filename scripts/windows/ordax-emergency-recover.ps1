@@ -1,5 +1,5 @@
 param(
-    [string]$Branch = "feat/ordax-dev-agent"
+    [string]$Branch = "main"
 )
 
 $ErrorActionPreference = "Stop"
