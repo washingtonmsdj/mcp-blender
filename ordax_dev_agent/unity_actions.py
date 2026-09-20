@@ -35,6 +35,18 @@ from .unity_knowledge import (
 )
 
 
+def _unity_editor_log_candidates(project: Path) -> list[Path]:
+    project_log = project.resolve() / "Logs" / "Editor.log"
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+        global_log = base / "Unity" / "Editor" / "Editor.log"
+    elif sys.platform == "darwin":
+        global_log = Path.home() / "Library" / "Logs" / "Unity" / "Editor.log"
+    else:
+        global_log = Path.home() / ".config" / "unity3d" / "Editor.log"
+    return [project_log, global_log]
+
+
 def _unity_process_ids_for_project(project: Path) -> list[int]:
     """Return Unity process IDs whose command line references this project."""
     target = str(project.resolve()).replace("\\", "/").lower()
@@ -584,13 +596,8 @@ class UnityActions:
         editor = self._editor(payload)
         process_ids = _unity_process_ids_for_project(project.root)
 
-        if sys.platform == "win32":
-            base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-            log_path = base / "Unity" / "Editor" / "Editor.log"
-        elif sys.platform == "darwin":
-            log_path = Path.home() / "Library" / "Logs" / "Unity" / "Editor.log"
-        else:
-            log_path = Path.home() / ".config" / "unity3d" / "Editor.log"
+        log_candidates = _unity_editor_log_candidates(project.root)
+        log_path = next((path for path in log_candidates if path.is_file()), log_candidates[-1])
 
         max_lines = max(20, min(int(payload.get("max_lines", 160)), 500))
         max_chars = max(4096, min(int(payload.get("max_chars", 60000)), 200000))
@@ -613,6 +620,8 @@ class UnityActions:
             **status,
             "unity_process_ids": process_ids,
             "editor_log_path": str(log_path),
+            "editor_log_candidates": [str(path) for path in log_candidates],
+            "editor_log_source": "project" if log_path == log_candidates[0] else "global",
             "editor_log_exists": log_path.is_file(),
             "editor_log_size_bytes": log_size,
             "editor_log_mtime": log_mtime,
