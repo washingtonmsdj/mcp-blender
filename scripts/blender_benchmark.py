@@ -422,8 +422,12 @@ def run(root: Path) -> dict:
             ),
         },
         "modeling_dispatch": {
-            "positive_control": baseline["modeling"]["positive_control"],
-            "negative_control_detected": baseline["modeling"]["negative_control_detected"],
+            "transform_positive": baseline["modeling"]["positive_control"],
+            "transform_negative_detected": baseline["modeling"]["negative_control_detected"],
+            "create_positive": baseline["modeling"]["create_positive"],
+            "create_duplicate_detected": baseline["modeling"]["create_duplicate_detected"],
+            "modifier_positive": baseline["modeling"]["modifier_positive"],
+            "modifier_duplicate_detected": baseline["modeling"]["modifier_duplicate_detected"],
             "dispatcher_journaled": baseline["modeling"]["dispatcher_journaled"],
             "location": (
                 (baseline["modeling"]["valid"].get("object") or {}).get("location")
@@ -431,6 +435,10 @@ def run(root: Path) -> dict:
             "scale": (
                 (baseline["modeling"]["valid"].get("object") or {}).get("scale")
             ),
+            "created_mesh_vertices": (
+                ((baseline["modeling"]["create"].get("object") or {}).get("mesh") or {}).get("vertices")
+            ),
+            "modifier_runtime_budget": baseline["modeling"]["modifier"].get("runtime_budget"),
         },
         "self_comparison": {
             "passed": identical.data.get("comparison_passed"),
