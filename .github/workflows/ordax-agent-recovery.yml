@@ -33,7 +33,26 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check whether this main run is still current
+        id: freshness
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          git fetch --quiet origin main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not fetch origin/main for freshness check."
+          }
+          $latest = (git rev-parse origin/main).Trim()
+          if ($latest -eq "${{ github.sha }}") {
+            "current=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            Write-Host "This is the current main commit."
+          } else {
+            "current=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            Write-Host "Superseded main run: ${{ github.sha }}; latest is $latest. Heavy local validation and recovery will be skipped."
+          }
+
       - name: Compile candidate Python before touching managed agent
+        if: steps.freshness.outputs.current != 'false'
         shell: pwsh
         run: |
           $python = Get-Command python -ErrorAction SilentlyContinue
@@ -49,6 +68,7 @@ jobs:
           }
 
       - name: Run isolated real Blender smoke
+        if: steps.freshness.outputs.current != 'false'
         shell: pwsh
         run: |
           $managedRepo = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent\src"
@@ -63,6 +83,7 @@ jobs:
           }
 
       - name: Run OrdaX BlenderBench
+        if: steps.freshness.outputs.current != 'false'
         shell: pwsh
         run: |
           $managedRepo = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent\src"
@@ -82,7 +103,7 @@ jobs:
           }
 
       - name: Recover managed agent safely
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.freshness.outputs.current != 'false'
         shell: pwsh
         run: |
           $branch = "main"
