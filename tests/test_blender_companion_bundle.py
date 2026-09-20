@@ -247,6 +247,64 @@ class BlenderModelingContractTests(unittest.TestCase):
             plan["runtime_guards"],
         )
 
+    def test_create_plan_exposes_runtime_and_failure_contracts(self) -> None:
+        plan = plan_modeling_operation(
+            "create_primitive",
+            {"name": "Body", "primitive": "cube"},
+        )
+        self.assertEqual(
+            ["object_mode", "no_render_job", "unique_object_name"],
+            plan["runtime_requirements"],
+        )
+        self.assertEqual(
+            [
+                "remove_partial_object_on_failure",
+                "remove_partial_mesh_on_failure",
+            ],
+            plan["failure_policy"],
+        )
+
+    def test_modifier_plan_exposes_runtime_and_failure_contracts(self) -> None:
+        plan = plan_modeling_operation(
+            "add_modifier",
+            {
+                "object_name": "Body",
+                "name": "Edges",
+                "type": "BEVEL",
+            },
+        )
+        self.assertIn(
+            "local_nonlinked_mesh_target",
+            plan["runtime_requirements"],
+        )
+        self.assertIn(
+            "unique_modifier_name",
+            plan["runtime_requirements"],
+        )
+        self.assertIn(
+            "animated_or_constrained_target_requires_dedicated_workflow",
+            plan["runtime_requirements"],
+        )
+        self.assertEqual(
+            [
+                "remove_new_modifier_on_failure",
+                "preserve_existing_modifier_stack",
+            ],
+            plan["failure_policy"],
+        )
+
+    def test_transform_plan_does_not_inherit_legacy_mesh_only_runtime_guards(self) -> None:
+        plan = plan_modeling_operation(
+            "object_transform",
+            {
+                "object_name": "Camera",
+                "location": [1, 2, 3],
+            },
+        )
+        self.assertTrue(plan["executable"])
+        self.assertNotIn("runtime_requirements", plan)
+        self.assertNotIn("failure_policy", plan)
+
     def test_modifier_budget_rejects_full_stack(self) -> None:
         result = evaluate_modifier_runtime_budget(
             modifier_type="BEVEL",

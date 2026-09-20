@@ -18,6 +18,15 @@ MAX_PROJECTED_SUBSURF_FACES = 500000
 MODELING_SCHEMAS = {
     "create_primitive": {
         "status": "pending_blender_smoke",
+        "runtime_requirements": [
+            "object_mode",
+            "no_render_job",
+            "unique_object_name",
+        ],
+        "failure_policy": [
+            "remove_partial_object_on_failure",
+            "remove_partial_mesh_on_failure",
+        ],
         "description": (
             "Planned typed primitive creation. Not remotely executable until "
             "the current Blender companion implementation passes a real Blender smoke."
@@ -55,6 +64,17 @@ MODELING_SCHEMAS = {
     },
     "add_modifier": {
         "status": "pending_blender_smoke",
+        "runtime_requirements": [
+            "object_mode",
+            "no_render_job",
+            "local_nonlinked_mesh_target",
+            "unique_modifier_name",
+            "animated_or_constrained_target_requires_dedicated_workflow",
+        ],
+        "failure_policy": [
+            "remove_new_modifier_on_failure",
+            "preserve_existing_modifier_stack",
+        ],
         "runtime_guards": {
             "max_modifier_stack": MAX_MODIFIER_STACK,
             "max_evaluated_faces": MAX_EVALUATED_FACES,
@@ -487,6 +507,11 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         "requires_real_blender_smoke": not executable,
         "arguments": arguments,
     }
-    if "runtime_guards" in schema:
-        result["runtime_guards"] = copy.deepcopy(schema["runtime_guards"])
+    for metadata_key in (
+        "runtime_requirements",
+        "runtime_guards",
+        "failure_policy",
+    ):
+        if metadata_key in schema:
+            result[metadata_key] = copy.deepcopy(schema[metadata_key])
     return result

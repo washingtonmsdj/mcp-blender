@@ -215,6 +215,9 @@ The visible Blender companion now exposes a richer typed perception loop:
   Modifier plans also publish runtime guard limits (8 modifiers, 200k evaluated
   faces, 500k projected SUBSURF faces); those limits must eventually be checked
   against live Blender metrics, never user-claimed counts.
+  Pending create/modifier plans also carry runtime preconditions and rollback
+  guarantees (Object Mode/no render, uniqueness/local-target requirements and
+  cleanup-on-failure) so the future executor has a complete typed contract.
 - \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
 - \`blender.asset_manifest\` — provider file manifest/provenance lookup.
 
