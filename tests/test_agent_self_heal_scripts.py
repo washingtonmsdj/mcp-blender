@@ -192,11 +192,35 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             bootstrap,
         )
         self.assertIn(
+            'function Sync-ExternalBootstrapFromRepo',
+            bootstrap,
+        )
+        self.assertIn(
+            '[void](Sync-ExternalBootstrapFromRepo)',
+            bootstrap,
+        )
+        self.assertIn(
+            '[void][ScriptBlock]::Create($bootstrapText)',
+            bootstrap,
+        )
+        self.assertIn(
+            'ast.parse(open(sys.argv[1]',
+            bootstrap,
+        )
+        self.assertNotIn(
+            '-m py_compile $policySource',
+            bootstrap,
+        )
+        self.assertIn(
             '--compare-install-contract',
             bootstrap,
         )
         self.assertIn(
             'ordax_dev_agent.main',
+            bootstrap,
+        )
+        self.assertNotIn(
+            'if (-not $updated',
             bootstrap,
         )
 
