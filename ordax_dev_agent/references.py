@@ -54,6 +54,27 @@ def _finite_positive(value: Any, field: str) -> float:
     return result
 
 
+def _image_pixel_digest(path: Path) -> dict[str, Any]:
+    """Hash decoded RGBA pixels, not container bytes or PNG metadata."""
+    try:
+        from PIL import Image
+    except ImportError as error:
+        raise RuntimeError("Pillow is required for reference pixel hashing") from error
+
+    with Image.open(path) as image:
+        normalized = image.convert("RGBA")
+        width, height = normalized.size
+        digest = hashlib.sha256()
+        digest.update(f"{width}x{height}:RGBA:".encode("ascii"))
+        digest.update(normalized.tobytes())
+        return {
+            "width": width,
+            "height": height,
+            "mode": "RGBA",
+            "sha256": digest.hexdigest(),
+        }
+
+
 def _validate_reference(entry: Any, seen: set[str]) -> dict[str, Any]:
     if not isinstance(entry, dict):
         raise ValueError("reference entries must be objects")
@@ -644,18 +665,60 @@ class ReferenceActions:
                 "Reference review contains no deterministic view artifacts",
             )
 
-        expected: dict[str, str] = {}
+        project = self._project(payload)
+        if state.get("project") != project.slug:
+            return ActionResult(
+                False,
+                "reference pass belongs to another project",
+            )
+        artifact_root = (
+            self.config.state_dir / "artifacts" / project.slug
+        ).resolve()
+
+        expected: dict[str, dict[str, Any]] = {}
+        source_file_sha256: dict[str, str] = {}
         for item in raw_artifacts:
             if not isinstance(item, dict):
                 continue
             view = str(item.get("view") or "").strip()
-            digest = str(item.get("sha256") or "").strip()
-            if view and digest:
-                expected[view] = digest
+            raw_path = str(item.get("artifact") or "").strip()
+            declared_file_sha = str(item.get("sha256") or "").strip()
+            if not view or not raw_path or not declared_file_sha:
+                continue
+
+            path = Path(raw_path).expanduser().resolve()
+            if (
+                not path.is_relative_to(artifact_root)
+                or not path.is_file()
+            ):
+                return ActionResult(
+                    False,
+                    f"Reviewed artifact is missing or outside the artifact root: {view}",
+                )
+            actual_file_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            if actual_file_sha != declared_file_sha:
+                return ActionResult(
+                    False,
+                    "Reviewed visual evidence changed after capture",
+                    {
+                        "view": view,
+                        "declared_file_sha256": declared_file_sha,
+                        "actual_file_sha256": actual_file_sha,
+                    },
+                )
+            try:
+                expected[view] = _image_pixel_digest(path)
+            except (OSError, RuntimeError) as error:
+                return ActionResult(
+                    False,
+                    f"Could not decode reviewed visual evidence for {view}: {error}",
+                )
+            source_file_sha256[view] = actual_file_sha
+
         if not expected:
             return ActionResult(
                 False,
-                "Reference review contains no deterministic view hashes",
+                "Reference review contains no verifiable deterministic view pixels",
             )
 
         object_names = state.get("object_names")
@@ -696,38 +759,82 @@ class ReferenceActions:
                 fresh.data,
             )
 
-        current: dict[str, str] = {}
+        current: dict[str, dict[str, Any]] = {}
+        fresh_file_sha256: dict[str, str] = {}
         for item in fresh.data.get("artifacts", []):
             if not isinstance(item, dict):
                 continue
             view = str(item.get("view") or "").strip()
-            digest = str(item.get("sha256") or "").strip()
-            if view and digest:
-                current[view] = digest
+            raw_path = str(item.get("artifact") or "").strip()
+            if not view or not raw_path:
+                continue
+            path = Path(raw_path).expanduser().resolve()
+            if (
+                not path.is_relative_to(artifact_root)
+                or not path.is_file()
+            ):
+                return ActionResult(
+                    False,
+                    f"Fresh visual artifact is missing or outside the artifact root: {view}",
+                )
+            actual_file_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            declared_file_sha = str(item.get("sha256") or "").strip()
+            if declared_file_sha and declared_file_sha != actual_file_sha:
+                return ActionResult(
+                    False,
+                    "Fresh visual artifact hash does not match the capture result",
+                    {
+                        "view": view,
+                        "declared_file_sha256": declared_file_sha,
+                        "actual_file_sha256": actual_file_sha,
+                    },
+                )
+            try:
+                current[view] = _image_pixel_digest(path)
+            except (OSError, RuntimeError) as error:
+                return ActionResult(
+                    False,
+                    f"Could not decode fresh visual evidence for {view}: {error}",
+                )
+            fresh_file_sha256[view] = actual_file_sha
 
         changed = sorted(
             view
             for view in set(expected) | set(current)
-            if expected.get(view) != current.get(view)
+            if expected.get(view, {}).get("sha256")
+            != current.get(view, {}).get("sha256")
         )
         if changed:
             return ActionResult(
                 False,
-                "Rendered candidate changed after visual evidence was reviewed",
+                "Rendered candidate pixels changed after visual evidence was reviewed",
                 {
                     "changed_views": changed,
-                    "expected_sha256": expected,
-                    "current_sha256": current,
+                    "expected_pixel_sha256": {
+                        view: data["sha256"]
+                        for view, data in expected.items()
+                    },
+                    "current_pixel_sha256": {
+                        view: data["sha256"]
+                        for view, data in current.items()
+                    },
+                    "reviewed_file_sha256": source_file_sha256,
+                    "fresh_file_sha256": fresh_file_sha256,
                     "fresh_capture": fresh.data,
                 },
             )
 
         return ActionResult(
             True,
-            "Rendered candidate still matches reviewed visual evidence",
+            "Rendered candidate pixels still match reviewed visual evidence",
             {
                 "verified_views": sorted(expected),
-                "sha256": expected,
+                "pixel_sha256": {
+                    view: data["sha256"]
+                    for view, data in expected.items()
+                },
+                "reviewed_file_sha256": source_file_sha256,
+                "fresh_file_sha256": fresh_file_sha256,
                 "fresh_capture": fresh.data,
             },
         )
