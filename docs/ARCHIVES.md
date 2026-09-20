@@ -47,10 +47,28 @@ OrdaX Dev Agent + Blender Live companion architecture on `main`.
 Keep it for project/history inspection only. New automation must use the current
 typed action registry and companion bundle.
 
+## Agent-update consolidation archives
+
+The following snapshots preserve superseded update/recovery experiments that
+were intentionally not merged wholesale into the final resilience path:
+
+- `archive/agent-update-install-contract-before-consolidation-2026-09-20`
+- `archive/agent-update-self-heal-before-consolidation-2026-09-20`
+- `archive/recovery-bootstrap-old-agent-before-consolidation-2026-09-20`
+
+Their active `fix/*` refs can be retired even though they contain commits
+outside `main`, because the corresponding protected archive points to the exact
+same commit. The production replacement is the explicit-refspec update path plus
+the external bootstrap under `%LOCALAPPDATA%\OrdaX\DevAgent\bootstrap`.
+
 ## Policy
 
 - `main` is the only active integration line.
 - `archive/*` is protected from automatic branch hygiene.
 - A historical branch is archived before its active ref is retired.
+- Automatic hygiene may retire a divergent transient branch only when a
+  protected `archive/*` ref points to the exact same commit SHA.
+- Otherwise automatic retirement still requires a merged PR and full ancestry
+  in `main`.
 - No archive is used by `agent.update`, self-hosted recovery or normal CI
   deployment paths.
