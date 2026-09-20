@@ -352,8 +352,8 @@ class BlenderActions:
                 "tools": modeling_schemas(),
                 "mutation_policy": {
                     "object_transform": "available",
-                    "create_primitive": "disabled_pending_real_blender_smoke",
-                    "add_modifier": "disabled_pending_real_blender_smoke",
+                    "create_primitive": "available",
+                    "add_modifier": "available",
                 },
             },
         )
@@ -390,6 +390,30 @@ class BlenderActions:
 
         return self._blender_live(payload).request(
             "object_transform",
+            plan["arguments"],
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_create_primitive(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            plan = plan_modeling_operation("create_primitive", payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+
+        return self._blender_live(payload).request(
+            "create_primitive",
+            plan["arguments"],
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_add_modifier(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            plan = plan_modeling_operation("add_modifier", payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+
+        return self._blender_live(payload).request(
+            "add_modifier",
             plan["arguments"],
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
