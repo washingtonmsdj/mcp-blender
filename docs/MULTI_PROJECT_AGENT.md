@@ -7,18 +7,29 @@ jobs e examina os resultados.
 
 ## Ativar
 
-Instale esta versão no clone gerenciado do agente, execute `pip install -e .`
-com o Python desse clone e reinicie o agente quando não houver job em andamento.
-O comando `agent.update` existente ainda acompanha `feat/ordax-dev-agent`; uma
-branch de desenvolvimento não é instalada automaticamente por esse comando.
-Não execute dois consumidores para a mesma identidade durante a atualização.
+O clone gerenciado acompanha a `main` por fast-forward e o bootstrap externo
+valida atualização, dependências e compilação antes de iniciar o agente. Não
+execute dois consumidores para a mesma identidade durante uma atualização.
 
-Adicione `projects` e `default_project` ao arquivo local
-`%LOCALAPPDATA%/OrdaX/DevAgent/agent-settings.json`, preservando as configurações
-de Supabase e o token. Use `config/projects.example.json` como exemplo, ajustando
-os caminhos. Reinicie depois de modificar o cadastro. Sem `projects`, o perfil
-HORDAX antigo continua disponível. Um objeto vazio desabilita todos os projetos.
-Projetos não precisam ser repositórios Git para usar Blender ou Unity.
+O cadastro de projetos continua sendo uma autorização **local**. Em vez de editar
+JSON manualmente, use o helper versionado:
+
+```powershell
+.\scripts\windows\ordax-project-register.ps1 `
+  -Slug meu-projeto `
+  -Path "C:\Projects\MeuProjeto" `
+  -Apps unity,blender `
+  -RestartAgent
+```
+
+O helper preserva as configurações existentes, valida que o caminho é local,
+mantém projetos já cadastrados e só reinicia a tarefa agendada quando
+`-RestartAgent` é solicitado. Se o agente estiver ocupado, o restart é recusado
+por padrão. A edição direta de
+`%LOCALAPPDATA%/OrdaX/DevAgent/agent-settings.json` continua suportada para
+administração avançada. Sem `projects`, o perfil HORDAX antigo continua
+disponível. Um objeto vazio desabilita todos os projetos. Projetos não precisam
+ser repositórios Git para usar Blender ou Unity.
 
 O cadastro é uma autorização local. Um payload remoto não pode cadastrar um
 caminho novo. Cada aplicativo precisa estar em `apps`; branches e métodos Unity
@@ -77,8 +88,12 @@ a fila Supabase; stdio não é uma URL pública.
 
 Em um projeto novo com `apps: ["unity"]`, execute `unity.install_companion` uma vez.
 Isso adiciona `Assets/OrdaX/Editor/OrdaXGenericAgent.cs`; deixe o Unity importá-lo.
-Depois use `unity.editor_status`, `unity.play_start`, `unity.play_stop` e
-`unity.capture`. O companion usa o Editor aberto e não abre uma segunda instância.
+Depois use `unity.editor_status`, `unity.scene_summary`,
+`unity.physics_audit`, `unity.spatial_audit`, `unity.play_start`,
+`unity.play_stop` e `unity.capture`. O `spatial_audit` procura evidências de
+mundo quebrado — transforms espelhados, escalas quase zero ou extremas, posições
+não finitas/extremas, roots invertidos, bounds globais dos renderers e câmera
+abaixo/inside de colliders — sem depender de tipos específicos do jogo. O companion usa o Editor aberto e não abre uma segunda instância.
 
 Uma captura genérica fotografa a câmera ativa da cena atual, sem trocar de cena
 ou iniciar/parar Play automaticamente. O JSON inclui hierarquia, posições,
