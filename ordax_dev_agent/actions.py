@@ -23,7 +23,15 @@ from .execution_lock import ExecutionLock
 Action = Callable[[dict[str, Any]], ActionResult]
 
 
-class ActionRegistry(ObservationActions, ReferenceActions, BlenderActions, UnityActions, AgentActions, ArtifactActions, GitActions):
+class ActionRegistry(
+    ObservationActions,
+    ReferenceActions,
+    BlenderActions,
+    UnityActions,
+    AgentActions,
+    ArtifactActions,
+    GitActions,
+):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
     def __init__(self, config: AgentConfig):
