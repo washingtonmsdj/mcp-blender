@@ -47,6 +47,16 @@ OrdaX Dev Agent + Blender Live companion architecture on `main`.
 Keep it for project/history inspection only. New automation must use the current
 typed action registry and companion bundle.
 
+### `archive/agent-resilience-status-before-salvador-rebase-2026-09-20`
+
+Snapshot of the first `agent.resilience_status` feature branch before the
+parallel Salvador onboarding work advanced `main` and the feature was replayed
+cleanly on top of that newer architecture.
+
+The production implementation is on `main` starting with Dev Agent 1.18.0.
+This archive exists only to preserve the original pre-rebase commit graph; it
+contains no capability that should be merged separately.
+
 ## Agent-update consolidation archives
 
 The following snapshots preserve superseded update/recovery experiments that
