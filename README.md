@@ -7,7 +7,7 @@ preview Blender, sequências de capturas com snapshots e imagens entregues ao mo
 por MCP. A fila Supabase existente continua atendendo clientes remotos.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.13.0`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.14.0`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -264,22 +264,21 @@ The visible Blender companion now exposes a richer typed perception loop:
   faces/triangles, out-of-tile loops, scale-invariant shape distortion and
   optional exact triangle-overlap evidence under a bounded analysis budget.
 - `blender.live_modeling_schema` — read-only typed modeling contracts. The
-  existing `blender.live_object_transform` is available and rejects non-finite,
-  boolean and invalid positive-size inputs before IPC; the visible companion
-  re-runs the same shared contract when consuming the command. Primitive creation
-  and modifier insertion are intentionally advertised as `pending_blender_smoke`
-  until validated against the current Blender 5.x companion.
+  validated mutations are `blender.live_object_transform`,
+  `blender.live_create_primitive` and `blender.live_add_modifier`. They share
+  closed-world planning, runtime guards and Blender-side validation. Create and
+  modifier were promoted after a successful real Blender 5.2.2 BlenderBench on
+  September 20, 2026.
 - `blender.live_modeling_plan` — read-only closed-world planner that validates
   one modeling intent, rejects unknown/inapplicable fields and returns normalized
-  defaults/arguments plus whether execution is currently enabled. Use
-  `schema → plan → execute`; a plan marked `pending_blender_smoke` is evidence
-  only and cannot mutate Blender.
-  Modifier plans also publish runtime guard limits (8 modifiers, 200k evaluated
-  faces, 500k projected SUBSURF faces); those limits must eventually be checked
-  against live Blender metrics, never user-claimed counts.
-  Pending create/modifier plans also carry runtime preconditions and rollback
-  guarantees (Object Mode/no render, uniqueness/local-target requirements and
-  cleanup-on-failure) so the future executor has a complete typed contract.
+  defaults/arguments plus the concrete action when execution is available. Use
+  `schema → plan → execute`.
+  Modifier plans publish runtime guard limits (8 modifiers, 200k evaluated
+  faces, 500k projected SUBSURF faces); the visible Blender companion verifies
+  those limits from live scene metrics, never user-claimed counts.
+  Create/modifier plans also carry runtime preconditions and rollback guarantees
+  (Object Mode/no render, uniqueness/local-target requirements and
+  cleanup-on-failure).
 - \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
 - \`blender.asset_manifest\` — provider file manifest/provenance lookup.
 

@@ -17,7 +17,8 @@ MAX_PROJECTED_SUBSURF_FACES = 500000
 
 MODELING_SCHEMAS = {
     "create_primitive": {
-        "status": "pending_blender_smoke",
+        "status": "available",
+        "action": "blender.live_create_primitive",
         "runtime_requirements": [
             "object_mode",
             "no_render_job",
@@ -28,8 +29,8 @@ MODELING_SCHEMAS = {
             "remove_partial_mesh_on_failure",
         ],
         "description": (
-            "Planned typed primitive creation. Not remotely executable until "
-            "the current Blender companion implementation passes a real Blender smoke."
+            "Typed primitive creation validated by BlenderBench on Blender 5.2.2. "
+            "Supports cube, sphere and cylinder creation under runtime guards."
         ),
         "required": ["name", "primitive"],
         "properties": {
@@ -63,7 +64,8 @@ MODELING_SCHEMAS = {
         },
     },
     "add_modifier": {
-        "status": "pending_blender_smoke",
+        "status": "available",
+        "action": "blender.live_add_modifier",
         "runtime_requirements": [
             "object_mode",
             "no_render_job",
@@ -81,8 +83,8 @@ MODELING_SCHEMAS = {
             "max_projected_subsurf_faces": MAX_PROJECTED_SUBSURF_FACES,
         },
         "description": (
-            "Planned typed modifier insertion. Not remotely executable until "
-            "the current Blender companion implementation passes a real Blender smoke."
+            "Typed modifier insertion validated by BlenderBench on Blender 5.2.2. "
+            "Supports BEVEL, SUBSURF, SOLIDIFY and MIRROR under runtime budgets."
         ),
         "required": ["name", "type"],
         "selectors": ["object_name", "ordax_object_id"],

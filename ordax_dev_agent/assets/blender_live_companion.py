@@ -158,6 +158,8 @@ CAPABILITIES = [
     "contact_audit",
     "quality_gate",
     "object_transform",
+    "create_primitive",
+    "add_modifier",
     "object_metadata",
     "api_schema",
     "api_lookup",
@@ -955,7 +957,7 @@ def _modeling_plan_from_command(operation: str, command: dict) -> dict:
     return _plan_modeling_operation(operation, payload)
 
 
-def _modeling_create_primitive_unregistered(command: dict) -> None:
+def _modeling_create_primitive(command: dict) -> None:
     command_id = command["id"]
     try:
         _modeling_runtime_preconditions()
@@ -1009,8 +1011,7 @@ def _modeling_create_primitive_unregistered(command: dict) -> None:
         _response(
             command_id,
             True,
-            "Smoke-only Blender primitive created",
-            execution_gate="smoke_only_unregistered",
+            "Blender primitive created",
             operation="create_primitive",
             object=_object_details(obj),
         )
@@ -1029,14 +1030,13 @@ def _modeling_create_primitive_unregistered(command: dict) -> None:
             command_id,
             False,
             f"{type(error).__name__}: {error}",
-            execution_gate="smoke_only_unregistered",
             operation="create_primitive",
         )
     finally:
         bm.free()
 
 
-def _modeling_add_modifier_unregistered(command: dict) -> None:
+def _modeling_add_modifier(command: dict) -> None:
     command_id = command["id"]
     modifier = None
     obj = None
@@ -1093,8 +1093,7 @@ def _modeling_add_modifier_unregistered(command: dict) -> None:
         _response(
             command_id,
             True,
-            "Smoke-only Blender modifier inserted",
-            execution_gate="smoke_only_unregistered",
+            "Blender modifier inserted",
             operation="add_modifier",
             runtime_budget=budget,
             before=before,
@@ -1111,7 +1110,6 @@ def _modeling_add_modifier_unregistered(command: dict) -> None:
             command_id,
             False,
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
-            execution_gate="smoke_only_unregistered",
             operation="add_modifier",
             before=before,
         )
@@ -3206,18 +3204,10 @@ def _process(path: Path) -> None:
             _quality_gate(command)
         elif operation == "object_transform":
             _object_transform(command)
-        elif (
-            operation == "__smoke_create_primitive"
-            and CFG.ordax_smoke_modeling_fixture
-            and bool(CFG.ordax_smoke_output_dir)
-        ):
-            _modeling_create_primitive_unregistered(command)
-        elif (
-            operation == "__smoke_add_modifier"
-            and CFG.ordax_smoke_modeling_fixture
-            and bool(CFG.ordax_smoke_output_dir)
-        ):
-            _modeling_add_modifier_unregistered(command)
+        elif operation == "create_primitive":
+            _modeling_create_primitive(command)
+        elif operation == "add_modifier":
+            _modeling_add_modifier(command)
         elif operation == "object_metadata":
             _object_metadata(command)
         elif operation == "api_schema":
@@ -3354,7 +3344,7 @@ def _run_modeling_smoke_fixture() -> dict:
             create_path,
             {
                 "id": smoke_ids["create"],
-                "operation": "__smoke_create_primitive",
+                "operation": "create_primitive",
                 "name": temporary_name,
                 "primitive": "cube",
                 "location": [3.0, 0.0, 0.0],
@@ -3368,7 +3358,7 @@ def _run_modeling_smoke_fixture() -> dict:
             duplicate_create_path,
             {
                 "id": smoke_ids["create_duplicate"],
-                "operation": "__smoke_create_primitive",
+                "operation": "create_primitive",
                 "name": temporary_name,
                 "primitive": "cube",
                 "size": 0.25,
@@ -3381,7 +3371,7 @@ def _run_modeling_smoke_fixture() -> dict:
             modifier_path,
             {
                 "id": smoke_ids["modifier"],
-                "operation": "__smoke_add_modifier",
+                "operation": "add_modifier",
                 "object_name": temporary_name,
                 "name": "SmokeBevel",
                 "type": "BEVEL",
@@ -3396,7 +3386,7 @@ def _run_modeling_smoke_fixture() -> dict:
             duplicate_modifier_path,
             {
                 "id": smoke_ids["modifier_duplicate"],
-                "operation": "__smoke_add_modifier",
+                "operation": "add_modifier",
                 "object_name": temporary_name,
                 "name": "SmokeBevel",
                 "type": "BEVEL",
