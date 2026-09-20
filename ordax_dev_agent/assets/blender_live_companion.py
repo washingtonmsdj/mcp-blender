@@ -111,6 +111,13 @@ _line_intersection_2d = _UV_MATH.line_intersection_2d
 _triangle_overlap_area_2d = _UV_MATH.triangle_overlap_area_2d
 _triangle_shape_distortion = _UV_MATH.triangle_shape_distortion
 
+_SPATIAL_MATH = _load_companion_asset_module(
+    "blender_spatial_math.py",
+    "_ordax_blender_spatial_math",
+)
+_aabb_overlap = _SPATIAL_MATH.aabb_overlap
+_aabb_contains = _SPATIAL_MATH.aabb_contains
+
 CFG = _args()
 CONTROL_ROOT = Path(CFG.ordax_control_root).resolve()
 PROJECT_ROOT = Path(CFG.ordax_project_root).resolve()
@@ -684,30 +691,6 @@ def _approx_surface_clearance(source_points, target_tree) -> float | None:
         distance = float(nearest[3])
         minimum = distance if minimum is None else min(minimum, distance)
     return minimum
-
-
-def _aabb_overlap(left: dict, right: dict) -> bool:
-    left_min, left_max = left.get("aabb_min"), left.get("aabb_max")
-    right_min, right_max = right.get("aabb_min"), right.get("aabb_max")
-    if not all((left_min, left_max, right_min, right_max)):
-        return False
-    return all(
-        left_min[axis] <= right_max[axis]
-        and left_max[axis] >= right_min[axis]
-        for axis in range(3)
-    )
-
-
-def _aabb_contains(outer: dict, inner: dict, tolerance: float = 1e-6) -> bool:
-    outer_min, outer_max = outer.get("aabb_min"), outer.get("aabb_max")
-    inner_min, inner_max = inner.get("aabb_min"), inner.get("aabb_max")
-    if not all((outer_min, outer_max, inner_min, inner_max)):
-        return False
-    return all(
-        inner_min[axis] >= outer_min[axis] - tolerance
-        and inner_max[axis] <= outer_max[axis] + tolerance
-        for axis in range(3)
-    )
 
 
 def _contact_audit(command: dict) -> None:

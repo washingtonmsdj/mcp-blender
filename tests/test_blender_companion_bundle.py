@@ -9,6 +9,20 @@ from ordax_dev_agent.blender_live_bridge import (
 )
 
 
+def load_spatial_math():
+    root = Path(__file__).resolve().parents[1]
+    path = root / "ordax_dev_agent" / "assets" / "blender_spatial_math.py"
+    spec = importlib.util.spec_from_file_location(
+        "_test_ordax_blender_spatial_math",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not load Blender spatial math helper")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_uv_math():
     root = Path(__file__).resolve().parents[1]
     path = root / "ordax_dev_agent" / "assets" / "blender_uv_math.py"
@@ -94,9 +108,43 @@ class BlenderCompanionBundleTests(unittest.TestCase):
             (root / "blender_companion_bundle.json").read_text(encoding="utf-8")
         )
         self.assertEqual(
-            ["blender_live_companion.py", "blender_uv_math.py"],
+            [
+                "blender_live_companion.py",
+                "blender_uv_math.py",
+                "blender_spatial_math.py",
+            ],
             manifest["files"],
         )
+
+
+class BlenderSpatialMathTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.spatial = load_spatial_math()
+
+    def test_aabb_overlap_accepts_touching_faces(self) -> None:
+        left = {"aabb_min": [0, 0, 0], "aabb_max": [1, 1, 1]}
+        right = {"aabb_min": [1, 0, 0], "aabb_max": [2, 1, 1]}
+        self.assertTrue(self.spatial.aabb_overlap(left, right))
+
+    def test_aabb_overlap_rejects_separated_boxes(self) -> None:
+        left = {"aabb_min": [0, 0, 0], "aabb_max": [1, 1, 1]}
+        right = {"aabb_min": [1.01, 0, 0], "aabb_max": [2, 1, 1]}
+        self.assertFalse(self.spatial.aabb_overlap(left, right))
+
+    def test_aabb_contains_respects_tolerance(self) -> None:
+        outer = {"aabb_min": [0, 0, 0], "aabb_max": [1, 1, 1]}
+        inner = {
+            "aabb_min": [-5e-7, 0.1, 0.1],
+            "aabb_max": [1.0000005, 0.9, 0.9],
+        }
+        self.assertTrue(self.spatial.aabb_contains(outer, inner, 1e-6))
+        self.assertFalse(self.spatial.aabb_contains(outer, inner, 1e-8))
+
+    def test_aabb_helpers_reject_missing_bounds(self) -> None:
+        complete = {"aabb_min": [0, 0, 0], "aabb_max": [1, 1, 1]}
+        self.assertFalse(self.spatial.aabb_overlap({}, complete))
+        self.assertFalse(self.spatial.aabb_contains(complete, {}))
 
 
 class BlenderUvMathTests(unittest.TestCase):
