@@ -8,7 +8,7 @@ from typing import Any
 from .blender_live_bridge import BlenderLiveBridge
 from .models import ActionResult
 from .process_runner import run_command as _run
-from .update_policy import staged_index_check, tracked_worktree_check
+from .update_policy import managed_repo_clean_check
 from .versioning import component_versions
 
 
@@ -185,18 +185,16 @@ class AgentActions:
         # checkout both diff-files and diff-index have been observed to block for
         # tens of seconds. Compare tracked file content to the index and compare
         # the index tree to HEAD instead; both checks fail closed on ambiguity.
-        worktree = tracked_worktree_check(repo, timeout=60)
-        staged = staged_index_check(repo, timeout=30)
-        if not worktree.get("ok") or not staged.get("ok"):
+        preflight = managed_repo_clean_check(repo)
+        if not preflight.get("ok"):
             return ActionResult(
                 False,
                 "managed agent tracked-change check failed",
-                {
-                    "worktree_check": worktree,
-                    "staged_check": staged,
-                },
+                {"preflight": preflight},
             )
-        if not worktree.get("clean") or not staged.get("clean"):
+        if not preflight.get("clean"):
+            worktree = preflight.get("worktree") or {}
+            staged = preflight.get("staged") or {}
             return ActionResult(
                 False,
                 "managed agent has local tracked changes; update refused",
@@ -204,8 +202,7 @@ class AgentActions:
                     "worktree_changed_paths": worktree.get("changed_paths", []),
                     "unstaged": not bool(worktree.get("clean")),
                     "staged": not bool(staged.get("clean")),
-                    "worktree_check": worktree,
-                    "staged_check": staged,
+                    "preflight": preflight,
                 },
             )
 
