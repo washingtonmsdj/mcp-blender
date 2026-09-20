@@ -8,6 +8,7 @@ from ordax_dev_agent.blender_live_bridge import (
     blender_companion_bundle_fingerprint,
 )
 from ordax_dev_agent.assets.blender_modeling_contracts import (
+    evaluate_modifier_runtime_budget,
     modeling_schemas,
     normalize_transform_fields,
     plan_modeling_operation,
@@ -224,6 +225,84 @@ class BlenderModelingContractTests(unittest.TestCase):
                     "object_name": 123,
                     "location": [0, 0, 0],
                 },
+            )
+
+    def test_modifier_plan_exposes_runtime_guard_limits(self) -> None:
+        plan = plan_modeling_operation(
+            "add_modifier",
+            {
+                "object_name": "Body",
+                "name": "Subsurf",
+                "type": "SUBSURF",
+                "levels": 2,
+            },
+        )
+        self.assertEqual(
+            {
+                "max_modifier_stack": 8,
+                "max_evaluated_faces": 200000,
+                "max_projected_subsurf_faces": 500000,
+            },
+            plan["runtime_guards"],
+        )
+
+    def test_modifier_budget_rejects_full_stack(self) -> None:
+        result = evaluate_modifier_runtime_budget(
+            modifier_type="BEVEL",
+            modifier_count=8,
+            evaluated_faces=1000,
+        )
+        self.assertFalse(result["allowed"])
+        self.assertIn("modifier stack limit reached", result["reasons"])
+
+    def test_modifier_budget_rejects_mesh_above_evaluated_face_limit(self) -> None:
+        result = evaluate_modifier_runtime_budget(
+            modifier_type="SOLIDIFY",
+            modifier_count=2,
+            evaluated_faces=200001,
+        )
+        self.assertFalse(result["allowed"])
+        self.assertIn(
+            "evaluated mesh exceeds interactive face budget",
+            result["reasons"],
+        )
+
+    def test_subsurf_budget_uses_projected_face_count(self) -> None:
+        accepted = evaluate_modifier_runtime_budget(
+            modifier_type="SUBSURF",
+            modifier_count=2,
+            evaluated_faces=31250,
+            levels=2,
+        )
+        self.assertTrue(accepted["allowed"])
+        self.assertEqual(500000, accepted["projected_faces"])
+
+        rejected = evaluate_modifier_runtime_budget(
+            modifier_type="SUBSURF",
+            modifier_count=2,
+            evaluated_faces=31251,
+            levels=2,
+        )
+        self.assertFalse(rejected["allowed"])
+        self.assertEqual(500016, rejected["projected_faces"])
+        self.assertIn(
+            "projected SUBSURF mesh exceeds interactive face budget",
+            rejected["reasons"],
+        )
+
+    def test_modifier_budget_rejects_boolean_or_invalid_metrics(self) -> None:
+        with self.assertRaises(ValueError):
+            evaluate_modifier_runtime_budget(
+                modifier_type="BEVEL",
+                modifier_count=True,
+                evaluated_faces=100,
+            )
+        with self.assertRaises(ValueError):
+            evaluate_modifier_runtime_budget(
+                modifier_type="SUBSURF",
+                modifier_count=1,
+                evaluated_faces=100,
+                levels=3,
             )
 
     def test_schema_keeps_unverified_mutations_disabled(self) -> None:
