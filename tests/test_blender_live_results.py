@@ -184,6 +184,22 @@ class BlenderLiveResultTests(unittest.TestCase):
         self.assertIn('"smoke-model-create-duplicate.json"', benchmark)
         self.assertIn('"smoke-model-modifier-duplicate.json"', benchmark)
 
+    def test_blenderbench_fixture_uses_script_file_not_python_expr(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        benchmark = (root / "scripts" / "blender_benchmark.py").read_text(
+            encoding="utf-8"
+        )
+
+        create_start = benchmark.index("def _create_scene(")
+        create_end = benchmark.index("\n\ndef _run_companion_smoke(", create_start)
+        create_scene = benchmark[create_start:create_end]
+
+        self.assertIn('fixture_script = scene.with_suffix(".fixture.py")', create_scene)
+        self.assertIn('"--disable-autoexec"', create_scene)
+        self.assertIn('"--python"', create_scene)
+        self.assertIn("fixture_script.unlink()", create_scene)
+        self.assertNotIn('"--python-expr"', create_scene)
+
 
 if __name__ == "__main__":
     unittest.main()
