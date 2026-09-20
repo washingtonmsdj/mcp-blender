@@ -57,6 +57,7 @@ class ActionRegistry(
             "blender.live_contact_audit": self.blender_live_contact_audit,
             "blender.live_quality_gate": self.blender_live_quality_gate,
             "blender.live_modeling_schema": self.blender_live_modeling_schema,
+            "blender.live_modeling_plan": self.blender_live_modeling_plan,
             "blender.live_object_transform": self.blender_live_object_transform,
             "blender.live_object_metadata": self.blender_live_object_metadata,
             "blender.live_api_schema": self.blender_live_api_schema,
