@@ -211,6 +211,9 @@ The visible Blender companion now exposes a richer typed perception loop:
   defaults/arguments plus whether execution is currently enabled. Use
   `schema → plan → execute`; a plan marked `pending_blender_smoke` is evidence
   only and cannot mutate Blender.
+  Modifier plans also publish runtime guard limits (8 modifiers, 200k evaluated
+  faces, 500k projected SUBSURF faces); those limits must eventually be checked
+  against live Blender metrics, never user-claimed counts.
 - \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
 - \`blender.asset_manifest\` — provider file manifest/provenance lookup.
 
