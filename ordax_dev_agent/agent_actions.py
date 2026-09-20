@@ -10,6 +10,7 @@ from .models import ActionResult
 from .process_runner import run_command as _run
 from .update_policy import install_contract_changed, managed_repo_clean_check
 from .versioning import component_versions
+from .capability_contracts import capability_contracts
 
 
 class AgentActions:
@@ -48,6 +49,7 @@ class AgentActions:
                 "default_project": self.config.default_project,
                 "busy": self._execution_lock.locked(),
                 "versions": component_versions(),
+                "capability_contracts": capability_contracts(),
                 "live_apps": live_apps,
             },
         )
