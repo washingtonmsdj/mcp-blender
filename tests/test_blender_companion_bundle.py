@@ -10,6 +10,7 @@ from ordax_dev_agent.blender_live_bridge import (
 from ordax_dev_agent.assets.blender_modeling_contracts import (
     modeling_schemas,
     normalize_transform_fields,
+    plan_modeling_operation,
 )
 
 
@@ -138,6 +139,93 @@ class BlenderCompanionBundleTests(unittest.TestCase):
 
 
 class BlenderModelingContractTests(unittest.TestCase):
+    def test_create_primitive_plan_applies_typed_defaults(self) -> None:
+        plan = plan_modeling_operation(
+            "create_primitive",
+            {"name": "Body", "primitive": "sphere"},
+        )
+        self.assertFalse(plan["executable"])
+        self.assertEqual("pending_blender_smoke", plan["status"])
+        self.assertEqual(
+            {
+                "name": "Body",
+                "primitive": "sphere",
+                "location": [0.0, 0.0, 0.0],
+                "radius": 1.0,
+                "segments": 32,
+            },
+            plan["arguments"],
+        )
+
+    def test_create_plan_rejects_primitive_specific_mismatch(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported field.*cube"):
+            plan_modeling_operation(
+                "create_primitive",
+                {
+                    "name": "Body",
+                    "primitive": "cube",
+                    "radius": 1.0,
+                },
+            )
+
+    def test_modifier_plan_applies_type_specific_defaults(self) -> None:
+        plan = plan_modeling_operation(
+            "add_modifier",
+            {
+                "object_name": "Body",
+                "name": "SoftEdges",
+                "type": "bevel",
+            },
+        )
+        self.assertFalse(plan["executable"])
+        self.assertEqual(
+            {
+                "object_name": "Body",
+                "name": "SoftEdges",
+                "type": "BEVEL",
+                "width": 0.05,
+                "segments": 2,
+            },
+            plan["arguments"],
+        )
+
+    def test_transform_plan_is_executable_and_closed_to_unknown_fields(self) -> None:
+        plan = plan_modeling_operation(
+            "object_transform",
+            {
+                "ordax_object_id": "hull.main",
+                "location": [1, 2, 3],
+            },
+        )
+        self.assertTrue(plan["executable"])
+        self.assertEqual("blender.live_object_transform", plan["action"])
+        self.assertEqual(
+            {
+                "ordax_object_id": "hull.main",
+                "location": [1.0, 2.0, 3.0],
+            },
+            plan["arguments"],
+        )
+        with self.assertRaisesRegex(ValueError, "unsupported field"):
+            plan_modeling_operation(
+                "object_transform",
+                {
+                    "object_name": "Body",
+                    "location": [0, 0, 0],
+                    "anything": True,
+                },
+            )
+
+    def test_selector_rejects_non_string_values(self) -> None:
+        with self.assertRaisesRegex(ValueError, "object_name must be a string"):
+            plan_modeling_operation(
+                "object_transform",
+                {
+                    "object_name": 123,
+                    "location": [0, 0, 0],
+                },
+            )
+
     def test_schema_keeps_unverified_mutations_disabled(self) -> None:
         schemas = modeling_schemas()
         self.assertEqual("available", schemas["object_transform"]["status"])

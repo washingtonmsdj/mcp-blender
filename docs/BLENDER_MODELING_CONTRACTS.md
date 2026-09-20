@@ -10,6 +10,21 @@ just because its source code existed on a historical branch.
 
 `blender.live_modeling_schema` is read-only and returns the supported contracts.
 
+`blender.live_modeling_plan` is also read-only. It accepts one operation and
+returns a normalized closed-world plan. Unknown fields and parameters that do
+not apply to the chosen primitive/modifier are rejected instead of ignored.
+Defaults are materialized in the plan, so a future executor does not have to
+reinterpret an underspecified request.
+
+The required flow is:
+
+1. inspect `blender.live_modeling_schema`;
+2. call `blender.live_modeling_plan` with one operation;
+3. execute only when the returned plan has `executable=true` and a concrete
+   action;
+4. treat `pending_blender_smoke` plans as non-executable evidence.
+
+
 `blender.live_object_transform` remains the only typed modeling mutation enabled
 in this phase. It supports one stable selector (`object_name` or
 `ordax_object_id`) plus one or more of:
@@ -22,6 +37,9 @@ in this phase. It supports one stable selector (`object_name` or
 Validation happens before Blender IPC. Vectors must contain exactly three finite
 numbers. Boolean values are not accepted as numbers. Scale and dimensions must
 remain strictly positive and within bounded ranges.
+
+The transform action now uses the same planner internally, so unknown fields are
+rejected rather than silently ignored.
 
 ## Prepared but deliberately disabled
 

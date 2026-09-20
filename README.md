@@ -178,7 +178,7 @@ implementations are composed as mixins rather than accumulating in one module:
 - `assets/blender_uv_math.py` — pure deterministic UV/triangle math extracted from the Blender runtime for ordinary unit testing, including overlap area and normalized 3D→UV shape distortion.
 - `assets/blender_spatial_math.py` — pure deterministic AABB overlap/containment math used by contact auditing, independently unit-tested outside Blender.
 - `assets/blender_quality_rules.py` — pure axis/tolerance validation shared by deterministic quality gates and unit-tested without Blender.
-- `assets/blender_modeling_contracts.py` — shared typed modeling schemas and transform validation; no `bpy` dependency, packaged with the companion bundle.
+- `assets/blender_modeling_contracts.py` — shared typed modeling schemas, closed-world plan normalization and transform validation; no `bpy` dependency, packaged with the companion bundle.
 
 Moving a method into a domain module does not add an action. An operation becomes
 remotely callable only when `ActionRegistry._actions` explicitly registers it.
@@ -206,6 +206,11 @@ The visible Blender companion now exposes a richer typed perception loop:
   boolean and invalid positive-size inputs before IPC. Primitive creation and
   modifier insertion are intentionally advertised as `pending_blender_smoke`
   until validated against the current Blender 5.x companion.
+- `blender.live_modeling_plan` — read-only closed-world planner that validates
+  one modeling intent, rejects unknown/inapplicable fields and returns normalized
+  defaults/arguments plus whether execution is currently enabled. Use
+  `schema → plan → execute`; a plan marked `pending_blender_smoke` is evidence
+  only and cannot mutate Blender.
 - \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
 - \`blender.asset_manifest\` — provider file manifest/provenance lookup.
 

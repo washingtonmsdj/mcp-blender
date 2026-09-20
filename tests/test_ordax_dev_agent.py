@@ -50,6 +50,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_contact_audit", result.data["actions"])
             self.assertIn("blender.live_quality_gate", result.data["actions"])
             self.assertIn("blender.live_modeling_schema", result.data["actions"])
+            self.assertIn("blender.live_modeling_plan", result.data["actions"])
             self.assertIn("blender.live_object_transform", result.data["actions"])
             self.assertIn("blender.live_object_metadata", result.data["actions"])
             self.assertIn("blender.live_api_schema", result.data["actions"])
@@ -85,6 +86,92 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.reference_decision", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
+
+    def test_modeling_plan_normalizes_cube_and_keeps_it_non_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "blender.live_modeling_plan",
+                {
+                    "operation": "create_primitive",
+                    "name": "HullBlock",
+                    "primitive": "cube",
+                },
+            )
+
+            self.assertTrue(result.ok)
+            self.assertFalse(result.data["executable"])
+            self.assertEqual(
+                "disabled_pending_real_blender_smoke",
+                result.data["execution"],
+            )
+            self.assertEqual(
+                {
+                    "name": "HullBlock",
+                    "primitive": "cube",
+                    "location": [0.0, 0.0, 0.0],
+                    "size": 2.0,
+                },
+                result.data["arguments"],
+            )
+
+    def test_modeling_plan_rejects_inapplicable_modifier_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "blender.live_modeling_plan",
+                {
+                    "operation": "add_modifier",
+                    "object_name": "Hull",
+                    "name": "Mirror",
+                    "type": "MIRROR",
+                    "width": 0.1,
+                },
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("unsupported field(s) for MIRROR", result.summary)
+
+    def test_modeling_plan_rejects_unknown_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "blender.live_modeling_plan",
+                {
+                    "operation": "object_transform",
+                    "object_name": "Hull",
+                    "location": [0, 0, 0],
+                    "code": "anything",
+                },
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("unsupported field(s): code", result.summary)
+
+    def test_object_transform_rejects_unknown_fields_before_ipc(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.execute(
+                    "blender.live_object_transform",
+                    {
+                        "object_name": "Hull",
+                        "location": [0, 0, 0],
+                        "unexpected": 1,
+                    },
+                )
+
+            self.assertFalse(result.ok)
+            self.assertIn("unsupported field(s): unexpected", result.summary)
+            live.assert_not_called()
 
     def test_modeling_schema_exposes_only_transform_as_available(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
