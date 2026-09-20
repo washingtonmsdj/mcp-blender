@@ -33,6 +33,24 @@ has_merged_pr() {
   [[ "$count" != "0" ]]
 }
 
+has_exact_archive_snapshot() {
+  local branch_sha="$1"
+  local archive_ref
+  local archive_sha
+
+  while IFS= read -r archive_ref; do
+    [[ -z "$archive_ref" ]] && continue
+    archive_sha="$(git rev-parse "$archive_ref")"
+    if [[ "$archive_sha" == "$branch_sha" ]]; then
+      return 0
+    fi
+  done < <(
+    git for-each-ref       --format='%(refname:short)'       refs/remotes/origin/archive/
+  )
+
+  return 1
+}
+
 delete_branch_if_safe() {
   local branch="$1"
 
@@ -52,12 +70,21 @@ delete_branch_if_safe() {
     echo "skip $branch: remote branch no longer exists"
     return 0
   fi
+  local branch_sha
+  branch_sha="$(git rev-parse "origin/$branch")"
+
+  if has_exact_archive_snapshot "$branch_sha"; then
+    echo "delete $branch: exact protected archive snapshot preserves branch history"
+    git push origin --delete "$branch"
+    return 0
+  fi
+
   if ! has_merged_pr "$branch"; then
-    echo "skip $branch: no merged pull request proves absorption"
+    echo "skip $branch: no merged PR and no exact archive snapshot proves safe retirement"
     return 0
   fi
   if ! git merge-base --is-ancestor "origin/$branch" origin/main; then
-    echo "skip $branch: branch still contains commits outside main"
+    echo "skip $branch: merged branch still contains commits outside main"
     return 0
   fi
 
