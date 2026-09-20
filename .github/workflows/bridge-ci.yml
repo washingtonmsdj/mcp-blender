@@ -41,6 +41,11 @@ jobs:
       - name: Run Python unit tests
         run: python -m unittest discover -s tests -p "test_*.py"
 
+      - name: Validate branch hygiene shell
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash -n scripts/branch-hygiene.sh
+
       - name: Validate package metadata
         shell: bash
         run: |
