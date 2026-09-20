@@ -25,8 +25,8 @@ The required flow is:
 4. treat `pending_blender_smoke` plans as non-executable evidence.
 
 
-`blender.live_object_transform` remains the only typed modeling mutation enabled
-in this phase. It supports one stable selector (`object_name` or
+`blender.live_object_transform`, `blender.live_create_primitive` and
+`blender.live_add_modifier` are typed modeling mutations available in this phase. It supports one stable selector (`object_name` or
 `ordax_object_id`) plus one or more of:
 
 - `location`
@@ -47,57 +47,36 @@ contract when consuming `object_transform`. Only transport metadata `id` and
 are rejected. This is defense in depth: bypassing host validation does not
 weaken the Blender-side contract.
 
-## Prepared but deliberately disabled
+## Available create and modifier mutations
 
-The contracts also describe:
+`create_primitive` supports cube, sphere and cylinder creation through
+`blender.live_create_primitive`.
 
-- `create_primitive`: cube, sphere and cylinder creation;
-- `add_modifier`: BEVEL, SUBSURF, SOLIDIFY and MIRROR insertion.
+`add_modifier` supports BEVEL, SUBSURF, SOLIDIFY and MIRROR through
+`blender.live_add_modifier`.
 
-Both report `pending_blender_smoke`. No remote action is registered for either
-mutation yet.
+Both use the same closed-world planner that powered the staged smoke path. The
+runtime preconditions, rollback guarantees and modifier budgets remain enforced:
 
-The planner also preserves runtime preconditions and rollback guarantees from
-the useful part of the historical prototype.
-
-For `create_primitive` the future executor must prove Object Mode, no active
-render job and a unique object name. If creation fails after allocating Blender
-data, the partial object and mesh must be removed.
-
-For `add_modifier` the future executor must prove Object Mode, no active render
-job, a local/non-linked mesh target and a unique modifier name. Animated or
-constrained targets require a dedicated workflow instead of silently reusing the
-generic modifier path. If insertion/configuration fails, the newly-created
-modifier must be removed and the pre-existing modifier stack preserved.
-
-These are contract requirements only; they do not make either mutation
-executable.
-
-`add_modifier` also publishes deterministic runtime guards inherited from the
-earlier modeling prototype:
-
+- creation requires Object Mode, no active render job and a unique object name;
+- failed creation cleans partial object/mesh data;
+- modifier insertion requires Object Mode, no render job, a local/non-linked mesh
+  target and a unique modifier name;
+- animated or constrained targets require a dedicated workflow;
+- failed modifier insertion removes only the new modifier and preserves the
+  existing stack;
 - maximum modifier stack: 8;
 - maximum evaluated mesh before insertion: 200,000 faces;
 - maximum projected SUBSURF mesh: 500,000 faces.
 
-The pure helper `evaluate_modifier_runtime_budget` implements these limits and
-is unit-tested, but the planner does **not** accept user-supplied scene metrics as
-proof. Modifier count and evaluated face count must come from the live Blender
-scene when the executor is eventually enabled.
-
-
-The earlier implementation is preserved read-only at
-`archive/blender-live-session-before-contract-port-2026-09-20`. Its active
-`codex/blender-live-session` development branch has been retired after the
-useful contracts, runtime guards and rollback semantics were ported to the
-current architecture. The archived code remains design evidence only and must
-not be merged back wholesale.
-
-One legacy rule is intentionally **not** copied: its transform implementation
-required a local, non-linked mesh with no animation/constraints. The current
-`blender.live_object_transform` is already a supported general scene-object
-operation, so importing that old restriction would be a behavioral regression
-rather than a safety improvement.
+The production promotion is backed by the real BlenderBench run
+`53b9b1ef-81de-406f-966e-576599c257e2` executed on September 20, 2026 with
+Blender 5.2.2 LTS. That run proved transform positive/negative controls,
+successful cube creation, duplicate object-name rejection, successful BEVEL
+insertion, duplicate modifier-name rejection, allowed runtime budget, durable
+trajectory evidence, UV positive/negative controls, multiview self-comparison
+and controlled mutation detection. The benchmark completed with return code 0
+and a durable report artifact.
 
 ## Promotion gate
 
@@ -114,45 +93,14 @@ true:
    the durable trajectory, and the source `.blend` on disk remains unchanged;
 7. the normal Bridge CI remains green.
 
-Until that happens, the schema is discoverable but execution remains
-unavailable.
-
-This is intentional fail-closed behavior: capability discovery may move ahead of
-runtime enablement, but unverified scene mutation may not.
+The promotion gate has now been satisfied for `create_primitive` and
+`add_modifier`. Future modeling mutations must still follow the same fail-closed
+process before registration.
 
 ## Current real-smoke coverage
 
-`scripts/blender_benchmark.py` now asks the current companion to run an
-optional modeling fixture in a temporary Blender scene. The fixture:
-
-- writes an `object_transform` command to the companion inbox;
-- processes it through the same `_process` dispatcher used by live commands;
-- requires the positive transform result to be durable;
-- sends a zero-scale negative control and requires rejection;
-- requires both command IDs in `trajectory.jsonl`;
-- relies on BlenderBench's existing before/after SHA-256 check to prove the
-  source `.blend` was not saved or overwritten.
-
-This validates the already-supported transform path when the self-hosted Blender
-runner is online.
-
-The current companion now also contains **unregistered smoke-only executors** for
-`create_primitive` and `add_modifier`. They are intentionally absent from
-`CAPABILITIES`, absent from `ActionRegistry`, and accepted by the dispatcher
-only when both the modeling-smoke flag and a smoke output directory are active.
-
-BlenderBench exercises these staged paths with:
-
-- successful cube creation;
-- duplicate object-name rejection;
-- successful BEVEL insertion;
-- duplicate modifier-name rejection;
-- runtime-budget evidence;
-- durable trajectory evidence;
-- cleanup of the temporary object before visual capture.
-
-Passing hosted CI is not enough to promote these operations. They remain
-`pending_blender_smoke` until the self-hosted Blender 5.x benchmark executes
-this exact code successfully. Promotion then requires a separate PR that
-registers normal operation names and updates the advertised capabilities.
-
+`scripts/blender_benchmark.py` continues to exercise all three production
+modeling mutations through the real companion dispatcher on every BlenderBench
+run. It keeps positive/negative controls, durable trajectory evidence, temporary
+object cleanup and source `.blend` hash protection so later changes cannot
+silently weaken the validated behavior.
