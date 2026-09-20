@@ -63,8 +63,8 @@ function Sync-ExternalBootstrapFromRepo {
     return $true
 }
 
-function Read-GitValue([string[]]$Args) {
-    $value = (& git -c core.fsmonitor=false -C $repoRootResolved @Args 2>$null)
+function Read-GitValue([string[]]$CommandArgs) {
+    $value = (& git -c core.fsmonitor=false -C $repoRootResolved @CommandArgs 2>$null)
     if ($LASTEXITCODE -ne 0) {
         return $null
     }
@@ -119,8 +119,8 @@ function Invoke-SafeUpdate {
         return $false
     }
 
-    $beforeHead = Read-GitValue @("rev-parse", "HEAD")
-    $beforeBranch = Read-GitValue @("rev-parse", "--abbrev-ref", "HEAD")
+    $beforeHead = Read-GitValue -CommandArgs @("rev-parse", "HEAD")
+    $beforeBranch = Read-GitValue -CommandArgs @("rev-parse", "--abbrev-ref", "HEAD")
     if (-not $beforeHead -or -not $beforeBranch) {
         Write-BootstrapLog "UPDATE_SKIP could not resolve current HEAD/branch"
         return $false
@@ -134,7 +134,7 @@ function Invoke-SafeUpdate {
         return $false
     }
 
-    $remoteHead = Read-GitValue @("rev-parse", $remoteRef)
+    $remoteHead = Read-GitValue -CommandArgs @("rev-parse", $remoteRef)
     if (-not $remoteHead) {
         Write-BootstrapLog "UPDATE_SKIP remote head unavailable ref=$remoteRef"
         return $false
@@ -209,14 +209,10 @@ while ($true) {
         continue
     }
 
-    & $python -m compileall -q (Join-Path $repoRootResolved "mcp_blender_unity") (Join-Path $repoRootResolved "ordax_dev_agent")
-    if ($LASTEXITCODE -ne 0) {
-        Write-BootstrapLog "LAUNCH_WAIT local compile failed retry=$retrySeconds"
-        Start-Sleep -Seconds $retrySeconds
-        $retrySeconds = [Math]::Min($MaxRetrySeconds, $retrySeconds * 2)
-        continue
-    }
-
+    # Compile validation already runs inside Invoke-SafeUpdate whenever the
+    # checkout actually changes. Re-running compileall on every task start can
+    # stall the control plane before the local health endpoint is even created.
+    Write-BootstrapLog "LAUNCH_READY repo=$repoRootResolved"
     Write-BootstrapLog "AGENT_START repo=$repoRootResolved"
     & $python -m ordax_dev_agent.main
     $code = $LASTEXITCODE
