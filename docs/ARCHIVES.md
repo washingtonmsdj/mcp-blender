@@ -1,0 +1,56 @@
+# Preserved historical branches
+
+The active development line is `main`. Historical implementations are kept
+under `archive/*` only when their original commit graph still has diagnostic,
+design or project-history value.
+
+Archives are **not** alternate update channels and must not be merged back
+wholesale. Reuse should be selective: inspect the archived idea, port the useful
+behavior into the current architecture, add current tests, and merge through a
+normal PR.
+
+## Current archives
+
+### `archive/ordax-engine-before-cleanup-2026-09-17`
+
+Snapshot of the removed Ordax Engine implementation before the repository was
+reduced to the Blender/Unity bridge and OrdaX Dev Agent architecture.
+
+Use only for historical comparison.
+
+### `archive/blender-live-session-before-contract-port-2026-09-20`
+
+Original six-commit Blender live-session/modeling experiment.
+
+Useful ideas already ported to `main` include:
+
+- typed modeling schemas;
+- closed-world modeling planning;
+- transform validation;
+- modifier runtime budgets;
+- runtime/rollback requirements;
+- real object-transform dispatcher smoke coverage.
+
+The archived `bpy/bmesh` executor is not production code and must not be merged
+back wholesale.
+
+### `archive/blender-bridge-salvador-prototype-2026-09-17`
+
+Snapshot of the old GitHub-file-queue Blender bridge used during the Salvador
+prototype work. The archived branch contains commands/results/previews and
+project-specific modeling history, including topographic/elevator studies.
+
+That bridge used a different architecture (GitHub command/result queue, local
+relay and optional arbitrary `execute_code`) and is superseded by the typed
+OrdaX Dev Agent + Blender Live companion architecture on `main`.
+
+Keep it for project/history inspection only. New automation must use the current
+typed action registry and companion bundle.
+
+## Policy
+
+- `main` is the only active integration line.
+- `archive/*` is protected from automatic branch hygiene.
+- A historical branch is archived before its active ref is retired.
+- No archive is used by `agent.update`, self-hosted recovery or normal CI
+  deployment paths.
