@@ -198,24 +198,27 @@ jobs:
             }
           }
 
-          $running = @(
-            Get-CimInstance Win32_Process |
-              Where-Object {
-                $_.CommandLine -and
-                $_.CommandLine -like "*ordax_dev_agent.main*" -and
-                $_.CommandLine -like "*OrdaX*DevAgent*"
-              }
-          )
-
-          $status = $null
-          if ($running) {
-            try {
-              $status = Invoke-RestMethod -Uri "http://127.0.0.1:8765/status" -TimeoutSec 3
-            } catch {
-              Write-Host "Agent process exists but local status endpoint is unavailable."
-            }
+          $taskName = "OrdaX Dev Agent"
+          $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+          if (-not $task) {
+            throw "OrdaX scheduled task is not installed."
+          }
+          if ($task.State -eq "Disabled") {
+            throw "OrdaX scheduled task is disabled."
           }
 
+          # Avoid Win32_Process/CIM here. A degraded Windows WMI provider can
+          # block indefinitely and prevent the very recovery this workflow is
+          # supposed to perform. The scheduled task plus the bounded local
+          # health endpoint are the authoritative ownership signals.
+          $status = $null
+          try {
+            $status = Invoke-RestMethod -Uri "http://127.0.0.1:8765/status" -TimeoutSec 3
+          } catch {
+            Write-Host "Local agent status endpoint is unavailable."
+          }
+
+          $taskRunning = $task.State -eq "Running"
           $requestedJob = if ($request) { [string]$request.job_id } else { "" }
           $activeJob = if ($status -and $status.runtime) { [string]$status.runtime.last_job_id } else { "" }
           $activeState = if ($status -and $status.runtime) { [string]$status.runtime.state } else { "" }
@@ -225,17 +228,22 @@ jobs:
             $activeState -eq "busy"
           )
 
-          if ($running -and -not $status -and -not $explicitRecovery) {
-            Write-Host "Healthy-state proof is unavailable; leaving running agent untouched."
+          if ($taskRunning -and -not $status -and -not $explicitRecovery) {
+            Write-Host "Scheduled task is running but healthy-state proof is unavailable; leaving it untouched."
             exit 0
           }
 
-          if ($running -and $activeState -eq "busy" -and -not $explicitRecovery) {
+          if (-not $taskRunning -and $status -and -not $explicitRecovery) {
+            Write-Host "Agent endpoint is healthy outside the scheduled task; refusing to start a duplicate instance."
+            exit 0
+          }
+
+          if ($status -and $activeState -eq "busy" -and -not $explicitRecovery) {
             Write-Host "Agent is busy with $activeJob; update deferred without interruption."
             exit 0
           }
 
-          if ($running -and -not $needsUpdate -and -not $explicitRecovery) {
+          if ($status -and -not $needsUpdate -and -not $explicitRecovery) {
             Write-Host "Managed agent is already at current main; leaving it untouched."
             exit 0
           }
@@ -254,31 +262,14 @@ jobs:
             throw "$Reason Managed checkout restored to $beforeHead."
           }
 
-          $taskName = "OrdaX Dev Agent"
-          $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-          if (-not $task) {
-            throw "OrdaX scheduled task is not installed."
-          }
-          if ($task.State -eq "Disabled") {
-            throw "OrdaX scheduled task is disabled."
-          }
-
-          if ($running) {
+          if ($taskRunning) {
             if ($explicitRecovery) {
               Write-Host "Explicit recovery request matches stuck job $activeJob."
             } elseif ($needsUpdate) {
               Write-Host "Agent is idle and behind current main; performing safe maintenance update."
             }
 
-            if ($task.State -eq "Running") {
-              Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-              Start-Sleep -Seconds 1
-            }
-            foreach ($process in $running) {
-              if (Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue) {
-                & taskkill.exe /PID $process.ProcessId /T /F | Out-Null
-              }
-            }
+            Stop-ScheduledTask -TaskName $taskName -ErrorAction Stop
             Start-Sleep -Seconds 2
           }
 
