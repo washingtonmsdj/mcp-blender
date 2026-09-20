@@ -7,7 +7,7 @@ preview Blender, sequências de capturas com snapshots e imagens entregues ao mo
 por MCP. A fila Supabase existente continua atendendo clientes remotos.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.15.2`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.16.0`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -218,6 +218,13 @@ Veja `docs/SELF_HOSTED_RUNNER.md`.
 - **Toolchain smoke** — manual; verifica Blender/Unity instalados no runner.
 - **Validate HORDAX in Unity** — manual; valida um ref escolhido do HORDAX e
   publica o log como artifact.
+
+O Scheduled Task do Dev Agent usa um bootstrap estável copiado para
+`%LOCALAPPDATA%\OrdaX\DevAgent\bootstrap`, fora do checkout gerenciado. Esse
+bootstrap faz preflight, fetch com refspec explícito, fast-forward, refresh
+semântico de dependências, compile gate e rollback antes de carregar o agente.
+Assim uma versão antiga do próprio agente não precisa estar saudável para
+atualizar o checkout numa próxima reinicialização controlada.
 
 O runner self-hosted é necessário apenas para operações que realmente dependem
 do Blender/Unity instalado na estação. CI hospedado continua validando código,
