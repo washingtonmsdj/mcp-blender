@@ -26,6 +26,43 @@ function Write-BootstrapLog([string]$Message) {
     Add-Content -Path $logPath -Value "$stamp $Message" -Encoding UTF8
 }
 
+function Sync-ExternalBootstrapFromRepo {
+    $bootstrapSource = Join-Path $repoRootResolved "scripts\windows\ordax-agent-bootstrap.ps1"
+    $policySource = Join-Path $repoRootResolved "ordax_dev_agent\update_policy.py"
+
+    if (-not (Test-Path $bootstrapSource) -or -not (Test-Path $policySource)) {
+        Write-BootstrapLog "SELF_REFRESH_SKIP candidate bootstrap source missing"
+        return $false
+    }
+
+    try {
+        $bootstrapText = Get-Content $bootstrapSource -Raw -Encoding UTF8
+        [void][ScriptBlock]::Create($bootstrapText)
+    } catch {
+        Write-BootstrapLog "SELF_REFRESH_SKIP candidate bootstrap PowerShell does not parse: $($_.Exception.Message)"
+        return $false
+    }
+
+    & $python -m py_compile $policySource
+    if ($LASTEXITCODE -ne 0) {
+        Write-BootstrapLog "SELF_REFRESH_SKIP candidate update policy does not compile"
+        return $false
+    }
+
+    $bootstrapDestination = Join-Path $bootstrapDir "ordax-agent-bootstrap.ps1"
+    $policyDestination = Join-Path $bootstrapDir "update_policy.py"
+    $bootstrapTemp = "$bootstrapDestination.next"
+    $policyTemp = "$policyDestination.next"
+
+    Copy-Item -Force $bootstrapSource $bootstrapTemp
+    Copy-Item -Force $policySource $policyTemp
+    Move-Item -Force $bootstrapTemp $bootstrapDestination
+    Move-Item -Force $policyTemp $policyDestination
+
+    Write-BootstrapLog "SELF_REFRESH_OK"
+    return $true
+}
+
 function Read-GitValue([string[]]$Args) {
     $value = (& git -c core.fsmonitor=false -C $repoRootResolved @Args 2>$null)
     if ($LASTEXITCODE -ne 0) {
@@ -151,6 +188,7 @@ function Invoke-SafeUpdate {
         return $false
     }
 
+    [void](Sync-ExternalBootstrapFromRepo)
     Write-BootstrapLog "UPDATE_OK before=$beforeHead after=$remoteHead install_refresh=$refreshInstall switched=$switched"
     return $true
 }
@@ -159,7 +197,10 @@ $retrySeconds = [Math]::Max(1, $InitialRetrySeconds)
 
 while ($true) {
     try {
-        [void](Invoke-SafeUpdate)
+        $updated = Invoke-SafeUpdate
+        if (-not $updated -and (Test-Path $python)) {
+            [void](Sync-ExternalBootstrapFromRepo)
+        }
     } catch {
         Write-BootstrapLog "UPDATE_ERROR $($_.Exception.Message)"
     }
