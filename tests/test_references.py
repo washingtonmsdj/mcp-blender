@@ -5,9 +5,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from PIL import Image, PngImagePlugin
+
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
 from ordax_dev_agent.models import ActionResult
+from ordax_dev_agent.references import _image_pixel_digest
 
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\nreference-fixture"
@@ -550,12 +553,79 @@ class ReferenceContractTests(unittest.TestCase):
         state = json.loads(pass_path.read_text(encoding="utf-8"))
         self.assertEqual("rejected", state["status"])
 
-    def test_visual_hash_guard_recaptures_same_views_and_parameters(self) -> None:
+    def _write_real_png(
+        self,
+        path: Path,
+        *,
+        rgba: tuple[int, int, int, int],
+        note: str,
+        compress_level: int = 6,
+    ) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        image = Image.new("RGBA", (4, 3), rgba)
+        metadata = PngImagePlugin.PngInfo()
+        metadata.add_text("ordax_test_note", note)
+        image.save(
+            path,
+            format="PNG",
+            pnginfo=metadata,
+            compress_level=compress_level,
+        )
+
+    def test_pixel_digest_ignores_png_metadata_and_compression(self) -> None:
+        root = self.config.state_dir / "artifacts" / "model" / "pixel-digest"
+        first = root / "first.png"
+        second = root / "second.png"
+        self._write_real_png(
+            first,
+            rgba=(42, 84, 126, 255),
+            note="reviewed",
+            compress_level=0,
+        )
+        self._write_real_png(
+            second,
+            rgba=(42, 84, 126, 255),
+            note="recaptured",
+            compress_level=9,
+        )
+
+        self.assertNotEqual(
+            hashlib.sha256(first.read_bytes()).hexdigest(),
+            hashlib.sha256(second.read_bytes()).hexdigest(),
+        )
+        self.assertEqual(
+            _image_pixel_digest(first)["sha256"],
+            _image_pixel_digest(second)["sha256"],
+        )
+
+    def test_visual_hash_guard_recaptures_same_pixels_and_parameters(self) -> None:
+        root = self.config.state_dir / "artifacts" / "model" / "pixel-guard"
+        reviewed_path = root / "reviewed-front.png"
+        fresh_path = root / "fresh-front.png"
+        self._write_real_png(
+            reviewed_path,
+            rgba=(20, 40, 60, 255),
+            note="reviewed-container",
+            compress_level=0,
+        )
+        self._write_real_png(
+            fresh_path,
+            rgba=(20, 40, 60, 255),
+            note="fresh-container",
+            compress_level=9,
+        )
+        reviewed_file_sha = hashlib.sha256(reviewed_path.read_bytes()).hexdigest()
+        fresh_file_sha = hashlib.sha256(fresh_path.read_bytes()).hexdigest()
+        self.assertNotEqual(reviewed_file_sha, fresh_file_sha)
+
         reviewed = {
             "capture": {
                 "artifacts": [
-                    {"view": "front", "sha256": "1" * 64},
-                    {"view": "right", "sha256": "2" * 64},
+                    {
+                        "view": "front",
+                        "artifact": str(reviewed_path),
+                        "sha256": reviewed_file_sha,
+                    }
                 ],
                 "resolution": [640, 480],
                 "margin": 1.25,
@@ -571,8 +641,11 @@ class ReferenceContractTests(unittest.TestCase):
             "captured",
             {
                 "artifacts": [
-                    {"view": "front", "sha256": "1" * 64},
-                    {"view": "right", "sha256": "2" * 64},
+                    {
+                        "view": "front",
+                        "artifact": str(fresh_path),
+                        "sha256": fresh_file_sha,
+                    }
                 ]
             },
         )
@@ -590,13 +663,90 @@ class ReferenceContractTests(unittest.TestCase):
 
         self.assertTrue(result.ok)
         request = capture.call_args.args[0]
-        self.assertEqual(["front", "right"], request["views"])
+        self.assertEqual(["front"], request["views"])
         self.assertEqual(["Hull"], request["object_names"])
         self.assertEqual(640, request["width"])
         self.assertEqual(480, request["height"])
         self.assertEqual(1.25, request["margin"])
         self.assertEqual("material", request["mode"])
-        self.assertEqual(["front", "right"], result.data["verified_views"])
+        self.assertEqual(["front"], result.data["verified_views"])
+        self.assertEqual(
+            _image_pixel_digest(reviewed_path)["sha256"],
+            result.data["pixel_sha256"]["front"],
+        )
+        self.assertEqual(
+            reviewed_file_sha,
+            result.data["reviewed_file_sha256"]["front"],
+        )
+        self.assertEqual(
+            fresh_file_sha,
+            result.data["fresh_file_sha256"]["front"],
+        )
+
+    def test_visual_hash_guard_rejects_real_pixel_change(self) -> None:
+        root = self.config.state_dir / "artifacts" / "model" / "pixel-change"
+        reviewed_path = root / "reviewed-front.png"
+        fresh_path = root / "fresh-front.png"
+        self._write_real_png(
+            reviewed_path,
+            rgba=(20, 40, 60, 255),
+            note="reviewed",
+        )
+        self._write_real_png(
+            fresh_path,
+            rgba=(21, 40, 60, 255),
+            note="fresh",
+        )
+        reviewed_file_sha = hashlib.sha256(reviewed_path.read_bytes()).hexdigest()
+        fresh_file_sha = hashlib.sha256(fresh_path.read_bytes()).hexdigest()
+
+        reviewed = {
+            "capture": {
+                "artifacts": [
+                    {
+                        "view": "front",
+                        "artifact": str(reviewed_path),
+                        "sha256": reviewed_file_sha,
+                    }
+                ],
+                "resolution": [320, 240],
+                "margin": 1.15,
+                "mode": "material",
+            }
+        }
+        state = {"project": "model", "object_names": ["Hull"]}
+        recaptured = ActionResult(
+            True,
+            "captured",
+            {
+                "artifacts": [
+                    {
+                        "view": "front",
+                        "artifact": str(fresh_path),
+                        "sha256": fresh_file_sha,
+                    }
+                ]
+            },
+        )
+
+        with patch.object(
+            self.registry,
+            "blender_live_multiview_capture",
+            return_value=recaptured,
+        ):
+            result = self.registry._reference_candidate_visual_hashes(
+                {"project": "model"},
+                state,
+                reviewed,
+            )
+
+        self.assertFalse(result.ok)
+        self.assertIn("pixels changed", result.summary)
+        self.assertEqual(["front"], result.data["changed_views"])
+        self.assertNotEqual(
+            result.data["expected_pixel_sha256"]["front"],
+            result.data["current_pixel_sha256"]["front"],
+        )
 
     def test_reference_decision_blocks_accept_after_pixels_changed(self) -> None:
         target = str((self.project / "boat.blend").resolve())
