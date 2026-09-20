@@ -78,9 +78,11 @@ because camera, crop, lens, pose and lighting are not proven equivalent.
 This closes a pending `reference-pass.json` after visual inspection.
 
 - `decision=accept` requires a written `assessment`, verifies the review file
-  hash, fingerprints the current objects again and refuses to save if any
-  reviewed object changed after capture. Only the exact reviewed candidate can
-  be accepted.
+  hash, fingerprints the current objects again **and recaptures the same
+  deterministic multiview**. Every reviewed view must reproduce the original
+  SHA-256 pixel hash. Geometry/transform changes are caught by fingerprints;
+  material, lighting, UV or other rendered-state changes are caught by the
+  recaptured pixels. Only the exact reviewed candidate can be accepted.
 - `decision=reject` requires an assessment and restores the generation
   checkpoint with `discard_unsaved=true`.
 - If final save fails after an accept decision, the action rolls back to the
