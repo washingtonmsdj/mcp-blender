@@ -7,7 +7,7 @@ preview Blender, sequências de capturas com snapshots e imagens entregues ao mo
 por MCP. A fila Supabase existente continua atendendo clientes remotos.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.12.0`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.13.0`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -302,6 +302,8 @@ this layer and the capabilities intentionally not copied.
 `python scripts/verify_visual_agent.py` now runs both the existing isolated render smoke and the real companion deterministic silhouette-multiview path. On the Windows self-hosted recovery runner this candidate smoke runs before the managed agent is touched.
 
 `python scripts/blender_benchmark.py` adds an end-to-end regression: exact baseline self-comparison must pass, while a controlled geometry mutation must fail silhouette IoU and expose the expected bounds delta. See `docs/BLENDERBENCH.md`. The benchmark also contains valid/invalid UV fixtures and a real companion-dispatch modeling fixture: `object_transform` must mutate the temporary scene in memory, a zero-scale negative control must be rejected, both commands must be journaled, and the source `.blend` must remain byte-for-byte unchanged on disk.
+
+`blender.benchmark` exposes that same benchmark through the typed Dev Agent. It is a fixed diagnostic action: only `project` and bounded `timeout_seconds` are accepted; callers cannot supply a script, shell command or arbitrary output path. The structured report is written under the agent state directory and returned as an artifact.
 
 ### Reference Contract
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,154 @@ from .process_runner import run_command as _run
 class BlenderActions:
     def _blender_live(self, payload: dict[str, Any]) -> BlenderLiveBridge:
         return BlenderLiveBridge(self.config, self._project(payload))
+
+    def blender_benchmark(self, payload: dict[str, Any]) -> ActionResult:
+        unsupported = sorted(set(payload) - {"project", "timeout_seconds"})
+        if unsupported:
+            return ActionResult(
+                False,
+                "unsupported field(s): " + ", ".join(unsupported),
+            )
+
+        try:
+            timeout = int(payload.get("timeout_seconds", 1200))
+        except (TypeError, ValueError):
+            return ActionResult(False, "timeout_seconds must be an integer")
+        if timeout < 60 or timeout > 3600:
+            return ActionResult(
+                False,
+                "timeout_seconds must be between 60 and 3600",
+            )
+
+        blender = find_blender()
+        if blender is None:
+            return ActionResult(False, "Blender executable not found")
+
+        source_root = Path(__file__).resolve().parents[1]
+        managed_root = self.config.agent_repo_path.resolve()
+        candidates = [
+            managed_root / "scripts" / "blender_benchmark.py",
+            source_root / "scripts" / "blender_benchmark.py",
+        ]
+        script = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if script is None:
+            return ActionResult(
+                False,
+                "BlenderBench script is missing from the managed/source repository",
+                {"checked": [str(candidate) for candidate in candidates]},
+            )
+
+        run_id = uuid.uuid4().hex
+        artifact_root = (
+            self.config.state_dir
+            / "artifacts"
+            / "blenderbench"
+            / run_id
+        ).resolve()
+        artifact_root.mkdir(parents=True, exist_ok=False)
+
+        report_path = artifact_root / "benchmark-report.json"
+        result = _run(
+            [
+                sys.executable,
+                str(script),
+                "--output-dir",
+                str(artifact_root),
+                "--report-file",
+                str(report_path),
+            ],
+            cwd=script.parents[1],
+            timeout=timeout,
+        )
+        if not result.ok:
+            result.summary = (
+                "OrdaX BlenderBench timed out"
+                if result.data.get("timed_out")
+                else "OrdaX BlenderBench failed"
+            )
+            result.data["artifact_root"] = str(artifact_root)
+            result.data["blender"] = str(blender)
+            return result
+
+        if not report_path.is_file():
+            return ActionResult(
+                False,
+                "BlenderBench completed but did not write its durable report",
+                {
+                    **result.data,
+                    "artifact_root": str(artifact_root),
+                    "blender": str(blender),
+                    "report_path": str(report_path),
+                },
+            )
+        try:
+            benchmark = json.loads(
+                report_path.read_text(encoding="utf-8-sig")
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            return ActionResult(
+                False,
+                "BlenderBench durable report is not valid JSON",
+                {
+                    **result.data,
+                    "artifact_root": str(artifact_root),
+                    "blender": str(blender),
+                    "report_path": str(report_path),
+                    "parse_error": str(error),
+                },
+            )
+        if not isinstance(benchmark, dict):
+            return ActionResult(
+                False,
+                "BlenderBench report must be a JSON object",
+                {
+                    **result.data,
+                    "artifact_root": str(artifact_root),
+                    "blender": str(blender),
+                    "report_path": str(report_path),
+                },
+            )
+
+        modeling = benchmark.get("modeling_dispatch") or {}
+        required_modeling = {
+            "transform_positive": True,
+            "transform_negative_detected": True,
+            "create_positive": True,
+            "create_duplicate_detected": True,
+            "modifier_positive": True,
+            "modifier_duplicate_detected": True,
+            "dispatcher_journaled": True,
+        }
+        missing = [
+            key
+            for key, expected in required_modeling.items()
+            if modeling.get(key) is not expected
+        ]
+        if missing:
+            return ActionResult(
+                False,
+                "BlenderBench report is missing required staged-modeling evidence",
+                {
+                    **result.data,
+                    "artifact": str(report_path),
+                    "artifact_root": str(artifact_root),
+                    "blender": str(blender),
+                    "benchmark": benchmark,
+                    "missing_evidence": missing,
+                },
+            )
+
+        return ActionResult(
+            True,
+            "OrdaX BlenderBench passed",
+            {
+                **result.data,
+                "artifact": str(report_path),
+                "artifact_root": str(artifact_root),
+                "blender": str(blender),
+                "benchmark": benchmark,
+            },
+        )
 
     def blender_live_start(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)

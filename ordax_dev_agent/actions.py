@@ -46,6 +46,7 @@ class ActionRegistry(
             "project.reference_images": self.project_reference_images,
             "observation.capture": self.observation_capture,
             "blender.inspect": self.blender_inspect,
+            "blender.benchmark": self.blender_benchmark,
             "blender.render_preview": self.blender_render_preview,
             "blender.live_start": self.blender_live_start,
             "blender.live_status": self.blender_live_status,
