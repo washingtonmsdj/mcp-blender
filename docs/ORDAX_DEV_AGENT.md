@@ -90,6 +90,15 @@ Suggested tables:
 - `ordax_dev_job_events`: append-only logs/progress
 - `ordax_dev_artifacts`: screenshots, JSON snapshots, logs and hashes
 
+Presence is lease-like rather than permanent. The local agent normally refreshes
+`last_seen_at` about every 20 seconds (including long-running job renewals).
+Migration `004_agent_presence_expiry.sql` installs a one-minute `pg_cron` job:
+if no heartbeat/renewal arrives for 90 seconds, a non-offline agent becomes
+`offline`. The row keeps `last_seen_at`, `last_job_id` and `last_error` for
+diagnosis. A database trigger also updates `updated_at` on every agent-row
+change, so presence timestamps cannot claim a row is current when it is not.
+
+
 Use RLS for client-visible tables. The agent should authenticate as a dedicated
 machine identity. Realtime can then wake the agent as new jobs arrive, with
 polling retained as a fallback.
