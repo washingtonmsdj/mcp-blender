@@ -133,16 +133,61 @@ class ObservationActions:
             raise ValueError("Unity project Assets directory is missing")
         if project.unity.get("profile") == "hordax":
             return ActionResult(False, "HORDAX already uses its dedicated companion")
+
         source = Path(__file__).parent / "assets" / "OrdaXGenericAgent.cs"
         target = project.path("Assets/OrdaX/Editor/OrdaXGenericAgent.cs", must_exist=False)
         content = source.read_bytes()
-        if target.exists() and target.read_bytes() != content:
-            return ActionResult(False, "Existing companion differs; update it through version control")
+        before = target.read_bytes() if target.is_file() else None
+
+        if before is not None and before != content:
+            try:
+                existing_text = before.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                return ActionResult(
+                    False,
+                    "Existing Unity companion is not valid UTF-8; refusing managed upgrade",
+                )
+            managed_markers = (
+                "class OrdaXGenericAgent",
+                "ordax-generic-v",
+                'namespace OrdaX',
+            )
+            if not all(marker in existing_text for marker in managed_markers):
+                return ActionResult(
+                    False,
+                    "Existing companion is not recognized as OrdaX-managed; refusing overwrite",
+                    {"path": str(target), "project": project.slug},
+                )
+
         legacy = project.root / "Assets/HORDAX/Editor/OrdaXEditorAgent.cs"
         if legacy.exists():
             return ActionResult(False, "Existing HORDAX companion detected; select the hordax profile")
+
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
-        return ActionResult(True, "Generic Unity companion installed; let Unity import the script", {
-            "path": str(target), "project": project.slug,
-        })
+        if before != content:
+            temporary = target.with_name(target.name + f".ordax-{uuid.uuid4().hex}.tmp")
+            try:
+                temporary.write_bytes(content)
+                if temporary.read_bytes() != content:
+                    raise IOError("temporary companion verification failed")
+                temporary.replace(target)
+            finally:
+                temporary.unlink(missing_ok=True)
+
+        updated = before is not None and before != content
+        installed = before is None
+        return ActionResult(
+            True,
+            "Generic Unity companion upgraded; let Unity import the script"
+            if updated
+            else "Generic Unity companion installed; let Unity import the script",
+            {
+                "path": str(target),
+                "project": project.slug,
+                "installed": installed,
+                "updated": updated,
+                "already_current": before == content,
+                "before_sha256": hashlib.sha256(before).hexdigest() if before is not None else None,
+                "sha256": hashlib.sha256(content).hexdigest(),
+            },
+        )
