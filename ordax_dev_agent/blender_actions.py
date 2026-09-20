@@ -14,6 +14,7 @@ from typing import Any
 
 from mcp_blender_unity.config import find_blender
 
+from .assets.blender_modeling_contracts import modeling_schemas, normalize_transform_fields
 from .blender_asset_sources import polyhaven_file_manifest, search_polyhaven
 from .blender_live_bridge import BlenderLiveBridge
 from .models import ActionResult
@@ -192,6 +193,21 @@ class BlenderActions:
             timeout_seconds=float(payload.get("timeout_seconds", 60)),
         )
 
+    def blender_live_modeling_schema(self, payload: dict[str, Any]) -> ActionResult:
+        return ActionResult(
+            True,
+            "Typed Blender modeling contracts",
+            {
+                "protocol_version": 9,
+                "tools": modeling_schemas(),
+                "mutation_policy": {
+                    "object_transform": "available",
+                    "create_primitive": "disabled_pending_real_blender_smoke",
+                    "add_modifier": "disabled_pending_real_blender_smoke",
+                },
+            },
+        )
+
     def blender_live_object_transform(self, payload: dict[str, Any]) -> ActionResult:
         request: dict[str, Any] = {}
         object_name = str(payload.get("object_name") or "").strip()
@@ -203,20 +219,10 @@ class BlenderActions:
         else:
             request["ordax_object_id"] = object_id
 
-        for key in ("location", "rotation_euler", "scale", "dimensions"):
-            if key not in payload:
-                continue
-            value = payload.get(key)
-            if (
-                not isinstance(value, list)
-                or len(value) != 3
-                or not all(isinstance(item, (int, float)) for item in value)
-            ):
-                return ActionResult(False, f"{key} must be a list of three numbers")
-            request[key] = [float(item) for item in value]
-
-        if not any(key in request for key in ("location", "rotation_euler", "scale", "dimensions")):
-            return ActionResult(False, "at least one transform field is required")
+        try:
+            request.update(normalize_transform_fields(payload))
+        except ValueError as error:
+            return ActionResult(False, str(error))
 
         return self._blender_live(payload).request(
             "object_transform",

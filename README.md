@@ -178,6 +178,7 @@ implementations are composed as mixins rather than accumulating in one module:
 - `assets/blender_uv_math.py` — pure deterministic UV/triangle math extracted from the Blender runtime for ordinary unit testing, including overlap area and normalized 3D→UV shape distortion.
 - `assets/blender_spatial_math.py` — pure deterministic AABB overlap/containment math used by contact auditing, independently unit-tested outside Blender.
 - `assets/blender_quality_rules.py` — pure axis/tolerance validation shared by deterministic quality gates and unit-tested without Blender.
+- `assets/blender_modeling_contracts.py` — shared typed modeling schemas and transform validation; no `bpy` dependency, packaged with the companion bundle.
 
 Moving a method into a domain module does not add an action. An operation becomes
 remotely callable only when `ActionRegistry._actions` explicitly registers it.
@@ -200,6 +201,11 @@ The visible Blender companion now exposes a richer typed perception loop:
   containment, mesh-quality and UV-quality checks. UV quality measures collapsed
   faces/triangles, out-of-tile loops, scale-invariant shape distortion and
   optional exact triangle-overlap evidence under a bounded analysis budget.
+- `blender.live_modeling_schema` — read-only typed modeling contracts. The
+  existing `blender.live_object_transform` is available and rejects non-finite,
+  boolean and invalid positive-size inputs before IPC. Primitive creation and
+  modifier insertion are intentionally advertised as `pending_blender_smoke`
+  until validated against the current Blender 5.x companion.
 - \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
 - \`blender.asset_manifest\` — provider file manifest/provenance lookup.
 

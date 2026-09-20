@@ -49,6 +49,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_object_fingerprints", result.data["actions"])
             self.assertIn("blender.live_contact_audit", result.data["actions"])
             self.assertIn("blender.live_quality_gate", result.data["actions"])
+            self.assertIn("blender.live_modeling_schema", result.data["actions"])
             self.assertIn("blender.live_object_transform", result.data["actions"])
             self.assertIn("blender.live_object_metadata", result.data["actions"])
             self.assertIn("blender.live_api_schema", result.data["actions"])
@@ -84,6 +85,87 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.reference_decision", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
+
+    def test_modeling_schema_exposes_only_transform_as_available(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute("blender.live_modeling_schema", {})
+
+            self.assertTrue(result.ok)
+            tools = result.data["tools"]
+            self.assertEqual("available", tools["object_transform"]["status"])
+            self.assertEqual(
+                "blender.live_object_transform",
+                tools["object_transform"]["action"],
+            )
+            self.assertEqual(
+                "pending_blender_smoke",
+                tools["create_primitive"]["status"],
+            )
+            self.assertEqual(
+                "pending_blender_smoke",
+                tools["add_modifier"]["status"],
+            )
+            self.assertEqual(
+                "disabled_pending_real_blender_smoke",
+                result.data["mutation_policy"]["create_primitive"],
+            )
+
+    def test_object_transform_rejects_nonfinite_boolean_and_invalid_scale(self) -> None:
+        invalid_payloads = [
+            {"object_name": "Hull", "location": [0.0, float("nan"), 0.0]},
+            {"object_name": "Hull", "rotation_euler": [0.0, True, 0.0]},
+            {"object_name": "Hull", "scale": [1.0, 0.0, 1.0]},
+            {"object_name": "Hull", "scale": [1.0, float("inf"), 1.0]},
+            {"object_name": "Hull", "dimensions": [1.0, -0.1, 1.0]},
+        ]
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                for payload in invalid_payloads:
+                    with self.subTest(payload=payload):
+                        result = registry.execute(
+                            "blender.live_object_transform",
+                            payload,
+                        )
+                        self.assertFalse(result.ok)
+                live.assert_not_called()
+
+    def test_object_transform_normalizes_valid_numeric_values(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.execute(
+                    "blender.live_object_transform",
+                    {
+                        "object_name": "Hull",
+                        "location": [1, 2.5, -3],
+                        "scale": [1, 2, 1],
+                    },
+                )
+
+            self.assertTrue(result.ok)
+            self.assertEqual("object_transform", result.data["operation"])
+            self.assertEqual([1.0, 2.5, -3.0], result.data["payload"]["location"])
+            self.assertEqual([1.0, 2.0, 1.0], result.data["payload"]["scale"])
 
     def test_quality_gate_rejects_model_supplied_completion_claim(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
