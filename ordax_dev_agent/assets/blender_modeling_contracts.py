@@ -10,6 +10,11 @@ import math
 from typing import Any
 
 
+MAX_MODIFIER_STACK = 8
+MAX_EVALUATED_FACES = 200000
+MAX_PROJECTED_SUBSURF_FACES = 500000
+
+
 MODELING_SCHEMAS = {
     "create_primitive": {
         "status": "pending_blender_smoke",
@@ -50,6 +55,11 @@ MODELING_SCHEMAS = {
     },
     "add_modifier": {
         "status": "pending_blender_smoke",
+        "runtime_guards": {
+            "max_modifier_stack": MAX_MODIFIER_STACK,
+            "max_evaluated_faces": MAX_EVALUATED_FACES,
+            "max_projected_subsurf_faces": MAX_PROJECTED_SUBSURF_FACES,
+        },
         "description": (
             "Planned typed modifier insertion. Not remotely executable until "
             "the current Blender companion implementation passes a real Blender smoke."
@@ -376,6 +386,70 @@ def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
     return arguments
 
 
+def evaluate_modifier_runtime_budget(
+    *,
+    modifier_type: Any,
+    modifier_count: Any,
+    evaluated_faces: Any,
+    levels: Any = 1,
+) -> dict[str, Any]:
+    normalized_type = str(modifier_type or "").strip().upper()
+    if normalized_type not in {"BEVEL", "SUBSURF", "SOLIDIFY", "MIRROR"}:
+        raise ValueError(
+            "modifier_type must be BEVEL, SUBSURF, SOLIDIFY, or MIRROR"
+        )
+    count = _bounded_number(
+        modifier_count,
+        "modifier_count",
+        0,
+        MAX_MODIFIER_STACK,
+        integer=True,
+    )
+    faces = _bounded_number(
+        evaluated_faces,
+        "evaluated_faces",
+        0,
+        1000000000,
+        integer=True,
+    )
+    normalized_levels = 1
+    if normalized_type == "SUBSURF":
+        normalized_levels = _bounded_number(
+            levels,
+            "levels",
+            0,
+            2,
+            integer=True,
+        )
+
+    reasons: list[str] = []
+    if count >= MAX_MODIFIER_STACK:
+        reasons.append("modifier stack limit reached")
+    if faces > MAX_EVALUATED_FACES:
+        reasons.append("evaluated mesh exceeds interactive face budget")
+
+    projected_faces = int(faces)
+    if normalized_type == "SUBSURF":
+        projected_faces = int(faces * (4 ** int(normalized_levels)))
+        if projected_faces > MAX_PROJECTED_SUBSURF_FACES:
+            reasons.append("projected SUBSURF mesh exceeds interactive face budget")
+
+    return {
+        "allowed": not reasons,
+        "modifier_type": normalized_type,
+        "modifier_count": int(count),
+        "evaluated_faces": int(faces),
+        "levels": int(normalized_levels) if normalized_type == "SUBSURF" else None,
+        "projected_faces": projected_faces,
+        "limits": {
+            "max_modifier_stack": MAX_MODIFIER_STACK,
+            "max_evaluated_faces": MAX_EVALUATED_FACES,
+            "max_projected_subsurf_faces": MAX_PROJECTED_SUBSURF_FACES,
+        },
+        "reasons": reasons,
+    }
+
+
 def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("modeling payload must be an object")
@@ -394,7 +468,7 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
 
     schema = MODELING_SCHEMAS[normalized_operation]
     executable = schema["status"] == "available"
-    return {
+    result = {
         "operation": normalized_operation,
         "status": schema["status"],
         "executable": executable,
@@ -402,3 +476,6 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         "requires_real_blender_smoke": not executable,
         "arguments": arguments,
     }
+    if "runtime_guards" in schema:
+        result["runtime_guards"] = copy.deepcopy(schema["runtime_guards"])
+    return result
