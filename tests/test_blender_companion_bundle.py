@@ -23,6 +23,20 @@ def load_spatial_math():
     return module
 
 
+def load_quality_rules():
+    root = Path(__file__).resolve().parents[1]
+    path = root / "ordax_dev_agent" / "assets" / "blender_quality_rules.py"
+    spec = importlib.util.spec_from_file_location(
+        "_test_ordax_blender_quality_rules",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not load Blender quality rules helper")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_uv_math():
     root = Path(__file__).resolve().parents[1]
     path = root / "ordax_dev_agent" / "assets" / "blender_uv_math.py"
@@ -112,6 +126,7 @@ class BlenderCompanionBundleTests(unittest.TestCase):
                 "blender_live_companion.py",
                 "blender_uv_math.py",
                 "blender_spatial_math.py",
+                "blender_quality_rules.py",
             ],
             manifest["files"],
         )
@@ -145,6 +160,37 @@ class BlenderSpatialMathTests(unittest.TestCase):
         complete = {"aabb_min": [0, 0, 0], "aabb_max": [1, 1, 1]}
         self.assertFalse(self.spatial.aabb_overlap({}, complete))
         self.assertFalse(self.spatial.aabb_contains(complete, {}))
+
+
+class BlenderQualityRuleTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rules = load_quality_rules()
+
+    def test_quality_axis_normalizes_case_and_whitespace(self) -> None:
+        self.assertEqual(("x", 0), self.rules.quality_axis(" X ", "axis"))
+        self.assertEqual(("z", 2), self.rules.quality_axis("z", "axis"))
+
+    def test_quality_axis_rejects_unknown_axis(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be one of x, y, z"):
+            self.rules.quality_axis("w", "axis")
+
+    def test_quality_tolerance_uses_default(self) -> None:
+        self.assertEqual(0.02, self.rules.quality_tolerance({}, default=0.02))
+
+    def test_quality_tolerance_accepts_numeric_strings(self) -> None:
+        self.assertEqual(
+            0.125,
+            self.rules.quality_tolerance({"tolerance": "0.125"}),
+        )
+
+    def test_quality_tolerance_rejects_invalid_or_out_of_range_values(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be a number"):
+            self.rules.quality_tolerance({"tolerance": "bad"})
+        with self.assertRaisesRegex(ValueError, "between 0 and 1000000"):
+            self.rules.quality_tolerance({"tolerance": -0.1})
+        with self.assertRaisesRegex(ValueError, "between 0 and 1000000"):
+            self.rules.quality_tolerance({"tolerance": 1000000.1})
 
 
 class BlenderUvMathTests(unittest.TestCase):
