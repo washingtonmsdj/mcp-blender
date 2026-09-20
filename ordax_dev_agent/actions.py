@@ -100,6 +100,7 @@ class ActionRegistry(
             "unity.physics_audit": self.unity_physics_audit,
             "unity.benchmark_islands_generate": self.unity_benchmark_islands_generate,
             "agent.status": self.agent_status,
+            "agent.resilience_status": self.agent_resilience_status,
             "agent.update": self.agent_update,
             "agent.self_test": self.agent_self_test,
             "artifact.preview": self.artifact_preview,
