@@ -38,7 +38,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
         run: |
-          git fetch --quiet origin main
+          git fetch --quiet origin "refs/heads/main:refs/remotes/origin/main"
           if ($LASTEXITCODE -ne 0) {
             throw "Could not fetch origin/main for freshness check."
           }
@@ -156,7 +156,7 @@ jobs:
             throw "Could not read managed agent HEAD."
           }
 
-          git -c core.fsmonitor=false -C $repo fetch --quiet origin $branch
+          git -c core.fsmonitor=false -C $repo fetch --quiet origin "refs/heads/$branch:refs/remotes/origin/$branch"
           if ($LASTEXITCODE -ne 0) {
             throw "Could not fetch agent recovery branch."
           }
