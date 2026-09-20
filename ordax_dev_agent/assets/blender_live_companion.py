@@ -47,7 +47,45 @@ def _args():
     return parser.parse_args(argv)
 
 
-COMPANION_FINGERPRINT = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+def _companion_bundle_fingerprint() -> str:
+    root = Path(__file__).resolve().parent
+    manifest_path = (root / "blender_companion_bundle.json").resolve()
+    if not manifest_path.is_relative_to(root):
+        raise RuntimeError("Blender companion bundle manifest escaped asset root")
+
+    data = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    if not isinstance(data, dict) or data.get("version") != 1:
+        raise RuntimeError("Blender companion bundle manifest version is invalid")
+    raw_files = data.get("files")
+    if (
+        not isinstance(raw_files, list)
+        or not raw_files
+        or len(raw_files) > 32
+        or not all(isinstance(name, str) and name.strip() for name in raw_files)
+    ):
+        raise RuntimeError("Blender companion bundle files are invalid")
+
+    names = [name.strip().replace("\\", "/") for name in raw_files]
+    if len(set(names)) != len(names):
+        raise RuntimeError("Blender companion bundle files must be unique")
+
+    digest = hashlib.sha256()
+    digest.update(b"ordax-blender-companion-bundle\0")
+    digest.update(b"1\0")
+    for name in sorted(names):
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise RuntimeError(f"invalid Blender companion bundle path: {name}")
+        path = (root / relative).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            raise RuntimeError(f"Blender companion bundle file missing: {name}")
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
+
+
+COMPANION_FINGERPRINT = _companion_bundle_fingerprint()
 
 CFG = _args()
 CONTROL_ROOT = Path(CFG.ordax_control_root).resolve()
