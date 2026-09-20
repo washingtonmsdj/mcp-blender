@@ -8,7 +8,7 @@ from typing import Any
 from .blender_live_bridge import BlenderLiveBridge
 from .models import ActionResult
 from .process_runner import run_command as _run
-from .update_policy import managed_repo_clean_check
+from .update_policy import install_contract_changed, managed_repo_clean_check
 from .versioning import component_versions
 
 
@@ -252,33 +252,49 @@ class AgentActions:
         dependency_refresh = False
 
         if before_head and after_head and before_head != after_head:
-            dependency_diff = subprocess.run(
-                [
-                    *git,
-                    "diff",
-                    "--quiet",
-                    before_head,
-                    after_head,
-                    "--",
-                    "pyproject.toml",
-                ],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=30,
-                shell=False,
-            )
-            if dependency_diff.returncode == 1:
-                dependency_refresh = True
-            elif dependency_diff.returncode not in (0, 1):
+            def pyproject_at(commit: str) -> tuple[str | None, str | None]:
+                try:
+                    completed = subprocess.run(
+                        [*git, "show", f"{commit}:pyproject.toml"],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=30,
+                        shell=False,
+                    )
+                except subprocess.TimeoutExpired as error:
+                    return None, f"timed out after {error.timeout} seconds"
+                if completed.returncode != 0:
+                    return None, completed.stderr[-4000:]
+                return completed.stdout, None
+
+            before_pyproject, before_error = pyproject_at(before_head)
+            after_pyproject, after_error = pyproject_at(after_head)
+            if (
+                before_error
+                or after_error
+                or before_pyproject is None
+                or after_pyproject is None
+            ):
                 return ActionResult(
                     False,
-                    "could not determine whether agent dependencies changed",
+                    "could not inspect agent install contract",
                     {
-                        "returncode": dependency_diff.returncode,
-                        "stderr": dependency_diff.stderr[-4000:],
+                        "before_error": before_error,
+                        "after_error": after_error,
                     },
+                )
+            try:
+                dependency_refresh = install_contract_changed(
+                    before_pyproject,
+                    after_pyproject,
+                )
+            except ValueError as error:
+                return ActionResult(
+                    False,
+                    "could not parse agent install contract",
+                    {"error": str(error)},
                 )
 
         if dependency_refresh:
@@ -297,6 +313,7 @@ class AgentActions:
                 "head": after_head,
                 "restart_required": True,
                 "dependencies_refreshed": dependency_refresh,
+                "install_contract_changed": dependency_refresh,
                 "tracked_check": "index-object-hash+index-tree-hash",
             },
         )
