@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+import os
 from pathlib import Path
 from typing import Any
 
@@ -80,4 +81,150 @@ def staged_index_check(
         "index_tree": index_sha,
         "head_tree": head_sha,
         "method": "index-tree-hash",
+    }
+
+def tracked_worktree_check(
+    repo: str | Path,
+    *,
+    timeout: int = 60,
+) -> dict[str, Any]:
+    """Compare tracked worktree content with the index without refreshing it."""
+    root = Path(repo).resolve()
+    git = ["git", "-c", "core.fsmonitor=false", "-C", str(root)]
+
+    try:
+        listed = subprocess.run(
+            [*git, "ls-files", "--stage", "-z"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            shell=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        return {
+            "ok": False,
+            "clean": False,
+            "error": f"tracked file listing timed out after {error.timeout} seconds",
+        }
+
+    if listed.returncode != 0:
+        return {
+            "ok": False,
+            "clean": False,
+            "returncode": listed.returncode,
+            "error": listed.stderr.decode("utf-8", errors="replace")[-4000:],
+        }
+
+    paths: list[bytes] = []
+    expected: list[bytes] = []
+    changed_paths: list[str] = []
+    unsupported_paths: list[str] = []
+
+    for record in listed.stdout.split(b"\0"):
+        if not record:
+            continue
+        try:
+            metadata, raw_path = record.split(b"\t", 1)
+            mode, object_id, stage = metadata.split(b" ", 2)
+        except ValueError:
+            return {
+                "ok": False,
+                "clean": False,
+                "error": "could not parse git ls-files --stage output",
+            }
+
+        display_path = os.fsdecode(raw_path)
+        if stage != b"0":
+            changed_paths.append(display_path)
+            continue
+        if mode not in {b"100644", b"100755"}:
+            unsupported_paths.append(display_path)
+            continue
+        if b"\n" in raw_path or b"\r" in raw_path:
+            unsupported_paths.append(display_path)
+            continue
+
+        candidate = root / display_path
+        if not candidate.is_file():
+            changed_paths.append(display_path)
+            continue
+
+        paths.append(raw_path)
+        expected.append(object_id.lower())
+
+    if unsupported_paths:
+        return {
+            "ok": False,
+            "clean": False,
+            "error": "tracked worktree contains unsupported path modes/names",
+            "unsupported_paths": unsupported_paths[:100],
+        }
+
+    if changed_paths:
+        return {
+            "ok": True,
+            "clean": False,
+            "changed_paths": sorted(set(changed_paths))[:200],
+            "method": "index-object-hash",
+        }
+
+    if not paths:
+        return {
+            "ok": True,
+            "clean": True,
+            "changed_paths": [],
+            "tracked_files": 0,
+            "method": "index-object-hash",
+        }
+
+    input_paths = b"\n".join(paths) + b"\n"
+    try:
+        hashed = subprocess.run(
+            [*git, "hash-object", "--stdin-paths"],
+            input=input_paths,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            shell=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        return {
+            "ok": False,
+            "clean": False,
+            "error": f"tracked file hashing timed out after {error.timeout} seconds",
+        }
+
+    if hashed.returncode != 0:
+        return {
+            "ok": False,
+            "clean": False,
+            "returncode": hashed.returncode,
+            "error": hashed.stderr.decode("utf-8", errors="replace")[-4000:],
+        }
+
+    actual = [
+        line.strip().lower()
+        for line in hashed.stdout.splitlines()
+        if line.strip()
+    ]
+    if len(actual) != len(expected):
+        return {
+            "ok": False,
+            "clean": False,
+            "error": "tracked file hash count did not match index entry count",
+            "expected_count": len(expected),
+            "actual_count": len(actual),
+        }
+
+    for raw_path, expected_id, actual_id in zip(paths, expected, actual):
+        if expected_id != actual_id:
+            changed_paths.append(os.fsdecode(raw_path))
+
+    return {
+        "ok": True,
+        "clean": not changed_paths,
+        "changed_paths": sorted(set(changed_paths))[:200],
+        "tracked_files": len(paths),
+        "method": "index-object-hash",
     }
