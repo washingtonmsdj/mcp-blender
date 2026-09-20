@@ -192,6 +192,22 @@ class ProjectTests(unittest.TestCase):
         self.assertFalse(list(bridge.inbox.glob('*.json')))
 
 
+    def test_unity_editor_status_is_observational_and_never_nudges(self):
+        registry = ActionRegistry(self.config)
+        editor = Mock()
+        editor.status.return_value = {
+            "project_appears_open": True,
+            "presence_fresh": False,
+        }
+
+        with patch.object(registry, "_editor", return_value=editor):
+            result = registry.unity_editor_status({"project": "model"})
+
+        self.assertFalse(result.ok)
+        self.assertEqual("Unity Editor companion not ready", result.summary)
+        editor.status.assert_called_once_with()
+        editor.nudge_companion.assert_not_called()
+
     def test_unity_refresh_prefers_typed_companion_without_foreground_helper(self):
         registry = ActionRegistry(self.config)
         presence = self.root / "editor-presence.json"
