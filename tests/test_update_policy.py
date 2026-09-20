@@ -5,7 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ordax_dev_agent.update_policy import staged_index_check
+from ordax_dev_agent.update_policy import (
+    managed_repo_clean_check,
+    staged_index_check,
+    tracked_worktree_check,
+)
 
 
 def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -56,6 +60,41 @@ class StagedIndexCheckTests(unittest.TestCase):
             result = staged_index_check(repo)
         self.assertTrue(result["ok"])
         self.assertTrue(result["clean"])
+
+    def test_tracked_worktree_hash_detects_unstaged_change(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            repo = self.make_repo(Path(raw))
+            clean = tracked_worktree_check(repo)
+            self.assertTrue(clean["ok"])
+            self.assertTrue(clean["clean"])
+
+            (repo / "tracked.txt").write_text("two\n", encoding="utf-8")
+            changed = tracked_worktree_check(repo)
+
+        self.assertTrue(changed["ok"])
+        self.assertFalse(changed["clean"])
+        self.assertIn("tracked.txt", changed["changed_paths"])
+        self.assertEqual("index-object-hash", changed["method"])
+
+    def test_managed_repo_clean_check_combines_both_guards(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            repo = self.make_repo(Path(raw))
+            clean = managed_repo_clean_check(repo)
+            self.assertTrue(clean["ok"])
+            self.assertTrue(clean["clean"])
+            self.assertEqual(
+                "index-object-hash+index-tree-hash",
+                clean["method"],
+            )
+
+            (repo / "tracked.txt").write_text("two\n", encoding="utf-8")
+            git(repo, "add", "tracked.txt")
+            staged = managed_repo_clean_check(repo)
+
+        self.assertTrue(staged["ok"])
+        self.assertFalse(staged["clean"])
+        self.assertTrue(staged["worktree"]["clean"])
+        self.assertFalse(staged["staged"]["clean"])
 
     def test_unmerged_index_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
