@@ -77,6 +77,9 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.asset_search", result.data["actions"])
             self.assertIn("blender.asset_manifest", result.data["actions"])
             self.assertIn("blender.multiview_compare", result.data["actions"])
+            self.assertIn("project.references", result.data["actions"])
+            self.assertIn("project.reference_images", result.data["actions"])
+            self.assertIn("blender.reference_review", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
