@@ -48,6 +48,7 @@ class ActionRegistry(
             "project.reference_images": self.project_reference_images,
             "project.text_read": self.project_text_read,
             "project.text_write": self.project_text_write,
+            "project.text_patch": self.project_text_patch,
             "observation.capture": self.observation_capture,
             "blender.inspect": self.blender_inspect,
             "blender.benchmark": self.blender_benchmark,
