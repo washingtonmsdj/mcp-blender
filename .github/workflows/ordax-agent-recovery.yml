@@ -159,16 +159,17 @@ jobs:
             }
           }
 
-          git -c core.fsmonitor=false -C $repo diff-files --quiet --
-          if ($LASTEXITCODE -gt 1) { throw "Could not check managed agent unstaged changes." }
-          if ($LASTEXITCODE -eq 1) {
-            throw "Managed agent has unstaged tracked changes. Recovery refuses to overwrite them."
+          $venvPython = Join-Path $repo ".venv\Scripts\python.exe"
+          if (-not (Test-Path $venvPython)) {
+            throw "Managed agent virtual environment is missing: $venvPython"
           }
 
-          git -c core.fsmonitor=false -C $repo diff-index --cached --quiet HEAD --
-          if ($LASTEXITCODE -gt 1) { throw "Could not check managed agent staged changes." }
+          & $venvPython -m ordax_dev_agent.update_policy --check-clean $repo | Write-Host
+          if ($LASTEXITCODE -gt 1) {
+            throw "Could not verify managed agent tracked changes."
+          }
           if ($LASTEXITCODE -eq 1) {
-            throw "Managed agent has staged tracked changes. Recovery refuses to overwrite them."
+            throw "Managed agent has tracked changes. Recovery refuses to overwrite them."
           }
 
           git -c core.fsmonitor=false -C $repo fetch --quiet origin $branch
@@ -183,11 +184,6 @@ jobs:
           git -c core.fsmonitor=false -C $repo merge --ff-only --quiet "origin/$branch"
           if ($LASTEXITCODE -ne 0) {
             throw "Managed agent is not fast-forwardable. Recovery stopped without force."
-          }
-
-          $venvPython = Join-Path $repo ".venv\Scripts\python.exe"
-          if (-not (Test-Path $venvPython)) {
-            throw "Managed agent virtual environment is missing: $venvPython"
           }
 
           & $venvPython -m compileall -q (Join-Path $repo "mcp_blender_unity") (Join-Path $repo "ordax_dev_agent")
