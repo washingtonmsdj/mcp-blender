@@ -3298,117 +3298,240 @@ def _run_modeling_smoke_fixture() -> dict:
             f"modeling smoke requires object in scene: {object_name}"
         )
 
-    positive_id = "smoke-model-transform"
-    positive_path = INBOX / f"{positive_id}.json"
-    _write_json_atomic(
-        positive_path,
-        {
-            "id": positive_id,
-            "operation": "object_transform",
-            "object_name": object_name,
-            "location": [1.25, -0.5, 0.75],
-            "rotation_euler": [0.0, 0.0, 0.25],
-            "scale": [1.0, 1.25, 0.75],
-        },
-    )
-    _process(positive_path)
-
-    positive_result_path = RESULTS / f"{positive_id}.json"
-    if not positive_result_path.is_file():
-        raise RuntimeError(
-            "modeling smoke positive control did not create a durable result"
-        )
-    positive = json.loads(
-        positive_result_path.read_text(encoding="utf-8-sig")
-    )
-    if not bool(positive.get("ok")):
-        raise RuntimeError(
-            "modeling smoke positive control failed: "
-            + str(positive.get("summary") or "unknown failure")
-        )
-
-    transformed = positive.get("object") or {}
     expected_location = [1.25, -0.5, 0.75]
     expected_scale = [1.0, 1.25, 0.75]
-    if transformed.get("location") != expected_location:
-        raise RuntimeError(
-            "modeling smoke location mismatch: "
-            + repr(transformed.get("location"))
-        )
-    if transformed.get("scale") != expected_scale:
-        raise RuntimeError(
-            "modeling smoke scale mismatch: "
-            + repr(transformed.get("scale"))
-        )
-
-    invalid_id = "smoke-model-invalid"
-    invalid_path = INBOX / f"{invalid_id}.json"
-    _write_json_atomic(
-        invalid_path,
-        {
-            "id": invalid_id,
-            "operation": "object_transform",
-            "object_name": object_name,
-            "scale": [1.0, 0.0, 1.0],
-        },
-    )
-    _process(invalid_path)
-
-    invalid_result_path = RESULTS / f"{invalid_id}.json"
-    if not invalid_result_path.is_file():
-        raise RuntimeError(
-            "modeling smoke negative control did not create a durable result"
-        )
-    invalid = json.loads(
-        invalid_result_path.read_text(encoding="utf-8-sig")
-    )
-    if bool(invalid.get("ok")):
-        raise RuntimeError(
-            "modeling smoke negative control was incorrectly accepted"
-        )
-
-    current = _object_details(obj)
-    if current.get("location") != expected_location:
-        raise RuntimeError(
-            "negative modeling smoke changed object location unexpectedly"
-        )
-    if current.get("scale") != expected_scale:
-        raise RuntimeError(
-            "negative modeling smoke changed object scale unexpectedly"
-        )
-
-    trajectory_ids = set()
-    if TRAJECTORY.is_file():
-        for line in TRAJECTORY.read_text(encoding="utf-8-sig").splitlines():
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            identifier = str(entry.get("id") or "")
-            if identifier:
-                trajectory_ids.add(identifier)
-
-    missing = sorted(
-        {positive_id, invalid_id} - trajectory_ids
-    )
-    if missing:
-        raise RuntimeError(
-            "modeling smoke dispatcher did not journal command(s): "
-            + ", ".join(missing)
-        )
-
-    return {
-        "positive_control": True,
-        "negative_control_detected": True,
-        "dispatcher_journaled": True,
-        "object_name": object_name,
-        "location": current.get("location"),
-        "scale": current.get("scale"),
-        "positive_result": str(positive_result_path),
-        "negative_result": str(invalid_result_path),
+    smoke_ids = {
+        "transform": "smoke-model-transform",
+        "transform_invalid": "smoke-model-invalid",
+        "create": "smoke-model-create",
+        "create_duplicate": "smoke-model-create-duplicate",
+        "modifier": "smoke-model-modifier",
+        "modifier_duplicate": "smoke-model-modifier-duplicate",
     }
+    result_paths = {
+        key: RESULTS / f"{identifier}.json"
+        for key, identifier in smoke_ids.items()
+    }
+    temporary_name = "SmokePrimitive"
+    summaries = {}
+
+    if bpy.context.scene.objects.get(temporary_name) is not None:
+        raise RuntimeError(
+            f"modeling smoke temporary object already exists: {temporary_name}"
+        )
+
+    try:
+        transform_path = INBOX / f"{smoke_ids['transform']}.json"
+        _write_json_atomic(
+            transform_path,
+            {
+                "id": smoke_ids["transform"],
+                "operation": "object_transform",
+                "object_name": object_name,
+                "location": expected_location,
+                "rotation_euler": [0.0, 0.0, 0.25],
+                "scale": expected_scale,
+            },
+        )
+        _process(transform_path)
+
+        invalid_transform_path = INBOX / f"{smoke_ids['transform_invalid']}.json"
+        _write_json_atomic(
+            invalid_transform_path,
+            {
+                "id": smoke_ids["transform_invalid"],
+                "operation": "object_transform",
+                "object_name": object_name,
+                "scale": [1.0, 0.0, 1.0],
+            },
+        )
+        _process(invalid_transform_path)
+
+        create_path = INBOX / f"{smoke_ids['create']}.json"
+        _write_json_atomic(
+            create_path,
+            {
+                "id": smoke_ids["create"],
+                "operation": "__smoke_create_primitive",
+                "name": temporary_name,
+                "primitive": "cube",
+                "location": [3.0, 0.0, 0.0],
+                "size": 0.5,
+            },
+        )
+        _process(create_path)
+
+        duplicate_create_path = INBOX / f"{smoke_ids['create_duplicate']}.json"
+        _write_json_atomic(
+            duplicate_create_path,
+            {
+                "id": smoke_ids["create_duplicate"],
+                "operation": "__smoke_create_primitive",
+                "name": temporary_name,
+                "primitive": "cube",
+                "size": 0.25,
+            },
+        )
+        _process(duplicate_create_path)
+
+        modifier_path = INBOX / f"{smoke_ids['modifier']}.json"
+        _write_json_atomic(
+            modifier_path,
+            {
+                "id": smoke_ids["modifier"],
+                "operation": "__smoke_add_modifier",
+                "object_name": temporary_name,
+                "name": "SmokeBevel",
+                "type": "BEVEL",
+                "width": 0.05,
+                "segments": 2,
+            },
+        )
+        _process(modifier_path)
+
+        duplicate_modifier_path = INBOX / f"{smoke_ids['modifier_duplicate']}.json"
+        _write_json_atomic(
+            duplicate_modifier_path,
+            {
+                "id": smoke_ids["modifier_duplicate"],
+                "operation": "__smoke_add_modifier",
+                "object_name": temporary_name,
+                "name": "SmokeBevel",
+                "type": "BEVEL",
+                "width": 0.02,
+                "segments": 1,
+            },
+        )
+        _process(duplicate_modifier_path)
+
+        for key, result_path in result_paths.items():
+            if not result_path.is_file():
+                raise RuntimeError(
+                    f"modeling smoke did not create durable result for {key}"
+                )
+            summaries[key] = json.loads(
+                result_path.read_text(encoding="utf-8-sig")
+            )
+
+        if not bool(summaries["transform"].get("ok")):
+            raise RuntimeError(
+                "modeling transform positive control failed: "
+                + str(summaries["transform"].get("summary") or "unknown failure")
+            )
+        if bool(summaries["transform_invalid"].get("ok")):
+            raise RuntimeError(
+                "modeling transform negative control was incorrectly accepted"
+            )
+        if not bool(summaries["create"].get("ok")):
+            raise RuntimeError(
+                "primitive creation smoke failed: "
+                + str(summaries["create"].get("summary") or "unknown failure")
+            )
+        if bool(summaries["create_duplicate"].get("ok")):
+            raise RuntimeError(
+                "duplicate primitive name was incorrectly accepted"
+            )
+        if not bool(summaries["modifier"].get("ok")):
+            raise RuntimeError(
+                "modifier insertion smoke failed: "
+                + str(summaries["modifier"].get("summary") or "unknown failure")
+            )
+        if bool(summaries["modifier_duplicate"].get("ok")):
+            raise RuntimeError(
+                "duplicate modifier name was incorrectly accepted"
+            )
+
+        transformed = summaries["transform"].get("object") or {}
+        if transformed.get("location") != expected_location:
+            raise RuntimeError(
+                "modeling smoke location mismatch: "
+                + repr(transformed.get("location"))
+            )
+        if transformed.get("scale") != expected_scale:
+            raise RuntimeError(
+                "modeling smoke scale mismatch: "
+                + repr(transformed.get("scale"))
+            )
+
+        current = _object_details(obj)
+        if current.get("location") != expected_location:
+            raise RuntimeError(
+                "negative modeling smoke changed object location unexpectedly"
+            )
+        if current.get("scale") != expected_scale:
+            raise RuntimeError(
+                "negative modeling smoke changed object scale unexpectedly"
+            )
+
+        created = summaries["create"].get("object") or {}
+        if created.get("name") != temporary_name or created.get("type") != "MESH":
+            raise RuntimeError(
+                "created primitive identity/type mismatch: " + repr(created)
+            )
+        if (created.get("mesh") or {}).get("vertices") != 8:
+            raise RuntimeError(
+                "created cube did not expose the expected 8 vertices"
+            )
+
+        modified = summaries["modifier"].get("object") or {}
+        modifiers = modified.get("modifiers") or []
+        if not any(
+            item.get("name") == "SmokeBevel" and item.get("type") == "BEVEL"
+            for item in modifiers
+        ):
+            raise RuntimeError(
+                "smoke BEVEL modifier is missing from object details"
+            )
+        budget = summaries["modifier"].get("runtime_budget") or {}
+        if not bool(budget.get("allowed")):
+            raise RuntimeError(
+                "smoke modifier unexpectedly exceeded runtime budget"
+            )
+
+        trajectory_ids = set()
+        if TRAJECTORY.is_file():
+            for line in TRAJECTORY.read_text(encoding="utf-8-sig").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                identifier = str(entry.get("id") or "")
+                if identifier:
+                    trajectory_ids.add(identifier)
+
+        missing = sorted(set(smoke_ids.values()) - trajectory_ids)
+        if missing:
+            raise RuntimeError(
+                "modeling smoke dispatcher did not journal command(s): "
+                + ", ".join(missing)
+            )
+
+        return {
+            "transform_positive": True,
+            "transform_negative_detected": True,
+            "create_positive": True,
+            "create_duplicate_detected": True,
+            "modifier_positive": True,
+            "modifier_duplicate_detected": True,
+            "dispatcher_journaled": True,
+            "object_name": object_name,
+            "location": current.get("location"),
+            "scale": current.get("scale"),
+            "results": {
+                key: str(path)
+                for key, path in result_paths.items()
+            },
+        }
+    finally:
+        temporary = bpy.context.scene.objects.get(temporary_name)
+        if temporary is not None:
+            mesh = temporary.data if temporary.type == "MESH" else None
+            bpy.data.objects.remove(temporary, do_unlink=True)
+            if mesh is not None and getattr(mesh, "users", 0) == 0:
+                bpy.data.meshes.remove(mesh)
+            bpy.context.view_layer.update()
 
 
 for stale in INFLIGHT.glob("*.json"):
