@@ -433,7 +433,7 @@ class ActionRegistry(ObservationActions):
         if not (repo / ".git").is_dir():
             return ActionResult(False, f"managed agent repository not found: {repo}")
 
-        branch = "feat/ordax-dev-agent"
+        branch = "main"
         git = ["git", "-c", "core.fsmonitor=false", "-C", str(repo)]
 
         def quiet_check(args: list[str], *, timeout: int = 20) -> tuple[int, str]:
