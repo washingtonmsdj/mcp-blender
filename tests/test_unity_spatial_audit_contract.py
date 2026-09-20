@@ -26,6 +26,12 @@ class UnitySpatialAuditContractTests(unittest.TestCase):
             "nonFiniteTransformCount",
             "invertedRootCount",
             "cameraInsideColliderCount",
+            "cameraBoundsContainingColliderCount",
+            "cameraInsideColliderNames",
+            "cameraBoundsContainingColliderNames",
+            "cameraGroundDistance",
+            "cameraGroundPoint",
+            "cameraGroundCollider",
             "cameraBelowRenderBounds",
             "renderBoundsCenter",
             "renderBoundsSize",
@@ -36,7 +42,10 @@ class UnitySpatialAuditContractTests(unittest.TestCase):
             self.assertIn(expected, source)
 
         self.assertIn("renderer.bounds", source)
-        self.assertIn("collider.bounds.Contains(camera.transform.position)", source)
+        self.assertIn("collider.bounds.Contains(cameraPosition)", source)
+        self.assertIn("collider.ClosestPoint(cameraPosition)", source)
+        self.assertIn("Physics.RaycastAll(", source)
+        self.assertIn("QueryTriggerInteraction.Ignore", source)
         self.assertIn("Vector3.Dot(transform.up, Vector3.up)", source)
 
     def test_registry_routes_spatial_audit_to_live_unity_companion(self) -> None:
