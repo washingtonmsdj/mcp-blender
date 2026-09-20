@@ -12,13 +12,55 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             root / ".github" / "workflows" / "ordax-agent-recovery.yml"
         ).read_text(encoding="utf-8")
 
+        self.assertIn(
+            "ordax_dev_agent.update_policy --check-clean",
+            launcher,
+        )
+        self.assertIn(
+            '$policyScript = Join-Path $env:GITHUB_WORKSPACE '
+            '"ordax_dev_agent\\update_policy.py"',
+            recovery,
+        )
+        self.assertIn('"--check-clean"', recovery)
+        self.assertIn('"--compare-install-contract"', recovery)
+        self.assertNotIn(
+            "$venvPython -m ordax_dev_agent.update_policy",
+            recovery,
+        )
         for text in (launcher, recovery):
-            self.assertIn(
-                "ordax_dev_agent.update_policy --check-clean",
-                text,
-            )
             self.assertNotIn("diff-files --quiet", text)
             self.assertNotIn("diff-index --cached", text)
+
+    def test_recovery_updates_only_idle_fast_forwardable_agent(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        recovery = (
+            root / ".github" / "workflows" / "ordax-agent-recovery.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "merge-base --is-ancestor $beforeHead $remoteHead",
+            recovery,
+        )
+        self.assertIn(
+            '$activeState -eq "busy" -and -not $explicitRecovery',
+            recovery,
+        )
+        self.assertIn(
+            "update deferred without interruption",
+            recovery,
+        )
+        self.assertIn(
+            "performing safe maintenance update",
+            recovery,
+        )
+        self.assertIn(
+            "if ($installContractChanged)",
+            recovery,
+        )
+        self.assertIn(
+            "& $venvPython -m pip install -e $repo",
+            recovery,
+        )
 
     def test_launcher_control_flow_is_structurally_intact(self) -> None:
         root = Path(__file__).resolve().parents[1]
