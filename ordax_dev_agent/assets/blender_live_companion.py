@@ -131,6 +131,8 @@ _MODELING_CONTRACTS = _load_companion_asset_module(
     "_ordax_blender_modeling_contracts",
 )
 _normalize_transform_request = _MODELING_CONTRACTS.normalize_transform_request
+_plan_modeling_operation = _MODELING_CONTRACTS.plan_modeling_operation
+_evaluate_modifier_runtime_budget = _MODELING_CONTRACTS.evaluate_modifier_runtime_budget
 
 CFG = _args()
 CONTROL_ROOT = Path(CFG.ordax_control_root).resolve()
@@ -935,6 +937,184 @@ def _object_transform(command: dict) -> None:
         before=before,
         object=_object_details(obj),
     )
+
+
+def _modeling_runtime_preconditions() -> None:
+    if bpy.context.mode != "OBJECT":
+        raise ValueError("modeling requires Object Mode")
+    if bpy.app.is_job_running("RENDER"):
+        raise ValueError("modeling requires no running render job")
+
+
+def _modeling_plan_from_command(operation: str, command: dict) -> dict:
+    payload = {
+        key: value
+        for key, value in command.items()
+        if key not in {"id", "operation"}
+    }
+    return _plan_modeling_operation(operation, payload)
+
+
+def _modeling_create_primitive_unregistered(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        _modeling_runtime_preconditions()
+        plan = _modeling_plan_from_command("create_primitive", command)
+        arguments = plan["arguments"]
+        name = arguments["name"]
+        if bpy.context.scene.objects.get(name) is not None or bpy.data.objects.get(name) is not None:
+            raise ValueError("object name already exists; creation refused")
+    except ValueError as error:
+        _response(command_id, False, str(error))
+        return
+
+    import bmesh
+
+    bm = bmesh.new()
+    mesh = None
+    obj = None
+    try:
+        primitive = arguments["primitive"]
+        if primitive == "cube":
+            bmesh.ops.create_cube(
+                bm,
+                size=arguments["size"],
+            )
+        elif primitive == "sphere":
+            segments = arguments["segments"]
+            bmesh.ops.create_uvsphere(
+                bm,
+                u_segments=segments,
+                v_segments=max(4, segments // 2),
+                radius=arguments["radius"],
+            )
+        else:
+            bmesh.ops.create_cone(
+                bm,
+                cap_ends=True,
+                cap_tris=False,
+                segments=arguments["segments"],
+                radius1=arguments["radius"],
+                radius2=arguments["radius"],
+                depth=arguments["depth"],
+            )
+
+        mesh = bpy.data.meshes.new(name)
+        bm.to_mesh(mesh)
+        mesh.update()
+        obj = bpy.data.objects.new(name, mesh)
+        bpy.context.scene.collection.objects.link(obj)
+        obj.location = arguments["location"]
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Smoke-only Blender primitive created",
+            execution_gate="smoke_only_unregistered",
+            operation="create_primitive",
+            object=_object_details(obj),
+        )
+    except Exception as error:
+        if obj is not None:
+            try:
+                bpy.data.objects.remove(obj, do_unlink=True)
+            except Exception:
+                pass
+        if mesh is not None and getattr(mesh, "users", 0) == 0:
+            try:
+                bpy.data.meshes.remove(mesh)
+            except Exception:
+                pass
+        _response(
+            command_id,
+            False,
+            f"{type(error).__name__}: {error}",
+            execution_gate="smoke_only_unregistered",
+            operation="create_primitive",
+        )
+    finally:
+        bm.free()
+
+
+def _modeling_add_modifier_unregistered(command: dict) -> None:
+    command_id = command["id"]
+    modifier = None
+    obj = None
+    before = None
+    try:
+        _modeling_runtime_preconditions()
+        plan = _modeling_plan_from_command("add_modifier", command)
+        arguments = plan["arguments"]
+        obj = _resolve_object(arguments)
+
+        if (
+            obj.type != "MESH"
+            or obj.library is not None
+            or obj.override_library is not None
+            or getattr(obj.data, "library", None) is not None
+        ):
+            raise ValueError(
+                "modifier requires an existing local, non-linked mesh object"
+            )
+        if obj.animation_data is not None or len(obj.constraints) > 0:
+            raise ValueError(
+                "animated or constrained targets require a dedicated workflow"
+            )
+        if obj.modifiers.get(arguments["name"]) is not None:
+            raise ValueError("modifier name already exists; insertion refused")
+
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        evaluated = obj.evaluated_get(depsgraph)
+        evaluated_faces = len(evaluated.data.polygons)
+        budget = _evaluate_modifier_runtime_budget(
+            modifier_type=arguments["type"],
+            modifier_count=len(obj.modifiers),
+            evaluated_faces=evaluated_faces,
+            levels=arguments.get("levels", 1),
+        )
+        if not budget["allowed"]:
+            raise ValueError("; ".join(budget["reasons"]))
+
+        before = _object_details(obj)
+        modifier = obj.modifiers.new(arguments["name"], arguments["type"])
+        if modifier.type == "BEVEL":
+            modifier.width = arguments["width"]
+            modifier.segments = arguments["segments"]
+        elif modifier.type == "SUBSURF":
+            modifier.levels = arguments["levels"]
+            modifier.render_levels = arguments["levels"]
+        elif modifier.type == "SOLIDIFY":
+            modifier.thickness = arguments["thickness"]
+        else:
+            axis = arguments["axis"]
+            modifier.use_axis = [candidate == axis for candidate in "XYZ"]
+
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Smoke-only Blender modifier inserted",
+            execution_gate="smoke_only_unregistered",
+            operation="add_modifier",
+            runtime_budget=budget,
+            before=before,
+            object=_object_details(obj),
+        )
+    except (ValueError, Exception) as error:
+        if modifier is not None and obj is not None:
+            try:
+                obj.modifiers.remove(modifier)
+                bpy.context.view_layer.update()
+            except Exception:
+                pass
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            execution_gate="smoke_only_unregistered",
+            operation="add_modifier",
+            before=before,
+        )
 
 
 _OBJECT_METADATA_KEYS = frozenset(
@@ -3026,6 +3206,16 @@ def _process(path: Path) -> None:
             _quality_gate(command)
         elif operation == "object_transform":
             _object_transform(command)
+        elif (
+            operation == "__smoke_create_primitive"
+            and CFG.ordax_smoke_modeling_fixture
+        ):
+            _modeling_create_primitive_unregistered(command)
+        elif (
+            operation == "__smoke_add_modifier"
+            and CFG.ordax_smoke_modeling_fixture
+        ):
+            _modeling_add_modifier_unregistered(command)
         elif operation == "object_metadata":
             _object_metadata(command)
         elif operation == "api_schema":
