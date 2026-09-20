@@ -43,9 +43,9 @@ function Sync-ExternalBootstrapFromRepo {
         return $false
     }
 
-    & $python -m py_compile $policySource
+    & $python -c "import ast,sys; ast.parse(open(sys.argv[1], encoding='utf-8').read())" $policySource
     if ($LASTEXITCODE -ne 0) {
-        Write-BootstrapLog "SELF_REFRESH_SKIP candidate update policy does not compile"
+        Write-BootstrapLog "SELF_REFRESH_SKIP candidate update policy does not parse"
         return $false
     }
 
@@ -197,10 +197,7 @@ $retrySeconds = [Math]::Max(1, $InitialRetrySeconds)
 
 while ($true) {
     try {
-        $updated = Invoke-SafeUpdate
-        if (-not $updated -and (Test-Path $python)) {
-            [void](Sync-ExternalBootstrapFromRepo)
-        }
+        [void](Invoke-SafeUpdate)
     } catch {
         Write-BootstrapLog "UPDATE_ERROR $($_.Exception.Message)"
     }
