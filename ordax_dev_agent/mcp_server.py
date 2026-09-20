@@ -44,8 +44,10 @@ def action_execute(action: str, project: str, arguments: dict | None = None) -> 
 Examples: project.observe {app:unity}, blender.inspect {blend_file:scene.blend},
 blender.render_preview {blend_file:scene.blend,width:1280,height:720},
 observation.capture {app:unity,frames:3,interval_seconds:1},
+project.references {asset:wooden-boat},
+blender.reference_review {asset:wooden-boat,reference_ids:[front],object_names:[Hull]},
 git.sync {branch:main}, unity.install_companion {} (adds an Editor script).
-Read artifact_image using data.artifact or observations[].artifact to see results.
+Use artifact_image for managed reference/model PNG/JPEG evidence returned by actions.
 """
     payload = {**(arguments or {}), "project": project}
     result = registry().execute(action, payload)

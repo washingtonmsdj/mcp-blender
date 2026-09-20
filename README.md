@@ -160,7 +160,7 @@ O workflow **Validate HORDAX in Unity** faz checkout do HORDAX em diretório iso
 
 Os workflows são manuais por segurança.
 
-## Blender Live 1.4.0
+## Blender Live 1.5.0
 
 The visible Blender companion now exposes a richer typed perception loop:
 
@@ -200,6 +200,17 @@ this layer and the capabilities intentionally not copied.
 `python scripts/verify_visual_agent.py` now runs both the existing isolated render smoke and the real companion deterministic silhouette-multiview path. On the Windows self-hosted recovery runner this candidate smoke runs before the managed agent is touched.
 
 `python scripts/blender_benchmark.py` adds an end-to-end regression: exact baseline self-comparison must pass, while a controlled geometry mutation must fail silhouette IoU and expose the expected bounds delta. See `docs/BLENDERBENCH.md`. The benchmark also contains valid/invalid UV fixtures so the Blender 5.x UV API and `uv_quality` implementation are exercised in the real runtime.
+
+### Reference Contract
+
+- `project.references` validates a versioned project-local visual brief without copying images.
+- `project.reference_images` materializes selected PNG/JPEG references into the managed artifact root with manifest/image hashes.
+- `blender.reference_review` pairs those references with deterministic Blender multiview captures for explicit object names.
+- Blender Live protocol v9 reports declared scene unit metadata so physical dimensions are checked only when the scene actually defines a usable scale.
+- Arbitrary source/reference images do **not** receive a fabricated similarity score; camera/lens/crop/pose correspondence remains explicit evidence that must be reviewed.
+
+See `docs/REFERENCE_CONTRACT.md` and `config/references.example.json`.
+
 
 
 ## Segurança

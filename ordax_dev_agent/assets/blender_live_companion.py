@@ -8,6 +8,7 @@ import difflib
 import hashlib
 import importlib
 import json
+import math
 import re
 import runpy
 import struct
@@ -61,7 +62,7 @@ RESULTS = CONTROL_ROOT / "results"
 INFLIGHT = CONTROL_ROOT / "inflight"
 PRESENCE = CONTROL_ROOT / "presence.json"
 
-PROTOCOL_VERSION = 8
+PROTOCOL_VERSION = 9
 CAPABILITIES = [
     "ping",
     "inspect",
@@ -2635,6 +2636,20 @@ def _multiview_bounds(corners: list[Vector]) -> dict:
     }
 
 
+def _scene_unit_metadata(scene) -> tuple[str, float | None]:
+    settings = getattr(scene, "unit_settings", None)
+    system = str(getattr(settings, "system", "NONE") or "NONE").upper()
+    if system == "NONE":
+        return system, None
+    try:
+        scale = float(getattr(settings, "scale_length", 1.0))
+    except (TypeError, ValueError):
+        return system, None
+    if not math.isfinite(scale) or scale <= 0:
+        return system, None
+    return system, scale
+
+
 def _multiview_render_engine(
     scene,
     *,
@@ -2784,6 +2799,7 @@ def _multiview_capture(command: dict) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     scene = bpy.context.scene
+    unit_system, unit_scale_m = _scene_unit_metadata(scene)
     original_camera = scene.camera
     old_path = scene.render.filepath
     old_format = scene.render.image_settings.file_format
@@ -2888,6 +2904,8 @@ def _multiview_capture(command: dict) -> None:
             "projection": "orthographic",
             "render_engine": engine_used,
             "mode": mode,
+            "unit_system": unit_system,
+            "unit_scale_m": unit_scale_m,
         }
         manifest_path = output_dir / "multiview.json"
         _write_json_atomic(manifest_path, manifest)
@@ -2956,6 +2974,8 @@ def _multiview_capture(command: dict) -> None:
         projection="orthographic",
         render_engine=engine_used,
         mode=mode,
+        unit_system=unit_system,
+        unit_scale_m=unit_scale_m,
     )
 
 
