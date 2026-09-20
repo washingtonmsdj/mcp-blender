@@ -194,14 +194,9 @@ function Invoke-SafeUpdate {
 }
 
 $retrySeconds = [Math]::Max(1, $InitialRetrySeconds)
+$needsSafeUpdate = $false
 
 while ($true) {
-    try {
-        [void](Invoke-SafeUpdate)
-    } catch {
-        Write-BootstrapLog "UPDATE_ERROR $($_.Exception.Message)"
-    }
-
     if (-not (Test-Path $python)) {
         Write-BootstrapLog "LAUNCH_WAIT venv missing path=$python retry=$retrySeconds"
         Start-Sleep -Seconds $retrySeconds
@@ -209,27 +204,40 @@ while ($true) {
         continue
     }
 
-    # Compile validation already runs inside Invoke-SafeUpdate whenever the
-    # checkout actually changes. Re-running compileall on every task start can
-    # stall the control plane before the local health endpoint is even created.
+    # Bring the local health/control plane up first. The previous bootstrap ran
+    # repository preflight/update work before starting the agent; on this host
+    # that work can stall for minutes and leave the Scheduled Task "Running"
+    # while port 8765 is unavailable. Safe update now happens only between
+    # agent runs, never in front of initial health.
     Write-BootstrapLog "LAUNCH_READY repo=$repoRootResolved"
     Write-BootstrapLog "AGENT_START repo=$repoRootResolved"
     & $python -m ordax_dev_agent.main
     $code = $LASTEXITCODE
     Write-BootstrapLog "AGENT_EXIT code=$code"
 
+    $needsSafeUpdate = $true
+    if ($code -eq 42) {
+        $retrySeconds = [Math]::Max(1, $InitialRetrySeconds)
+    }
+
+    if ($needsSafeUpdate) {
+        try {
+            [void](Invoke-SafeUpdate)
+        } catch {
+            Write-BootstrapLog "UPDATE_ERROR $($_.Exception.Message)"
+        }
+        $needsSafeUpdate = $false
+    }
+
     if ($code -eq 0) {
-        # The scheduled task is intended to be persistent. A genuine task stop
-        # terminates this bootstrap process itself, so a child agent returning
-        # zero while the bootstrap is still alive should be treated as an
-        # unexpected clean exit and relaunched.
+        # A genuine task stop terminates this bootstrap process itself. If the
+        # child agent returns zero while the bootstrap is still alive, relaunch.
         Write-BootstrapLog "AGENT_RESTART clean-exit code=0 retry=$retrySeconds"
         Start-Sleep -Seconds $retrySeconds
         $retrySeconds = [Math]::Min($MaxRetrySeconds, $retrySeconds * 2)
         continue
     }
     if ($code -eq 42) {
-        $retrySeconds = [Math]::Max(1, $InitialRetrySeconds)
         Start-Sleep -Seconds 2
         continue
     }

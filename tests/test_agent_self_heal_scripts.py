@@ -132,6 +132,27 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertIn('continue', bootstrap)
         self.assertNotIn('if ($code -eq 0) {\n        exit 0', bootstrap)
 
+    def test_external_bootstrap_starts_health_before_safe_update(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        bootstrap = (
+            root / "scripts" / "windows" / "ordax-agent-bootstrap.ps1"
+        ).read_text(encoding="utf-8")
+
+        loop_index = bootstrap.index("while ($true)")
+        start_index = bootstrap.index(
+            '& $python -m ordax_dev_agent.main',
+            loop_index,
+        )
+        update_index = bootstrap.index(
+            '[void](Invoke-SafeUpdate)',
+            start_index,
+        )
+        self.assertLess(start_index, update_index)
+        self.assertIn(
+            "never in front of initial health",
+            bootstrap,
+        )
+
 
     def test_all_managed_main_fetches_write_remote_tracking_ref(self) -> None:
         root = Path(__file__).resolve().parents[1]

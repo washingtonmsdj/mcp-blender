@@ -121,6 +121,8 @@ Write-Host ("External bootstrap: " + $bootstrapPath)
 
 if ($SupabaseUrl -and $PublishableKey) {
     Write-Host "Supabase control plane configured."
+} elseif (Test-Path $settingsPath) {
+    Write-Host "Supabase control plane settings preserved from existing installation."
 } else {
     Write-Host "Supabase control plane not configured."
 }
