@@ -56,6 +56,20 @@ Esse script apenas endurece o serviço já suportado pelo GitHub:
 
 O GitHub runner é uma segunda camada de recuperação/CI. A disponibilidade normal do OrdaX Agent não depende dele.
 
+### Política da fila self-hosted
+
+O workflow `OrdaX Agent Recovery` não é mais aberto automaticamente para cada pull request. Pull requests usam o `Bridge CI` hospedado para compilação, testes Python/Windows/Linux e parsing PowerShell.
+
+O Blender real/BlenderBench no self-hosted roda em duas situações:
+
+1. `push` na `main`, antes da etapa de recuperação/atualização do agente;
+2. `workflow_dispatch`, quando for necessário validar manualmente um commit/branch sem implantar no agente.
+
+O workflow usa um único grupo de `concurrency` com `cancel-in-progress: false`. Portanto, uma execução já iniciada nunca é interrompida por outra atualização. Quando o runner estiver offline, o GitHub mantém no máximo a execução pendente mais recente desse grupo em vez de acumular uma fila nova a cada commit/PR.
+
+Isso separa claramente os papéis: CI hospedado protege o merge; Blender real valida a integração na estação Windows; e a implantação do agente só ocorre em `push` da `main`.
+
+
 ## Testar o toolchain
 
 No repositório mcp-blender:
