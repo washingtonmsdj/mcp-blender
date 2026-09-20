@@ -81,6 +81,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("project.reference_images", result.data["actions"])
             self.assertIn("blender.reference_review", result.data["actions"])
             self.assertIn("blender.reference_generation_pass", result.data["actions"])
+            self.assertIn("blender.reference_decision", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
