@@ -230,5 +230,224 @@ class ReferenceContractTests(unittest.TestCase):
         )
 
 
+    def test_reference_generation_rolls_back_failed_declared_dimension(self) -> None:
+        generation = ActionResult(
+            True,
+            "generated",
+            {"checkpoint_id": "checkpoint-1", "artifacts": []},
+        )
+        review = ActionResult(
+            True,
+            "reviewed",
+            {
+                "dimension_checks": [
+                    {
+                        "axis": "x",
+                        "target_m": 4.0,
+                        "actual_m": 5.0,
+                        "within_tolerance": False,
+                    }
+                ],
+                "artifacts": [],
+            },
+        )
+        rollback = ActionResult(True, "restored", {"checkpoint_id": "checkpoint-1"})
+
+        with (
+            patch.object(
+                self.registry,
+                "blender_live_generation_pass",
+                return_value=generation,
+            ) as generation_pass,
+            patch.object(
+                self.registry,
+                "_blender_reference_review_from_materialized",
+                return_value=review,
+            ),
+            patch.object(
+                self.registry,
+                "blender_live_checkpoint_restore",
+                return_value=rollback,
+            ) as restore,
+            patch.object(
+                self.registry,
+                "blender_live_save",
+            ) as save,
+        ):
+            result = self.registry.execute(
+                "blender.reference_generation_pass",
+                {
+                    "project": "model",
+                    "asset": "boat",
+                    "reference_ids": ["front"],
+                    "object_names": ["Hull"],
+                    "script_path": "automation/blender/boat.py",
+                    "save_target_path": "boat.blend",
+                },
+            )
+
+        self.assertFalse(result.ok)
+        self.assertIn("outside tolerance", result.summary)
+        self.assertEqual("checkpoint-1", result.data["checkpoint_id"])
+        self.assertEqual("x", result.data["failed_dimensions"][0]["axis"])
+        self.assertNotIn(
+            "save_target_path",
+            generation_pass.call_args.args[0],
+        )
+        restore.assert_called_once()
+        self.assertEqual(
+            "checkpoint-1",
+            restore.call_args.args[0]["checkpoint_id"],
+        )
+        self.assertTrue(restore.call_args.args[0]["discard_unsaved"])
+        save.assert_not_called()
+
+    def test_reference_generation_defers_save_until_deterministic_gates_pass(self) -> None:
+        generation = ActionResult(
+            True,
+            "generated",
+            {"checkpoint_id": "checkpoint-2", "artifacts": []},
+        )
+        review = ActionResult(
+            True,
+            "reviewed",
+            {
+                "dimension_checks": [
+                    {
+                        "axis": "x",
+                        "target_m": 4.0,
+                        "actual_m": 4.0,
+                        "within_tolerance": True,
+                    }
+                ],
+                "artifacts": [],
+            },
+        )
+        saved = ActionResult(True, "saved", {"target_path": "boat.blend"})
+
+        with (
+            patch.object(
+                self.registry,
+                "blender_live_generation_pass",
+                return_value=generation,
+            ) as generation_pass,
+            patch.object(
+                self.registry,
+                "_blender_reference_review_from_materialized",
+                return_value=review,
+            ),
+            patch.object(
+                self.registry,
+                "blender_live_checkpoint_restore",
+            ) as restore,
+            patch.object(
+                self.registry,
+                "blender_live_save",
+                return_value=saved,
+            ) as save,
+        ):
+            result = self.registry.execute(
+                "blender.reference_generation_pass",
+                {
+                    "project": "model",
+                    "asset": "boat",
+                    "reference_ids": ["front"],
+                    "object_names": ["Hull"],
+                    "script_path": "automation/blender/boat.py",
+                    "save_target_path": "boat.blend",
+                },
+            )
+
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["visual_review_pending"])
+        self.assertIn("visual assessment pending", result.summary)
+        self.assertNotIn(
+            "save_target_path",
+            generation_pass.call_args.args[0],
+        )
+        save.assert_called_once()
+        self.assertEqual("boat.blend", save.call_args.args[0]["target_path"])
+        restore.assert_not_called()
+
+    def test_reference_generation_can_require_declared_physical_scale(self) -> None:
+        generation = ActionResult(
+            True,
+            "generated",
+            {"checkpoint_id": "checkpoint-3", "artifacts": []},
+        )
+        review = ActionResult(
+            True,
+            "reviewed",
+            {
+                "dimension_checks": [
+                    {
+                        "axis": "x",
+                        "target_m": 4.0,
+                        "status": "unknown",
+                        "reason": "Blender scene does not declare a physical unit scale",
+                    }
+                ],
+                "artifacts": [],
+            },
+        )
+        rollback = ActionResult(True, "restored", {})
+
+        with (
+            patch.object(
+                self.registry,
+                "blender_live_generation_pass",
+                return_value=generation,
+            ),
+            patch.object(
+                self.registry,
+                "_blender_reference_review_from_materialized",
+                return_value=review,
+            ),
+            patch.object(
+                self.registry,
+                "blender_live_checkpoint_restore",
+                return_value=rollback,
+            ) as restore,
+        ):
+            result = self.registry.execute(
+                "blender.reference_generation_pass",
+                {
+                    "project": "model",
+                    "asset": "boat",
+                    "reference_ids": ["front"],
+                    "object_names": ["Hull"],
+                    "script_path": "automation/blender/boat.py",
+                    "require_reference_physical_scale": True,
+                },
+            )
+
+        self.assertFalse(result.ok)
+        self.assertIn("physical scale is required", result.summary)
+        restore.assert_called_once()
+
+    def test_reference_generation_preflight_failure_never_mutates_blender(self) -> None:
+        self.image.write_bytes(b"changed-after-contract")
+
+        with patch.object(
+            self.registry,
+            "blender_live_generation_pass",
+        ) as generation_pass:
+            result = self.registry.execute(
+                "blender.reference_generation_pass",
+                {
+                    "project": "model",
+                    "asset": "boat",
+                    "reference_ids": ["front"],
+                    "object_names": ["Hull"],
+                    "script_path": "automation/blender/boat.py",
+                },
+            )
+
+        self.assertFalse(result.ok)
+        self.assertIn("preflight failed", result.summary)
+        self.assertEqual("reference_preflight", result.data["phase"])
+        generation_pass.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
