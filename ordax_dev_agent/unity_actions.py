@@ -577,12 +577,10 @@ class UnityActions:
         )
 
     def unity_editor_status(self, payload: dict[str, Any]) -> ActionResult:
-        project = self._project_path(payload)
+        # Status is intentionally observational. A read-only health probe must
+        # never touch project files, wait for Unity imports, focus the Editor, or
+        # mutate Editor state. Use unity.refresh_editor for active recovery.
         editor = self._editor(payload)
-        if not editor.presence_is_fresh() and editor.project_appears_open():
-            editor.nudge_companion(
-                wait_seconds=float(payload.get("wait_seconds", 30)),
-            )
         status = editor.status()
         ready = bool(status.get("presence_fresh"))
         return ActionResult(
