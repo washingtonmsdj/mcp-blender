@@ -26,6 +26,13 @@ has_open_pr() {
   [[ "$count" != "0" ]]
 }
 
+has_merged_pr() {
+  local branch="$1"
+  local count
+  count="$(gh pr list --repo "$repo" --state merged --head "$branch" --limit 1 --json number --jq 'length')"
+  [[ "$count" != "0" ]]
+}
+
 delete_branch_if_safe() {
   local branch="$1"
 
@@ -45,12 +52,16 @@ delete_branch_if_safe() {
     echo "skip $branch: remote branch no longer exists"
     return 0
   fi
+  if ! has_merged_pr "$branch"; then
+    echo "skip $branch: no merged pull request proves absorption"
+    return 0
+  fi
   if ! git merge-base --is-ancestor "origin/$branch" origin/main; then
     echo "skip $branch: branch still contains commits outside main"
     return 0
   fi
 
-  echo "delete $branch: no open PR and fully contained in main"
+  echo "delete $branch: merged PR, no open PR, fully contained in main"
   git push origin --delete "$branch"
 }
 
