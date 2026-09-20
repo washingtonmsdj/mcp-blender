@@ -118,6 +118,13 @@ _SPATIAL_MATH = _load_companion_asset_module(
 _aabb_overlap = _SPATIAL_MATH.aabb_overlap
 _aabb_contains = _SPATIAL_MATH.aabb_contains
 
+_QUALITY_RULES = _load_companion_asset_module(
+    "blender_quality_rules.py",
+    "_ordax_blender_quality_rules",
+)
+_quality_axis = _QUALITY_RULES.quality_axis
+_quality_tolerance = _QUALITY_RULES.quality_tolerance
+
 CFG = _args()
 CONTROL_ROOT = Path(CFG.ordax_control_root).resolve()
 PROJECT_ROOT = Path(CFG.ordax_project_root).resolve()
@@ -1031,25 +1038,7 @@ def _object_metadata(command: dict) -> None:
 
 
 
-_QUALITY_AXES = {"x": 0, "y": 1, "z": 2}
 _QUALITY_TYPES = {"dimensions", "symmetry", "proportion", "containment", "mesh_quality", "uv_quality"}
-
-
-def _quality_axis(value, field: str) -> tuple[str, int]:
-    axis = str(value or "").strip().lower()
-    if axis not in _QUALITY_AXES:
-        raise ValueError(f"{field} must be one of x, y, z")
-    return axis, _QUALITY_AXES[axis]
-
-
-def _quality_tolerance(check: dict, default: float = 0.01) -> float:
-    try:
-        tolerance = float(check.get("tolerance", default))
-    except (TypeError, ValueError):
-        raise ValueError("tolerance must be a number")
-    if tolerance < 0 or tolerance > 1000000:
-        raise ValueError("tolerance must be between 0 and 1000000")
-    return tolerance
 
 
 def _quality_object(name, field: str):
