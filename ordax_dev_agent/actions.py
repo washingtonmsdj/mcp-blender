@@ -31,6 +31,7 @@ from .blender_live_bridge import BlenderLiveBridge
 from .blender_asset_sources import polyhaven_file_manifest, search_polyhaven
 from .projects import load_projects, Project
 from .observations import ObservationActions
+from .references import ReferenceActions
 from .execution_lock import ExecutionLock
 
 
@@ -159,7 +160,7 @@ def _unity_process_ids_for_project(project: Path) -> list[int]:
     return result
 
 
-class ActionRegistry(ObservationActions):
+class ActionRegistry(ObservationActions, ReferenceActions):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
     def __init__(self, config: AgentConfig):
@@ -170,6 +171,8 @@ class ActionRegistry(ObservationActions):
         self._actions: dict[str, Action] = {
             "projects.list": self.projects_list,
             "project.observe": self.project_observe,
+            "project.references": self.project_references,
+            "project.reference_images": self.project_reference_images,
             "observation.capture": self.observation_capture,
             "blender.inspect": self.blender_inspect,
             "blender.render_preview": self.blender_render_preview,
@@ -203,6 +206,7 @@ class ActionRegistry(ObservationActions):
             "blender.asset_search": self.blender_asset_search,
             "blender.asset_manifest": self.blender_asset_manifest,
             "blender.multiview_compare": self.blender_multiview_compare,
+            "blender.reference_review": self.blender_reference_review,
             "unity.install_companion": self.unity_install_companion,
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
