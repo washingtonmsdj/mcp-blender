@@ -20,6 +20,42 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             self.assertNotIn("diff-files --quiet", text)
             self.assertNotIn("diff-index --cached", text)
 
+    def test_launcher_control_flow_is_structurally_intact(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        launcher = (
+            root / "scripts" / "windows" / "ordax-agent-start.cmd"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(1, launcher.splitlines().count(":run"))
+        self.assertEqual(1, launcher.splitlines().count(":safe_update"))
+        self.assertEqual(1, launcher.splitlines().count(":increase_backoff"))
+
+        expected_run_block = (
+            ':run\n'
+            'if "%SKIP_SAFE_UPDATE%"=="0" (\n'
+            '  call :safe_update\n'
+            ') else (\n'
+            '  set "SKIP_SAFE_UPDATE=0"\n'
+            ')\n'
+        )
+        self.assertIn(expected_run_block, launcher)
+
+        run_index = launcher.index(":run")
+        compile_index = launcher.index(
+            '"%PYTHON%" -m compileall',
+            run_index,
+        )
+        safe_label_index = launcher.index("\n:safe_update\n")
+        self.assertLess(run_index, compile_index)
+        self.assertLess(compile_index, safe_label_index)
+
+        self.assertIn(
+            'ordax_dev_agent.update_policy --check-clean "%ROOT%"',
+            launcher,
+        )
+        self.assertNotIn("diff-files --quiet", launcher)
+        self.assertNotIn("diff-index --cached", launcher)
+
 
 if __name__ == "__main__":
     unittest.main()
