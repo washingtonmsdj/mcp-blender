@@ -46,6 +46,7 @@ blender.render_preview {blend_file:scene.blend,width:1280,height:720},
 observation.capture {app:unity,frames:3,interval_seconds:1},
 project.references {asset:wooden-boat},
 blender.reference_review {asset:wooden-boat,reference_ids:[front],object_names:[Hull]},
+blender.reference_generation_pass {asset:wooden-boat,reference_ids:[front],object_names:[Hull],script_path:automation/blender/refine.py},
 git.sync {branch:main}, unity.install_companion {} (adds an Editor script).
 Use artifact_image for managed reference/model PNG/JPEG evidence returned by actions.
 """
