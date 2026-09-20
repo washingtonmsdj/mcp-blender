@@ -67,6 +67,8 @@ O Blender real/BlenderBench no self-hosted roda em duas situações:
 
 O workflow usa um único grupo de `concurrency` com `cancel-in-progress: false`. Portanto, uma execução já iniciada nunca é interrompida por outra atualização. Quando o runner estiver offline, o GitHub mantém no máximo a execução pendente mais recente desse grupo em vez de acumular uma fila nova a cada commit/PR.
 
+Além disso, ao finalmente receber um runner, uma execução de `push` da `main` compara o SHA do próprio run com `origin/main`. Se já houver um commit mais novo, ela marca a execução como superseded e pula compilação local, Blender smoke, BlenderBench e recovery. Assim uma pendência antiga não toca no agente apenas porque o PC voltou online horas depois.
+
 Isso separa claramente os papéis: CI hospedado protege o merge; Blender real valida a integração na estação Windows; e a implantação do agente só ocorre em `push` da `main`.
 
 
