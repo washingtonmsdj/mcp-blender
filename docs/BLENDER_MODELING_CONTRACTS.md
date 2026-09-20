@@ -86,9 +86,12 @@ proof. Modifier count and evaluated face count must come from the live Blender
 scene when the executor is eventually enabled.
 
 
-The historical `codex/blender-live-session` branch contains an earlier
-implementation of these operations, but that code targets an older companion
-architecture. It is treated as design evidence, not code to merge directly.
+The earlier implementation is preserved read-only at
+`archive/blender-live-session-before-contract-port-2026-09-20`. Its active
+`codex/blender-live-session` development branch has been retired after the
+useful contracts, runtime guards and rollback semantics were ported to the
+current architecture. The archived code remains design evidence only and must
+not be merged back wholesale.
 
 One legacy rule is intentionally **not** copied: its transform implementation
 required a local, non-linked mesh with no animation/constraints. The current
