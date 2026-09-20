@@ -41,6 +41,12 @@ remain strictly positive and within bounded ranges.
 The transform action now uses the same planner internally, so unknown fields are
 rejected rather than silently ignored.
 
+The visible Blender companion independently re-runs the same shared transform
+contract when consuming `object_transform`. Only transport metadata `id` and
+`operation` are ignored there; host-only fields or any other unexpected field
+are rejected. This is defense in depth: bypassing host validation does not
+weaken the Blender-side contract.
+
 ## Prepared but deliberately disabled
 
 The contracts also describe:
