@@ -30,7 +30,7 @@ class ProjectTextActionTests(unittest.TestCase):
 
     def test_read_and_sha_guarded_write(self) -> None:
         target = self.project / "Assets" / "Scripts" / "World.cs"
-        target.write_text("class World {}\n", encoding="utf-8")
+        target.write_bytes(b"class World {}\n")
 
         read = self.registry.execute(
             "project.text_read",
@@ -55,7 +55,7 @@ class ProjectTextActionTests(unittest.TestCase):
         self.assertFalse(write.data["created"])
         self.assertEqual(
             "class World { int Version = 2; }\n",
-            target.read_text(encoding="utf-8"),
+            target.read_bytes().decode("utf-8"),
         )
 
     def test_stale_write_is_refused(self) -> None:
