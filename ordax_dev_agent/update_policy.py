@@ -1,6 +1,8 @@
 """Helpers for safe managed-agent Git preflight checks."""
 from __future__ import annotations
 
+import argparse
+import json
 import subprocess
 import os
 from pathlib import Path
@@ -228,3 +230,41 @@ def tracked_worktree_check(
         "tracked_files": len(paths),
         "method": "index-object-hash",
     }
+
+
+def managed_repo_clean_check(
+    repo: str | Path,
+    *,
+    worktree_timeout: int = 60,
+    staged_timeout: int = 30,
+) -> dict[str, Any]:
+    worktree = tracked_worktree_check(repo, timeout=worktree_timeout)
+    staged = staged_index_check(repo, timeout=staged_timeout)
+    ok = bool(worktree.get("ok")) and bool(staged.get("ok"))
+    clean = ok and bool(worktree.get("clean")) and bool(staged.get("clean"))
+    return {
+        "ok": ok,
+        "clean": clean,
+        "worktree": worktree,
+        "staged": staged,
+        "method": "index-object-hash+index-tree-hash",
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check-clean", metavar="REPO")
+    args = parser.parse_args(argv)
+
+    if not args.check_clean:
+        parser.error("--check-clean is required")
+
+    result = managed_repo_clean_check(args.check_clean)
+    print(json.dumps(result, separators=(",", ":")))
+    if not result.get("ok"):
+        return 2
+    return 0 if result.get("clean") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
