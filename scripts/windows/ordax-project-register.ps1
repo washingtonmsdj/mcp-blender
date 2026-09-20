@@ -6,7 +6,6 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Path,
 
-    [ValidateSet("unity", "blender")]
     [string[]]$Apps = @("unity", "blender"),
 
     [string[]]$AllowedBranches = @(),
@@ -21,9 +20,27 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if (-not $Apps -or $Apps.Count -eq 0) {
+$normalizedApps = @(
+    foreach ($value in @($Apps)) {
+        if ($null -eq $value) { continue }
+        foreach ($piece in ([string]$value -split "[,;]")) {
+            $name = $piece.Trim().ToLowerInvariant()
+            if ($name) { $name }
+        }
+    }
+) | Select-Object -Unique
+
+if (-not $normalizedApps -or $normalizedApps.Count -eq 0) {
     throw "At least one application must be enabled."
 }
+
+$allowedApps = @("unity", "blender")
+$invalidApp = $normalizedApps | Where-Object { $_ -notin $allowedApps } | Select-Object -First 1
+if ($invalidApp) {
+    throw "Unsupported application '$invalidApp'. Allowed values: unity, blender."
+}
+
+$Apps = @($normalizedApps)
 
 $invalidBranch = $AllowedBranches | Where-Object {
     [string]::IsNullOrWhiteSpace($_) -or $_.StartsWith("-")
