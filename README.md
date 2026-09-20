@@ -271,15 +271,14 @@ The visible Blender companion now exposes a richer typed perception loop:
   September 20, 2026.
 - `blender.live_modeling_plan` — read-only closed-world planner that validates
   one modeling intent, rejects unknown/inapplicable fields and returns normalized
-  defaults/arguments plus whether execution is currently enabled. Use
-  `schema → plan → execute`; a plan marked `pending_blender_smoke` is evidence
-  only and cannot mutate Blender.
-  Modifier plans also publish runtime guard limits (8 modifiers, 200k evaluated
-  faces, 500k projected SUBSURF faces); those limits must eventually be checked
-  against live Blender metrics, never user-claimed counts.
-  Pending create/modifier plans also carry runtime preconditions and rollback
-  guarantees (Object Mode/no render, uniqueness/local-target requirements and
-  cleanup-on-failure) so the future executor has a complete typed contract.
+  defaults/arguments plus the concrete action when execution is available. Use
+  `schema → plan → execute`.
+  Modifier plans publish runtime guard limits (8 modifiers, 200k evaluated
+  faces, 500k projected SUBSURF faces); the visible Blender companion verifies
+  those limits from live scene metrics, never user-claimed counts.
+  Create/modifier plans also carry runtime preconditions and rollback guarantees
+  (Object Mode/no render, uniqueness/local-target requirements and
+  cleanup-on-failure).
 - \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
 - \`blender.asset_manifest\` — provider file manifest/provenance lookup.
 
