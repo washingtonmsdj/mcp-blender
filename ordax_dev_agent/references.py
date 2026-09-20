@@ -624,6 +624,114 @@ class ReferenceActions:
                 result[key] = digest
         return result
 
+    def _reference_candidate_visual_hashes(
+        self,
+        payload: dict[str, Any],
+        state: dict[str, Any],
+        review_data: dict[str, Any],
+    ) -> ActionResult:
+        capture = review_data.get("capture")
+        if not isinstance(capture, dict):
+            return ActionResult(
+                False,
+                "Reference review contains no deterministic capture evidence",
+            )
+
+        raw_artifacts = capture.get("artifacts")
+        if not isinstance(raw_artifacts, list) or not raw_artifacts:
+            return ActionResult(
+                False,
+                "Reference review contains no deterministic view artifacts",
+            )
+
+        expected: dict[str, str] = {}
+        for item in raw_artifacts:
+            if not isinstance(item, dict):
+                continue
+            view = str(item.get("view") or "").strip()
+            digest = str(item.get("sha256") or "").strip()
+            if view and digest:
+                expected[view] = digest
+        if not expected:
+            return ActionResult(
+                False,
+                "Reference review contains no deterministic view hashes",
+            )
+
+        object_names = state.get("object_names")
+        if (
+            not isinstance(object_names, list)
+            or not object_names
+            or not all(isinstance(name, str) and name.strip() for name in object_names)
+        ):
+            return ActionResult(False, "reference pass contains invalid object_names")
+
+        resolution = capture.get("resolution")
+        if (
+            not isinstance(resolution, list)
+            or len(resolution) != 2
+            or not all(isinstance(value, int) for value in resolution)
+        ):
+            resolution = [768, 768]
+
+        fresh = self.blender_live_multiview_capture(
+            {
+                "project": state["project"],
+                "views": list(expected),
+                "object_names": [name.strip() for name in object_names],
+                "mode": str(capture.get("mode") or "material"),
+                "width": resolution[0],
+                "height": resolution[1],
+                "margin": capture.get("margin", 1.15),
+                "timeout_seconds": min(
+                    float(payload.get("timeout_seconds", 240)),
+                    240.0,
+                ),
+            }
+        )
+        if not fresh.ok:
+            return ActionResult(
+                False,
+                "Could not recapture candidate visual evidence before acceptance",
+                fresh.data,
+            )
+
+        current: dict[str, str] = {}
+        for item in fresh.data.get("artifacts", []):
+            if not isinstance(item, dict):
+                continue
+            view = str(item.get("view") or "").strip()
+            digest = str(item.get("sha256") or "").strip()
+            if view and digest:
+                current[view] = digest
+
+        changed = sorted(
+            view
+            for view in set(expected) | set(current)
+            if expected.get(view) != current.get(view)
+        )
+        if changed:
+            return ActionResult(
+                False,
+                "Rendered candidate changed after visual evidence was reviewed",
+                {
+                    "changed_views": changed,
+                    "expected_sha256": expected,
+                    "current_sha256": current,
+                    "fresh_capture": fresh.data,
+                },
+            )
+
+        return ActionResult(
+            True,
+            "Rendered candidate still matches reviewed visual evidence",
+            {
+                "verified_views": sorted(expected),
+                "sha256": expected,
+                "fresh_capture": fresh.data,
+            },
+        )
+
     def blender_reference_generation_pass(
         self,
         payload: dict[str, Any],
@@ -923,12 +1031,19 @@ class ReferenceActions:
             or not review_path.is_file()
         ):
             return ActionResult(False, "reference review evidence is missing")
-        current_review_sha = hashlib.sha256(review_path.read_bytes()).hexdigest()
+        review_bytes = review_path.read_bytes()
+        current_review_sha = hashlib.sha256(review_bytes).hexdigest()
         if current_review_sha != str(state.get("review_sha256") or ""):
             return ActionResult(
                 False,
                 "reference review evidence changed after candidate capture",
             )
+        try:
+            review_data = json.loads(review_bytes.decode("utf-8-sig"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            return ActionResult(False, f"invalid reference review JSON: {error}")
+        if not isinstance(review_data, dict):
+            return ActionResult(False, "reference review must contain an object")
 
         if decision == "reject":
             rollback = self.blender_live_checkpoint_restore(
@@ -1011,6 +1126,21 @@ class ReferenceActions:
                     "changed_selectors": changed,
                     "expected_fingerprints": expected,
                     "current_fingerprints": current,
+                },
+            )
+
+        visual_consistency = self._reference_candidate_visual_hashes(
+            payload,
+            state,
+            review_data,
+        )
+        if not visual_consistency.ok:
+            return ActionResult(
+                False,
+                "Candidate visual state changed after review; generate a new reference review before accepting",
+                {
+                    "visual_consistency": visual_consistency.data,
+                    "summary": visual_consistency.summary,
                 },
             )
 
@@ -1117,6 +1247,7 @@ class ReferenceActions:
                 "checkpoint_id": checkpoint_id,
                 "assessment": assessment,
                 "saved_target_path": str(target),
+                "visual_consistency": visual_consistency.data,
                 "save": state["save"],
             },
         )
