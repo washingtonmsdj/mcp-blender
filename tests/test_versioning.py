@@ -13,6 +13,7 @@ from ordax_dev_agent.blender_live_bridge import (
 from ordax_dev_agent.config import AgentConfig
 from ordax_dev_agent.references import MANIFEST_VERSION
 from ordax_dev_agent.versioning import component_versions
+from ordax_dev_agent.capability_contracts import capability_contracts
 
 
 class ComponentVersioningTests(unittest.TestCase):
@@ -68,6 +69,51 @@ class ComponentVersioningTests(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertEqual(component_versions(), result.data["versions"])
+
+    def test_capability_contracts_expose_promoted_blender_modeling_actions(self) -> None:
+        contracts = capability_contracts()
+        modeling = contracts["blender_modeling"]
+
+        self.assertEqual([], modeling["pending_operations"])
+        self.assertEqual(
+            [
+                "blender.live_add_modifier",
+                "blender.live_create_primitive",
+                "blender.live_object_transform",
+            ],
+            modeling["available_actions"],
+        )
+        self.assertEqual(
+            "available",
+            modeling["operations"]["create_primitive"]["status"],
+        )
+        self.assertEqual(
+            "blender.live_create_primitive",
+            modeling["operations"]["create_primitive"]["action"],
+        )
+        self.assertEqual(
+            "available",
+            modeling["operations"]["add_modifier"]["status"],
+        )
+        self.assertEqual(
+            8,
+            modeling["operations"]["add_modifier"]["runtime_guards"][
+                "max_modifier_stack"
+            ],
+        )
+
+    def test_agent_status_exposes_capability_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute("agent.status", {})
+
+        self.assertTrue(result.ok)
+        self.assertEqual(
+            capability_contracts(),
+            result.data["capability_contracts"],
+        )
 
 
 if __name__ == "__main__":
