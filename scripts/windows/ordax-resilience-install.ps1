@@ -70,6 +70,7 @@ Write-Host "OrdaX scheduled task:"
 Write-Host ("  State: " + $task.State)
 Write-Host ("  LastTaskResult: " + $taskInfo.LastTaskResult)
 Write-Host ("  NextRunTime: " + $taskInfo.NextRunTime)
+Write-Host ("  Action: " + (($task.Actions | Select-Object -First 1).Execute) + " " + (($task.Actions | Select-Object -First 1).Arguments))
 
 Write-Host "GitHub Actions runner service:"
 if ($runner) {
@@ -97,7 +98,7 @@ if ($HardenRunnerService -and $runner -and ($runner.State -ne "Running" -or $run
 Write-Host ""
 Write-Host "Resilience bootstrap completed."
 Write-Host "Primary uptime: Windows Task Scheduler -> OrdaX interactive agent"
-Write-Host "Agent launcher: safe Git fast-forward + retry loop"
+Write-Host "Agent bootstrap: external safe Git fast-forward + retry loop"
 if ($runner) {
     Write-Host "Secondary recovery channel: GitHub Actions Windows service"
 } else {
