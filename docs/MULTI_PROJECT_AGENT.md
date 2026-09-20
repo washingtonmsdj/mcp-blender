@@ -84,6 +84,24 @@ Configure esse comando no cliente MCP instalado na estação. Ferramentas:
 ao modelo ver os pixels. Um cliente exclusivamente na nuvem deve continuar usando
 a fila Supabase; stdio não é uma URL pública.
 
+## Texto de projeto
+
+Projetos cadastrados também expõem duas operações tipadas para trabalho em
+código/configuração sem abrir um shell remoto:
+
+- `project.text_read` lê texto UTF-8 dentro de `Assets`, `Packages`,
+  `ProjectSettings`, `automation` ou `docs`, devolvendo conteúdo, tamanho e
+  SHA-256.
+- `project.text_write` escreve somente extensões de fonte/configuração
+  permitidas e exige o `expected_sha256` obtido na leitura anterior para
+  substituir um arquivo existente. Criação exige `create=true`.
+
+A escrita é atômica e falha se o arquivo mudou desde a leitura. Diretórios
+gerados/cache/build/repositório são bloqueados. Arquivos serializados Unity
+(`.unity`, `.prefab`, `.meta`) podem ser inspecionados, mas não são gravados
+por essa operação genérica; mudanças estruturais de cena devem continuar usando
+operações Unity tipadas.
+
 ## Unity genérico
 
 Em um projeto novo com `apps: ["unity"]`, execute `unity.install_companion` uma vez.
