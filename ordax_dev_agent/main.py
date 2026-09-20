@@ -10,15 +10,30 @@ import time
 from pathlib import Path
 
 from . import __version__
-from .actions import ActionRegistry
 from .config import AgentConfig
-from .control_plane import ControlPlane
-from .models import ActionResult
 from .status_server import start_status_server
-from .projects import load_projects
+
+
+def _startup_log(config: AgentConfig | None, message: str) -> None:
+    try:
+        if config is not None:
+            state_dir = config.state_dir
+        else:
+            local_app_data = Path(
+                os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")
+            )
+            state_dir = local_app_data / "OrdaX" / "DevAgent"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with (state_dir / "agent-startup.log").open("a", encoding="utf-8") as handle:
+            handle.write(f"{stamp} {message}\n")
+    except Exception:
+        pass
 
 
 def _agent_metadata(config: AgentConfig) -> dict:
+    from .projects import load_projects
+
     return {
         "hordax_path": str(config.hordax_path),
         "bridge_path": str(config.bridge_path),
@@ -70,9 +85,9 @@ def _start_local_watchdog(config: AgentConfig) -> subprocess.Popen | None:
 
 
 def _upload_result_artifacts(
-    control: ControlPlane,
+    control,
     job,
-    result: ActionResult,
+    result,
     cache: dict | None = None,
 ) -> list[dict]:
     uploaded: list[dict] = []
@@ -125,24 +140,42 @@ def _upload_result_artifacts(
 
 
 def main() -> int:
+    _startup_log(None, f"MAIN_ENTER pid={os.getpid()} version={__version__}")
     config = AgentConfig.from_env()
+    _startup_log(config, "CONFIG_READY")
     config.write_public_status()
-    registry = ActionRegistry(config)
+
     runtime = {
-        "state": "starting",
+        "state": "initializing",
         "paired": False,
         "last_job_id": None,
         "last_job_action": None,
         "last_result": None,
     }
+    registry = None
 
     def status_payload() -> dict:
+        if registry is None:
+            return {
+                **config.public_status(),
+                "agent_version": __version__,
+                "actions": [],
+                "projects": [],
+                "runtime": dict(runtime),
+            }
         base = registry.agent_status({}).data
         base["agent_version"] = __version__
         base["runtime"] = dict(runtime)
         return base
 
     status_server = start_status_server(status_payload)
+    _startup_log(config, "STATUS_SERVER_READY port=8765")
+
+    from .actions import ActionRegistry
+    _startup_log(config, "ACTION_REGISTRY_IMPORT_OK")
+    registry = ActionRegistry(config)
+    _startup_log(config, f"ACTION_REGISTRY_READY actions={len(registry.names)}")
+
     watchdog_process = _start_local_watchdog(config)
     runtime["watchdog_pid"] = watchdog_process.pid if watchdog_process else None
     runtime["state"] = (
@@ -175,7 +208,11 @@ def main() -> int:
             status_server.shutdown()
         return 0
 
+    from .control_plane import ControlPlane
+    from .models import ActionResult
+    _startup_log(config, "CONTROL_PLANE_IMPORT_OK")
     control = ControlPlane(config)
+    _startup_log(config, "CONTROL_PLANE_READY")
 
     while not stop and not runtime["paired"]:
         try:
