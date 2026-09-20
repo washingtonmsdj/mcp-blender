@@ -1,6 +1,7 @@
 """Agent lifecycle and self-diagnostic typed actions."""
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from typing import Any
@@ -52,6 +53,84 @@ class AgentActions:
                 "capability_contracts": capability_contracts(),
                 "live_apps": live_apps,
             },
+        )
+
+    def agent_resilience_status(self, payload: dict[str, Any]) -> ActionResult:
+        unsupported = sorted(set(payload) - {"timeout_seconds"})
+        if unsupported:
+            return ActionResult(
+                False,
+                "unsupported field(s): " + ", ".join(unsupported),
+            )
+
+        if sys.platform != "win32":
+            return ActionResult(
+                False,
+                "agent resilience status is available only on Windows",
+            )
+
+        try:
+            timeout_seconds = int(payload.get("timeout_seconds", 15))
+        except (TypeError, ValueError):
+            return ActionResult(False, "timeout_seconds must be an integer")
+        if timeout_seconds < 3 or timeout_seconds > 30:
+            return ActionResult(
+                False,
+                "timeout_seconds must be between 3 and 30",
+            )
+
+        repo = self.config.agent_repo_path.resolve()
+        script = (
+            repo
+            / "scripts"
+            / "windows"
+            / "ordax-resilience-status.ps1"
+        )
+        if not script.is_file():
+            return ActionResult(
+                False,
+                f"resilience status script not found: {script}",
+            )
+
+        result = _run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+            ],
+            cwd=repo,
+            timeout=timeout_seconds,
+        )
+        if not result.ok:
+            result.summary = "agent resilience status check failed"
+            return result
+
+        raw = result.data.get("stdout", "")
+        try:
+            status = json.loads(raw)
+        except (TypeError, json.JSONDecodeError) as error:
+            return ActionResult(
+                False,
+                "agent resilience status returned invalid JSON",
+                {
+                    "error": str(error),
+                    "stdout_tail": str(raw)[-4000:],
+                },
+            )
+
+        if not isinstance(status, dict):
+            return ActionResult(
+                False,
+                "agent resilience status must return a JSON object",
+            )
+
+        return ActionResult(
+            True,
+            "agent resilience status ready",
+            {"resilience": status},
         )
 
     def agent_self_test(self, payload: dict[str, Any]) -> ActionResult:
