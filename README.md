@@ -1,10 +1,16 @@
 # MCP Blender + Unity CLI
 
-## OrdaX multi-projeto (0.3)
+## OrdaX multi-projeto (0.3.0)
 
 O agente aceita projetos locais cadastrados, companion Unity genérico, inspeção e
 preview Blender, sequências de capturas com snapshots e imagens entregues ao modelo
 por MCP. A fila Supabase existente continua atendendo clientes remotos.
+
+Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
+Agent `1.11.1`, protocolo Blender Live `9`, bundle do companion `1` e
+Reference Contract `1`. O inventário completo e as regras de compatibilidade
+estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
+`agent.status.versions`.
 Veja [configuração e limites](docs/MULTI_PROJECT_AGENT.md) e
 [exemplo de projetos](config/projects.example.json).
 

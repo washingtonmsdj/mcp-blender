@@ -8,6 +8,7 @@ from typing import Any
 from .blender_live_bridge import BlenderLiveBridge
 from .models import ActionResult
 from .process_runner import run_command as _run
+from .versioning import component_versions
 
 
 class AgentActions:
@@ -45,6 +46,7 @@ class AgentActions:
                 "projects": [project.public() for project in self.projects.values()],
                 "default_project": self.config.default_project,
                 "busy": self._execution_lock.locked(),
+                "versions": component_versions(),
                 "live_apps": live_apps,
             },
         )
