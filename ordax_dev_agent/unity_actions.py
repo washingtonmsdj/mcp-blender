@@ -301,7 +301,7 @@ class UnityActions:
         return self._unity_live_inspection(
             payload,
             "spatial_audit",
-            "Unity spatial audit passed",
+            "Unity spatial audit completed",
         )
 
     def unity_benchmark_islands_generate(self, payload: dict[str, Any]) -> ActionResult:
