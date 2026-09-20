@@ -7,7 +7,7 @@ preview Blender, sequências de capturas com snapshots e imagens entregues ao mo
 por MCP. A fila Supabase existente continua atendendo clientes remotos.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.13.0`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.14.0`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -264,11 +264,11 @@ The visible Blender companion now exposes a richer typed perception loop:
   faces/triangles, out-of-tile loops, scale-invariant shape distortion and
   optional exact triangle-overlap evidence under a bounded analysis budget.
 - `blender.live_modeling_schema` — read-only typed modeling contracts. The
-  existing `blender.live_object_transform` is available and rejects non-finite,
-  boolean and invalid positive-size inputs before IPC; the visible companion
-  re-runs the same shared contract when consuming the command. Primitive creation
-  and modifier insertion are intentionally advertised as `pending_blender_smoke`
-  until validated against the current Blender 5.x companion.
+  validated mutations are `blender.live_object_transform`,
+  `blender.live_create_primitive` and `blender.live_add_modifier`. They share
+  closed-world planning, runtime guards and Blender-side validation. Create and
+  modifier were promoted after a successful real Blender 5.2.2 BlenderBench on
+  September 20, 2026.
 - `blender.live_modeling_plan` — read-only closed-world planner that validates
   one modeling intent, rejects unknown/inapplicable fields and returns normalized
   defaults/arguments plus whether execution is currently enabled. Use
