@@ -203,8 +203,9 @@ The visible Blender companion now exposes a richer typed perception loop:
   optional exact triangle-overlap evidence under a bounded analysis budget.
 - `blender.live_modeling_schema` — read-only typed modeling contracts. The
   existing `blender.live_object_transform` is available and rejects non-finite,
-  boolean and invalid positive-size inputs before IPC. Primitive creation and
-  modifier insertion are intentionally advertised as `pending_blender_smoke`
+  boolean and invalid positive-size inputs before IPC; the visible companion
+  re-runs the same shared contract when consuming the command. Primitive creation
+  and modifier insertion are intentionally advertised as `pending_blender_smoke`
   until validated against the current Blender 5.x companion.
 - `blender.live_modeling_plan` — read-only closed-world planner that validates
   one modeling intent, rejects unknown/inapplicable fields and returns normalized
