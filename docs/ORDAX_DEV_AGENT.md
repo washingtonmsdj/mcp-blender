@@ -275,3 +275,15 @@ Read-only health report:
 ```powershell
 .\scripts\windows\ordax-resilience-status.ps1
 ```
+
+The same report is available through the strict action registry as
+`agent.resilience_status`. It is intentionally read-only and Windows-only:
+the only accepted input is optional `timeout_seconds` (3–30 seconds), and the
+agent always executes the repository-owned
+`scripts/windows/ordax-resilience-status.ps1`. Callers cannot provide a
+script path, command, arguments or shell text. The returned stdout must parse
+as a JSON object.
+
+This exposes Scheduled Task state/action, external-bootstrap presence, current
+agent processes, local health and GitHub runner-service state without turning
+recovery diagnostics into arbitrary remote execution.
