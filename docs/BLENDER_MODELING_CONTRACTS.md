@@ -51,6 +51,19 @@ The contracts also describe:
 Both report `pending_blender_smoke`. No remote action is registered for either
 mutation yet.
 
+`add_modifier` also publishes deterministic runtime guards inherited from the
+earlier modeling prototype:
+
+- maximum modifier stack: 8;
+- maximum evaluated mesh before insertion: 200,000 faces;
+- maximum projected SUBSURF mesh: 500,000 faces.
+
+The pure helper `evaluate_modifier_runtime_budget` implements these limits and
+is unit-tested, but the planner does **not** accept user-supplied scene metrics as
+proof. Modifier count and evaluated face count must come from the live Blender
+scene when the executor is eventually enabled.
+
+
 The historical `codex/blender-live-session` branch contains an earlier
 implementation of these operations, but that code targets an older companion
 architecture. It is treated as design evidence, not code to merge directly.
