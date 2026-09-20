@@ -146,8 +146,9 @@ class BlenderModelingContractTests(unittest.TestCase):
             "create_primitive",
             {"name": "Body", "primitive": "sphere"},
         )
-        self.assertFalse(plan["executable"])
-        self.assertEqual("pending_blender_smoke", plan["status"])
+        self.assertTrue(plan["executable"])
+        self.assertEqual("available", plan["status"])
+        self.assertEqual("blender.live_create_primitive", plan["action"])
         self.assertEqual(
             {
                 "name": "Body",
@@ -179,7 +180,9 @@ class BlenderModelingContractTests(unittest.TestCase):
                 "type": "bevel",
             },
         )
-        self.assertFalse(plan["executable"])
+        self.assertTrue(plan["executable"])
+        self.assertEqual("available", plan["status"])
+        self.assertEqual("blender.live_add_modifier", plan["action"])
         self.assertEqual(
             {
                 "object_name": "Body",
@@ -364,16 +367,18 @@ class BlenderModelingContractTests(unittest.TestCase):
                 levels=3,
             )
 
-    def test_schema_keeps_unverified_mutations_disabled(self) -> None:
+    def test_schema_marks_validated_modeling_mutations_available(self) -> None:
         schemas = modeling_schemas()
         self.assertEqual("available", schemas["object_transform"]["status"])
+        self.assertEqual("available", schemas["create_primitive"]["status"])
         self.assertEqual(
-            "pending_blender_smoke",
-            schemas["create_primitive"]["status"],
+            "blender.live_create_primitive",
+            schemas["create_primitive"]["action"],
         )
+        self.assertEqual("available", schemas["add_modifier"]["status"])
         self.assertEqual(
-            "pending_blender_smoke",
-            schemas["add_modifier"]["status"],
+            "blender.live_add_modifier",
+            schemas["add_modifier"]["action"],
         )
 
     def test_schema_copy_cannot_mutate_global_contract(self) -> None:
