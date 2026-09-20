@@ -49,6 +49,30 @@ artifact pipeline.
 The action also writes a `reference-contract.json` snapshot containing the
 validated brief, manifest digest and hashes of the selected images.
 
+### `blender.reference_generation_pass`
+
+This is the reference-aware mutation path. It validates and materializes the
+selected references **before** executing the generation script, then delegates
+the mutation to the existing recoverable `blender.live_generation_pass`.
+
+The generation pass checkpoint remains the rollback authority. After mutation,
+the action performs deterministic reference review for the explicit
+`object_names` and can reject the pass when:
+
+- deterministic multiview capture fails;
+- a declared physical dimension is outside the contract tolerance;
+- `require_reference_physical_scale=true` and physical scale is unavailable.
+
+A requested `save_target_path` is removed from the inner generation call and
+saved only after these deterministic reference gates pass. If the reference
+gate or final save fails, the action restores the generation checkpoint with
+`discard_unsaved=true`.
+
+Passing this action does **not** mean arbitrary source photography visually
+matches the model. The result sets `visual_review_pending=true`; source/model
+pixels still need explicit inspection because camera, crop, lens, pose and
+lighting are not proven equivalent.
+
 ### `blender.reference_review`
 
 Requires explicit `object_names`. It first materializes the selected reference
@@ -91,13 +115,14 @@ or visual fidelity.
 2. fetch only the needed source images;
 3. block out one semantic component or stage;
 4. run deterministic geometry/contact/UV gates;
-5. capture deterministic multiview evidence;
-6. run `blender.reference_review`;
-7. inspect paired source/result pixels and record concrete divergences;
-8. make localized corrections while protecting approved components;
-9. repeat until the declared measurable constraints and visual review are
+5. run `blender.reference_generation_pass` for mutations that must honor
+   measurable reference constraints and rollback automatically on failure;
+6. inspect the returned paired source/result pixels and record concrete visual
+   divergences;
+7. make localized corrections while protecting approved components;
+8. repeat until the declared measurable constraints and visual review are
    acceptable;
-10. run final quality gates and isolated headless export.
+9. run final quality gates and isolated headless export.
 
 The existing baseline-to-baseline `blender.multiview_compare` remains the
 correct tool for deterministic regression between two OrdaX captures.
