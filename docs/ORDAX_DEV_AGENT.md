@@ -63,6 +63,10 @@ Never commit service keys.
 - `unity.validate`
 - `unity.capture`
 - `unity.run_method`
+- `unity.editor_start`
+- `unity.editor_terminate_stuck`
+- `unity.hub_install_editor`
+- `unity.recover_resume`
 - `blender.version`
 - `blender.run_python`
 
@@ -139,6 +143,16 @@ For source-code iterations, the preferred chain is:
 
 This gives the user a persistent development preview while still allowing safe
 script recompilation between iterations.
+
+### Unity patch recovery loop
+
+`unity.recover_resume` is the bounded recovery path for a broken Unity Editor
+installation. The caller supplies an exact Editor version and optional changeset.
+The action only accepts a patch in the project's existing release stream, resolves
+the exact Hub executable, upgrades the managed companion, waits for the project to
+migrate its `ProjectVersion.txt`, then runs compile, scene summary, physics audit,
+spatial audit, Play Mode and capture. Every stage is recorded and the workflow
+stops on the first failure. It never falls back to a different Editor version.
 
 
 ## Visible Blender live workspace
