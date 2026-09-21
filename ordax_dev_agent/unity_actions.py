@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import json
+import ntpath
 import os
 import re
 import subprocess
@@ -119,6 +120,14 @@ def _windows_unity_lock_probe(lock_path: Path) -> dict[str, Any]:
 
 _UNITY_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+[abfp]\d+$")
 _UNITY_CHANGESET_PATTERN = re.compile(r"^[0-9a-fA-F]{7,40}$")
+
+
+def _normalize_windows_path(value: str | Path) -> str:
+    # Do not resolve here: Windows may expose the same executable using an 8.3
+    # path through one API and the already-canonical path through another.
+    # Normalize separators/case first so identical reported paths compare
+    # deterministically without extra filesystem I/O.
+    return ntpath.normcase(ntpath.normpath(str(value))).casefold()
 
 
 def _windows_unity_processes(timeout_seconds: float = 10.0) -> list[dict[str, Any]]:
@@ -361,7 +370,7 @@ class UnityActions:
                 "Cannot identify the Unity executable for the locked project",
                 {"project_lock_probe": lock_probe},
             )
-        expected_norm = str(expected.resolve()).replace("\\", "/").lower()
+        expected_norm = _normalize_windows_path(expected)
 
         processes = _windows_unity_processes(
             timeout_seconds=float(payload.get("process_timeout_seconds", 10))
@@ -369,7 +378,7 @@ class UnityActions:
         candidates = [
             item
             for item in processes
-            if str(item.get("path") or "").replace("\\", "/").lower()
+            if _normalize_windows_path(str(item.get("path") or ""))
             == expected_norm
         ]
         if len(candidates) != 1:
