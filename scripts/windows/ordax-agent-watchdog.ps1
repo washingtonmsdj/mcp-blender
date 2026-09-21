@@ -20,9 +20,25 @@ function Write-WatchdogLog([string]$Message) {
     Add-Content -Path $logPath -Value "$stamp $Message" -Encoding UTF8
 }
 
-function Stop-AgentTree([string]$Reason) {
+function Stop-AgentForRecovery([string]$Reason) {
     Write-WatchdogLog "RECOVERY $Reason pid=$AgentPid"
-    & taskkill.exe /PID $AgentPid /T /F | Out-Null
+    try {
+        Stop-Process -Id $AgentPid -Force -ErrorAction Stop
+        Write-WatchdogLog "AGENT_STOPPED pid=$AgentPid"
+        return $true
+    } catch {
+        Write-WatchdogLog "AGENT_STOP_FAIL pid=$AgentPid error=$($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Recover-Agent([string]$Reason) {
+    $stopped = Stop-AgentForRecovery $Reason
+    if (-not $stopped) {
+        return $false
+    }
+    Request-AgentRestartIfNeeded
+    return $true
 }
 
 function Request-AgentRestartIfNeeded {
@@ -110,7 +126,7 @@ while ($true) {
         $consecutiveFailures += 1
         Write-WatchdogLog "HEALTH_FAIL count=$consecutiveFailures pid=$AgentPid"
         if ($consecutiveFailures -ge $MaxConsecutiveFailures) {
-            Stop-AgentTree "local health endpoint failed $consecutiveFailures consecutive probes"
+            [void](Recover-Agent "local health endpoint failed $consecutiveFailures consecutive probes")
             exit 20
         }
         Start-Sleep -Seconds $ProbeIntervalSeconds
@@ -130,7 +146,7 @@ while ($true) {
         } elseif ($busySince) {
             $busyAge = [DateTime]::UtcNow - $busySince
             if ($busyAge.TotalMinutes -ge $MaxBusyMinutes) {
-                Stop-AgentTree ("job $busyJobId remained busy for " + [Math]::Round($busyAge.TotalMinutes, 1) + " minutes")
+                [void](Recover-Agent ("job $busyJobId remained busy for " + [Math]::Round($busyAge.TotalMinutes, 1) + " minutes"))
                 exit 21
             }
         }
