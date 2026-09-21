@@ -110,6 +110,32 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
             self.assertIn("exactly one", result.summary)
             stop.assert_not_called()
 
+    def test_installations_action_reports_discovered_editors(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            registry, _project = self.make_registry(root)
+            editor = root / "Unity" / "6000.6.2f1" / "Editor" / "Unity.exe"
+            editor.parent.mkdir(parents=True)
+            editor.write_bytes(b"unity")
+            with patch(
+                "ordax_dev_agent.unity_actions.sys.platform", "win32"
+            ), patch(
+                "ordax_dev_agent.unity_actions._windows_unity_installation_scan",
+                return_value=[
+                    {
+                        "editor": str(editor),
+                        "sources": [{"source": "registry", "detail": "Unity 6000.6.2f1"}],
+                    }
+                ],
+            ):
+                result = registry.execute(
+                    "unity.installations",
+                    {"version": "6000.6.2f1"},
+                )
+            self.assertTrue(result.ok)
+            self.assertEqual(1, result.data["count"])
+            self.assertEqual(1, len(result.data["requested_matches"]))
+
     def test_hub_install_editor_is_typed_and_verifies_installation(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
