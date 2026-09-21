@@ -118,6 +118,7 @@ class ActionRegistry(
             "unity.editor_start": self.unity_editor_start,
             "unity.editor_terminate_stuck": self.unity_editor_terminate_stuck,
             "unity.hub_install_editor": self.unity_hub_install_editor,
+            "unity.recover_resume": self.unity_recover_resume,
             "unity.refresh_editor": self.unity_refresh_editor,
             "unity.play_start": self.unity_play_start,
             "unity.play_stop": self.unity_play_stop,
