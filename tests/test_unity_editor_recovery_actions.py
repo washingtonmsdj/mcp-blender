@@ -2,10 +2,12 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
+from ordax_dev_agent.models import ActionResult
 
 
 class UnityEditorRecoveryActionTests(unittest.TestCase):
@@ -146,6 +148,136 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
             self.assertIn("6000.6.2f1", command)
             self.assertIn("770e33f6875c", command)
             self.assertFalse(run.call_args.kwargs["shell"])
+
+
+    def test_editor_start_can_target_exact_hub_version(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            registry, _project = self.make_registry(root)
+            editor_path = root / "Unity" / "6000.6.2f1" / "Editor" / "Unity.exe"
+            editor_path.parent.mkdir(parents=True)
+            editor_path.write_bytes(b"test")
+
+            bridge = Mock()
+            bridge.presence_is_fresh.side_effect = [False, True]
+            bridge.project_appears_open.return_value = False
+            bridge.status.return_value = {
+                "presence_fresh": False,
+                "presence": {"protocol": "ordax-generic-v5"},
+            }
+
+            with patch.object(registry, "_editor", return_value=bridge), patch(
+                "ordax_dev_agent.unity_actions._find_hub_editor_executable",
+                return_value=editor_path,
+            ), patch(
+                "ordax_dev_agent.unity_actions.find_unity"
+            ) as legacy_find, patch(
+                "ordax_dev_agent.unity_actions.subprocess.Popen",
+                return_value=SimpleNamespace(pid=4242),
+            ) as popen:
+                result = registry.execute(
+                    "unity.editor_start",
+                    {"version": "6000.6.2f1", "wait_seconds": 1},
+                )
+
+            self.assertTrue(result.ok, f"{result.summary}: {result.data}")
+            legacy_find.assert_not_called()
+            self.assertEqual(str(editor_path), popen.call_args.args[0][0])
+            self.assertEqual("6000.6.2f1", result.data["requested_version"])
+
+    def test_recover_resume_runs_closed_loop_on_same_release_stream(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            registry, _project = self.make_registry(root)
+            ok = ActionResult(True, "ok", {})
+
+            with patch(
+                "ordax_dev_agent.unity_actions.unity_project_profile",
+                side_effect=[
+                    {"unity_version": "6000.6.1f1"},
+                    {"unity_version": "6000.6.2f1"},
+                ],
+            ), patch.object(
+                registry, "unity_editor_terminate_stuck", return_value=ok
+            ) as terminate, patch.object(
+                registry, "unity_hub_install_editor", return_value=ok
+            ) as install, patch.object(
+                registry, "unity_install_companion", return_value=ok
+            ) as companion, patch.object(
+                registry, "unity_editor_start", return_value=ok
+            ) as start, patch.object(
+                registry, "unity_compile", return_value=ok
+            ) as compile_, patch.object(
+                registry, "unity_scene_summary", return_value=ok
+            ) as summary, patch.object(
+                registry, "unity_physics_audit", return_value=ok
+            ) as physics, patch.object(
+                registry, "unity_spatial_audit", return_value=ok
+            ) as spatial, patch.object(
+                registry, "unity_play_start", return_value=ok
+            ) as play, patch.object(
+                registry,
+                "unity_capture",
+                return_value=ActionResult(
+                    True,
+                    "captured",
+                    {"artifact": "capture.png", "snapshot_path": "capture.json"},
+                ),
+            ) as capture:
+                result = registry.execute(
+                    "unity.recover_resume",
+                    {
+                        "version": "6000.6.2f1",
+                        "changeset": "770e33f6875c",
+                    },
+                )
+
+            self.assertTrue(result.ok, f"{result.summary}: {result.data}")
+            terminate.assert_called_once()
+            install.assert_called_once()
+            companion.assert_called_once()
+            start.assert_called_once()
+            self.assertEqual(
+                "6000.6.2f1",
+                start.call_args.args[0]["version"],
+            )
+            compile_.assert_called_once()
+            summary.assert_called_once()
+            physics.assert_called_once()
+            spatial.assert_called_once()
+            play.assert_called_once()
+            capture.assert_called_once()
+            self.assertEqual("capture.png", result.data["artifact"])
+            self.assertEqual(
+                [
+                    "terminate_stuck_editor",
+                    "install_target_editor",
+                    "install_companion",
+                    "start_target_editor",
+                    "compile",
+                    "scene_summary",
+                    "physics_audit",
+                    "spatial_audit",
+                    "play_start",
+                    "capture",
+                ],
+                [item["step"] for item in result.data["steps"]],
+            )
+
+    def test_recover_resume_refuses_cross_stream_editor(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            registry, _project = self.make_registry(root)
+
+            result = registry.execute(
+                "unity.recover_resume",
+                {"version": "6000.5.10f1"},
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("current Unity release stream", result.summary)
+            self.assertEqual("6000.6.1f1", result.data["current_version"])
+            self.assertEqual("6000.5.10f1", result.data["target_version"])
 
 
 if __name__ == "__main__":
