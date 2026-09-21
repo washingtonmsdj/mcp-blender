@@ -190,6 +190,11 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
             root = Path(raw)
             registry, _project = self.make_registry(root)
             ok = ActionResult(True, "ok", {})
+            started = ActionResult(
+                True,
+                "started",
+                {"presence": {"unityVersion": "6000.6.2f1", "protocol": "ordax-generic-v5"}},
+            )
 
             with patch(
                 "ordax_dev_agent.unity_actions.unity_project_profile",
@@ -204,7 +209,7 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
             ) as install, patch.object(
                 registry, "unity_install_companion", return_value=ok
             ) as companion, patch.object(
-                registry, "unity_editor_start", return_value=ok
+                registry, "unity_editor_start", return_value=started
             ) as start, patch.object(
                 registry, "unity_compile", return_value=ok
             ) as compile_, patch.object(
@@ -256,9 +261,9 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
                     "start_target_editor",
                     "compile",
                     "scene_summary",
+                    "play_start",
                     "physics_audit",
                     "spatial_audit",
-                    "play_start",
                     "capture",
                 ],
                 [item["step"] for item in result.data["steps"]],
