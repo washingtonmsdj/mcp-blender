@@ -150,31 +150,64 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
             self.assertFalse(run.call_args.kwargs["shell"])
 
 
-    def test_authenticode_verifier_passes_path_via_environment(self) -> None:
-        with tempfile.TemporaryDirectory() as raw:
-            installer = Path(raw) / "UnitySetup64-6000.6.2f1.exe"
-            installer.write_bytes(b"test")
-            completed = subprocess.CompletedProcess(
-                args=["powershell.exe"],
-                returncode=0,
-                stdout='{"Status":"Valid","Subject":"CN=Unity Technologies SF","Thumbprint":"ABC"}',
-                stderr="",
-            )
-            with patch(
-                "ordax_dev_agent.unity_actions.subprocess.run",
-                return_value=completed,
-            ) as run:
-                from ordax_dev_agent.unity_actions import _verify_windows_authenticode
-                result = _verify_windows_authenticode(installer)
+    def test_release_metadata_requires_exact_version_changeset_and_download(self) -> None:
+        from ordax_dev_agent.unity_actions import _unity_release_installer_metadata
 
-            self.assertTrue(result["valid"])
-            command = run.call_args.args[0]
-            self.assertEqual(["powershell.exe", "-NoProfile", "-Command"], command[:3])
-            self.assertNotIn(str(installer), command)
-            self.assertEqual(
-                str(installer),
-                run.call_args.kwargs["env"]["ORDAX_AUTHENTICODE_PATH"],
+        payload = {
+            "results": [
+                {
+                    "version": "6000.6.2f1",
+                    "shortRevision": "770e33f6875c",
+                    "downloads": [
+                        {
+                            "url": (
+                                "https://download.unity3d.com/download_unity/"
+                                "770e33f6875c/Windows64EditorInstaller/"
+                                "UnitySetup64-6000.6.2f1.exe"
+                            ),
+                            "integrity": "sha1-" + __import__("base64").b64encode(
+                                b"0123456789abcdef0123456789abcdef01234567\n"
+                            ).decode("ascii"),
+                            "type": "EXE",
+                            "platform": "WINDOWS",
+                            "architecture": "X86_64",
+                        }
+                    ],
+                }
+            ]
+        }
+        response = Mock()
+        response.read.return_value = __import__("json").dumps(payload).encode("utf-8")
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+
+        with patch(
+            "ordax_dev_agent.unity_actions.urllib.request.urlopen",
+            return_value=response,
+        ):
+            metadata = _unity_release_installer_metadata(
+                "6000.6.2f1",
+                "770e33f6875c",
             )
+
+        self.assertEqual("sha1", metadata["algorithm"])
+        self.assertEqual(
+            "0123456789abcdef0123456789abcdef01234567",
+            metadata["expected_hash"],
+        )
+        self.assertIn("version=6000.6.2f1", metadata["api_url"])
+
+    def test_file_integrity_matches_official_digest(self) -> None:
+        from ordax_dev_agent.unity_actions import _verify_file_integrity
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "installer.exe"
+            path.write_bytes(b"unity-installer")
+            expected = hashlib.sha1(b"unity-installer").hexdigest()
+            result = _verify_file_integrity(path, "sha1", expected)
+        self.assertTrue(result["valid"])
+        self.assertEqual(expected, result["actual_hash"])
 
     def test_direct_install_editor_uses_official_signed_installer(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -218,12 +251,19 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
                 "ordax_dev_agent.unity_actions.shutil.which",
                 return_value=str(curl),
             ), patch(
-                "ordax_dev_agent.unity_actions._verify_windows_authenticode",
+                "ordax_dev_agent.unity_actions._unity_release_installer_metadata",
                 return_value={
-                    "valid": True,
-                    "status": "Valid",
-                    "subject": "CN=Unity Technologies SF",
-                    "thumbprint": "abc123",
+                    "api_url": "https://services.api.unity.com/test",
+                    "url": (
+                        "https://download.unity3d.com/download_unity/"
+                        "770e33f6875c/Windows64EditorInstaller/"
+                        "UnitySetup64-6000.6.2f1.exe"
+                    ),
+                    "algorithm": "sha1",
+                    "expected_hash": __import__("hashlib").sha1(
+                        b"official-installer"
+                    ).hexdigest(),
+                    "integrity": "sha1-test",
                 },
             ), patch(
                 "ordax_dev_agent.unity_actions.subprocess.run",
@@ -248,7 +288,8 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
                 "UnitySetup64-6000.6.2f1.exe",
                 result.data["url"],
             )
-            self.assertEqual("Valid", result.data["signature"]["status"])
+            self.assertTrue(result.data["integrity"]["valid"])
+            self.assertEqual("sha1", result.data["integrity"]["algorithm"])
 
     def test_direct_install_editor_refuses_missing_changeset(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
