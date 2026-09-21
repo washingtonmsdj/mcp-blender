@@ -6,16 +6,8 @@ $bootstrapPolicyPath = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent\bootstrap\upd
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 $taskInfo = if ($task) { Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue } else { $null }
 
-$runner = Get-CimInstance Win32_Service |
-    Where-Object { $_.Name -like "actions.runner.*" } |
+$runner = Get-Service -Name "actions.runner.*" -ErrorAction SilentlyContinue |
     Select-Object -First 1
-
-$agentProcess = Get-CimInstance Win32_Process |
-    Where-Object {
-        $_.CommandLine -and
-        $_.CommandLine -like "*ordax_dev_agent.main*"
-    } |
-    Select-Object ProcessId,Name,CommandLine
 
 $agentStatus = $null
 try {
@@ -40,11 +32,23 @@ $result = [ordered]@{
                     }
                 }
             )
+            triggers = @(
+                $task.Triggers | ForEach-Object {
+                    [ordered]@{
+                        enabled = [bool]$_.Enabled
+                        start_boundary = $_.StartBoundary
+                        user_id = $_.UserId
+                        repetition_interval = if ($_.Repetition) { [string]$_.Repetition.Interval } else { "" }
+                        repetition_duration = if ($_.Repetition) { [string]$_.Repetition.Duration } else { "" }
+                    }
+                }
+            )
         }
     } else {
         [ordered]@{ exists = $false }
     }
-    agent_processes = @($agentProcess)
+    agent_processes = @()
+    agent_process_enumeration = "intentionally-disabled-no-cim"
     external_bootstrap = [ordered]@{
         script_exists = Test-Path $bootstrapPath
         policy_exists = Test-Path $bootstrapPolicyPath
@@ -56,10 +60,8 @@ $result = [ordered]@{
         [ordered]@{
             exists = $true
             name = $runner.Name
-            state = $runner.State
-            start_mode = $runner.StartMode
-            start_name = $runner.StartName
-            path_name = $runner.PathName
+            state = [string]$runner.Status
+            start_type = [string]$runner.StartType
         }
     } else {
         [ordered]@{ exists = $false }
