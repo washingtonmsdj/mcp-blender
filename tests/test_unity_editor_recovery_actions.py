@@ -150,6 +150,32 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
             self.assertFalse(run.call_args.kwargs["shell"])
 
 
+    def test_authenticode_verifier_passes_path_via_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            installer = Path(raw) / "UnitySetup64-6000.6.2f1.exe"
+            installer.write_bytes(b"test")
+            completed = subprocess.CompletedProcess(
+                args=["powershell.exe"],
+                returncode=0,
+                stdout='{"Status":"Valid","Subject":"CN=Unity Technologies SF","Thumbprint":"ABC"}',
+                stderr="",
+            )
+            with patch(
+                "ordax_dev_agent.unity_actions.subprocess.run",
+                return_value=completed,
+            ) as run:
+                from ordax_dev_agent.unity_actions import _verify_windows_authenticode
+                result = _verify_windows_authenticode(installer)
+
+            self.assertTrue(result["valid"])
+            command = run.call_args.args[0]
+            self.assertEqual(["powershell.exe", "-NoProfile", "-Command"], command[:3])
+            self.assertNotIn(str(installer), command)
+            self.assertEqual(
+                str(installer),
+                run.call_args.kwargs["env"]["ORDAX_AUTHENTICODE_PATH"],
+            )
+
     def test_direct_install_editor_uses_official_signed_installer(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
