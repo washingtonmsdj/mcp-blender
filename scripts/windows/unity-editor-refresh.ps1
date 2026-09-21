@@ -7,29 +7,28 @@ $ErrorActionPreference = "Stop"
 $resolved = (Resolve-Path $ProjectPath).Path
 $projectName = Split-Path $resolved -Leaf
 
-$candidates = Get-CimInstance Win32_Process -Filter "Name='Unity.exe'" |
-    Where-Object {
-        $_.CommandLine -and
-        ($_.CommandLine -like "*$resolved*" -or $_.CommandLine -like "*$projectName*")
-    }
-
-if (-not $candidates) {
-    $candidates = Get-Process Unity -ErrorAction SilentlyContinue |
+$allUnity = @(Get-Process Unity -ErrorAction SilentlyContinue)
+$candidates = @(
+    $allUnity |
         Where-Object {
             $_.MainWindowHandle -ne 0 -and
             $_.MainWindowTitle -like "*$projectName*"
-        } |
-        ForEach-Object {
-            Get-CimInstance Win32_Process -Filter ("ProcessId=" + $_.Id)
         }
+)
+
+if ($candidates.Count -eq 0 -and $allUnity.Count -eq 1) {
+    $lockPath = Join-Path $resolved "Temp\UnityLockfile"
+    if (Test-Path $lockPath) {
+        # A single Unity process plus this project's active lock is a safe
+        # recovery target even when a modal dialog replaced the normal title.
+        $candidates = @($allUnity[0])
+    }
 }
 
-$candidate = $candidates | Select-Object -First 1
-if (-not $candidate) {
-    throw "No running Unity Editor process was found for $resolved"
+$process = $candidates | Select-Object -First 1
+if (-not $process) {
+    throw "No uniquely identifiable running Unity Editor process was found for $resolved"
 }
-
-$process = Get-Process -Id $candidate.ProcessId -ErrorAction Stop
 if ($process.MainWindowHandle -eq 0) {
     throw "Unity process has no main window."
 }
