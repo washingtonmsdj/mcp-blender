@@ -128,6 +128,102 @@ class AgentActions:
             {"resilience": status},
         )
 
+    def agent_resilience_repair(self, payload: dict[str, Any]) -> ActionResult:
+        unsupported = sorted(set(payload) - {"timeout_seconds"})
+        if unsupported:
+            return ActionResult(
+                False,
+                "unsupported field(s): " + ", ".join(unsupported),
+            )
+        if sys.platform != "win32":
+            return ActionResult(
+                False,
+                "agent resilience repair is available only on Windows",
+            )
+
+        try:
+            timeout_seconds = int(payload.get("timeout_seconds", 30))
+        except (TypeError, ValueError):
+            return ActionResult(False, "timeout_seconds must be an integer")
+        if timeout_seconds < 10 or timeout_seconds > 60:
+            return ActionResult(
+                False,
+                "timeout_seconds must be between 10 and 60",
+            )
+
+        repo = self.config.agent_repo_path.resolve()
+        installer = (
+            repo
+            / "scripts"
+            / "windows"
+            / "ordax-agent-bootstrap-install.ps1"
+        )
+        if not installer.is_file():
+            return ActionResult(
+                False,
+                f"bootstrap installer not found: {installer}",
+            )
+
+        repair = _run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(installer),
+                "-RepoRoot",
+                str(repo),
+                "-TaskName",
+                "OrdaX Dev Agent",
+                "-RetargetTask",
+            ],
+            cwd=repo,
+            timeout=timeout_seconds,
+        )
+        if not repair.ok:
+            repair.summary = "agent resilience task repair failed"
+            return repair
+
+        status = self.agent_resilience_status(
+            {"timeout_seconds": min(timeout_seconds, 30)}
+        )
+        if not status.ok:
+            status.summary = (
+                "task repair completed, but resilience verification failed"
+            )
+            status.data["repair"] = repair.data
+            return status
+
+        resilience = status.data.get("resilience") or {}
+        scheduled = resilience.get("scheduled_task") or {}
+        triggers = scheduled.get("triggers") or []
+        maintenance = [
+            trigger
+            for trigger in triggers
+            if str(trigger.get("repetition_interval") or "")
+        ]
+        if not scheduled.get("exists") or len(triggers) < 2 or not maintenance:
+            return ActionResult(
+                False,
+                "task repair did not produce the required recovery triggers",
+                {
+                    "repair": repair.data,
+                    "resilience": resilience,
+                },
+            )
+
+        return ActionResult(
+            True,
+            "agent resilience task repaired and verified",
+            {
+                "repair": repair.data,
+                "resilience": resilience,
+                "trigger_count": len(triggers),
+                "maintenance_trigger_count": len(maintenance),
+            },
+        )
+
     def agent_self_test(self, payload: dict[str, Any]) -> ActionResult:
         repo = self.config.agent_repo_path.resolve()
         tests_root = repo / "tests"

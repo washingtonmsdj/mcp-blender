@@ -438,6 +438,18 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertIn("MainWindowTitle", refresh)
         self.assertNotIn("Get-CimInstance", refresh)
 
+    def test_resilience_status_avoids_win32_cim_and_reports_triggers(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        status = (
+            root / "scripts" / "windows" / "ordax-resilience-status.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("Get-CimInstance", status)
+        self.assertIn('Get-Service -Name "actions.runner.*"', status)
+        self.assertIn("triggers = @(", status)
+        self.assertIn("repetition_interval", status)
+        self.assertIn("repetition_duration", status)
+
     def test_resilience_status_reports_external_bootstrap(self) -> None:
         root = Path(__file__).resolve().parents[1]
         status = (

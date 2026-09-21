@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.main import _start_local_watchdog
 from ordax_dev_agent.config import AgentConfig
+from ordax_dev_agent.models import ActionResult
 
 
 class AgentActionRegistryTests(unittest.TestCase):
@@ -38,6 +39,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             result = registry.execute("agent.status", {})
             self.assertTrue(result.ok)
             self.assertIn("agent.update", result.data["actions"])
+            self.assertIn("agent.resilience_repair", result.data["actions"])
             self.assertIn("unity.compile", result.data["actions"])
             self.assertIn("blender.run_python", result.data["actions"])
             self.assertIn("blender.live_start", result.data["actions"])
@@ -89,6 +91,43 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_add_modifier", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
+
+    def test_resilience_repair_verifies_periodic_trigger(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            config = self.make_config(root)
+            repo = config.agent_repo_path
+            installer = repo / "scripts" / "windows" / "ordax-agent-bootstrap-install.ps1"
+            installer.parent.mkdir(parents=True)
+            installer.write_text("Write-Output '{}'", encoding="utf-8")
+            registry = ActionRegistry(config)
+
+            repaired = ActionResult(True, "ok", {"stdout": "{}"})
+            verified = ActionResult(
+                True,
+                "ready",
+                {
+                    "resilience": {
+                        "scheduled_task": {
+                            "exists": True,
+                            "triggers": [
+                                {"repetition_interval": ""},
+                                {"repetition_interval": "PT1M"},
+                            ],
+                        }
+                    }
+                },
+            )
+            with patch("ordax_dev_agent.agent_actions.sys.platform", "win32"), patch(
+                "ordax_dev_agent.agent_actions._run", return_value=repaired
+            ), patch.object(
+                registry, "agent_resilience_status", return_value=verified
+            ):
+                result = registry.execute("agent.resilience_repair", {})
+
+            self.assertTrue(result.ok, f"{result.summary}: {result.data}")
+            self.assertEqual(2, result.data["trigger_count"])
+            self.assertEqual(1, result.data["maintenance_trigger_count"])
 
     def test_modeling_plan_normalizes_available_cube_action(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
