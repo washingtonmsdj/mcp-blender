@@ -71,7 +71,7 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
                     {"wait_seconds": 5},
                 )
 
-            self.assertTrue(result.ok)
+            self.assertTrue(result.ok, f"{result.summary}: {result.data}")
             self.assertEqual(16860, result.data["pid"])
             self.assertTrue(result.data["stale_lock_cleared"])
             self.assertEqual("missing", result.data["project_lock_probe"]["state"])
