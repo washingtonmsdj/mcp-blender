@@ -105,6 +105,9 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("function Request-AgentRestartIfNeeded", watchdog)
+        self.assertIn("function Stop-AgentForRecovery", watchdog)
+        self.assertIn("function Recover-Agent", watchdog)
+        self.assertIn("Stop-Process -Id $AgentPid -Force", watchdog)
         self.assertIn("Invoke-RestMethod -Uri $healthUrl", watchdog)
         self.assertIn(
             "Start-ScheduledTask -TaskName $RestartTaskName",
@@ -113,6 +116,19 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertIn('$task.State -ne "Running"', watchdog)
         self.assertIn('$task.State -eq "Disabled"', watchdog)
         self.assertNotIn("Get-CimInstance", watchdog)
+        self.assertNotIn("taskkill.exe", watchdog)
+
+        health_recovery_index = watchdog.index(
+            '[void](Recover-Agent "local health endpoint failed'
+        )
+        health_exit_index = watchdog.index("exit 20", health_recovery_index)
+        self.assertLess(health_recovery_index, health_exit_index)
+
+        busy_recovery_index = watchdog.index(
+            '[void](Recover-Agent ("job $busyJobId remained busy'
+        )
+        busy_exit_index = watchdog.index("exit 21", busy_recovery_index)
+        self.assertLess(busy_recovery_index, busy_exit_index)
 
         exit_index = watchdog.index("EXIT parent process ended")
         restart_index = watchdog.index(
