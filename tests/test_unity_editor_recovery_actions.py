@@ -150,6 +150,92 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
             self.assertFalse(run.call_args.kwargs["shell"])
 
 
+    def test_direct_install_editor_uses_official_signed_installer(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            registry, _project = self.make_registry(root)
+            local_app_data = root / "local"
+            expected_editor = (
+                local_app_data
+                / "Unity"
+                / "Hub"
+                / "Editor"
+                / "6000.6.2f1"
+                / "Editor"
+                / "Unity.exe"
+            )
+            curl = root / "curl.exe"
+            curl.write_bytes(b"curl")
+
+            def fake_run(command, **_kwargs):
+                if str(command[0]) == str(curl):
+                    output = Path(command[command.index("--output") + 1])
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    output.write_bytes(b"official-installer")
+                    return subprocess.CompletedProcess(command, 0, "", "")
+                if str(command[0]).endswith("UnitySetup64-6000.6.2f1.exe"):
+                    expected_editor.parent.mkdir(parents=True, exist_ok=True)
+                    expected_editor.write_bytes(b"unity")
+                    return subprocess.CompletedProcess(command, 0, "", "")
+                raise AssertionError(f"unexpected command: {command}")
+
+            with patch.dict(
+                "ordax_dev_agent.unity_actions.os.environ",
+                {"LOCALAPPDATA": str(local_app_data)},
+                clear=False,
+            ), patch(
+                "ordax_dev_agent.unity_actions.sys.platform", "win32"
+            ), patch(
+                "ordax_dev_agent.unity_actions._hub_editor_install_exists",
+                return_value=False,
+            ), patch(
+                "ordax_dev_agent.unity_actions.shutil.which",
+                return_value=str(curl),
+            ), patch(
+                "ordax_dev_agent.unity_actions._verify_windows_authenticode",
+                return_value={
+                    "valid": True,
+                    "status": "Valid",
+                    "subject": "CN=Unity Technologies SF",
+                    "thumbprint": "abc123",
+                },
+            ), patch(
+                "ordax_dev_agent.unity_actions.subprocess.run",
+                side_effect=fake_run,
+            ):
+                result = registry.execute(
+                    "unity.direct_install_editor",
+                    {
+                        "version": "6000.6.2f1",
+                        "changeset": "770e33f6875c",
+                        "download_timeout_seconds": 120,
+                        "install_timeout_seconds": 120,
+                    },
+                )
+
+            self.assertTrue(result.ok, f"{result.summary}: {result.data}")
+            self.assertTrue(expected_editor.is_file())
+            self.assertEqual("unity-download-archive", result.data["source"])
+            self.assertEqual(
+                "https://download.unity3d.com/download_unity/"
+                "770e33f6875c/Windows64EditorInstaller/"
+                "UnitySetup64-6000.6.2f1.exe",
+                result.data["url"],
+            )
+            self.assertEqual("Valid", result.data["signature"]["status"])
+
+    def test_direct_install_editor_refuses_missing_changeset(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            registry, _project = self.make_registry(root)
+            with patch("ordax_dev_agent.unity_actions.sys.platform", "win32"):
+                result = registry.execute(
+                    "unity.direct_install_editor",
+                    {"version": "6000.6.2f1"},
+                )
+            self.assertFalse(result.ok)
+            self.assertIn("changeset is required", result.summary)
+
     def test_editor_start_can_target_exact_hub_version(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)

@@ -7,7 +7,7 @@ espacial de cenas, inspeção/preview Blender e sequências de capturas com snap
 e imagens entregues ao modelo por MCP. A fila Supabase existente continua atendendo clientes remotos.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.19.16`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.19.17`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -139,6 +139,14 @@ launch that exact Hub executable instead of resolving the project's older Editor
 `unity.recover_resume` is constrained to the project's current release stream
 (for example `6000.6.x -> 6000.6.x`) and runs fail-closed through recovery,
 companion upgrade, compile, scene/physics/spatial inspection, Play Mode and capture.
+
+If Unity Hub downloads an Editor but repeatedly times out while validating the
+installation, `unity.direct_install_editor` provides a separate bounded fallback.
+It constructs the official `download.unity3d.com` installer URL only from an
+exact version + changeset, downloads resumably, requires a valid Unity
+Technologies Authenticode signature, installs silently into the user-local Unity
+Editor root, and verifies that the expected `Unity.exe` exists. Callers cannot
+supply an arbitrary URL or install directory.
 
 ## Tools MCP
 

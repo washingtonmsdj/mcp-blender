@@ -10,6 +10,7 @@ import json
 import ntpath
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -251,6 +252,64 @@ def _unity_release_stream(version: str) -> tuple[int, int] | None:
     if not match:
         return None
     return int(match.group(1)), int(match.group(2))
+
+
+def _official_windows_unity_installer_url(version: str, changeset: str) -> str:
+    if not _UNITY_VERSION_PATTERN.fullmatch(version):
+        raise ValueError("invalid Unity Editor version")
+    if not _UNITY_CHANGESET_PATTERN.fullmatch(changeset):
+        raise ValueError("invalid Unity changeset")
+    return (
+        "https://download.unity3d.com/download_unity/"
+        f"{changeset}/Windows64EditorInstaller/UnitySetup64-{version}.exe"
+    )
+
+
+def _verify_windows_authenticode(path: Path) -> dict[str, Any]:
+    script = (
+        "$p=$args[0];"
+        "$s=Get-AuthenticodeSignature -LiteralPath $p;"
+        "[pscustomobject]@{"
+        "Status=[string]$s.Status;"
+        "Subject=[string]$s.SignerCertificate.Subject;"
+        "Thumbprint=[string]$s.SignerCertificate.Thumbprint"
+        "}|ConvertTo-Json -Compress"
+    )
+    completed = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", script, str(path)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        shell=False,
+    )
+    if completed.returncode != 0:
+        return {
+            "valid": False,
+            "status": "powershell-error",
+            "subject": "",
+            "thumbprint": "",
+            "stderr": completed.stderr[-4000:],
+        }
+    try:
+        raw = json.loads(completed.stdout.strip() or "{}")
+    except json.JSONDecodeError:
+        return {
+            "valid": False,
+            "status": "unparseable",
+            "subject": "",
+            "thumbprint": "",
+            "stdout": completed.stdout[-4000:],
+        }
+    status = str(raw.get("Status") or "")
+    subject = str(raw.get("Subject") or "")
+    thumbprint = str(raw.get("Thumbprint") or "")
+    valid = status.casefold() == "valid" and "unity technologies" in subject.casefold()
+    return {
+        "valid": valid,
+        "status": status,
+        "subject": subject,
+        "thumbprint": thumbprint,
+    }
 
 
 def _unity_process_ids_for_project(project: Path) -> list[int]:
@@ -561,6 +620,177 @@ class UnityActions:
         if completed.returncode != 0 or not installed:
             return ActionResult(False, "Unity Hub did not complete the requested Editor installation", data)
         return ActionResult(True, "Unity Editor installed through Unity Hub", data)
+
+    def unity_direct_install_editor(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        if sys.platform != "win32":
+            return ActionResult(False, "Direct Unity Editor installation is currently Windows-only")
+
+        version = str(payload.get("version") or "").strip()
+        changeset = str(payload.get("changeset") or "").strip()
+        if not _UNITY_VERSION_PATTERN.fullmatch(version):
+            return ActionResult(False, "version must be an exact Unity Editor version such as 6000.6.2f1")
+        if not _UNITY_CHANGESET_PATTERN.fullmatch(changeset):
+            return ActionResult(False, "changeset is required and must be a hexadecimal Unity changeset")
+
+        if _hub_editor_install_exists(version):
+            return ActionResult(
+                True,
+                "Requested Unity Editor version is already installed",
+                {
+                    "version": version,
+                    "already_installed": True,
+                    "editor": str(_find_hub_editor_executable(version)),
+                },
+            )
+
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if not local_app_data:
+            return ActionResult(False, "LOCALAPPDATA is unavailable; refusing an ambiguous install location")
+
+        curl = shutil.which("curl.exe") or shutil.which("curl")
+        if not curl:
+            return ActionResult(False, "curl is unavailable for resumable official Unity installer download")
+
+        installer_dir = self.config.state_dir / "unity-installers"
+        installer_dir.mkdir(parents=True, exist_ok=True)
+        installer = installer_dir / f"UnitySetup64-{version}.exe"
+        partial = installer.with_suffix(installer.suffix + ".part")
+        install_dir = Path(local_app_data) / "Unity" / "Hub" / "Editor" / version
+        url = _official_windows_unity_installer_url(version, changeset)
+
+        signature: dict[str, Any] | None = None
+        if installer.is_file():
+            signature = _verify_windows_authenticode(installer)
+            if not signature.get("valid"):
+                try:
+                    installer.unlink()
+                except OSError as error:
+                    return ActionResult(
+                        False,
+                        f"Cached Unity installer has an invalid signature and could not be removed: {error}",
+                        {"installer": str(installer), "signature": signature},
+                    )
+
+        download_timeout = max(
+            120,
+            min(int(payload.get("download_timeout_seconds", 900)), 900),
+        )
+        if not installer.is_file():
+            download_command = [
+                str(curl),
+                "--fail",
+                "--location",
+                "--retry",
+                "3",
+                "--retry-delay",
+                "2",
+            ]
+            if partial.is_file() and partial.stat().st_size > 0:
+                download_command.extend(["--continue-at", "-"])
+            download_command.extend(
+                [
+                    "--output",
+                    str(partial),
+                    url,
+                ]
+            )
+            try:
+                downloaded = subprocess.run(
+                    download_command,
+                    cwd=str(project.root),
+                    capture_output=True,
+                    text=True,
+                    timeout=download_timeout,
+                    shell=False,
+                )
+            except subprocess.TimeoutExpired as error:
+                return ActionResult(
+                    False,
+                    "Official Unity installer download timed out",
+                    {
+                        "url": url,
+                        "partial": str(partial),
+                        "partial_bytes": partial.stat().st_size if partial.is_file() else 0,
+                        "timeout_seconds": error.timeout,
+                    },
+                )
+            if downloaded.returncode != 0 or not partial.is_file():
+                return ActionResult(
+                    False,
+                    "Official Unity installer download failed",
+                    {
+                        "url": url,
+                        "partial": str(partial),
+                        "returncode": downloaded.returncode,
+                        "stdout": downloaded.stdout[-8000:],
+                        "stderr": downloaded.stderr[-8000:],
+                    },
+                )
+            partial.replace(installer)
+
+        signature = _verify_windows_authenticode(installer)
+        if not signature.get("valid"):
+            return ActionResult(
+                False,
+                "Official Unity installer Authenticode verification failed",
+                {
+                    "url": url,
+                    "installer": str(installer),
+                    "signature": signature,
+                },
+            )
+
+        install_dir.mkdir(parents=True, exist_ok=True)
+        install_timeout = max(
+            120,
+            min(int(payload.get("install_timeout_seconds", 600)), 900),
+        )
+        install_command = [
+            str(installer),
+            "/S",
+            f"/D={install_dir}",
+        ]
+        try:
+            installed = subprocess.run(
+                install_command,
+                cwd=str(project.root),
+                capture_output=True,
+                text=True,
+                timeout=install_timeout,
+                shell=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            return ActionResult(
+                False,
+                "Direct Unity Editor installer timed out",
+                {
+                    "version": version,
+                    "installer": str(installer),
+                    "install_dir": str(install_dir),
+                    "timeout_seconds": error.timeout,
+                },
+            )
+
+        unity = install_dir / "Editor" / "Unity.exe"
+        ok = installed.returncode == 0 and unity.is_file()
+        data = {
+            "version": version,
+            "changeset": changeset,
+            "source": "unity-download-archive",
+            "url": url,
+            "installer": str(installer),
+            "signature": signature,
+            "install_dir": str(install_dir),
+            "editor": str(unity),
+            "returncode": installed.returncode,
+            "stdout": installed.stdout[-8000:],
+            "stderr": installed.stderr[-8000:],
+            "installed": unity.is_file(),
+        }
+        if not ok:
+            return ActionResult(False, "Direct Unity Editor installation did not produce the expected Editor", data)
+        return ActionResult(True, "Unity Editor installed from the official signed installer", data)
 
     def unity_recover_resume(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
