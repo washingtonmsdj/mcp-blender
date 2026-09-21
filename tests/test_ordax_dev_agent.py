@@ -65,6 +65,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("unity.asset_inventory", result.data["actions"])
             self.assertIn("unity.asset_import", result.data["actions"])
             self.assertIn("unity.editor_diagnostics", result.data["actions"])
+            self.assertIn("unity.recover_resume", result.data["actions"])
             self.assertIn("blender.live_checkpoint_create", result.data["actions"])
             self.assertIn("blender.live_checkpoint_list", result.data["actions"])
             self.assertIn("blender.live_checkpoint_restore", result.data["actions"])

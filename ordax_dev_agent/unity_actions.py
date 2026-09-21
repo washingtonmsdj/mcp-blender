@@ -197,24 +197,60 @@ def _find_unity_hub() -> Path | None:
     return None
 
 
-def _hub_editor_install_exists(version: str) -> bool:
-    roots = [Path("C:/Program Files/Unity/Hub/Editor")]
+def _hub_editor_roots() -> list[Path]:
+    roots: list[Path] = []
+    extra_roots = os.environ.get("UNITY_EDITOR_ROOTS", "")
+    for raw in extra_roots.split(";"):
+        raw = raw.strip().strip('"')
+        if raw:
+            roots.append(Path(raw))
+
+    roots.append(Path("C:/Program Files/Unity/Hub/Editor"))
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
         roots.append(Path(local_app_data) / "Unity" / "Hub" / "Editor")
+
+    unique: list[Path] = []
+    seen: set[str] = set()
     for root in roots:
+        key = _normalize_windows_path(root)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(root)
+    return unique
+
+
+def _find_hub_editor_executable(version: str) -> Path | None:
+    for root in _hub_editor_roots():
         if not root.is_dir():
             continue
-        for entry in root.iterdir():
+        try:
+            entries = sorted(root.iterdir(), key=lambda item: item.name.casefold())
+        except OSError:
+            continue
+        for entry in entries:
             if not entry.is_dir():
                 continue
-            if entry.name.lower() == version.lower() or entry.name.lower().startswith(
-                version.lower() + "-"
-            ):
-                unity = entry / "Editor" / "Unity.exe"
-                if unity.is_file():
-                    return True
-    return False
+            name = entry.name.casefold()
+            target = version.casefold()
+            if name != target and not name.startswith(target + "-"):
+                continue
+            unity = entry / "Editor" / "Unity.exe"
+            if unity.is_file():
+                return unity.resolve()
+    return None
+
+
+def _hub_editor_install_exists(version: str) -> bool:
+    return _find_hub_editor_executable(version) is not None
+
+
+def _unity_release_stream(version: str) -> tuple[int, int] | None:
+    match = re.match(r"^(\d+)\.(\d+)\.", version)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
 
 
 def _unity_process_ids_for_project(project: Path) -> list[int]:
@@ -525,6 +561,192 @@ class UnityActions:
         if completed.returncode != 0 or not installed:
             return ActionResult(False, "Unity Hub did not complete the requested Editor installation", data)
         return ActionResult(True, "Unity Editor installed through Unity Hub", data)
+
+    def unity_recover_resume(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        version = str(payload.get("version") or "").strip()
+        changeset = str(payload.get("changeset") or "").strip()
+        if not _UNITY_VERSION_PATTERN.fullmatch(version):
+            return ActionResult(False, "version must be an exact Unity Editor version such as 6000.6.2f1")
+        if changeset and not _UNITY_CHANGESET_PATTERN.fullmatch(changeset):
+            return ActionResult(False, "changeset must be a hexadecimal Unity changeset")
+
+        profile_before = unity_project_profile(project.root)
+        current_version = str(profile_before.get("unity_version") or "").strip()
+        current_stream = _unity_release_stream(current_version)
+        target_stream = _unity_release_stream(version)
+        if current_stream is None or target_stream is None:
+            return ActionResult(
+                False,
+                "Could not determine the Unity release stream for safe patch recovery",
+                {"current_version": current_version or None, "target_version": version},
+            )
+        if current_stream != target_stream:
+            return ActionResult(
+                False,
+                "Recovery only permits an Editor patch within the project's current Unity release stream",
+                {
+                    "current_version": current_version,
+                    "target_version": version,
+                    "current_stream": ".".join(map(str, current_stream)),
+                    "target_stream": ".".join(map(str, target_stream)),
+                },
+            )
+
+        steps: list[dict[str, Any]] = []
+
+        def run_step(name: str, result: ActionResult) -> ActionResult | None:
+            data = dict(result.data or {})
+            for key in ("stdout", "stderr", "editor_log_tail"):
+                value = data.get(key)
+                if isinstance(value, str) and len(value) > 8000:
+                    data[key] = value[-8000:]
+            steps.append(
+                {
+                    "step": name,
+                    "ok": result.ok,
+                    "summary": result.summary,
+                    "data": data,
+                }
+            )
+            if result.ok:
+                return None
+            return ActionResult(
+                False,
+                f"Unity recovery stopped at {name}: {result.summary}",
+                {
+                    "project": project.slug,
+                    "current_version": current_version,
+                    "target_version": version,
+                    "failed_step": name,
+                    "steps": steps,
+                },
+            )
+
+        common = dict(payload)
+        common["project"] = project.slug
+
+        failure = run_step(
+            "terminate_stuck_editor",
+            self.unity_editor_terminate_stuck(common),
+        )
+        if failure:
+            return failure
+
+        install_payload = dict(common)
+        install_payload["version"] = version
+        if changeset:
+            install_payload["changeset"] = changeset
+        failure = run_step(
+            "install_target_editor",
+            self.unity_hub_install_editor(install_payload),
+        )
+        if failure:
+            return failure
+
+        failure = run_step(
+            "install_companion",
+            self.unity_install_companion(common),
+        )
+        if failure:
+            return failure
+
+        start_payload = dict(common)
+        start_payload["version"] = version
+        start_payload["wait_seconds"] = float(payload.get("editor_wait_seconds", 240))
+        start_result = self.unity_editor_start(start_payload)
+        failure = run_step("start_target_editor", start_result)
+        if failure:
+            return failure
+
+        started_presence = start_result.data.get("presence") or {}
+        running_version = str(started_presence.get("unityVersion") or "").strip()
+        if running_version != version:
+            return ActionResult(
+                False,
+                "Unity companion became ready from a different Editor version than requested",
+                {
+                    "project": project.slug,
+                    "current_version": current_version,
+                    "target_version": version,
+                    "running_version": running_version or None,
+                    "failed_step": "verify_running_editor",
+                    "steps": steps,
+                },
+            )
+
+        profile_after_start = unity_project_profile(project.root)
+        project_version_after_start = str(
+            profile_after_start.get("unity_version") or ""
+        ).strip()
+
+        compile_payload = dict(common)
+        compile_payload["timeout_seconds"] = int(payload.get("compile_timeout_seconds", 1800))
+        failure = run_step("compile", self.unity_compile(compile_payload))
+        if failure:
+            return failure
+
+        scene_path = str(payload.get("scene_path") or "").strip()
+        if scene_path:
+            scene_payload = dict(common)
+            scene_payload["scene_path"] = scene_path
+            scene_payload["timeout_seconds"] = int(payload.get("scene_timeout_seconds", 120))
+            failure = run_step("scene_open", self.unity_scene_open(scene_payload))
+            if failure:
+                return failure
+
+        failure = run_step("scene_summary", self.unity_scene_summary(common))
+        if failure:
+            return failure
+
+        play_payload = dict(common)
+        play_payload["wait_seconds"] = float(payload.get("play_wait_seconds", 60))
+        failure = run_step("play_start", self.unity_play_start(play_payload))
+        if failure:
+            return failure
+
+        failure = run_step("physics_audit", self.unity_physics_audit(common))
+        if failure:
+            return failure
+        failure = run_step("spatial_audit", self.unity_spatial_audit(common))
+        if failure:
+            return failure
+
+        capture_payload = dict(common)
+        for key in (
+            "width",
+            "height",
+            "warmup_frames",
+            "warmup_seconds",
+            "time_scale",
+            "capture_on_terminal",
+            "capture_on_boss",
+            "timeout_seconds",
+        ):
+            if key in payload:
+                capture_payload[key] = payload[key]
+        capture_payload["timeout_seconds"] = int(payload.get("capture_timeout_seconds", 900))
+        capture_result = self.unity_capture(capture_payload)
+        failure = run_step("capture", capture_result)
+        if failure:
+            return failure
+
+        return ActionResult(
+            True,
+            "Unity recovered on the requested patch and the validation loop completed",
+            {
+                "project": project.slug,
+                "current_version": current_version,
+                "target_version": version,
+                "changeset": changeset or None,
+                "running_version": running_version,
+                "project_version_after_start": project_version_after_start or None,
+                "steps": steps,
+                "artifact": capture_result.data.get("artifact"),
+                "snapshot_path": capture_result.data.get("snapshot_path"),
+                "play_mode_left_running": True,
+            },
+        )
 
     def _editor(self, payload: dict[str, Any]) -> UnityEditorBridge:
         project = self._project(payload)
@@ -967,9 +1189,21 @@ class UnityActions:
                     status,
                 )
 
-        unity = find_unity(project.root)
-        if unity is None:
-            return ActionResult(False, "Unity executable not found for registered project")
+        requested_version = str(payload.get("version") or "").strip()
+        if requested_version:
+            if not _UNITY_VERSION_PATTERN.fullmatch(requested_version):
+                return ActionResult(False, "version must be an exact Unity Editor version such as 6000.6.2f1")
+            unity = _find_hub_editor_executable(requested_version)
+            if unity is None:
+                return ActionResult(
+                    False,
+                    "Requested Unity Editor version is not installed",
+                    {"requested_version": requested_version},
+                )
+        else:
+            unity = find_unity(project.root)
+            if unity is None:
+                return ActionResult(False, "Unity executable not found for registered project")
 
         command = [str(unity), "-projectPath", str(project.root)]
         popen_kwargs = {
@@ -1003,6 +1237,7 @@ class UnityActions:
                         "pid": process.pid,
                         "command": command,
                         "stale_lock_cleared": stale_lock_cleared,
+                        "requested_version": requested_version or None,
                     },
                 )
             time.sleep(0.5)
@@ -1016,6 +1251,7 @@ class UnityActions:
                 "pid": process.pid,
                 "command": command,
                 "stale_lock_cleared": stale_lock_cleared,
+                "requested_version": requested_version or None,
             },
         )
 
