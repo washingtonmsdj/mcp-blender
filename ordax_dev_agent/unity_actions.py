@@ -457,6 +457,7 @@ class UnityActions:
         )
 
     def unity_hub_install_editor(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
         if sys.platform != "win32":
             return ActionResult(False, "Unity Hub Editor installation is currently Windows-only")
 
