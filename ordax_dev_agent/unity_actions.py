@@ -48,6 +48,74 @@ def _unity_editor_log_candidates(project: Path) -> list[Path]:
     return [project_log, global_log]
 
 
+def _windows_unity_lock_probe(lock_path: Path) -> dict[str, Any]:
+    """Probe UnityLockfile without WMI/CIM or process enumeration.
+
+    Unity keeps Temp/UnityLockfile open while a project is active. On Windows,
+    opening the same path with share mode 0 fails with a sharing/lock violation
+    while the Editor still owns it. A successful exclusive open means the file
+    exists but is no longer actively held and can be treated as stale.
+    """
+    if not lock_path.exists():
+        return {"state": "missing", "path": str(lock_path)}
+    if sys.platform != "win32":
+        return {"state": "unknown", "path": str(lock_path), "reason": "non-windows"}
+
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    create_file.restype = wintypes.HANDLE
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+
+    generic_read = 0x80000000
+    open_existing = 3
+    file_attribute_normal = 0x80
+    invalid_handle_value = ctypes.c_void_p(-1).value
+
+    ctypes.set_last_error(0)
+    handle = create_file(
+        str(lock_path),
+        generic_read,
+        0,
+        None,
+        open_existing,
+        file_attribute_normal,
+        None,
+    )
+    handle_value = ctypes.cast(handle, ctypes.c_void_p).value
+    if handle_value == invalid_handle_value:
+        error = ctypes.get_last_error()
+        if error in {32, 33}:
+            return {
+                "state": "active",
+                "path": str(lock_path),
+                "winerror": error,
+            }
+        return {
+            "state": "unknown",
+            "path": str(lock_path),
+            "winerror": error,
+        }
+
+    try:
+        return {"state": "stale", "path": str(lock_path)}
+    finally:
+        close_handle(handle)
+
+
 def _unity_process_ids_for_project(project: Path) -> list[int]:
     """Return Unity process IDs whose command line references this project."""
     target = str(project.resolve()).replace("\\", "/").lower()
@@ -563,21 +631,44 @@ class UnityActions:
 
         stale_lock_cleared = False
         if editor.project_appears_open():
-            pids = _unity_process_ids_for_project(project.root)
-            if pids:
-                editor.nudge_companion(wait_seconds=float(payload.get("wait_seconds", 45)))
-                status = editor.status()
-                status["unity_process_ids"] = pids
+            editor.nudge_companion(
+                wait_seconds=min(float(payload.get("wait_seconds", 45)), 15.0)
+            )
+            status = editor.status()
+            if status.get("presence_fresh"):
                 return ActionResult(
-                    bool(status.get("presence_fresh")),
-                    "Unity Editor project is open and companion ready"
-                    if status.get("presence_fresh")
-                    else "Unity process is running for this project but companion is not ready",
+                    True,
+                    "Unity Editor project is open and companion ready",
                     status,
                 )
 
-            # A stale Temp/UnityLockfile can survive a crashed or killed batch.
-            # Only remove it after verifying there is no Unity process for this project.
+            if sys.platform == "win32":
+                lock_probe = _windows_unity_lock_probe(editor.project_lock_path)
+                status["project_lock_probe"] = lock_probe
+                if lock_probe.get("state") == "active":
+                    return ActionResult(
+                        False,
+                        "Unity project lock is actively held, but the OrdaX companion is not ready",
+                        status,
+                    )
+                if lock_probe.get("state") != "stale":
+                    return ActionResult(
+                        False,
+                        "Unity project lock state is uncertain; refusing unsafe lock cleanup or duplicate Editor launch",
+                        status,
+                    )
+            else:
+                pids = _unity_process_ids_for_project(project.root)
+                status["unity_process_ids"] = pids
+                if pids:
+                    return ActionResult(
+                        False,
+                        "Unity process is running for this project but companion is not ready",
+                        status,
+                    )
+
+            # The lock exists but is not actively held. It survived a crashed
+            # Editor and is safe to remove before launching a fresh instance.
             try:
                 editor.project_lock_path.unlink(missing_ok=True)
                 stale_lock_cleared = True
@@ -585,7 +676,7 @@ class UnityActions:
                 return ActionResult(
                     False,
                     f"Unity lock appears stale but could not be cleared: {error}",
-                    editor.status(),
+                    status,
                 )
 
         unity = find_unity(project.root)
@@ -658,7 +749,17 @@ class UnityActions:
     def unity_editor_diagnostics(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
         editor = self._editor(payload)
-        process_ids = _unity_process_ids_for_project(project.root)
+
+        process_ids: list[int] | None = None
+        process_detection_error: str | None = None
+        lock_probe: dict[str, Any] | None = None
+        if sys.platform == "win32":
+            lock_probe = _windows_unity_lock_probe(editor.project_lock_path)
+        else:
+            try:
+                process_ids = _unity_process_ids_for_project(project.root)
+            except OSError as error:
+                process_detection_error = str(error)
 
         log_candidates = _unity_editor_log_candidates(project.root)
         log_path = next((path for path in log_candidates if path.is_file()), log_candidates[-1])
@@ -683,6 +784,8 @@ class UnityActions:
         data = {
             **status,
             "unity_process_ids": process_ids,
+            "process_detection_error": process_detection_error,
+            "project_lock_probe": lock_probe,
             "editor_log_path": str(log_path),
             "editor_log_candidates": [str(path) for path in log_candidates],
             "editor_log_source": "project" if log_path == log_candidates[0] else "global",
