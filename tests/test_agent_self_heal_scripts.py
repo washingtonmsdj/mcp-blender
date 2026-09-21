@@ -390,6 +390,16 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         )
         self.assertLess(retarget_index, start_index)
 
+    def test_unity_refresh_recovery_has_no_cim_dependency(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        refresh = (
+            root / "scripts" / "windows" / "unity-editor-refresh.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Get-Process Unity", refresh)
+        self.assertIn("MainWindowTitle", refresh)
+        self.assertNotIn("Get-CimInstance", refresh)
+
     def test_resilience_status_reports_external_bootstrap(self) -> None:
         root = Path(__file__).resolve().parents[1]
         status = (
