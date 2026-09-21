@@ -7,7 +7,7 @@ espacial de cenas, inspeção/preview Blender e sequências de capturas com snap
 e imagens entregues ao modelo por MCP. A fila Supabase existente continua atendendo clientes remotos.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.19.14`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.19.15`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -308,6 +308,8 @@ sessions may restart automatically; unsaved Blender work is preserved.
 - `blender.export_headless` — export a saved `.blend` in an isolated Blender background process with a hard process timeout; intended for final GLB/FBX delivery so exporter stalls cannot block the visible companion.
 
 On Windows, the Dev Agent also launches an independent local watchdog process. The watchdog probes the local status endpoint, tracks the active job independently of the Python worker, and terminates only the Dev Agent process after repeated health failures or a single unchanged busy job exceeding the bounded 15-minute safety window. It deliberately keeps the watchdog process alive long enough to request a restart of the dedicated Scheduled Task; it does not kill the Agent process tree. The existing launcher/Scheduled Task then restarts the agent and performs the normal safe fast-forward update.
+
+The Windows Scheduled Task also carries two non-overlapping triggers: an interactive logon trigger and a one-minute maintenance trigger. Because the task uses `MultipleInstances=IgnoreNew`, the maintenance trigger is a no-op while the Agent is already running; if both the Agent and its child watchdog have disappeared, Task Scheduler can re-enter the normal Agent entrypoint without depending on GitHub Actions or Supabase job consumption.
 
 See \`docs/BLENDER_MCP_REFERENCE_REVIEW.md\` for the design review that informed
 this layer and the capabilities intentionally not copied.

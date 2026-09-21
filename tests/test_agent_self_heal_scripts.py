@@ -363,6 +363,28 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             installer,
         )
 
+    def test_agent_task_has_logon_and_periodic_self_recovery_triggers(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        installer = (
+            root / "scripts" / "windows" / "ordax-agent-install.ps1"
+        ).read_text(encoding="utf-8")
+        bootstrap_installer = (
+            root / "scripts" / "windows" / "ordax-agent-bootstrap-install.ps1"
+        ).read_text(encoding="utf-8")
+
+        for text in (installer, bootstrap_installer):
+            self.assertIn("New-ScheduledTaskTrigger -AtLogOn", text)
+            self.assertIn("-RepetitionInterval (New-TimeSpan -Minutes 1)", text)
+            self.assertIn("-RepetitionDuration (New-TimeSpan -Days 3650)", text)
+            self.assertIn("@($logonTrigger, $maintenanceTrigger)", text)
+
+        self.assertIn("-Trigger $triggers", installer)
+        self.assertIn(
+            "Set-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers",
+            bootstrap_installer,
+        )
+        self.assertIn('MultipleInstances = "IgnoreNew"', installer)
+
     def test_task_entry_logs_before_importing_full_agent(self) -> None:
         root = Path(__file__).resolve().parents[1]
         entry = (
