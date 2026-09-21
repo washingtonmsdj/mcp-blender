@@ -90,7 +90,13 @@ $actionParams = @{
     WorkingDirectory = $repoRoot
 }
 $action = New-ScheduledTaskAction @actionParams
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
+$logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
+$maintenanceTrigger = New-ScheduledTaskTrigger `
+    -Once `
+    -At ((Get-Date).AddMinutes(1)) `
+    -RepetitionInterval (New-TimeSpan -Minutes 1) `
+    -RepetitionDuration (New-TimeSpan -Days 3650)
+$triggers = @($logonTrigger, $maintenanceTrigger)
 
 $settingsParams = @{
     MultipleInstances = "IgnoreNew"
@@ -103,13 +109,14 @@ $settingsParams = @{
 }
 $settings = New-ScheduledTaskSettingsSet @settingsParams
 $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
-$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "OrdaX Dev Agent - direct persistent Python control plane for interactive Unity/Blender"
+$task = New-ScheduledTask -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Description "OrdaX Dev Agent - direct persistent Python control plane for interactive Unity/Blender"
 Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
 
 Write-Host "OrdaX Dev Agent installed."
 Write-Host "Scheduled task: $taskName"
 Write-Host "Run context: $userId (interactive desktop)"
 Write-Host "Restart policy: 999 attempts, 1 minute interval"
+Write-Host "Maintenance trigger: every 1 minute for self-recovery; duplicate starts are ignored"
 Write-Host "Local status endpoint: http://127.0.0.1:8765/status"
 Write-Host ("Task executable: " + $taskPython)
 Write-Host ("External bootstrap retained for maintenance: " + $bootstrapPath)
