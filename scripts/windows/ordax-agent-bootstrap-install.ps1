@@ -49,7 +49,20 @@ if ($RetargetTask) {
         -Execute $taskPython `
         -Argument '-m ordax_dev_agent.task_entry' `
         -WorkingDirectory $repoRootResolved
-    Set-ScheduledTask -TaskName $TaskName -Action $action | Out-Null
+
+    $taskUser = [string]$task.Principal.UserId
+    if (-not $taskUser) {
+        throw "Scheduled task principal is missing a user id: $TaskName"
+    }
+    $logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $taskUser
+    $maintenanceTrigger = New-ScheduledTaskTrigger `
+        -Once `
+        -At ((Get-Date).AddMinutes(1)) `
+        -RepetitionInterval (New-TimeSpan -Minutes 1) `
+        -RepetitionDuration (New-TimeSpan -Days 3650)
+    $triggers = @($logonTrigger, $maintenanceTrigger)
+
+    Set-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers | Out-Null
 }
 
 [pscustomobject]@{
