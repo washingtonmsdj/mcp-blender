@@ -7,7 +7,7 @@ espacial de cenas, inspeção/preview Blender e sequências de capturas com snap
 e imagens entregues ao modelo por MCP. A fila Supabase existente continua atendendo clientes remotos.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.19.0`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.19.13`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -133,6 +133,12 @@ version, including official suffix variants such as `-x86_64`, and validates
 the Editor, API reference assemblies, and UPM before selecting one. Healthy
 installations are preferred; `UNITY_EXE` remains an explicit override and is
 reported as invalid instead of silently falling back when its installation is incomplete.
+
+For broken Editor startup, the typed recovery path can install an exact patch and
+launch that exact Hub executable instead of resolving the project's older Editor.
+`unity.recover_resume` is constrained to the project's current release stream
+(for example `6000.6.x -> 6000.6.x`) and runs fail-closed through recovery,
+companion upgrade, compile, scene/physics/spatial inspection, Play Mode and capture.
 
 ## Tools MCP
 
