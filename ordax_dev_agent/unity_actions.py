@@ -343,9 +343,23 @@ def _unity_release_installer_metadata(version: str, changeset: str) -> dict[str,
     except ValueError as error:
         raise ValueError("Unity Releases API integrity value is not valid base64") from error
 
-    expected_hash = decoded.decode("ascii", errors="strict").strip().casefold()
-    if not re.fullmatch(r"[0-9a-f]+", expected_hash):
-        raise ValueError("Unity Releases API integrity digest is not hexadecimal")
+    digest_size = hashlib.new(algorithm).digest_size
+    if len(decoded) == digest_size:
+        expected_hash = decoded.hex()
+    else:
+        try:
+            expected_hash = decoded.decode("ascii", errors="strict").strip().casefold()
+        except UnicodeDecodeError as error:
+            raise ValueError(
+                "Unity Releases API integrity digest is neither raw digest bytes nor ASCII hexadecimal"
+            ) from error
+        if (
+            len(expected_hash) != digest_size * 2
+            or not re.fullmatch(r"[0-9a-f]+", expected_hash)
+        ):
+            raise ValueError(
+                "Unity Releases API integrity digest is not a valid hexadecimal digest"
+            )
 
     return {
         "api_url": api_url,
