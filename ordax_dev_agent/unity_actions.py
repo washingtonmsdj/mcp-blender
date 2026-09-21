@@ -654,28 +654,31 @@ class UnityActions:
         start_payload = dict(common)
         start_payload["version"] = version
         start_payload["wait_seconds"] = float(payload.get("editor_wait_seconds", 240))
-        failure = run_step(
-            "start_target_editor",
-            self.unity_editor_start(start_payload),
-        )
+        start_result = self.unity_editor_start(start_payload)
+        failure = run_step("start_target_editor", start_result)
         if failure:
             return failure
 
-        profile_after_start = unity_project_profile(project.root)
-        migrated_version = str(profile_after_start.get("unity_version") or "").strip()
-        if migrated_version != version:
+        started_presence = start_result.data.get("presence") or {}
+        running_version = str(started_presence.get("unityVersion") or "").strip()
+        if running_version != version:
             return ActionResult(
                 False,
-                "Target Unity Editor became reachable, but ProjectVersion.txt did not migrate to the requested patch",
+                "Unity companion became ready from a different Editor version than requested",
                 {
                     "project": project.slug,
                     "current_version": current_version,
                     "target_version": version,
-                    "project_version_after_start": migrated_version or None,
-                    "failed_step": "verify_project_version",
+                    "running_version": running_version or None,
+                    "failed_step": "verify_running_editor",
                     "steps": steps,
                 },
             )
+
+        profile_after_start = unity_project_profile(project.root)
+        project_version_after_start = str(
+            profile_after_start.get("unity_version") or ""
+        ).strip()
 
         compile_payload = dict(common)
         compile_payload["timeout_seconds"] = int(payload.get("compile_timeout_seconds", 1800))
@@ -695,16 +698,17 @@ class UnityActions:
         failure = run_step("scene_summary", self.unity_scene_summary(common))
         if failure:
             return failure
-        failure = run_step("physics_audit", self.unity_physics_audit(common))
-        if failure:
-            return failure
-        failure = run_step("spatial_audit", self.unity_spatial_audit(common))
-        if failure:
-            return failure
 
         play_payload = dict(common)
         play_payload["wait_seconds"] = float(payload.get("play_wait_seconds", 60))
         failure = run_step("play_start", self.unity_play_start(play_payload))
+        if failure:
+            return failure
+
+        failure = run_step("physics_audit", self.unity_physics_audit(common))
+        if failure:
+            return failure
+        failure = run_step("spatial_audit", self.unity_spatial_audit(common))
         if failure:
             return failure
 
@@ -735,6 +739,8 @@ class UnityActions:
                 "current_version": current_version,
                 "target_version": version,
                 "changeset": changeset or None,
+                "running_version": running_version,
+                "project_version_after_start": project_version_after_start or None,
                 "steps": steps,
                 "artifact": capture_result.data.get("artifact"),
                 "snapshot_path": capture_result.data.get("snapshot_path"),
