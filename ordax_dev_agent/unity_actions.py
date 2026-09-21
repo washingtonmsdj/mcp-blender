@@ -267,7 +267,8 @@ def _official_windows_unity_installer_url(version: str, changeset: str) -> str:
 
 def _verify_windows_authenticode(path: Path) -> dict[str, Any]:
     script = (
-        "$p=$args[0];"
+        "$p=$env:ORDAX_AUTHENTICODE_PATH;"
+        "if ([string]::IsNullOrWhiteSpace($p)) { throw 'ORDAX_AUTHENTICODE_PATH is missing' };"
         "$s=Get-AuthenticodeSignature -LiteralPath $p;"
         "[pscustomobject]@{"
         "Status=[string]$s.Status;"
@@ -275,12 +276,15 @@ def _verify_windows_authenticode(path: Path) -> dict[str, Any]:
         "Thumbprint=[string]$s.SignerCertificate.Thumbprint"
         "}|ConvertTo-Json -Compress"
     )
+    env = dict(os.environ)
+    env["ORDAX_AUTHENTICODE_PATH"] = str(path)
     completed = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-Command", script, str(path)],
+        ["powershell.exe", "-NoProfile", "-Command", script],
         capture_output=True,
         text=True,
         timeout=30,
         shell=False,
+        env=env,
     )
     if completed.returncode != 0:
         return {
