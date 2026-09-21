@@ -217,7 +217,7 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
                                 "UnitySetup64-6000.6.2f1.exe"
                             ),
                             "integrity": "md5-" + base64.b64encode(
-                                (digest + "\n").encode("ascii")
+                                bytes.fromhex(digest)
                             ).decode("ascii"),
                             "type": "EXE",
                             "platform": "WINDOWS",
@@ -242,6 +242,53 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
             )
 
         self.assertEqual("md5", metadata["algorithm"])
+        self.assertEqual(digest, metadata["expected_hash"])
+
+    def test_release_metadata_accepts_ascii_hex_integrity_compatibility(self) -> None:
+        from ordax_dev_agent.unity_actions import _unity_release_installer_metadata
+
+        import base64
+        import json
+
+        digest = "0123456789abcdef0123456789abcdef01234567"
+        payload = {
+            "results": [
+                {
+                    "version": "6000.6.2f1",
+                    "shortRevision": "770e33f6875c",
+                    "downloads": [
+                        {
+                            "url": (
+                                "https://download.unity3d.com/download_unity/"
+                                "770e33f6875c/Windows64EditorInstaller/"
+                                "UnitySetup64-6000.6.2f1.exe"
+                            ),
+                            "integrity": "sha1-" + base64.b64encode(
+                                (digest + "\n").encode("ascii")
+                            ).decode("ascii"),
+                            "type": "EXE",
+                            "platform": "WINDOWS",
+                            "architecture": "X86_64",
+                        }
+                    ],
+                }
+            ]
+        }
+        response = Mock()
+        response.read.return_value = json.dumps(payload).encode("utf-8")
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+
+        with patch(
+            "ordax_dev_agent.unity_actions.urllib.request.urlopen",
+            return_value=response,
+        ):
+            metadata = _unity_release_installer_metadata(
+                "6000.6.2f1",
+                "770e33f6875c",
+            )
+
+        self.assertEqual("sha1", metadata["algorithm"])
         self.assertEqual(digest, metadata["expected_hash"])
 
     def test_file_integrity_matches_official_digest(self) -> None:
