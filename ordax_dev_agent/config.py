@@ -46,9 +46,21 @@ class AgentConfig:
         if not isinstance(settings.get("adapters", []), list):
             raise ValueError("adapters must be a list of locally installed adapter names")
 
+        projects = settings.get("projects")
+        default_project = settings.get("default_project", "hordax")
+        # When an explicit registry contains exactly one project, an obsolete
+        # legacy default must not make otherwise-safe unscoped local status
+        # operations point at a nonexistent HORDAX project.
+        if (
+            isinstance(projects, dict)
+            and len(projects) == 1
+            and default_project not in projects
+        ):
+            default_project = next(iter(projects))
+
         config = cls(
-            projects=settings.get("projects"),
-            default_project=settings.get("default_project", "hordax"),
+            projects=projects,
+            default_project=default_project,
             adapters=tuple(settings.get("adapters", [])),
             agent_name=os.environ.get(
                 "ORDAX_AGENT_NAME",

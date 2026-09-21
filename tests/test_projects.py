@@ -37,6 +37,28 @@ class ProjectTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 AgentConfig.from_env()
 
+    def test_single_explicit_project_replaces_obsolete_legacy_default(self):
+        self.config.state_dir.mkdir()
+        (self.config.state_dir / 'agent-settings.json').write_text(
+            json.dumps({
+                'default_project': 'hordax',
+                'projects': {
+                    'salvador-lacerda-2d': {
+                        'path': str(self.project),
+                        'apps': ['unity', 'blender'],
+                    }
+                },
+            }),
+            encoding='utf-8',
+        )
+        with patch.dict(
+            os.environ,
+            {'ORDAX_AGENT_STATE_DIR': str(self.config.state_dir)},
+            clear=False,
+        ):
+            loaded = AgentConfig.from_env()
+        self.assertEqual('salvador-lacerda-2d', loaded.default_project)
+
     def test_custom_companion_source_is_used(self):
         registry = ActionRegistry(replace(self.config, projects={'model': {
             'path': str(self.project), 'apps': ['unity'],

@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import csv
 import json
+import ntpath
 import os
+import re
 import subprocess
 import sys
 import time
@@ -114,6 +116,105 @@ def _windows_unity_lock_probe(lock_path: Path) -> dict[str, Any]:
         return {"state": "stale", "path": str(lock_path)}
     finally:
         close_handle(handle)
+
+
+_UNITY_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+[abfp]\d+$")
+_UNITY_CHANGESET_PATTERN = re.compile(r"^[0-9a-fA-F]{7,40}$")
+
+
+def _normalize_windows_path(value: str | Path) -> str:
+    # Do not resolve here: Windows may expose the same executable using an 8.3
+    # path through one API and the already-canonical path through another.
+    # Normalize separators/case first so identical reported paths compare
+    # deterministically without extra filesystem I/O.
+    return ntpath.normcase(ntpath.normpath(str(value))).casefold()
+
+
+def _windows_unity_processes(timeout_seconds: float = 10.0) -> list[dict[str, Any]]:
+    if sys.platform != "win32":
+        return []
+    command = (
+        "Get-Process Unity -ErrorAction SilentlyContinue | "
+        "Select-Object Id,Path,MainWindowTitle | ConvertTo-Json -Compress"
+    )
+    completed = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", command],
+        capture_output=True,
+        text=True,
+        timeout=max(2.0, float(timeout_seconds)),
+        shell=False,
+    )
+    if completed.returncode != 0:
+        raise OSError(completed.stderr[-4000:] or "Get-Process Unity failed")
+    raw_text = completed.stdout.strip()
+    if not raw_text:
+        return []
+    try:
+        raw = json.loads(raw_text)
+    except json.JSONDecodeError as error:
+        raise OSError(f"Could not parse Unity process list: {error}") from error
+    records = raw if isinstance(raw, list) else [raw]
+    result: list[dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        try:
+            pid = int(record.get("Id"))
+        except (TypeError, ValueError):
+            continue
+        result.append(
+            {
+                "pid": pid,
+                "path": str(record.get("Path") or ""),
+                "title": str(record.get("MainWindowTitle") or ""),
+            }
+        )
+    return result
+
+
+def _find_unity_hub() -> Path | None:
+    candidates: list[Path] = []
+    program_files = os.environ.get("ProgramFiles")
+    if program_files:
+        candidates.append(Path(program_files) / "Unity Hub" / "Unity Hub.exe")
+    candidates.append(Path("C:/Program Files/Unity Hub/Unity Hub.exe"))
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        candidates.extend(
+            [
+                Path(local_app_data) / "Programs" / "Unity Hub" / "Unity Hub.exe",
+                Path(local_app_data) / "Unity Hub" / "Unity Hub.exe",
+            ]
+        )
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
+
+def _hub_editor_install_exists(version: str) -> bool:
+    roots = [Path("C:/Program Files/Unity/Hub/Editor")]
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        roots.append(Path(local_app_data) / "Unity" / "Hub" / "Editor")
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for entry in root.iterdir():
+            if not entry.is_dir():
+                continue
+            if entry.name.lower() == version.lower() or entry.name.lower().startswith(
+                version.lower() + "-"
+            ):
+                unity = entry / "Editor" / "Unity.exe"
+                if unity.is_file():
+                    return True
+    return False
 
 
 def _unity_process_ids_for_project(project: Path) -> list[int]:
@@ -238,6 +339,193 @@ def _unity_process_ids_for_project(project: Path) -> list[int]:
 
 
 class UnityActions:
+    def unity_editor_terminate_stuck(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        editor = self._editor(payload)
+
+        if sys.platform != "win32":
+            return ActionResult(False, "Unity stuck-editor recovery is currently Windows-only")
+        if editor.presence_is_fresh(max_age_seconds=12.0):
+            return ActionResult(
+                True,
+                "Unity companion is already healthy; no process was terminated",
+                editor.status(),
+            )
+
+        lock_probe = _windows_unity_lock_probe(editor.project_lock_path)
+        if lock_probe.get("state") != "active":
+            return ActionResult(
+                True,
+                "Unity project lock is not actively held; no process termination needed",
+                {
+                    **editor.status(),
+                    "project_lock_probe": lock_probe,
+                },
+            )
+
+        expected = find_unity(project.root)
+        if expected is None:
+            return ActionResult(
+                False,
+                "Cannot identify the Unity executable for the locked project",
+                {"project_lock_probe": lock_probe},
+            )
+        expected_norm = _normalize_windows_path(expected)
+
+        processes = _windows_unity_processes(
+            timeout_seconds=float(payload.get("process_timeout_seconds", 10))
+        )
+        candidates = [
+            item
+            for item in processes
+            if _normalize_windows_path(str(item.get("path") or ""))
+            == expected_norm
+        ]
+        if len(candidates) != 1:
+            return ActionResult(
+                False,
+                "Refusing to terminate Unity because the locked project does not map to exactly one matching Editor process",
+                {
+                    "project_lock_probe": lock_probe,
+                    "expected_editor": str(expected),
+                    "unity_processes": processes,
+                    "matching_processes": candidates,
+                },
+            )
+
+        pid = int(candidates[0]["pid"])
+        stop = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                f"Stop-Process -Id {pid} -Force -ErrorAction Stop",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            shell=False,
+        )
+        if stop.returncode != 0:
+            return ActionResult(
+                False,
+                f"Failed to terminate stuck Unity Editor PID {pid}",
+                {
+                    "pid": pid,
+                    "stderr": stop.stderr[-4000:],
+                    "project_lock_probe": lock_probe,
+                },
+            )
+
+        deadline = time.monotonic() + max(
+            5.0,
+            min(float(payload.get("wait_seconds", 25)), 60.0),
+        )
+        final_probe = lock_probe
+        while time.monotonic() < deadline:
+            final_probe = _windows_unity_lock_probe(editor.project_lock_path)
+            if final_probe.get("state") != "active":
+                break
+            time.sleep(0.35)
+
+        if final_probe.get("state") == "active":
+            return ActionResult(
+                False,
+                "Unity process terminated but the project lock is still actively held",
+                {
+                    "pid": pid,
+                    "project_lock_probe": final_probe,
+                },
+            )
+
+        stale_lock_cleared = False
+        if final_probe.get("state") == "stale":
+            try:
+                editor.project_lock_path.unlink(missing_ok=True)
+                stale_lock_cleared = True
+                final_probe = _windows_unity_lock_probe(editor.project_lock_path)
+            except OSError as error:
+                return ActionResult(
+                    False,
+                    f"Stuck Unity process ended but stale lock cleanup failed: {error}",
+                    {
+                        "pid": pid,
+                        "project_lock_probe": final_probe,
+                    },
+                )
+
+        return ActionResult(
+            True,
+            "Stuck Unity Editor terminated and project lock released",
+            {
+                "pid": pid,
+                "expected_editor": str(expected),
+                "stale_lock_cleared": stale_lock_cleared,
+                "project_lock_probe": final_probe,
+            },
+        )
+
+    def unity_hub_install_editor(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        if sys.platform != "win32":
+            return ActionResult(False, "Unity Hub Editor installation is currently Windows-only")
+
+        version = str(payload.get("version") or "").strip()
+        changeset = str(payload.get("changeset") or "").strip()
+        if not _UNITY_VERSION_PATTERN.fullmatch(version):
+            return ActionResult(False, "version must be an exact Unity Editor version such as 6000.6.2f1")
+        if changeset and not _UNITY_CHANGESET_PATTERN.fullmatch(changeset):
+            return ActionResult(False, "changeset must be a hexadecimal Unity changeset")
+
+        if _hub_editor_install_exists(version):
+            return ActionResult(
+                True,
+                "Requested Unity Editor version is already installed",
+                {"version": version, "already_installed": True},
+            )
+
+        hub = _find_unity_hub()
+        if hub is None:
+            return ActionResult(False, "Unity Hub executable was not found")
+
+        command = [
+            str(hub),
+            "--",
+            "--headless",
+            "install",
+            "--version",
+            version,
+        ]
+        if changeset:
+            command.extend(["--changeset", changeset])
+
+        timeout = max(
+            120,
+            min(int(payload.get("timeout_seconds", 2400)), 3600),
+        )
+        completed = subprocess.run(
+            command,
+            cwd=str(project.root),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+        )
+        installed = _hub_editor_install_exists(version)
+        data = {
+            "version": version,
+            "changeset": changeset or None,
+            "hub": str(hub),
+            "command": command,
+            "returncode": completed.returncode,
+            "stdout": completed.stdout[-40000:],
+            "stderr": completed.stderr[-20000:],
+            "installed": installed,
+        }
+        if completed.returncode != 0 or not installed:
+            return ActionResult(False, "Unity Hub did not complete the requested Editor installation", data)
+        return ActionResult(True, "Unity Editor installed through Unity Hub", data)
+
     def _editor(self, payload: dict[str, Any]) -> UnityEditorBridge:
         project = self._project(payload)
         source = project.unity.get("companion_source")
