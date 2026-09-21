@@ -79,6 +79,10 @@ def run_unity_cli(
         )
 
     command = [str(executable), *args]
+    env = os.environ.copy()
+    # Avoid a background update check blocking first command execution on
+    # workstations where the CLI's network/update helper is unhealthy.
+    env.setdefault("UNITY_NO_UPDATE_CHECK", "1")
     completed = subprocess.run(
         command,
         cwd=str(cwd) if cwd else None,
@@ -86,6 +90,7 @@ def run_unity_cli(
         text=True,
         timeout=max(1.0, float(timeout_seconds)),
         shell=False,
+        env=env,
     )
     parsed = _parse_json(completed.stdout)
     success = completed.returncode == 0
