@@ -251,6 +251,102 @@ def _hub_editor_install_exists(version: str) -> bool:
     return _find_hub_editor_executable(version) is not None
 
 
+def _windows_unity_installation_scan() -> list[dict[str, Any]]:
+    if sys.platform != "win32":
+        return []
+
+    candidates: dict[str, dict[str, Any]] = {}
+
+    def add_candidate(path: Path, source: str, detail: str | None = None) -> None:
+        try:
+            if not path.is_file():
+                return
+        except OSError:
+            return
+        key = _normalize_windows_path(path)
+        item = candidates.setdefault(
+            key,
+            {
+                "editor": str(path),
+                "sources": [],
+            },
+        )
+        marker = {"source": source}
+        if detail:
+            marker["detail"] = detail
+        if marker not in item["sources"]:
+            item["sources"].append(marker)
+
+    for root in _hub_editor_roots():
+        if not root.is_dir():
+            continue
+        try:
+            for version_dir in root.iterdir():
+                if version_dir.is_dir():
+                    add_candidate(
+                        version_dir / "Editor" / "Unity.exe",
+                        "hub-root",
+                        str(root),
+                    )
+        except OSError:
+            pass
+
+    program_files = Path(os.environ.get("ProgramFiles") or "C:/Program Files")
+    extra_patterns = [
+        program_files / "Unity" / "Editor" / "Unity.exe",
+        program_files / "Unity" / "Hub" / "Editor",
+    ]
+    add_candidate(extra_patterns[0], "program-files")
+
+    try:
+        for item in program_files.glob("Unity*"):
+            if not item.is_dir():
+                continue
+            add_candidate(item / "Editor" / "Unity.exe", "program-files-glob", item.name)
+            add_candidate(item / "Unity.exe", "program-files-glob", item.name)
+    except OSError:
+        pass
+
+    try:
+        import winreg
+        uninstall_roots = [
+            (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
+            (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
+            (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+        ]
+        for hive, key_path in uninstall_roots:
+            try:
+                with winreg.OpenKey(hive, key_path) as root_key:
+                    count, _, _ = winreg.QueryInfoKey(root_key)
+                    for index in range(count):
+                        try:
+                            sub_name = winreg.EnumKey(root_key, index)
+                            with winreg.OpenKey(root_key, sub_name) as sub:
+                                try:
+                                    display_name = str(winreg.QueryValueEx(sub, "DisplayName")[0] or "")
+                                except OSError:
+                                    continue
+                                if "unity" not in display_name.casefold():
+                                    continue
+                                try:
+                                    location = str(winreg.QueryValueEx(sub, "InstallLocation")[0] or "")
+                                except OSError:
+                                    location = ""
+                                if not location:
+                                    continue
+                                base = Path(location)
+                                add_candidate(base / "Unity.exe", "registry", display_name)
+                                add_candidate(base / "Editor" / "Unity.exe", "registry", display_name)
+                        except OSError:
+                            continue
+            except OSError:
+                continue
+    except ImportError:
+        pass
+
+    return sorted(candidates.values(), key=lambda item: item["editor"].casefold())
+
+
 def _unity_release_stream(version: str) -> tuple[int, int] | None:
     match = re.match(r"^(\d+)\.(\d+)\.", version)
     if not match:
@@ -630,6 +726,33 @@ class UnityActions:
                 "expected_editor": str(expected),
                 "stale_lock_cleared": stale_lock_cleared,
                 "project_lock_probe": final_probe,
+            },
+        )
+
+    def unity_installations(self, payload: dict[str, Any]) -> ActionResult:
+        if sys.platform != "win32":
+            return ActionResult(False, "Unity installation scan is currently Windows-only")
+        installations = _windows_unity_installation_scan()
+        requested = str(payload.get("version") or "").strip()
+        exact = []
+        if requested:
+            for item in installations:
+                editor = Path(item["editor"])
+                parts = [part.casefold() for part in editor.parts]
+                target = requested.casefold()
+                if target in parts or any(
+                    part == target or part.startswith(target + "-")
+                    for part in parts
+                ):
+                    exact.append(item)
+        return ActionResult(
+            True,
+            "Unity installation scan completed",
+            {
+                "requested_version": requested or None,
+                "installations": installations,
+                "requested_matches": exact,
+                "count": len(installations),
             },
         )
 
