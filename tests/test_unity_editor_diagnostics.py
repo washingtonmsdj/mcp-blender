@@ -19,6 +19,48 @@ class UnityEditorDiagnosticsTests(unittest.TestCase):
                 candidates[0],
             )
 
+    def test_windows_diagnostics_uses_lock_probe_without_process_enumeration(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project = root / "project"
+            (project / "Logs").mkdir(parents=True)
+            (project / "Logs" / "Editor.log").write_text(
+                "WINDOWS_LOCK_PROBE_TEST\n",
+                encoding="utf-8",
+            )
+            config = AgentConfig(
+                "test",
+                None,
+                None,
+                5,
+                root / "state",
+                root / "agent",
+                root / "hordax",
+                root / "bridge",
+                projects={"unity": {"path": str(project), "apps": ["unity"]}},
+                default_project="unity",
+            )
+            registry = ActionRegistry(config)
+            with patch(
+                "ordax_dev_agent.unity_actions.sys.platform",
+                "win32",
+            ), patch(
+                "ordax_dev_agent.unity_actions._windows_unity_lock_probe",
+                return_value={"state": "active", "path": str(project / "Temp" / "UnityLockfile")},
+            ), patch(
+                "ordax_dev_agent.unity_actions._unity_process_ids_for_project"
+            ) as process_ids:
+                result = registry.execute(
+                    "unity.editor_diagnostics",
+                    {"max_lines": 40},
+                )
+
+            self.assertTrue(result.ok)
+            process_ids.assert_not_called()
+            self.assertIsNone(result.data["unity_process_ids"])
+            self.assertEqual("active", result.data["project_lock_probe"]["state"])
+            self.assertIn("WINDOWS_LOCK_PROBE_TEST", result.data["editor_log_tail"])
+
     def test_diagnostics_prefers_project_local_editor_log(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
