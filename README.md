@@ -7,7 +7,7 @@ espacial de cenas, inspeção/preview Blender e sequências de capturas com snap
 e imagens entregues ao modelo por MCP. A fila Supabase existente continua atendendo clientes remotos.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.19.19`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.19.20`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -143,9 +143,10 @@ companion upgrade, compile, scene/physics/spatial inspection, Play Mode and capt
 If Unity Hub downloads an Editor but repeatedly times out while validating the
 installation, `unity.direct_install_editor` provides a separate bounded fallback.
 It resolves the exact version + changeset through Unity's official Releases API,
-requires the API's Windows x86_64 download URL and integrity digest to match,
-downloads resumably from `download.unity3d.com`, verifies the cached/downloaded
-installer hash locally, installs silently into the user-local Unity Editor root,
+requires the API's Windows x86_64 download URL and published integrity digest
+(including legacy MD5 when that is what Unity supplies) to match, downloads
+resumably from `download.unity3d.com`, verifies the cached/downloaded installer
+hash locally, installs silently into the user-local Unity Editor root,
 and verifies that the expected `Unity.exe` exists. Callers cannot supply an
 arbitrary URL, hash, or install directory, and the verification path does not
 depend on PowerShell certificate services.

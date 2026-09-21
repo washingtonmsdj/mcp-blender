@@ -336,7 +336,7 @@ def _unity_release_installer_metadata(version: str, changeset: str) -> dict[str,
         raise ValueError("Unity Releases API download has no usable integrity value")
     algorithm, encoded = integrity.split("-", 1)
     algorithm = algorithm.casefold()
-    if algorithm not in {"sha1", "sha256", "sha384", "sha512"}:
+    if algorithm not in {"md5", "sha1", "sha256", "sha384", "sha512"}:
         raise ValueError(f"unsupported Unity Releases API integrity algorithm: {algorithm}")
     try:
         decoded = base64.b64decode(encoded, validate=True)
