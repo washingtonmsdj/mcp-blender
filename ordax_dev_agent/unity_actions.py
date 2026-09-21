@@ -5,7 +5,9 @@ remote action by itself. The central ActionRegistry remains the allow-list.
 """
 from __future__ import annotations
 
+import base64
 import csv
+import hashlib
 import json
 import ntpath
 import os
@@ -14,6 +16,8 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -265,54 +269,105 @@ def _official_windows_unity_installer_url(version: str, changeset: str) -> str:
     )
 
 
-def _verify_windows_authenticode(path: Path) -> dict[str, Any]:
-    script = (
-        "$p=$env:ORDAX_AUTHENTICODE_PATH;"
-        "if ([string]::IsNullOrWhiteSpace($p)) { throw 'ORDAX_AUTHENTICODE_PATH is missing' };"
-        "$s=Get-AuthenticodeSignature -LiteralPath $p;"
-        "[pscustomobject]@{"
-        "Status=[string]$s.Status;"
-        "Subject=[string]$s.SignerCertificate.Subject;"
-        "Thumbprint=[string]$s.SignerCertificate.Thumbprint"
-        "}|ConvertTo-Json -Compress"
-    )
-    env = dict(os.environ)
-    env["ORDAX_AUTHENTICODE_PATH"] = str(path)
-    completed = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-Command", script],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        shell=False,
-        env=env,
-    )
-    if completed.returncode != 0:
-        return {
-            "valid": False,
-            "status": "powershell-error",
-            "subject": "",
-            "thumbprint": "",
-            "stderr": completed.stderr[-4000:],
+def _unity_release_installer_metadata(version: str, changeset: str) -> dict[str, str]:
+    if not _UNITY_VERSION_PATTERN.fullmatch(version):
+        raise ValueError("invalid Unity Editor version")
+    if not _UNITY_CHANGESET_PATTERN.fullmatch(changeset):
+        raise ValueError("invalid Unity changeset")
+
+    query = urllib.parse.urlencode(
+        {
+            "version": version,
+            "platform": "WINDOWS",
+            "architecture": "X86_64",
         }
+    )
+    api_url = (
+        "https://services.api.unity.com/unity/editor/release/v1/releases?"
+        + query
+    )
+    request = urllib.request.Request(
+        api_url,
+        headers={"Accept": "application/json", "User-Agent": "OrdaX-Dev-Agent"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        raw = json.loads(response.read().decode("utf-8"))
+
+    results = raw.get("results") if isinstance(raw, dict) else None
+    if not isinstance(results, list):
+        raise ValueError("Unity Releases API returned an invalid results payload")
+
+    release = next(
+        (
+            item
+            for item in results
+            if isinstance(item, dict)
+            and str(item.get("version") or "") == version
+            and str(item.get("shortRevision") or "").casefold()
+            == changeset.casefold()
+        ),
+        None,
+    )
+    if release is None:
+        raise ValueError("Unity Releases API did not return the exact requested version and changeset")
+
+    expected_url = _official_windows_unity_installer_url(version, changeset)
+    downloads = release.get("downloads")
+    if not isinstance(downloads, list):
+        raise ValueError("Unity Releases API release has no downloads list")
+
+    download = next(
+        (
+            item
+            for item in downloads
+            if isinstance(item, dict)
+            and str(item.get("type") or "").upper() == "EXE"
+            and str(item.get("platform") or "").upper() == "WINDOWS"
+            and str(item.get("architecture") or "").upper() == "X86_64"
+            and str(item.get("url") or "") == expected_url
+        ),
+        None,
+    )
+    if download is None:
+        raise ValueError("Unity Releases API did not expose the expected Windows x86_64 Editor installer")
+
+    integrity = str(download.get("integrity") or "")
+    if "-" not in integrity:
+        raise ValueError("Unity Releases API download has no usable integrity value")
+    algorithm, encoded = integrity.split("-", 1)
+    algorithm = algorithm.casefold()
+    if algorithm not in {"sha1", "sha256", "sha384", "sha512"}:
+        raise ValueError(f"unsupported Unity Releases API integrity algorithm: {algorithm}")
     try:
-        raw = json.loads(completed.stdout.strip() or "{}")
-    except json.JSONDecodeError:
-        return {
-            "valid": False,
-            "status": "unparseable",
-            "subject": "",
-            "thumbprint": "",
-            "stdout": completed.stdout[-4000:],
-        }
-    status = str(raw.get("Status") or "")
-    subject = str(raw.get("Subject") or "")
-    thumbprint = str(raw.get("Thumbprint") or "")
-    valid = status.casefold() == "valid" and "unity technologies" in subject.casefold()
+        decoded = base64.b64decode(encoded, validate=True)
+    except ValueError as error:
+        raise ValueError("Unity Releases API integrity value is not valid base64") from error
+
+    expected_hash = decoded.decode("ascii", errors="strict").strip().casefold()
+    if not re.fullmatch(r"[0-9a-f]+", expected_hash):
+        raise ValueError("Unity Releases API integrity digest is not hexadecimal")
+
     return {
-        "valid": valid,
-        "status": status,
-        "subject": subject,
-        "thumbprint": thumbprint,
+        "api_url": api_url,
+        "url": expected_url,
+        "algorithm": algorithm,
+        "expected_hash": expected_hash,
+        "integrity": integrity,
+    }
+
+
+def _verify_file_integrity(path: Path, algorithm: str, expected_hash: str) -> dict[str, Any]:
+    digest = hashlib.new(algorithm)
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    actual_hash = digest.hexdigest().casefold()
+    expected = expected_hash.casefold()
+    return {
+        "valid": actual_hash == expected,
+        "algorithm": algorithm,
+        "expected_hash": expected,
+        "actual_hash": actual_hash,
     }
 
 
@@ -661,19 +716,37 @@ class UnityActions:
         installer = installer_dir / f"UnitySetup64-{version}.exe"
         partial = installer.with_suffix(installer.suffix + ".part")
         install_dir = Path(local_app_data) / "Unity" / "Hub" / "Editor" / version
-        url = _official_windows_unity_installer_url(version, changeset)
+        try:
+            metadata = _unity_release_installer_metadata(version, changeset)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            return ActionResult(
+                False,
+                f"Could not verify Unity release metadata: {error}",
+            )
+        url = metadata["url"]
 
-        signature: dict[str, Any] | None = None
+        integrity: dict[str, Any] | None = None
         if installer.is_file():
-            signature = _verify_windows_authenticode(installer)
-            if not signature.get("valid"):
+            try:
+                integrity = _verify_file_integrity(
+                    installer,
+                    metadata["algorithm"],
+                    metadata["expected_hash"],
+                )
+            except OSError as error:
+                return ActionResult(
+                    False,
+                    f"Cached Unity installer could not be hashed: {error}",
+                    {"installer": str(installer), "metadata": metadata},
+                )
+            if not integrity.get("valid"):
                 try:
                     installer.unlink()
                 except OSError as error:
                     return ActionResult(
                         False,
-                        f"Cached Unity installer has an invalid signature and could not be removed: {error}",
-                        {"installer": str(installer), "signature": signature},
+                        f"Cached Unity installer failed official integrity verification and could not be removed: {error}",
+                        {"installer": str(installer), "integrity": integrity, "metadata": metadata},
                     )
 
         download_timeout = max(
@@ -733,15 +806,27 @@ class UnityActions:
                 )
             partial.replace(installer)
 
-        signature = _verify_windows_authenticode(installer)
-        if not signature.get("valid"):
+        try:
+            integrity = _verify_file_integrity(
+                installer,
+                metadata["algorithm"],
+                metadata["expected_hash"],
+            )
+        except OSError as error:
             return ActionResult(
                 False,
-                "Official Unity installer Authenticode verification failed",
+                f"Official Unity installer could not be hashed: {error}",
+                {"url": url, "installer": str(installer), "metadata": metadata},
+            )
+        if not integrity.get("valid"):
+            return ActionResult(
+                False,
+                "Official Unity installer failed Unity Releases API integrity verification",
                 {
                     "url": url,
                     "installer": str(installer),
-                    "signature": signature,
+                    "integrity": integrity,
+                    "metadata": metadata,
                 },
             )
 
@@ -784,7 +869,8 @@ class UnityActions:
             "source": "unity-download-archive",
             "url": url,
             "installer": str(installer),
-            "signature": signature,
+            "release_metadata": metadata,
+            "integrity": integrity,
             "install_dir": str(install_dir),
             "editor": str(unity),
             "returncode": installed.returncode,
