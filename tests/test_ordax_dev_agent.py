@@ -1108,7 +1108,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             with patch.object(registry, "_blender_live", return_value=fake_live):
                 result = registry.blender_live_scene_presentation(
                     {
-                        "render_engine": "BLENDER_EEVEE_NEXT",
+                        "render_engine": "BLENDER_EEVEE",
                         "resolution_x": 1200,
                         "resolution_y": 1200,
                         "world_strength": 0.2,
