@@ -215,9 +215,14 @@ while ($true) {
     $code = $LASTEXITCODE
     Write-BootstrapLog "AGENT_EXIT code=$code"
 
-    $needsSafeUpdate = $true
+    # Exit code 42 is emitted only after agent.update has already completed
+    # the guarded fetch/fast-forward/install-contract check itself. Repeating
+    # Invoke-SafeUpdate here causes a second network fetch while the control
+    # plane is offline, which unnecessarily stretches restart time.
+    $needsSafeUpdate = $code -ne 42
     if ($code -eq 42) {
         $retrySeconds = [Math]::Max(1, $InitialRetrySeconds)
+        Write-BootstrapLog "AGENT_RESTART update-complete skip-duplicate-safe-update"
     }
 
     if ($needsSafeUpdate) {
