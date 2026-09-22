@@ -63,6 +63,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_modeling_schema", result.data["actions"])
             self.assertIn("blender.live_modeling_plan", result.data["actions"])
             self.assertIn("blender.live_object_transform", result.data["actions"])
+            self.assertIn("blender.live_object_remove", result.data["actions"])
             self.assertIn("blender.live_object_metadata", result.data["actions"])
             self.assertIn("blender.live_api_schema", result.data["actions"])
             self.assertIn("blender.live_api_lookup", result.data["actions"])
@@ -1192,6 +1193,52 @@ class AgentActionRegistryTests(unittest.TestCase):
 
         self.assertFalse(result.ok)
         self.assertIn("unsupported characters", result.summary)
+        live.assert_not_called()
+
+
+
+    def test_live_object_remove_dispatches_typed_request(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.blender_live_object_remove(
+                    {
+                        "object_names": ["Old_Case", "Old_Acrylic"],
+                        "missing_ok": True,
+                    }
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("object_remove", result.data["operation"])
+        self.assertEqual(
+            ["Old_Case", "Old_Acrylic"],
+            result.data["payload"]["object_names"],
+        )
+        self.assertTrue(result.data["payload"]["missing_ok"])
+
+    def test_live_object_remove_rejects_empty_list(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.blender_live_object_remove({"object_names": []})
+
+        self.assertFalse(result.ok)
+        self.assertIn("non-empty list", result.summary)
         live.assert_not_called()
 
 

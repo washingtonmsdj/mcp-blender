@@ -70,6 +70,7 @@ class ActionRegistry(
             "blender.live_modeling_schema": self.blender_live_modeling_schema,
             "blender.live_modeling_plan": self.blender_live_modeling_plan,
             "blender.live_object_transform": self.blender_live_object_transform,
+            "blender.live_object_remove": self.blender_live_object_remove,
             "blender.live_create_primitive": self.blender_live_create_primitive,
             "blender.live_add_modifier": self.blender_live_add_modifier,
             "blender.live_material_apply": self.blender_live_material_apply,
