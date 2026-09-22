@@ -14,6 +14,7 @@ from ordax_dev_agent.assets.blender_modeling_contracts import (
     normalize_transform_request,
     plan_modeling_operation,
 )
+from ordax_dev_agent.assets.blender_material_contracts import normalize_material_request
 
 
 def load_spatial_math():
@@ -139,6 +140,27 @@ class BlenderCompanionBundleTests(unittest.TestCase):
             ],
             manifest["files"],
         )
+
+
+class BlenderMaterialContractTests(unittest.TestCase):
+    def test_transport_fields_are_allowed_only_when_explicit(self) -> None:
+        payload = {
+            "id": "abc",
+            "operation": "material_apply",
+            "object_name": "Acrylic",
+            "material_name": "Crystal",
+            "transmission": 1.0,
+        }
+        with self.assertRaisesRegex(ValueError, "unsupported field"):
+            normalize_material_request(payload)
+
+        normalized = normalize_material_request(
+            payload,
+            transport_fields={"id", "operation"},
+        )
+        self.assertEqual("Acrylic", normalized["object_name"])
+        self.assertEqual("Crystal", normalized["material_name"])
+        self.assertEqual(1.0, normalized["transmission"])
 
 
 class BlenderModelingContractTests(unittest.TestCase):
