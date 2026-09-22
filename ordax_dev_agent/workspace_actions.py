@@ -267,7 +267,14 @@ class WorkspaceActions:
         )
 
     def project_archive_to_hordax(self, payload: dict[str, Any]) -> ActionResult:
-        allowed = {"project", "family", "archive_slug", "message", "push"}
+        allowed = {
+            "project",
+            "family",
+            "archive_slug",
+            "message",
+            "push",
+            "include_paths",
+        }
         unsupported = sorted(set(payload) - allowed)
         if unsupported:
             return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
@@ -287,6 +294,37 @@ class WorkspaceActions:
         source = project.root.resolve()
         if source == self.config.hordax_path.resolve() or source.is_relative_to(self.config.hordax_path.resolve()):
             return ActionResult(False, "refusing to archive HORDAX-game into itself")
+
+        raw_include_paths = payload.get("include_paths")
+        include_paths: list[Path] | None = None
+        if raw_include_paths is not None:
+            if (
+                not isinstance(raw_include_paths, list)
+                or not raw_include_paths
+                or len(raw_include_paths) > 100
+                or not all(isinstance(value, str) and value.strip() for value in raw_include_paths)
+            ):
+                return ActionResult(
+                    False,
+                    "include_paths must be a non-empty list of at most 100 relative paths",
+                )
+            include_paths = []
+            seen: set[str] = set()
+            for raw in raw_include_paths:
+                rel = Path(raw.strip())
+                if rel.is_absolute() or ".." in rel.parts:
+                    return ActionResult(False, f"include path escapes project: {raw}")
+                resolved = (source / rel).resolve()
+                try:
+                    resolved.relative_to(source)
+                except ValueError:
+                    return ActionResult(False, f"include path escapes project: {raw}")
+                if not resolved.exists():
+                    return ActionResult(False, f"include path not found: {raw}")
+                key = rel.as_posix()
+                if key not in seen:
+                    seen.add(key)
+                    include_paths.append(rel)
 
         archive_clone = self.config.state_dir / "project-archive" / "HORDAX-game"
         origin = _run(
@@ -333,11 +371,27 @@ class WorkspaceActions:
 
         destination_rel = Path("Projects") / family / archive_slug / "source"
         destination = archive_clone / destination_rel
-        if destination.exists():
-            shutil.rmtree(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
         try:
-            shutil.copytree(source, destination, ignore=_copy_ignore)
+            if include_paths is None:
+                if destination.exists():
+                    shutil.rmtree(destination)
+                shutil.copytree(source, destination, ignore=_copy_ignore)
+            else:
+                destination.mkdir(parents=True, exist_ok=True)
+                for rel in include_paths:
+                    src = source / rel
+                    dst = destination / rel
+                    if dst.exists():
+                        if dst.is_dir():
+                            shutil.rmtree(dst)
+                        else:
+                            dst.unlink()
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    if src.is_dir():
+                        shutil.copytree(src, dst, ignore=_copy_ignore)
+                    else:
+                        shutil.copy2(src, dst)
         except Exception as error:
             return ActionResult(False, f"project archive copy failed: {type(error).__name__}: {error}")
 
@@ -361,6 +415,11 @@ class WorkspaceActions:
                     "archive_path": destination_rel.as_posix(),
                     "pushed": False,
                     "changed": False,
+                    "include_paths": (
+                        [path.as_posix() for path in include_paths]
+                        if include_paths is not None
+                        else None
+                    ),
                 },
             )
 
@@ -401,5 +460,10 @@ class WorkspaceActions:
                 "commit": head.data.get("stdout", "").strip(),
                 "pushed": push,
                 "changed": True,
+                "include_paths": (
+                    [path.as_posix() for path in include_paths]
+                    if include_paths is not None
+                    else None
+                ),
             },
         )
