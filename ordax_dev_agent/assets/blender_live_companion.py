@@ -167,6 +167,7 @@ CAPABILITIES = [
     "object_remove",
     "extract_region",
     "create_primitive",
+    "create_box_with_cutouts",
     "add_modifier",
     "material_apply",
     "create_camera",
@@ -1193,6 +1194,164 @@ def _extract_region(command: dict) -> None:
             False,
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
             operation="extract_region",
+        )
+
+
+def _create_box_with_cutouts(command: dict) -> None:
+    command_id = command["id"]
+    created = []
+    body = None
+    try:
+        _modeling_runtime_preconditions()
+        allowed = {
+            "id",
+            "operation",
+            "name",
+            "location",
+            "dimensions",
+            "cutouts",
+        }
+        unsupported = sorted(set(command) - allowed)
+        if unsupported:
+            raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+        name = str(command.get("name") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. +\\-]{0,126}", name):
+            raise ValueError("name contains unsupported characters")
+        if bpy.data.objects.get(name) is not None:
+            raise ValueError("object name already exists; creation refused")
+
+        location = command.get("location")
+        dimensions = command.get("dimensions")
+        cutouts = command.get("cutouts")
+        if (
+            not isinstance(location, list)
+            or len(location) != 3
+            or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in location)
+        ):
+            raise ValueError("location must contain three numbers")
+        if (
+            not isinstance(dimensions, list)
+            or len(dimensions) != 3
+            or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in dimensions)
+        ):
+            raise ValueError("dimensions must contain three numbers")
+        dimensions = [float(v) for v in dimensions]
+        if not all(math.isfinite(v) and 0.001 <= v <= 1000.0 for v in dimensions):
+            raise ValueError("dimensions contain a value outside the allowed range")
+        location = [float(v) for v in location]
+        if not all(math.isfinite(v) and abs(v) <= 1000.0 for v in location):
+            raise ValueError("location contains a value outside the allowed range")
+        if not isinstance(cutouts, list) or not (1 <= len(cutouts) <= 8):
+            raise ValueError("cutouts must contain 1 to 8 entries")
+
+        normalized_cutouts = []
+        for index, cutout in enumerate(cutouts):
+            if not isinstance(cutout, dict):
+                raise ValueError(f"cutouts[{index}] must be an object")
+            unknown = sorted(set(cutout) - {"offset", "dimensions"})
+            if unknown:
+                raise ValueError(
+                    f"cutouts[{index}] unsupported field(s): " + ", ".join(unknown)
+                )
+            offset = cutout.get("offset")
+            cut_dimensions = cutout.get("dimensions")
+            if (
+                not isinstance(offset, list)
+                or len(offset) != 3
+                or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in offset)
+            ):
+                raise ValueError(f"cutouts[{index}].offset must contain three numbers")
+            if (
+                not isinstance(cut_dimensions, list)
+                or len(cut_dimensions) != 3
+                or not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in cut_dimensions)
+            ):
+                raise ValueError(f"cutouts[{index}].dimensions must contain three numbers")
+            offset = [float(v) for v in offset]
+            cut_dimensions = [float(v) for v in cut_dimensions]
+            if not all(math.isfinite(v) and abs(v) <= 1000.0 for v in offset):
+                raise ValueError(f"cutouts[{index}].offset is outside the allowed range")
+            if not all(math.isfinite(v) and 0.001 <= v <= 1000.0 for v in cut_dimensions):
+                raise ValueError(f"cutouts[{index}].dimensions is outside the allowed range")
+            normalized_cutouts.append(
+                {"offset": offset, "dimensions": cut_dimensions}
+            )
+
+        bpy.ops.object.select_all(action="DESELECT")
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=location)
+        body = bpy.context.active_object
+        if body is None:
+            raise RuntimeError("failed to create box body")
+        body.name = name
+        body.data.name = name
+        body.dimensions = Vector(dimensions)
+        bpy.context.view_layer.update()
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+        created.append(body)
+
+        for index, cutout in enumerate(normalized_cutouts):
+            cutter_location = [
+                location[i] + cutout["offset"][i]
+                for i in range(3)
+            ]
+            bpy.ops.mesh.primitive_cube_add(
+                size=1.0,
+                location=cutter_location,
+            )
+            cutter = bpy.context.active_object
+            if cutter is None:
+                raise RuntimeError(f"failed to create cutout {index}")
+            cutter.name = f"__ordax_cut_{command_id[:8]}_{index}"
+            cutter.dimensions = Vector(cutout["dimensions"])
+            bpy.context.view_layer.update()
+            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+            created.append(cutter)
+
+            bpy.context.view_layer.objects.active = body
+            body.select_set(True)
+            cutter.select_set(False)
+            modifier = body.modifiers.new(
+                name=f"OrdaX_Cutout_{index}",
+                type="BOOLEAN",
+            )
+            modifier.operation = "DIFFERENCE"
+            modifier.solver = "EXACT"
+            modifier.object = cutter
+            bpy.ops.object.modifier_apply(modifier=modifier.name)
+
+            cutter_data = cutter.data
+            bpy.data.objects.remove(cutter, do_unlink=True)
+            if cutter in created:
+                created.remove(cutter)
+            if cutter_data is not None and cutter_data.users == 0:
+                bpy.data.meshes.remove(cutter_data)
+
+        bpy.context.view_layer.objects.active = body
+        body.select_set(True)
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender box with cutouts created",
+            operation="create_box_with_cutouts",
+            object=_object_details(body),
+            cutouts=normalized_cutouts,
+        )
+    except Exception as error:
+        for obj in list(created):
+            try:
+                data = getattr(obj, "data", None)
+                bpy.data.objects.remove(obj, do_unlink=True)
+                if data is not None and getattr(data, "users", 0) == 0:
+                    bpy.data.meshes.remove(data)
+            except Exception:
+                pass
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="create_box_with_cutouts",
         )
 
 
@@ -4391,6 +4550,8 @@ def _process(path: Path) -> None:
             _extract_region(command)
         elif operation == "create_primitive":
             _modeling_create_primitive(command)
+        elif operation == "create_box_with_cutouts":
+            _create_box_with_cutouts(command)
         elif operation == "add_modifier":
             _modeling_add_modifier(command)
         elif operation == "material_apply":
