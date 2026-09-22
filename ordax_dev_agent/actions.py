@@ -91,6 +91,7 @@ class ActionRegistry(
             "blender.live_node_schema": self.blender_live_node_schema,
             "blender.live_export": self.blender_live_export,
             "blender.export_headless": self.blender_export_headless,
+            "blender.extract_region_headless": self.blender_extract_region_headless,
             "blender.live_checkpoint_create": self.blender_live_checkpoint_create,
             "blender.live_checkpoint_list": self.blender_live_checkpoint_list,
             "blender.live_checkpoint_restore": self.blender_live_checkpoint_restore,
