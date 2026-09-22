@@ -123,6 +123,84 @@ class BlenderLiveResultTests(unittest.TestCase):
             self.assertEqual(str(bridge.inflight), status["inflight_root"])
 
 
+    def test_request_retries_transient_response_permission_error(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            bridge = self.make_bridge(Path(raw))
+            bridge._ensure_dirs()
+            command_id = "b" * 32
+            response_path = bridge.responses / f"{command_id}.json"
+            response_path.write_text(
+                json.dumps(
+                    {
+                        "id": command_id,
+                        "ok": True,
+                        "summary": "done",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            original_read_text = Path.read_text
+            calls = {"count": 0}
+
+            def flaky_read_text(path, *args, **kwargs):
+                if path == response_path and calls["count"] < 2:
+                    calls["count"] += 1
+                    raise PermissionError(13, "sharing violation")
+                if path == response_path:
+                    calls["count"] += 1
+                return original_read_text(path, *args, **kwargs)
+
+            current = {
+                "protocol_compatible": True,
+                "companion_current": True,
+                "capabilities": ["ping"],
+            }
+            with (
+                patch.object(bridge, "presence_is_fresh", return_value=True),
+                patch.object(bridge, "status", return_value=current),
+                patch("ordax_dev_agent.blender_live_bridge.uuid.uuid4", return_value=SimpleNamespace(hex=command_id)),
+                patch.object(Path, "read_text", flaky_read_text),
+            ):
+                result = bridge.request("ping", timeout_seconds=1)
+
+            self.assertTrue(result.ok)
+            self.assertEqual("done", result.summary)
+            self.assertGreaterEqual(calls["count"], 3)
+
+    def test_result_retries_transient_permission_error(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            bridge = self.make_bridge(Path(raw))
+            bridge._ensure_dirs()
+            command_id = uuid.uuid4().hex
+            result_path = bridge.results / f"{command_id}.json"
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "id": command_id,
+                        "ok": True,
+                        "summary": "durable",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            original_read_text = Path.read_text
+            calls = {"count": 0}
+
+            def flaky_read_text(path, *args, **kwargs):
+                if path == result_path and calls["count"] < 2:
+                    calls["count"] += 1
+                    raise PermissionError(13, "sharing violation")
+                if path == result_path:
+                    calls["count"] += 1
+                return original_read_text(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", flaky_read_text):
+                result = bridge.result(command_id)
+
+            self.assertTrue(result.ok)
+            self.assertEqual("durable", result.summary)
+            self.assertGreaterEqual(calls["count"], 3)
+
     def test_outdated_companion_allows_advertised_maintenance_operation(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             bridge = self.make_bridge(Path(raw))

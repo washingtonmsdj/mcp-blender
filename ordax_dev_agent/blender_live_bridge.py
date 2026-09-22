@@ -117,22 +117,34 @@ class BlenderLiveBridge:
         except OSError:
             return False
 
-    def _read_presence(self) -> dict[str, Any]:
+    def _read_json_object_retry(
+        self,
+        path: Path,
+        *,
+        label: str,
+        attempts: int = 6,
+    ) -> dict[str, Any]:
         last_error: Exception | None = None
-        for attempt in range(6):
+        for attempt in range(attempts):
             try:
-                raw = self.presence.read_text(encoding="utf-8-sig")
+                raw = path.read_text(encoding="utf-8-sig")
                 loaded = json.loads(raw)
                 if not isinstance(loaded, dict):
-                    raise ValueError("presence.json must contain a JSON object")
+                    raise ValueError(f"{label} must contain a JSON object")
                 return loaded
             except (OSError, json.JSONDecodeError, ValueError) as error:
                 last_error = error
-                if attempt >= 5:
+                if attempt >= attempts - 1:
                     break
                 time.sleep(0.02 * (attempt + 1))
         assert last_error is not None
         raise last_error
+
+    def _read_presence(self) -> dict[str, Any]:
+        return self._read_json_object_retry(
+            self.presence,
+            label="presence.json",
+        )
 
     def status(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -352,14 +364,17 @@ class BlenderLiveBridge:
         while time.monotonic() < deadline:
             if response_path.is_file():
                 try:
-                    response = json.loads(
-                        response_path.read_text(encoding="utf-8-sig")
+                    response = self._read_json_object_retry(
+                        response_path,
+                        label="Blender live response",
                     )
-                finally:
-                    try:
-                        response_path.unlink()
-                    except OSError:
-                        pass
+                except (OSError, json.JSONDecodeError, ValueError):
+                    time.sleep(0.05)
+                    continue
+                try:
+                    response_path.unlink()
+                except OSError:
+                    pass
 
                 ok = bool(response.get("ok"))
                 return ActionResult(
@@ -481,8 +496,11 @@ class BlenderLiveBridge:
             )
 
         try:
-            response = json.loads(path.read_text(encoding="utf-8-sig"))
-        except (OSError, json.JSONDecodeError) as error:
+            response = self._read_json_object_retry(
+                path,
+                label="Blender live result",
+            )
+        except (OSError, json.JSONDecodeError, ValueError) as error:
             return ActionResult(
                 False,
                 f"Blender live result could not be read: {error}",
