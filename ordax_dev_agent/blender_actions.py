@@ -17,6 +17,7 @@ from typing import Any
 from mcp_blender_unity.config import find_blender
 
 from .assets.blender_modeling_contracts import modeling_schemas, plan_modeling_operation
+from .assets.blender_material_contracts import normalize_material_request
 from .blender_asset_sources import polyhaven_file_manifest, search_polyhaven
 from .blender_live_bridge import BlenderLiveBridge
 from .models import ActionResult
@@ -415,6 +416,18 @@ class BlenderActions:
         return self._blender_live(payload).request(
             "add_modifier",
             plan["arguments"],
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_material_apply(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            arguments = normalize_material_request(payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+
+        return self._blender_live(payload).request(
+            "material_apply",
+            arguments,
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
 

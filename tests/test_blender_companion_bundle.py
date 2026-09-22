@@ -135,6 +135,7 @@ class BlenderCompanionBundleTests(unittest.TestCase):
                 "blender_spatial_math.py",
                 "blender_quality_rules.py",
                 "blender_modeling_contracts.py",
+                "blender_material_contracts.py",
             ],
             manifest["files"],
         )

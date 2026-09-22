@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from ordax_dev_agent.actions import ActionRegistry
-from ordax_dev_agent.main import _start_local_watchdog
+from ordax_dev_agent.main import _start_local_watchdog, _upload_result_artifacts
 from ordax_dev_agent.config import AgentConfig
 from ordax_dev_agent.models import ActionResult
 
@@ -44,6 +44,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.run_python", result.data["actions"])
             self.assertIn("blender.live_start", result.data["actions"])
             self.assertIn("blender.live_status", result.data["actions"])
+            self.assertIn("blender.live_material_apply", result.data["actions"])
             self.assertIn("blender.live_inspect", result.data["actions"])
             self.assertIn("blender.live_scene_snapshot", result.data["actions"])
             self.assertIn("blender.live_scene_reset", result.data["actions"])
@@ -727,6 +728,85 @@ class AgentActionRegistryTests(unittest.TestCase):
                 process = _start_local_watchdog(config)
 
             self.assertIsNone(process)
+
+
+    def test_material_apply_normalizes_and_dispatches(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.execute(
+                    "blender.live_material_apply",
+                    {
+                        "object_name": "Acrylic",
+                        "material_name": "Crystal",
+                        "base_color": [0.82, 0.94, 1.0, 0.18],
+                        "roughness": 0.08,
+                        "transmission": 1.0,
+                        "alpha": 0.18,
+                        "ior": 1.49,
+                    },
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("material_apply", result.data["operation"])
+        self.assertEqual("Crystal", result.data["payload"]["material_name"])
+        self.assertEqual(1.0, result.data["payload"]["transmission"])
+        self.assertEqual(0.18, result.data["payload"]["alpha"])
+
+    def test_material_apply_rejects_unknown_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.execute(
+                    "blender.live_material_apply",
+                    {
+                        "object_name": "Acrylic",
+                        "material_name": "Crystal",
+                        "python": "arbitrary",
+                    },
+                )
+
+        self.assertFalse(result.ok)
+        self.assertIn("unsupported field(s): python", result.summary)
+        live.assert_not_called()
+
+    def test_upload_result_artifacts_accepts_multiview_artifact_key(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "front.png"
+            path.write_bytes(b"png")
+            uploaded_paths = []
+
+            class FakeControl:
+                def upload_artifact(self, job, artifact_path, *, kind, metadata):
+                    uploaded_paths.append((artifact_path, kind, metadata))
+                    return {"path": str(artifact_path), "kind": kind}
+
+            job = SimpleNamespace(action="blender.live_multiview_capture")
+            result = ActionResult(
+                True,
+                "captured",
+                {"artifacts": [{"view": "front", "artifact": str(path)}]},
+            )
+
+            uploaded = _upload_result_artifacts(FakeControl(), job, result)
+
+        self.assertEqual(1, len(uploaded))
+        self.assertEqual(path, uploaded_paths[0][0])
 
 
 if __name__ == "__main__":

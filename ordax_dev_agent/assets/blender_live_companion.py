@@ -134,6 +134,12 @@ _normalize_transform_request = _MODELING_CONTRACTS.normalize_transform_request
 _plan_modeling_operation = _MODELING_CONTRACTS.plan_modeling_operation
 _evaluate_modifier_runtime_budget = _MODELING_CONTRACTS.evaluate_modifier_runtime_budget
 
+_MATERIAL_CONTRACTS = _load_companion_asset_module(
+    "blender_material_contracts.py",
+    "_ordax_blender_material_contracts",
+)
+_normalize_material_request = _MATERIAL_CONTRACTS.normalize_material_request
+
 CFG = _args()
 CONTROL_ROOT = Path(CFG.ordax_control_root).resolve()
 PROJECT_ROOT = Path(CFG.ordax_project_root).resolve()
@@ -160,6 +166,7 @@ CAPABILITIES = [
     "object_transform",
     "create_primitive",
     "add_modifier",
+    "material_apply",
     "object_metadata",
     "api_schema",
     "api_lookup",
@@ -1111,6 +1118,95 @@ def _modeling_add_modifier(command: dict) -> None:
             False,
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
             operation="add_modifier",
+            before=before,
+        )
+
+
+def _material_apply(command: dict) -> None:
+    command_id = command["id"]
+    obj = None
+    before = None
+    try:
+        _modeling_runtime_preconditions()
+        arguments = _normalize_material_request(command)
+        obj = _resolve_object(arguments)
+        if (
+            obj.type != "MESH"
+            or obj.library is not None
+            or obj.override_library is not None
+            or getattr(obj.data, "library", None) is not None
+        ):
+            raise ValueError("material assignment requires an existing local mesh object")
+
+        before = _object_details(obj)
+        material = bpy.data.materials.get(arguments["material_name"])
+        if material is None:
+            material = bpy.data.materials.new(arguments["material_name"])
+        material.use_nodes = True
+
+        rgba = arguments["base_color"]
+        material.diffuse_color = tuple(rgba)
+        nodes = material.node_tree.nodes if material.node_tree else None
+        bsdf = nodes.get("Principled BSDF") if nodes else None
+        if bsdf is None:
+            raise ValueError("Principled BSDF node is unavailable")
+
+        inputs = bsdf.inputs
+        if "Base Color" in inputs:
+            inputs["Base Color"].default_value = tuple(rgba)
+        if "Roughness" in inputs:
+            inputs["Roughness"].default_value = arguments["roughness"]
+        if "Metallic" in inputs:
+            inputs["Metallic"].default_value = arguments["metallic"]
+        if "IOR" in inputs:
+            inputs["IOR"].default_value = arguments["ior"]
+        if "Alpha" in inputs:
+            inputs["Alpha"].default_value = arguments["alpha"]
+        if "Transmission Weight" in inputs:
+            inputs["Transmission Weight"].default_value = arguments["transmission"]
+        elif "Transmission" in inputs:
+            inputs["Transmission"].default_value = arguments["transmission"]
+
+        if arguments["alpha"] < 0.999 or arguments["transmission"] > 0.0:
+            if hasattr(material, "surface_render_method"):
+                for value in ("DITHERED", "BLENDED"):
+                    try:
+                        material.surface_render_method = value
+                        break
+                    except Exception:
+                        continue
+            elif hasattr(material, "blend_method"):
+                try:
+                    material.blend_method = "BLEND"
+                except Exception:
+                    pass
+
+        obj.data.materials.clear()
+        obj.data.materials.append(material)
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender material applied",
+            operation="material_apply",
+            before=before,
+            object=_object_details(obj),
+            material={
+                "name": material.name,
+                "base_color": list(rgba),
+                "roughness": arguments["roughness"],
+                "metallic": arguments["metallic"],
+                "transmission": arguments["transmission"],
+                "alpha": arguments["alpha"],
+                "ior": arguments["ior"],
+            },
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="material_apply",
             before=before,
         )
 
@@ -3208,6 +3304,8 @@ def _process(path: Path) -> None:
             _modeling_create_primitive(command)
         elif operation == "add_modifier":
             _modeling_add_modifier(command)
+        elif operation == "material_apply":
+            _material_apply(command)
         elif operation == "object_metadata":
             _object_metadata(command)
         elif operation == "api_schema":
