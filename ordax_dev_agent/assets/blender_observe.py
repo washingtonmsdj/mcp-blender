@@ -36,4 +36,6 @@ if request["render"]:
     scene.render.use_file_extension = True
     if scene.render.engine == "CYCLES":
         scene.cycles.samples = request["samples"]
+    elif scene.render.engine == "BLENDER_EEVEE" and hasattr(scene, "eevee"):
+        scene.eevee.taa_render_samples = request["samples"]
     bpy.ops.render.render(write_still=True)
