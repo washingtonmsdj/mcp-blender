@@ -169,6 +169,7 @@ CAPABILITIES = [
     "material_apply",
     "import_asset",
     "animate_transform",
+    "viewport_proxy",
     "object_metadata",
     "api_schema",
     "api_lookup",
@@ -1481,6 +1482,110 @@ def _animate_transform(command: dict) -> None:
             operation="animate_transform",
             before=before,
             inserted_channels=inserted,
+        )
+
+
+def _viewport_proxy(command: dict) -> None:
+    command_id = command["id"]
+    obj = None
+    modifier = None
+    try:
+        _modeling_runtime_preconditions()
+        allowed = {
+            "id",
+            "operation",
+            "object_name",
+            "ordax_object_id",
+            "target_faces",
+            "enabled",
+        }
+        unsupported = sorted(set(command) - allowed)
+        if unsupported:
+            raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+        obj = _resolve_object(command)
+        if (
+            obj.type != "MESH"
+            or obj.library is not None
+            or obj.override_library is not None
+            or getattr(obj.data, "library", None) is not None
+        ):
+            raise ValueError("viewport proxy requires an existing local mesh object")
+        if obj.animation_data is not None or len(obj.constraints) > 0:
+            raise ValueError(
+                "animated or constrained targets require a dedicated proxy workflow"
+            )
+
+        enabled = command.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be boolean")
+        target_faces = command.get("target_faces", 150000)
+        if (
+            isinstance(target_faces, bool)
+            or not isinstance(target_faces, int)
+            or target_faces < 10000
+            or target_faces > 500000
+        ):
+            raise ValueError(
+                "target_faces must be an integer between 10000 and 500000"
+            )
+
+        modifier_name = "OrdaX_Viewport_Proxy"
+        existing = obj.modifiers.get(modifier_name)
+        source_faces = len(obj.data.polygons)
+
+        if not enabled:
+            if existing is not None:
+                obj.modifiers.remove(existing)
+            bpy.context.view_layer.update()
+            _response(
+                command_id,
+                True,
+                "Blender viewport proxy disabled",
+                operation="viewport_proxy",
+                enabled=False,
+                source_faces=source_faces,
+                object=_object_details(obj),
+            )
+            return
+
+        ratio = 1.0 if source_faces <= 0 else min(
+            1.0,
+            max(0.01, float(target_faces) / float(source_faces)),
+        )
+
+        if existing is not None and existing.type != "DECIMATE":
+            raise ValueError(
+                "OrdaX viewport proxy name is occupied by a non-DECIMATE modifier"
+            )
+        modifier = existing or obj.modifiers.new(modifier_name, "DECIMATE")
+        modifier.decimate_type = "COLLAPSE"
+        modifier.ratio = ratio
+        modifier.show_viewport = True
+        modifier.show_render = False
+        if hasattr(modifier, "show_in_editmode"):
+            modifier.show_in_editmode = False
+
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender viewport proxy enabled",
+            operation="viewport_proxy",
+            enabled=True,
+            source_faces=source_faces,
+            target_faces=target_faces,
+            estimated_viewport_faces=max(1, int(source_faces * ratio)),
+            ratio=ratio,
+            render_preserves_source=True,
+            object=_object_details(obj),
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="viewport_proxy",
         )
 
 
@@ -3648,6 +3753,8 @@ def _process(path: Path) -> None:
             _import_asset(command)
         elif operation == "animate_transform":
             _animate_transform(command)
+        elif operation == "viewport_proxy":
+            _viewport_proxy(command)
         elif operation == "object_metadata":
             _object_metadata(command)
         elif operation == "api_schema":

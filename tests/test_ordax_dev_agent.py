@@ -47,6 +47,8 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_material_apply", result.data["actions"])
             self.assertIn("blender.live_import_asset", result.data["actions"])
             self.assertIn("blender.live_animate_transform", result.data["actions"])
+            self.assertIn("blender.live_batch", result.data["actions"])
+            self.assertIn("blender.live_viewport_proxy", result.data["actions"])
             self.assertIn("blender.live_inspect", result.data["actions"])
             self.assertIn("blender.live_scene_snapshot", result.data["actions"])
             self.assertIn("blender.live_scene_reset", result.data["actions"])
@@ -924,6 +926,113 @@ class AgentActionRegistryTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("strictly increasing", result.summary)
         live.assert_not_called()
+
+
+
+    def test_live_batch_executes_validated_steps_locally(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            calls = []
+
+            def fake_transform(payload):
+                calls.append(("object_transform", payload))
+                return ActionResult(
+                    True,
+                    "moved",
+                    {"object": {"name": payload["object_name"]}},
+                )
+
+            def fake_material(payload):
+                calls.append(("material_apply", payload))
+                return ActionResult(
+                    True,
+                    "material",
+                    {"object": {"name": payload["object_name"]}},
+                )
+
+            with patch.object(
+                registry,
+                "blender_live_object_transform",
+                side_effect=fake_transform,
+            ), patch.object(
+                registry,
+                "blender_live_material_apply",
+                side_effect=fake_material,
+            ):
+                result = registry.blender_live_batch(
+                    {
+                        "steps": [
+                            {
+                                "op": "object_transform",
+                                "payload": {
+                                    "object_name": "Part",
+                                    "location": [1, 2, 3],
+                                },
+                            },
+                            {
+                                "op": "material_apply",
+                                "payload": {
+                                    "object_name": "Part",
+                                    "material_name": "Mat",
+                                },
+                            },
+                        ]
+                    }
+                )
+
+        self.assertTrue(result.ok, f"{result.summary}: {result.data}")
+        self.assertEqual(2, result.data["completed_steps"])
+        self.assertEqual(
+            ["object_transform", "material_apply"],
+            [item[0] for item in calls],
+        )
+
+    def test_live_batch_rejects_unlisted_operations(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.blender_live_batch(
+                {
+                    "steps": [
+                        {"op": "run_script", "payload": {}},
+                    ]
+                }
+            )
+
+        self.assertFalse(result.ok)
+        self.assertIn("not allowed", result.summary)
+
+    def test_viewport_proxy_dispatches_non_destructive_request(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.blender_live_viewport_proxy(
+                    {
+                        "object_name": "HighPoly",
+                        "target_faces": 120000,
+                    }
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("viewport_proxy", result.data["operation"])
+        self.assertEqual(120000, result.data["payload"]["target_faces"])
+        self.assertTrue(result.data["payload"]["enabled"])
 
 
 

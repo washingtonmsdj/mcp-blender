@@ -74,13 +74,16 @@ class AgentConfig:
                 "ORDAX_SUPABASE_PUBLISHABLE_KEY",
                 settings.get("publishable_key"),
             ),
-            poll_seconds=max(
-                2.0,
-                float(
-                    os.environ.get(
-                        "ORDAX_AGENT_POLL_SECONDS",
-                        settings.get("poll_seconds", 5),
-                    )
+            poll_seconds=min(
+                1.0,
+                max(
+                    0.25,
+                    float(
+                        os.environ.get(
+                            "ORDAX_AGENT_POLL_SECONDS",
+                            settings.get("poll_seconds", 1),
+                        )
+                    ),
                 ),
             ),
             state_dir=state_dir,
