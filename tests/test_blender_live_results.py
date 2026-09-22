@@ -79,6 +79,37 @@ class BlenderLiveResultTests(unittest.TestCase):
             self.assertTrue(result.data["retryable"])
             self.assertTrue(result.data["in_progress"])
 
+    def test_status_retries_transient_presence_permission_error(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            bridge = self.make_bridge(Path(raw))
+            bridge._ensure_dirs()
+            bridge.presence.write_text("{}", encoding="utf-8")
+            presence = json.dumps(
+                {
+                    "protocol_version": 9,
+                    "companion_fingerprint": "demo",
+                    "capabilities": ["ping"],
+                }
+            )
+            original_read_text = Path.read_text
+            calls = {"count": 0}
+
+            def flaky_read_text(path, *args, **kwargs):
+                if path == bridge.presence and calls["count"] < 2:
+                    calls["count"] += 1
+                    raise PermissionError(13, "sharing violation")
+                if path == bridge.presence:
+                    calls["count"] += 1
+                    return presence
+                return original_read_text(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", flaky_read_text):
+                status = bridge.status()
+
+            self.assertEqual(3, calls["count"])
+            self.assertTrue(status["protocol_compatible"])
+            self.assertNotIn("presence_error", status)
+
     def test_status_lists_inflight_commands(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             bridge = self.make_bridge(Path(raw))
