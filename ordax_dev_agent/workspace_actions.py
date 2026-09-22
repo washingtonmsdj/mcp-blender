@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import stat
 import time
 from pathlib import Path
 from typing import Any
@@ -70,6 +72,39 @@ def _copy_ignore(_directory: str, names: list[str]) -> set[str]:
         if name in _SKIP_NAMES or name.endswith(_SKIP_SUFFIXES):
             ignored.add(name)
     return ignored
+
+
+def _remove_tree_force(path: Path) -> None:
+    last_error: OSError | None = None
+
+    def _onerror(function, target, exc_info) -> None:
+        try:
+            os.chmod(target, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+            function(target)
+        except OSError:
+            raise exc_info[1]
+
+    for attempt in range(5):
+        try:
+            shutil.rmtree(path, onerror=_onerror)
+            return
+        except OSError as error:
+            last_error = error
+            if attempt >= 4:
+                break
+            try:
+                for item in path.rglob("*"):
+                    try:
+                        os.chmod(item, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+                    except OSError:
+                        pass
+                os.chmod(path, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+            except OSError:
+                pass
+            time.sleep(0.15 * (attempt + 1))
+
+    assert last_error is not None
+    raise last_error
 
 
 class WorkspaceActions:
@@ -341,7 +376,7 @@ class WorkspaceActions:
             except ValueError:
                 return ActionResult(False, "refusing to rebuild archive cache outside state directory")
             try:
-                shutil.rmtree(archive_clone)
+                _remove_tree_force(archive_clone)
             except Exception as error:
                 return ActionResult(
                     False,

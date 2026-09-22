@@ -12,6 +12,7 @@ from ordax_dev_agent.execution_lock import ExecutionLock
 from ordax_dev_agent.models import AgentJob, ActionResult
 from ordax_dev_agent.projects import load_projects
 from ordax_dev_agent.unity_editor_bridge import UnityEditorBridge
+from ordax_dev_agent.workspace_actions import _remove_tree_force
 
 
 class ProjectTests(unittest.TestCase):
@@ -387,6 +388,31 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual([], result.data["entries"])
 
 
+
+    def test_force_remove_tree_retries_after_permission_error(self):
+        target = self.root / "archive-cache"
+        target.mkdir()
+        (target / "file.bin").write_bytes(b"x")
+        real_rmtree = __import__("shutil").rmtree
+        calls = {"count": 0}
+
+        def flaky_rmtree(path, *args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise PermissionError(5, "access denied")
+            return real_rmtree(path, *args, **kwargs)
+
+        with (
+            patch(
+                "ordax_dev_agent.workspace_actions.shutil.rmtree",
+                side_effect=flaky_rmtree,
+            ),
+            patch("ordax_dev_agent.workspace_actions.time.sleep"),
+        ):
+            _remove_tree_force(target)
+
+        self.assertEqual(2, calls["count"])
+        self.assertFalse(target.exists())
 
     def test_archive_rejects_non_boolean_rebuild_cache(self):
         workspace = self.root / "github"
