@@ -167,6 +167,9 @@ CAPABILITIES = [
     "create_primitive",
     "add_modifier",
     "material_apply",
+    "create_camera",
+    "create_light",
+    "scene_presentation",
     "import_asset",
     "animate_transform",
     "viewport_proxy",
@@ -1586,6 +1589,251 @@ def _viewport_proxy(command: dict) -> None:
             False,
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
             operation="viewport_proxy",
+        )
+
+
+def _look_at_rotation(location, target):
+    location_v = Vector(location)
+    target_v = Vector(target)
+    direction = target_v - location_v
+    if direction.length <= 1e-9:
+        raise ValueError("target must differ from location")
+    return direction.to_track_quat("-Z", "Y").to_euler()
+
+
+def _create_camera(command: dict) -> None:
+    command_id = command["id"]
+    obj = None
+    try:
+        allowed = {
+            "id",
+            "operation",
+            "name",
+            "location",
+            "target",
+            "lens_mm",
+            "sensor_width_mm",
+            "clip_start",
+            "clip_end",
+            "make_active",
+        }
+        unsupported = sorted(set(command) - allowed)
+        if unsupported:
+            raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+        name = str(command.get("name") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. -]{0,126}", name):
+            raise ValueError("name contains unsupported characters")
+        location = command.get("location")
+        target = command.get("target")
+        if not isinstance(location, list) or len(location) != 3:
+            raise ValueError("location must be a list of three numbers")
+        if not isinstance(target, list) or len(target) != 3:
+            raise ValueError("target must be a list of three numbers")
+
+        existing = bpy.data.objects.get(name)
+        if existing is not None and existing.type != "CAMERA":
+            raise ValueError("camera name is occupied by a non-camera object")
+
+        if existing is None:
+            data = bpy.data.cameras.new(f"{name}_Data")
+            obj = bpy.data.objects.new(name, data)
+            bpy.context.scene.collection.objects.link(obj)
+        else:
+            obj = existing
+            data = obj.data
+
+        obj.location = [float(v) for v in location]
+        obj.rotation_euler = _look_at_rotation(location, target)
+        data.lens = float(command.get("lens_mm", 50.0))
+        data.sensor_width = float(command.get("sensor_width_mm", 36.0))
+        data.clip_start = float(command.get("clip_start", 0.001))
+        data.clip_end = float(command.get("clip_end", 100.0))
+        if bool(command.get("make_active", True)):
+            bpy.context.scene.camera = obj
+
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender camera ready",
+            operation="create_camera",
+            object=_object_details(obj),
+            camera={
+                "lens_mm": float(data.lens),
+                "sensor_width_mm": float(data.sensor_width),
+                "clip_start": float(data.clip_start),
+                "clip_end": float(data.clip_end),
+                "active": bpy.context.scene.camera == obj,
+                "target": [float(v) for v in target],
+            },
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="create_camera",
+            object=_object_details(obj) if obj is not None else None,
+        )
+
+
+def _create_light(command: dict) -> None:
+    command_id = command["id"]
+    obj = None
+    try:
+        allowed = {
+            "id",
+            "operation",
+            "name",
+            "light_type",
+            "location",
+            "target",
+            "energy",
+            "color",
+            "size",
+            "angle_degrees",
+            "spot_size_degrees",
+            "spot_blend",
+        }
+        unsupported = sorted(set(command) - allowed)
+        if unsupported:
+            raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+        name = str(command.get("name") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. -]{0,126}", name):
+            raise ValueError("name contains unsupported characters")
+        light_type = str(command.get("light_type") or "AREA").strip().upper()
+        if light_type not in {"AREA", "POINT", "SUN", "SPOT"}:
+            raise ValueError("light_type must be AREA, POINT, SUN, or SPOT")
+        location = command.get("location")
+        target = command.get("target")
+        if not isinstance(location, list) or len(location) != 3:
+            raise ValueError("location must be a list of three numbers")
+        if not isinstance(target, list) or len(target) != 3:
+            raise ValueError("target must be a list of three numbers")
+
+        existing = bpy.data.objects.get(name)
+        if existing is not None and existing.type != "LIGHT":
+            raise ValueError("light name is occupied by a non-light object")
+        if existing is not None and existing.data.type != light_type:
+            raise ValueError("existing light type does not match requested light_type")
+
+        if existing is None:
+            data = bpy.data.lights.new(f"{name}_Data", type=light_type)
+            obj = bpy.data.objects.new(name, data)
+            bpy.context.scene.collection.objects.link(obj)
+        else:
+            obj = existing
+            data = obj.data
+
+        obj.location = [float(v) for v in location]
+        if light_type in {"AREA", "SUN", "SPOT"}:
+            obj.rotation_euler = _look_at_rotation(location, target)
+
+        data.energy = float(command.get("energy", 100.0))
+        data.color = tuple(float(v) for v in command.get("color", [1.0, 1.0, 1.0]))
+
+        if light_type == "AREA":
+            data.shape = "DISK"
+            data.size = float(command.get("size", 0.1))
+        elif light_type == "SUN":
+            data.angle = math.radians(float(command.get("angle_degrees", 0.526)))
+        elif light_type == "SPOT":
+            data.spot_size = math.radians(float(command.get("spot_size_degrees", 45.0)))
+            data.spot_blend = float(command.get("spot_blend", 0.15))
+            data.shadow_soft_size = float(command.get("size", 0.1))
+        elif light_type == "POINT":
+            data.shadow_soft_size = float(command.get("size", 0.1))
+
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender light ready",
+            operation="create_light",
+            object=_object_details(obj),
+            light={
+                "type": light_type,
+                "energy": float(data.energy),
+                "color": [float(v) for v in data.color],
+                "target": [float(v) for v in target],
+            },
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="create_light",
+            object=_object_details(obj) if obj is not None else None,
+        )
+
+
+def _scene_presentation(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        allowed = {
+            "id",
+            "operation",
+            "render_engine",
+            "resolution_x",
+            "resolution_y",
+            "resolution_percentage",
+            "world_color",
+            "world_strength",
+            "transparent_film",
+        }
+        unsupported = sorted(set(command) - allowed)
+        if unsupported:
+            raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+        scene = bpy.context.scene
+        engine = str(command.get("render_engine") or "BLENDER_EEVEE_NEXT").strip().upper()
+        try:
+            scene.render.engine = engine
+        except Exception as error:
+            raise ValueError(f"render engine unavailable: {engine}") from error
+
+        scene.render.resolution_x = int(command.get("resolution_x", 1080))
+        scene.render.resolution_y = int(command.get("resolution_y", 1080))
+        scene.render.resolution_percentage = int(command.get("resolution_percentage", 100))
+        scene.render.film_transparent = bool(command.get("transparent_film", False))
+
+        world = scene.world
+        if world is None:
+            world = bpy.data.worlds.new("OrdaX_World")
+            scene.world = world
+        world.use_nodes = True
+        background = world.node_tree.nodes.get("Background") if world.node_tree else None
+        if background is None:
+            raise RuntimeError("World Background node is unavailable")
+        color = [float(v) for v in command.get("world_color", [0.035, 0.035, 0.035])]
+        background.inputs["Color"].default_value = (*color, 1.0)
+        background.inputs["Strength"].default_value = float(command.get("world_strength", 0.35))
+
+        _response(
+            command_id,
+            True,
+            "Blender scene presentation configured",
+            operation="scene_presentation",
+            render_engine=scene.render.engine,
+            resolution=[
+                int(scene.render.resolution_x),
+                int(scene.render.resolution_y),
+                int(scene.render.resolution_percentage),
+            ],
+            transparent_film=bool(scene.render.film_transparent),
+            world_color=color,
+            world_strength=float(background.inputs["Strength"].default_value),
+            active_camera=scene.camera.name if scene.camera else None,
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="scene_presentation",
         )
 
 
@@ -3749,6 +3997,12 @@ def _process(path: Path) -> None:
             _modeling_add_modifier(command)
         elif operation == "material_apply":
             _material_apply(command)
+        elif operation == "create_camera":
+            _create_camera(command)
+        elif operation == "create_light":
+            _create_light(command)
+        elif operation == "scene_presentation":
+            _scene_presentation(command)
         elif operation == "import_asset":
             _import_asset(command)
         elif operation == "animate_transform":

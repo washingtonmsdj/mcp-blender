@@ -45,6 +45,9 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_start", result.data["actions"])
             self.assertIn("blender.live_status", result.data["actions"])
             self.assertIn("blender.live_material_apply", result.data["actions"])
+            self.assertIn("blender.live_create_camera", result.data["actions"])
+            self.assertIn("blender.live_create_light", result.data["actions"])
+            self.assertIn("blender.live_scene_presentation", result.data["actions"])
             self.assertIn("blender.live_import_asset", result.data["actions"])
             self.assertIn("blender.live_animate_transform", result.data["actions"])
             self.assertIn("blender.live_batch", result.data["actions"])
@@ -1033,6 +1036,88 @@ class AgentActionRegistryTests(unittest.TestCase):
         self.assertEqual("viewport_proxy", result.data["operation"])
         self.assertEqual(120000, result.data["payload"]["target_faces"])
         self.assertTrue(result.data["payload"]["enabled"])
+
+
+
+    def test_live_create_camera_normalizes_and_dispatches(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.blender_live_create_camera(
+                    {
+                        "name": "Product_Camera",
+                        "location": [0.0, -0.2, 0.08],
+                        "target": [0.0, 0.0, 0.04],
+                        "lens_mm": 55,
+                    }
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("create_camera", result.data["operation"])
+        self.assertEqual("Product_Camera", result.data["payload"]["name"])
+        self.assertEqual(55.0, result.data["payload"]["lens_mm"])
+
+    def test_live_create_light_rejects_unknown_type(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.blender_live_create_light(
+                    {
+                        "name": "Bad",
+                        "light_type": "LASER",
+                        "location": [0, 0, 1],
+                    }
+                )
+
+        self.assertFalse(result.ok)
+        self.assertIn("AREA, POINT, SUN, or SPOT", result.summary)
+        live.assert_not_called()
+
+    def test_live_scene_presentation_dispatches_closed_world_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.blender_live_scene_presentation(
+                    {
+                        "render_engine": "BLENDER_EEVEE_NEXT",
+                        "resolution_x": 1200,
+                        "resolution_y": 1200,
+                        "world_strength": 0.2,
+                    }
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("scene_presentation", result.data["operation"])
+        self.assertEqual(1200, result.data["payload"]["resolution_x"])
+        self.assertEqual(0.2, result.data["payload"]["world_strength"])
 
 
 
