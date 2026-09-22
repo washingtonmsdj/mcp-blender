@@ -338,5 +338,36 @@ class ProjectTests(unittest.TestCase):
 
 
 
+    def test_workspace_list_projects_finds_matching_nested_directory(self):
+        workspace = self.root / "github"
+        hordax = workspace / "HORDAX-game"
+        target = workspace / "dioramas-biblicos" / "diorama-real"
+        hordax.mkdir(parents=True)
+        target.mkdir(parents=True)
+        (target / "scene.blend").touch()
+        config = replace(
+            self.config,
+            hordax_path=hordax,
+        )
+        registry = ActionRegistry(config)
+
+        result = registry.execute(
+            "workspace.list_projects",
+            {
+                "query": "diorama-real",
+                "max_depth": 3,
+            },
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(1, len(result.data["entries"]))
+        self.assertEqual(
+            "dioramas-biblicos/diorama-real",
+            result.data["entries"][0]["relative_path"],
+        )
+        self.assertEqual(1, result.data["entries"][0]["blend_files_at_root"])
+
+
+
 if __name__ == '__main__':
     unittest.main()
