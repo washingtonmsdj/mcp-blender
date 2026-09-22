@@ -65,6 +65,78 @@ def _copy_ignore(_directory: str, names: list[str]) -> set[str]:
 
 
 class WorkspaceActions:
+    def workspace_list_projects(self, payload: dict[str, Any]) -> ActionResult:
+        allowed = {"query", "max_depth", "max_entries"}
+        unsupported = sorted(set(payload) - allowed)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        query = str(payload.get("query") or "").strip().lower()
+        max_depth = payload.get("max_depth", 3)
+        max_entries = payload.get("max_entries", 200)
+        if isinstance(max_depth, bool) or not isinstance(max_depth, int) or not (1 <= max_depth <= 5):
+            return ActionResult(False, "max_depth must be an integer between 1 and 5")
+        if isinstance(max_entries, bool) or not isinstance(max_entries, int) or not (1 <= max_entries <= 500):
+            return ActionResult(False, "max_entries must be an integer between 1 and 500")
+
+        root = self.config.hordax_path.resolve().parent
+        if not root.is_dir():
+            return ActionResult(False, f"GitHub workspace not found: {root}")
+
+        entries: list[dict[str, Any]] = []
+        queue: list[tuple[Path, int]] = [(root, 0)]
+        while queue and len(entries) < max_entries:
+            directory, depth = queue.pop(0)
+            if depth >= max_depth:
+                continue
+            try:
+                children = sorted(
+                    (item for item in directory.iterdir() if item.is_dir()),
+                    key=lambda item: item.name.lower(),
+                )
+            except OSError:
+                continue
+            for child in children:
+                if child.name in _SKIP_NAMES or child.name.startswith("."):
+                    continue
+                rel = child.relative_to(root).as_posix()
+                if query and query not in rel.lower() and query not in child.name.lower():
+                    if depth + 1 < max_depth:
+                        queue.append((child, depth + 1))
+                    continue
+                try:
+                    blend_count = sum(1 for _ in child.glob("*.blend"))
+                except OSError:
+                    blend_count = 0
+                entries.append(
+                    {
+                        "relative_path": rel,
+                        "name": child.name,
+                        "depth": depth + 1,
+                        "is_git_repo": (child / ".git").exists(),
+                        "blend_files_at_root": blend_count,
+                    }
+                )
+                if len(entries) >= max_entries:
+                    break
+                if depth + 1 < max_depth:
+                    queue.append((child, depth + 1))
+            else:
+                continue
+            break
+
+        return ActionResult(
+            True,
+            "GitHub workspace projects discovered",
+            {
+                "workspace_root": str(root),
+                "query": query,
+                "max_depth": max_depth,
+                "entries": entries,
+                "truncated": len(entries) >= max_entries,
+            },
+        )
+
     def workspace_bind_project(self, payload: dict[str, Any]) -> ActionResult:
         allowed = {
             "slug",
