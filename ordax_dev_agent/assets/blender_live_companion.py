@@ -168,6 +168,7 @@ CAPABILITIES = [
     "add_modifier",
     "material_apply",
     "import_asset",
+    "animate_transform",
     "object_metadata",
     "api_schema",
     "api_lookup",
@@ -1303,6 +1304,183 @@ def _import_asset(command: dict) -> None:
             operation="import_asset",
             source_path=str(source) if source is not None else None,
             imported_object_count=len(created),
+        )
+
+
+def _animate_transform(command: dict) -> None:
+    command_id = command["id"]
+    obj = None
+    before = None
+    inserted = 0
+    try:
+        _modeling_runtime_preconditions()
+        allowed = {
+            "id",
+            "operation",
+            "object_name",
+            "ordax_object_id",
+            "keyframes",
+            "interpolation",
+            "replace_existing",
+            "set_scene_range",
+            "fps",
+        }
+        unsupported = sorted(set(command) - allowed)
+        if unsupported:
+            raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+        obj = _resolve_object(command)
+        if (
+            obj.library is not None
+            or obj.override_library is not None
+            or getattr(getattr(obj, "data", None), "library", None) is not None
+        ):
+            raise ValueError("animation requires an existing local object")
+
+        raw_keyframes = command.get("keyframes")
+        if not isinstance(raw_keyframes, list) or not (2 <= len(raw_keyframes) <= 64):
+            raise ValueError("keyframes must contain 2 to 64 entries")
+
+        interpolation = str(command.get("interpolation", "BEZIER")).strip().upper()
+        if interpolation not in {"BEZIER", "LINEAR", "CONSTANT"}:
+            raise ValueError("interpolation must be BEZIER, LINEAR, or CONSTANT")
+
+        replace_existing = command.get("replace_existing", True)
+        set_scene_range = command.get("set_scene_range", True)
+        if not isinstance(replace_existing, bool):
+            raise ValueError("replace_existing must be boolean")
+        if not isinstance(set_scene_range, bool):
+            raise ValueError("set_scene_range must be boolean")
+
+        fps = command.get("fps", 24)
+        if isinstance(fps, bool) or not isinstance(fps, int) or not (1 <= fps <= 120):
+            raise ValueError("fps must be an integer between 1 and 120")
+
+        normalized = []
+        previous_frame = None
+        for index, item in enumerate(raw_keyframes):
+            if not isinstance(item, dict):
+                raise ValueError(f"keyframes[{index}] must be an object")
+            unknown = sorted(set(item) - {"frame", "location", "rotation_euler", "scale"})
+            if unknown:
+                raise ValueError(
+                    f"keyframes[{index}] unsupported field(s): " + ", ".join(unknown)
+                )
+            frame = item.get("frame")
+            if isinstance(frame, bool) or not isinstance(frame, int):
+                raise ValueError(f"keyframes[{index}].frame must be an integer")
+            if frame < 0 or frame > 100000:
+                raise ValueError(f"keyframes[{index}].frame must be between 0 and 100000")
+            if previous_frame is not None and frame <= previous_frame:
+                raise ValueError("keyframe frames must be strictly increasing")
+            previous_frame = frame
+
+            values = {"frame": frame}
+            for field in ("location", "rotation_euler", "scale"):
+                if field not in item:
+                    continue
+                vector = item[field]
+                if not isinstance(vector, list) or len(vector) != 3:
+                    raise ValueError(
+                        f"keyframes[{index}].{field} must be a list of three finite numbers"
+                    )
+                converted = []
+                for component in vector:
+                    if isinstance(component, bool) or not isinstance(component, (int, float)):
+                        raise ValueError(
+                            f"keyframes[{index}].{field} must contain finite numbers"
+                        )
+                    numeric = float(component)
+                    if not math.isfinite(numeric):
+                        raise ValueError(
+                            f"keyframes[{index}].{field} must contain finite numbers"
+                        )
+                    converted.append(numeric)
+                if field == "scale" and any(value <= 0.0 or value > 1000.0 for value in converted):
+                    raise ValueError(
+                        f"keyframes[{index}].scale components must be greater than 0 and at most 1000"
+                    )
+                if field != "scale" and any(abs(value) > 100000.0 for value in converted):
+                    raise ValueError(
+                        f"keyframes[{index}].{field} components exceed the allowed range"
+                    )
+                values[field] = converted
+            if len(values) == 1:
+                raise ValueError(
+                    f"keyframes[{index}] must include location, rotation_euler, or scale"
+                )
+            normalized.append(values)
+
+        before = _object_details(obj)
+        if replace_existing:
+            obj.animation_data_clear()
+
+        preferences = getattr(bpy.context, "preferences", None)
+        edit_preferences = getattr(preferences, "edit", None) if preferences else None
+        old_interpolation = None
+        if edit_preferences is not None and hasattr(
+            edit_preferences, "keyframe_new_interpolation_type"
+        ):
+            old_interpolation = edit_preferences.keyframe_new_interpolation_type
+            edit_preferences.keyframe_new_interpolation_type = interpolation
+
+        try:
+            for keyframe in normalized:
+                frame = keyframe["frame"]
+                for field in ("location", "rotation_euler", "scale"):
+                    if field not in keyframe:
+                        continue
+                    setattr(obj, field, keyframe[field])
+                    if not obj.keyframe_insert(
+                        data_path=field,
+                        frame=frame,
+                        group="OrdaX Transform",
+                    ):
+                        raise RuntimeError(
+                            f"could not insert {field} keyframe at frame {frame}"
+                        )
+                    inserted += 1
+        finally:
+            if (
+                old_interpolation is not None
+                and edit_preferences is not None
+            ):
+                edit_preferences.keyframe_new_interpolation_type = old_interpolation
+
+        scene = bpy.context.scene
+        scene.render.fps = fps
+        first_frame = normalized[0]["frame"]
+        last_frame = normalized[-1]["frame"]
+        if set_scene_range:
+            scene.frame_start = first_frame
+            scene.frame_end = last_frame
+        scene.frame_set(first_frame)
+        bpy.context.view_layer.update()
+
+        _response(
+            command_id,
+            True,
+            "Blender transform animation created",
+            operation="animate_transform",
+            before=before,
+            object=_object_details(obj),
+            keyframe_count=len(normalized),
+            inserted_channels=inserted,
+            frame_start=first_frame,
+            frame_end=last_frame,
+            fps=fps,
+            interpolation=interpolation,
+            replace_existing=replace_existing,
+            set_scene_range=set_scene_range,
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="animate_transform",
+            before=before,
+            inserted_channels=inserted,
         )
 
 
@@ -3468,6 +3646,8 @@ def _process(path: Path) -> None:
             _material_apply(command)
         elif operation == "import_asset":
             _import_asset(command)
+        elif operation == "animate_transform":
+            _animate_transform(command)
         elif operation == "object_metadata":
             _object_metadata(command)
         elif operation == "api_schema":

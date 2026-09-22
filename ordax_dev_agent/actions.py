@@ -69,6 +69,7 @@ class ActionRegistry(
             "blender.live_add_modifier": self.blender_live_add_modifier,
             "blender.live_material_apply": self.blender_live_material_apply,
             "blender.live_import_asset": self.blender_live_import_asset,
+            "blender.live_animate_transform": self.blender_live_animate_transform,
             "blender.live_object_metadata": self.blender_live_object_metadata,
             "blender.live_api_schema": self.blender_live_api_schema,
             "blender.live_api_lookup": self.blender_live_api_lookup,

@@ -46,6 +46,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_status", result.data["actions"])
             self.assertIn("blender.live_material_apply", result.data["actions"])
             self.assertIn("blender.live_import_asset", result.data["actions"])
+            self.assertIn("blender.live_animate_transform", result.data["actions"])
             self.assertIn("blender.live_inspect", result.data["actions"])
             self.assertIn("blender.live_scene_snapshot", result.data["actions"])
             self.assertIn("blender.live_scene_reset", result.data["actions"])
@@ -862,6 +863,66 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.skipTest("temporary directory is inside home on this runner")
         self.assertFalse(result.ok)
         self.assertIn("home directory", result.summary)
+        live.assert_not_called()
+
+
+
+    def test_live_animate_transform_normalizes_and_dispatches(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.execute(
+                    "blender.live_animate_transform",
+                    {
+                        "object_name": "Acrylic",
+                        "keyframes": [
+                            {"frame": 1, "location": [0, 0, 0.05]},
+                            {"frame": 48, "location": [0, 0, 0.15]},
+                            {"frame": 96, "location": [0, 0, 0.05]},
+                        ],
+                        "interpolation": "bezier",
+                        "fps": 24,
+                    },
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("animate_transform", result.data["operation"])
+        self.assertEqual("BEZIER", result.data["payload"]["interpolation"])
+        self.assertEqual(3, len(result.data["payload"]["keyframes"]))
+        self.assertEqual(24, result.data["payload"]["fps"])
+
+    def test_live_animate_transform_rejects_unsorted_frames(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.execute(
+                    "blender.live_animate_transform",
+                    {
+                        "object_name": "Acrylic",
+                        "keyframes": [
+                            {"frame": 20, "location": [0, 0, 0.15]},
+                            {"frame": 10, "location": [0, 0, 0.05]},
+                        ],
+                    },
+                )
+
+        self.assertFalse(result.ok)
+        self.assertIn("strictly increasing", result.summary)
         live.assert_not_called()
 
 
