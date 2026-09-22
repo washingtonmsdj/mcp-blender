@@ -363,11 +363,7 @@ def main() -> int:
                     "summary": result.summary,
                 }
 
-                if (
-                    job.action == "agent.update"
-                    and result.ok
-                    and result.data.get("restart_required")
-                ):
+                if result.ok and result.data.get("restart_required"):
                     runtime["state"] = "restarting"
                     return 42
 
