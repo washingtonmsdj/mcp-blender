@@ -1128,7 +1128,7 @@ def _material_apply(command: dict) -> None:
     before = None
     try:
         _modeling_runtime_preconditions()
-        arguments = _normalize_material_request(command)
+        arguments = _normalize_material_request(command, transport_fields={"id", "operation"})
         obj = _resolve_object(arguments)
         if (
             obj.type != "MESH"
