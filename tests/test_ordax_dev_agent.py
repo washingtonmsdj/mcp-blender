@@ -1197,6 +1197,57 @@ class AgentActionRegistryTests(unittest.TestCase):
 
 
 
+    def test_live_extract_region_dispatches_typed_request(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.blender_live_extract_region(
+                    {
+                        "axis": "x",
+                        "minimum": 6,
+                        "maximum": 18,
+                        "translate": [-12, 0, 0],
+                        "keep_names": ["WorldAnchor"],
+                    }
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("extract_region", result.data["operation"])
+        self.assertEqual("X", result.data["payload"]["axis"])
+        self.assertEqual([-12.0, 0.0, 0.0], result.data["payload"]["translate"])
+        self.assertEqual(["WorldAnchor"], result.data["payload"]["keep_names"])
+
+    def test_live_extract_region_rejects_invalid_range(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.blender_live_extract_region(
+                    {
+                        "axis": "X",
+                        "minimum": 10,
+                        "maximum": 2,
+                    }
+                )
+
+        self.assertFalse(result.ok)
+        self.assertIn("maximum must be greater", result.summary)
+        live.assert_not_called()
+
     def test_live_object_remove_dispatches_typed_request(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
