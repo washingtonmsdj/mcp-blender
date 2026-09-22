@@ -210,6 +210,10 @@ def _normalize_scene_presentation_request(payload: dict[str, Any]) -> dict[str, 
         "world_color",
         "world_strength",
         "transparent_film",
+        "eevee_render_samples",
+        "eevee_shadow_ray_count",
+        "eevee_shadow_step_count",
+        "eevee_use_raytracing",
     }
     unsupported = sorted(set(payload) - allowed)
     if unsupported:
@@ -228,6 +232,9 @@ def _normalize_scene_presentation_request(payload: dict[str, Any]) -> dict[str, 
     transparent = payload.get("transparent_film", False)
     if not isinstance(transparent, bool):
         raise ValueError("transparent_film must be boolean")
+    eevee_use_raytracing = payload.get("eevee_use_raytracing", False)
+    if not isinstance(eevee_use_raytracing, bool):
+        raise ValueError("eevee_use_raytracing must be boolean")
     return {
         "render_engine": engine,
         "resolution_x": int(
@@ -265,6 +272,31 @@ def _normalize_scene_presentation_request(payload: dict[str, Any]) -> dict[str, 
             maximum=1000.0,
         ),
         "transparent_film": transparent,
+        "eevee_render_samples": int(
+            _presentation_number(
+                payload.get("eevee_render_samples", 64),
+                "eevee_render_samples",
+                minimum=1,
+                maximum=4096,
+            )
+        ),
+        "eevee_shadow_ray_count": int(
+            _presentation_number(
+                payload.get("eevee_shadow_ray_count", 1),
+                "eevee_shadow_ray_count",
+                minimum=1,
+                maximum=4,
+            )
+        ),
+        "eevee_shadow_step_count": int(
+            _presentation_number(
+                payload.get("eevee_shadow_step_count", 6),
+                "eevee_shadow_step_count",
+                minimum=1,
+                maximum=16,
+            )
+        ),
+        "eevee_use_raytracing": eevee_use_raytracing,
     }
 
 
