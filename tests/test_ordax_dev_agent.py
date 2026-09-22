@@ -1294,5 +1294,62 @@ class AgentActionRegistryTests(unittest.TestCase):
 
 
 
+    def test_live_create_box_with_cutouts_dispatches_typed_request(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.blender_live_create_box_with_cutouts(
+                    {
+                        "name": "Universal_Top",
+                        "location": [0, 0, 9.85],
+                        "dimensions": [10, 10, 0.3],
+                        "cutouts": [
+                            {
+                                "offset": [0, -4.54, 0],
+                                "dimensions": [9.34, 0.34, 0.5],
+                            }
+                        ],
+                    }
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("create_box_with_cutouts", result.data["operation"])
+        self.assertEqual("Universal_Top", result.data["payload"]["name"])
+        self.assertEqual(1, len(result.data["payload"]["cutouts"]))
+
+    def test_live_create_box_with_cutouts_rejects_empty_cutouts(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.blender_live_create_box_with_cutouts(
+                    {
+                        "name": "Universal_Top",
+                        "location": [0, 0, 9.85],
+                        "dimensions": [10, 10, 0.3],
+                        "cutouts": [],
+                    }
+                )
+
+        self.assertFalse(result.ok)
+        self.assertIn("cutouts must contain", result.summary)
+        live.assert_not_called()
+
+
+
 if __name__ == "__main__":
     unittest.main()
