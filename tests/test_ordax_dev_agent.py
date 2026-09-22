@@ -45,6 +45,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_start", result.data["actions"])
             self.assertIn("blender.live_status", result.data["actions"])
             self.assertIn("blender.live_material_apply", result.data["actions"])
+            self.assertIn("blender.live_import_asset", result.data["actions"])
             self.assertIn("blender.live_inspect", result.data["actions"])
             self.assertIn("blender.live_scene_snapshot", result.data["actions"])
             self.assertIn("blender.live_scene_reset", result.data["actions"])
@@ -807,6 +808,62 @@ class AgentActionRegistryTests(unittest.TestCase):
 
         self.assertEqual(1, len(uploaded))
         self.assertEqual(path, uploaded_paths[0][0])
+
+
+    def test_live_import_asset_accepts_single_obj_under_home(self) -> None:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as raw:
+            root = Path(raw)
+            project = root / "hordax"
+            project.mkdir()
+            asset_dir = root / "assets"
+            asset_dir.mkdir()
+            source = asset_dir / "couple.obj"
+            source.write_text("o couple\n", encoding="utf-8")
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.execute(
+                    "blender.live_import_asset",
+                    {
+                        "source_path": str(asset_dir),
+                        "object_name": "Biblical_Couple",
+                    },
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("import_asset", result.data["operation"])
+        self.assertEqual(str(source.resolve()), result.data["payload"]["source_path"])
+        self.assertEqual("Biblical_Couple", result.data["payload"]["object_name"])
+
+    def test_live_import_asset_refuses_source_outside_home(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            source = root / "asset.obj"
+            source.write_text("o x\n", encoding="utf-8")
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.execute(
+                    "blender.live_import_asset",
+                    {"source_path": str(source)},
+                )
+
+        if source.resolve().is_relative_to(Path.home().resolve()):
+            self.skipTest("temporary directory is inside home on this runner")
+        self.assertFalse(result.ok)
+        self.assertIn("home directory", result.summary)
+        live.assert_not_called()
+
 
 
 if __name__ == "__main__":
