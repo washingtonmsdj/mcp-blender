@@ -388,6 +388,37 @@ class ProjectTests(unittest.TestCase):
 
 
 
+    def test_archive_rejects_non_boolean_rebuild_cache(self):
+        workspace = self.root / "github"
+        hordax = workspace / "HORDAX-game"
+        project = workspace / "project"
+        hordax.mkdir(parents=True)
+        project.mkdir()
+        config = replace(
+            self.config,
+            hordax_path=hordax,
+            projects={
+                "model": {
+                    "path": str(project),
+                    "apps": ["blender"],
+                }
+            },
+            default_project="model",
+        )
+        registry = ActionRegistry(config)
+
+        result = registry.execute(
+            "project.archive_to_hordax",
+            {
+                "project": "model",
+                "family": "tests",
+                "rebuild_cache": "yes",
+            },
+        )
+
+        self.assertFalse(result.ok)
+        self.assertIn("rebuild_cache must be boolean", result.summary)
+
     def test_archive_rejects_include_path_escape(self):
         workspace = self.root / "github"
         hordax = workspace / "HORDAX-game"
