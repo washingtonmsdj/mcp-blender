@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,13 @@ _SKIP_NAMES = frozenset({
     ".ruff_cache",
     ".venv",
     "venv",
+    "node_modules",
+    "dist",
+    "target",
+    "vendor",
+    ".next",
+    ".nuxt",
+    "site-packages",
 })
 _SKIP_SUFFIXES = (".blend1", ".blend2", ".blend@", ".tmp", ".temp")
 
@@ -85,8 +93,15 @@ class WorkspaceActions:
 
         entries: list[dict[str, Any]] = []
         queue: list[tuple[Path, int]] = [(root, 0)]
+        deadline = time.monotonic() + 8.0
+        scanned_directories = 0
+        timed_out = False
         while queue and len(entries) < max_entries:
+            if time.monotonic() >= deadline:
+                timed_out = True
+                break
             directory, depth = queue.pop(0)
+            scanned_directories += 1
             if depth >= max_depth:
                 continue
             try:
@@ -134,6 +149,8 @@ class WorkspaceActions:
                 "max_depth": max_depth,
                 "entries": entries,
                 "truncated": len(entries) >= max_entries,
+                "timed_out": timed_out,
+                "scanned_directories": scanned_directories,
             },
         )
 
