@@ -173,6 +173,7 @@ CAPABILITIES = [
     "import_asset",
     "animate_transform",
     "viewport_proxy",
+    "bake_work_proxy",
     "object_metadata",
     "api_schema",
     "api_lookup",
@@ -1589,6 +1590,155 @@ def _viewport_proxy(command: dict) -> None:
             False,
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
             operation="viewport_proxy",
+        )
+
+
+def _bake_work_proxy(command: dict) -> None:
+    command_id = command["id"]
+    source = None
+    proxy = None
+    try:
+        _modeling_runtime_preconditions()
+        allowed = {
+            "id",
+            "operation",
+            "object_name",
+            "ordax_object_id",
+            "proxy_name",
+            "target_faces",
+            "remove_source",
+        }
+        unsupported = sorted(set(command) - allowed)
+        if unsupported:
+            raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+        source = _resolve_object(command)
+        if (
+            source.type != "MESH"
+            or source.library is not None
+            or source.override_library is not None
+            or getattr(source.data, "library", None) is not None
+        ):
+            raise ValueError("baked work proxy requires an existing local mesh object")
+        if source.animation_data is not None or len(source.constraints) > 0:
+            raise ValueError(
+                "animated or constrained targets require a dedicated proxy workflow"
+            )
+
+        proxy_name = str(command.get("proxy_name") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. -]{0,126}", proxy_name):
+            raise ValueError("proxy_name contains unsupported characters")
+        if bpy.data.objects.get(proxy_name) is not None:
+            raise ValueError(f"proxy object already exists: {proxy_name}")
+
+        target_faces = command.get("target_faces", 120000)
+        if (
+            isinstance(target_faces, bool)
+            or not isinstance(target_faces, int)
+            or target_faces < 10000
+            or target_faces > 500000
+        ):
+            raise ValueError(
+                "target_faces must be an integer between 10000 and 500000"
+            )
+        remove_source = command.get("remove_source", False)
+        if not isinstance(remove_source, bool):
+            raise ValueError("remove_source must be boolean")
+
+        unsupported_modifiers = [
+            modifier.name
+            for modifier in source.modifiers
+            if modifier.name != "OrdaX_Viewport_Proxy"
+        ]
+        if unsupported_modifiers:
+            raise ValueError(
+                "source has unsupported modifiers for baked proxy: "
+                + ", ".join(unsupported_modifiers)
+            )
+
+        source_faces = len(source.data.polygons)
+        if source_faces <= 0:
+            raise ValueError("source mesh has no polygons")
+
+        proxy = source.copy()
+        proxy.data = source.data.copy()
+        proxy.name = proxy_name
+        proxy.data.name = proxy_name
+        for collection in list(source.users_collection):
+            collection.objects.link(proxy)
+
+        for modifier in list(proxy.modifiers):
+            proxy.modifiers.remove(modifier)
+
+        ratio = min(
+            1.0,
+            max(0.005, float(target_faces) / float(source_faces)),
+        )
+        modifier = proxy.modifiers.new("OrdaX_Baked_Work_Proxy", "DECIMATE")
+        modifier.decimate_type = "COLLAPSE"
+        modifier.ratio = ratio
+        modifier.show_viewport = True
+        modifier.show_render = True
+
+        bpy.ops.object.select_all(action="DESELECT")
+        proxy.select_set(True)
+        bpy.context.view_layer.objects.active = proxy
+        apply_result = bpy.ops.object.modifier_apply(modifier=modifier.name)
+        if "FINISHED" not in set(apply_result):
+            raise RuntimeError(
+                f"Blender modifier apply returned: {sorted(apply_result)}"
+            )
+
+        baked_faces = len(proxy.data.polygons)
+        proxy["ordax_work_proxy"] = True
+        proxy["ordax_proxy_source_name"] = source.name
+        proxy["ordax_proxy_source_faces"] = int(source_faces)
+        proxy["ordax_proxy_target_faces"] = int(target_faces)
+        proxy["ordax_proxy_baked_faces"] = int(baked_faces)
+
+        source_name = source.name
+        source_transform = {
+            "location": _round_vector(source.location),
+            "rotation_euler": _round_vector(source.rotation_euler),
+            "scale": _round_vector(source.scale),
+        }
+
+        if remove_source:
+            source_mesh = source.data
+            bpy.data.objects.remove(source, do_unlink=True)
+            source = None
+            if source_mesh.users == 0:
+                bpy.data.meshes.remove(source_mesh)
+
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender baked work proxy created",
+            operation="bake_work_proxy",
+            source_name=source_name,
+            source_faces=source_faces,
+            target_faces=target_faces,
+            baked_faces=baked_faces,
+            ratio=ratio,
+            source_removed=remove_source,
+            source_transform=source_transform,
+            object=_object_details(proxy),
+        )
+    except Exception as error:
+        if proxy is not None:
+            try:
+                proxy_mesh = proxy.data
+                bpy.data.objects.remove(proxy, do_unlink=True)
+                if proxy_mesh is not None and proxy_mesh.users == 0:
+                    bpy.data.meshes.remove(proxy_mesh)
+            except Exception:
+                pass
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="bake_work_proxy",
         )
 
 
@@ -4009,6 +4159,8 @@ def _process(path: Path) -> None:
             _animate_transform(command)
         elif operation == "viewport_proxy":
             _viewport_proxy(command)
+        elif operation == "bake_work_proxy":
+            _bake_work_proxy(command)
         elif operation == "object_metadata":
             _object_metadata(command)
         elif operation == "api_schema":
