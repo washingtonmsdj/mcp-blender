@@ -184,6 +184,25 @@ class BlenderLiveResultTests(unittest.TestCase):
         self.assertIn('"smoke-model-create-duplicate.json"', benchmark)
         self.assertIn('"smoke-model-modifier-duplicate.json"', benchmark)
 
+    def test_multiview_uses_eevee_for_material_and_workbench_for_silhouette(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        companion = (
+            root / "ordax_dev_agent" / "assets" / "blender_live_companion.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'candidates = ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE")',
+            companion,
+        )
+        self.assertIn(
+            'candidates = ("BLENDER_WORKBENCH_NEXT", "BLENDER_WORKBENCH")',
+            companion,
+        )
+        self.assertIn("mode=mode", companion)
+        self.assertIn("def _multiview_add_material_lights(", companion)
+        self.assertIn("material_lights = _multiview_add_material_lights(", companion)
+
+
     def test_blenderbench_fixture_uses_script_file_not_python_expr(self) -> None:
         root = Path(__file__).resolve().parents[1]
         benchmark = (root / "scripts" / "blender_benchmark.py").read_text(
