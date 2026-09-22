@@ -1523,6 +1523,204 @@ class BlenderActions:
             },
         )
 
+    def blender_extract_region_headless(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {
+            "project",
+            "blend_file",
+            "output_path",
+            "axis",
+            "minimum",
+            "maximum",
+            "translate",
+            "cleanup_orphans",
+            "overwrite",
+            "timeout_seconds",
+        }
+        unsupported = sorted(set(payload) - supported)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        project = self._project(payload)
+
+        raw_blend = str(payload.get("blend_file") or "").strip()
+        if not raw_blend:
+            return ActionResult(False, "blend_file is required")
+        try:
+            blend_file = project.path(raw_blend)
+        except FileNotFoundError:
+            return ActionResult(False, "blend_file must be an existing .blend file")
+        if blend_file.suffix.lower() != ".blend" or not blend_file.is_file():
+            return ActionResult(False, "blend_file must be an existing .blend file")
+
+        raw_output = str(payload.get("output_path") or "").strip()
+        if not raw_output:
+            return ActionResult(False, "output_path is required")
+        output = project.path(raw_output, must_exist=False)
+        if output.suffix.lower() != ".blend":
+            return ActionResult(False, "output_path must end with .blend")
+        if output.resolve() == blend_file.resolve():
+            return ActionResult(False, "output_path must differ from blend_file")
+
+        axis = str(payload.get("axis") or "X").strip().upper()
+        if axis not in {"X", "Y", "Z"}:
+            return ActionResult(False, "axis must be X, Y, or Z")
+
+        try:
+            minimum = _presentation_number(
+                payload.get("minimum"),
+                "minimum",
+                minimum=-100000.0,
+                maximum=100000.0,
+            )
+            maximum = _presentation_number(
+                payload.get("maximum"),
+                "maximum",
+                minimum=-100000.0,
+                maximum=100000.0,
+            )
+            translate = _presentation_vector(
+                payload.get("translate", [0.0, 0.0, 0.0]),
+                "translate",
+                minimum=-100000.0,
+                maximum=100000.0,
+            )
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        if maximum <= minimum:
+            return ActionResult(False, "maximum must be greater than minimum")
+
+        cleanup_orphans = payload.get("cleanup_orphans", True)
+        overwrite = payload.get("overwrite", False)
+        if not isinstance(cleanup_orphans, bool):
+            return ActionResult(False, "cleanup_orphans must be boolean")
+        if not isinstance(overwrite, bool):
+            return ActionResult(False, "overwrite must be boolean")
+        if output.exists() and not overwrite:
+            return ActionResult(False, f"output_path already exists: {output}")
+
+        timeout = payload.get("timeout_seconds", 1800)
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+            return ActionResult(False, "timeout_seconds must be numeric")
+        timeout = int(timeout)
+        if timeout < 30 or timeout > 7200:
+            return ActionResult(False, "timeout_seconds must be between 30 and 7200")
+
+        blender = find_blender()
+        if blender is None:
+            return ActionResult(False, "Blender executable not found")
+
+        helper = (
+            Path(__file__).resolve().parent
+            / "assets"
+            / "blender_extract_region_headless.py"
+        )
+        if not helper.is_file():
+            return ActionResult(
+                False,
+                f"headless Blender extraction helper missing: {helper}",
+            )
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if overwrite:
+            try:
+                output.unlink(missing_ok=True)
+            except OSError as error:
+                return ActionResult(False, f"could not clear previous output: {error}")
+
+        report_root = self.config.state_dir / "blender-headless-extract"
+        report_root.mkdir(parents=True, exist_ok=True)
+        report = report_root / f"{uuid.uuid4().hex}.json"
+
+        command = [
+            str(blender),
+            "--background",
+            str(blend_file),
+            "--disable-autoexec",
+            "--python-exit-code",
+            "1",
+            "--python",
+            str(helper),
+            "--",
+            "--output",
+            str(output),
+            "--report",
+            str(report),
+            "--axis",
+            axis,
+            "--minimum",
+            str(minimum),
+            "--maximum",
+            str(maximum),
+            "--translate-x",
+            str(translate[0]),
+            "--translate-y",
+            str(translate[1]),
+            "--translate-z",
+            str(translate[2]),
+        ]
+        if cleanup_orphans:
+            command.append("--cleanup-orphans")
+
+        result = _run(
+            command,
+            cwd=project.root,
+            timeout=timeout,
+        )
+
+        report_data: dict[str, Any] = {}
+        if report.is_file():
+            try:
+                loaded = json.loads(report.read_text(encoding="utf-8-sig"))
+                if isinstance(loaded, dict):
+                    report_data = loaded
+            except (OSError, json.JSONDecodeError):
+                report_data = {}
+            try:
+                report.unlink()
+            except OSError:
+                pass
+
+        if not result.ok:
+            result.summary = (
+                "Headless Blender region extraction timed out"
+                if result.data.get("timed_out")
+                else "Headless Blender region extraction failed"
+            )
+            if report_data:
+                result.data["report"] = report_data
+            return result
+
+        if not output.is_file() or output.stat().st_size <= 0:
+            return ActionResult(
+                False,
+                "Headless Blender extraction completed without a non-empty .blend output",
+                {
+                    **result.data,
+                    "output_file": str(output),
+                    "report": report_data,
+                },
+            )
+
+        digest = hashlib.sha256()
+        with output.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+
+        return ActionResult(
+            True,
+            "Headless Blender region extracted",
+            {
+                **result.data,
+                **report_data,
+                "output_file": str(output),
+                "blend_file": str(blend_file),
+                "size_bytes": output.stat().st_size,
+                "sha256": digest.hexdigest(),
+                "isolated_process": True,
+            },
+        )
+
+
     def blender_live_checkpoint_create(self, payload: dict[str, Any]) -> ActionResult:
         label = str(payload.get("label") or "checkpoint").strip()
         return self._blender_live(payload).request(

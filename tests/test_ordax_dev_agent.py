@@ -70,6 +70,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_node_schema", result.data["actions"])
             self.assertIn("blender.live_export", result.data["actions"])
             self.assertIn("blender.export_headless", result.data["actions"])
+            self.assertIn("blender.extract_region_headless", result.data["actions"])
             self.assertIn("unity.cli_status", result.data["actions"])
             self.assertIn("unity.pipeline_install", result.data["actions"])
             self.assertIn("unity.pipeline_catalog", result.data["actions"])
@@ -729,6 +730,46 @@ class AgentActionRegistryTests(unittest.TestCase):
 
             self.assertFalse(result.ok)
             self.assertIn("existing .blend", result.summary)
+
+    def test_headless_extract_region_rejects_invalid_range(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project = root / "hordax"
+            project.mkdir()
+            (project / "master.blend").write_bytes(b"BLENDER")
+            registry = ActionRegistry(self.make_config(root))
+
+            result = registry.execute(
+                "blender.extract_region_headless",
+                {
+                    "project": "hordax",
+                    "blend_file": "master.blend",
+                    "output_path": "individual.blend",
+                    "axis": "X",
+                    "minimum": 8,
+                    "maximum": 2,
+                },
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("maximum must be greater", result.summary)
+
+    def test_headless_extract_helper_uses_copy_first_persistence(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        helper = (
+            root
+            / "ordax_dev_agent"
+            / "assets"
+            / "blender_extract_region_headless.py"
+        ).read_text(encoding="utf-8")
+
+        save_as = helper.index("bpy.ops.wm.save_as_mainfile")
+        object_removal = helper.index("bpy.data.objects.remove")
+        save_current = helper.index("bpy.ops.wm.save_mainfile")
+        self.assertLess(save_as, object_removal)
+        self.assertLess(object_removal, save_current)
+        self.assertIn("local_world_delta", helper)
+        self.assertIn("obj.location = obj.location + delta", helper)
 
     def test_local_watchdog_is_windows_only(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
