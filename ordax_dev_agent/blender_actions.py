@@ -613,6 +613,51 @@ class BlenderActions:
         )
 
 
+    def blender_live_viewport_proxy(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {
+            "project",
+            "timeout_seconds",
+            "object_name",
+            "ordax_object_id",
+            "target_faces",
+            "enabled",
+        }
+        unsupported = sorted(set(payload) - supported)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        try:
+            selector = normalize_object_selector(payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+
+        enabled = payload.get("enabled", True)
+        if not isinstance(enabled, bool):
+            return ActionResult(False, "enabled must be boolean")
+
+        target_faces = payload.get("target_faces", 150000)
+        if (
+            isinstance(target_faces, bool)
+            or not isinstance(target_faces, int)
+            or target_faces < 10000
+            or target_faces > 500000
+        ):
+            return ActionResult(
+                False,
+                "target_faces must be an integer between 10000 and 500000",
+            )
+
+        return self._blender_live(payload).request(
+            "viewport_proxy",
+            {
+                **selector,
+                "target_faces": target_faces,
+                "enabled": enabled,
+            },
+            timeout_seconds=float(payload.get("timeout_seconds", 90)),
+        )
+
+
     def blender_live_batch(self, payload: dict[str, Any]) -> ActionResult:
         supported = {"project", "steps", "stop_on_error"}
         unsupported = sorted(set(payload) - supported)
@@ -633,6 +678,7 @@ class BlenderActions:
             "add_modifier": self.blender_live_add_modifier,
             "material_apply": self.blender_live_material_apply,
             "animate_transform": self.blender_live_animate_transform,
+            "viewport_proxy": self.blender_live_viewport_proxy,
             "checkpoint_create": self.blender_live_checkpoint_create,
             "object_metadata": self.blender_live_object_metadata,
             "scene_snapshot": self.blender_live_scene_snapshot,
