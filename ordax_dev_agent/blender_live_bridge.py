@@ -117,6 +117,23 @@ class BlenderLiveBridge:
         except OSError:
             return False
 
+    def _read_presence(self) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for attempt in range(6):
+            try:
+                raw = self.presence.read_text(encoding="utf-8-sig")
+                loaded = json.loads(raw)
+                if not isinstance(loaded, dict):
+                    raise ValueError("presence.json must contain a JSON object")
+                return loaded
+            except (OSError, json.JSONDecodeError, ValueError) as error:
+                last_error = error
+                if attempt >= 5:
+                    break
+                time.sleep(0.02 * (attempt + 1))
+        assert last_error is not None
+        raise last_error
+
     def status(self) -> dict[str, Any]:
         data: dict[str, Any] = {
             "project": self.project.slug,
@@ -132,7 +149,7 @@ class BlenderLiveBridge:
         }
         if self.presence.is_file():
             try:
-                presence = json.loads(self.presence.read_text(encoding="utf-8-sig"))
+                presence = self._read_presence()
                 data["presence"] = presence
                 protocol = presence.get("protocol_version")
                 data["protocol_version"] = protocol
