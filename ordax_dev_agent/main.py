@@ -244,6 +244,7 @@ def main() -> int:
         return 0
 
     next_heartbeat = 0.0
+    idle_claim_misses = 0
 
     try:
         while not stop:
@@ -259,9 +260,17 @@ def main() -> int:
 
                 job = control.claim_next_job()
                 if job is None:
-                    time.sleep(config.poll_seconds)
+                    idle_claim_misses += 1
+                    # Stay very responsive during interactive work, then ease
+                    # toward the configured ceiling while the agent is idle.
+                    idle_delay = min(
+                        config.poll_seconds,
+                        0.20 * (1.55 ** min(idle_claim_misses - 1, 5)),
+                    )
+                    time.sleep(max(0.10, idle_delay))
                     continue
 
+                idle_claim_misses = 0
                 runtime["state"] = "busy"
                 runtime["last_job_id"] = job.id
                 runtime["last_job_action"] = job.action
