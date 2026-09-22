@@ -329,5 +329,19 @@ class BlenderLiveResultTests(unittest.TestCase):
         self.assertNotIn('"--python-expr"', create_scene)
 
 
+    def test_extract_region_handles_stale_root_world_matrix(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        companion = (
+            root / "ordax_dev_agent" / "assets" / "blender_live_companion.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("bpy.context.view_layer.update()", companion)
+        self.assertIn("local_world_delta = abs(local_coordinate - world_coordinate)", companion)
+        self.assertIn("bounds_world_delta = abs(coordinate - world_coordinate)", companion)
+        self.assertIn("coordinate = local_coordinate", companion)
+        self.assertIn("obj.location = obj.location + delta", companion)
+
+
+
 if __name__ == "__main__":
     unittest.main()
