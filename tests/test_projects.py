@@ -369,5 +369,24 @@ class ProjectTests(unittest.TestCase):
 
 
 
+    def test_workspace_list_projects_prunes_node_modules(self):
+        workspace = self.root / "github"
+        hordax = workspace / "HORDAX-game"
+        target = workspace / "node_modules" / "fake-samaritana"
+        hordax.mkdir(parents=True)
+        target.mkdir(parents=True)
+        config = replace(self.config, hordax_path=hordax)
+        registry = ActionRegistry(config)
+
+        result = registry.execute(
+            "workspace.list_projects",
+            {"query": "samaritana", "max_depth": 5},
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual([], result.data["entries"])
+
+
+
 if __name__ == '__main__':
     unittest.main()
