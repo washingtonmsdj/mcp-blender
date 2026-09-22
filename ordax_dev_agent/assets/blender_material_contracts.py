@@ -71,6 +71,8 @@ def normalize_material_request(
         "transmission",
         "alpha",
         "ior",
+        "surface_render_method",
+        "transparency_overlap",
     }
     ignored = _HOST_META_FIELDS if transport_fields is None else set(transport_fields)
     unsupported = sorted(set(payload) - allowed - ignored)
@@ -91,13 +93,34 @@ def normalize_material_request(
     alpha = _unit_number(payload.get("alpha", normalized_color[3]), "alpha")
     normalized_color[3] = alpha
 
+    surface_render_method = payload.get("surface_render_method")
+    if surface_render_method is None:
+        surface_render_method = (
+            "BLENDED"
+            if alpha < 0.999 or _unit_number(payload.get("transmission", 0.0), "transmission") > 0.0
+            else "DITHERED"
+        )
+    if not isinstance(surface_render_method, str):
+        raise ValueError("surface_render_method must be a string")
+    surface_render_method = surface_render_method.strip().upper()
+    if surface_render_method not in {"DITHERED", "BLENDED"}:
+        raise ValueError("surface_render_method must be DITHERED or BLENDED")
+
+    transparency_overlap = payload.get("transparency_overlap", True)
+    if not isinstance(transparency_overlap, bool):
+        raise ValueError("transparency_overlap must be boolean")
+
+    transmission = _unit_number(payload.get("transmission", 0.0), "transmission")
+
     return {
         **_selector(payload),
         "material_name": _bounded_string(payload.get("material_name"), "material_name"),
         "base_color": normalized_color,
         "roughness": _unit_number(payload.get("roughness", 0.4), "roughness"),
         "metallic": _unit_number(payload.get("metallic", 0.0), "metallic"),
-        "transmission": _unit_number(payload.get("transmission", 0.0), "transmission"),
+        "transmission": transmission,
         "alpha": alpha,
         "ior": ior,
+        "surface_render_method": surface_render_method,
+        "transparency_overlap": transparency_overlap,
     }
