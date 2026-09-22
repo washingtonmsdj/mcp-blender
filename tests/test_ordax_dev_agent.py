@@ -52,6 +52,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_animate_transform", result.data["actions"])
             self.assertIn("blender.live_batch", result.data["actions"])
             self.assertIn("blender.live_viewport_proxy", result.data["actions"])
+            self.assertIn("blender.live_bake_work_proxy", result.data["actions"])
             self.assertIn("blender.live_inspect", result.data["actions"])
             self.assertIn("blender.live_scene_snapshot", result.data["actions"])
             self.assertIn("blender.live_scene_reset", result.data["actions"])
@@ -1118,6 +1119,57 @@ class AgentActionRegistryTests(unittest.TestCase):
         self.assertEqual("scene_presentation", result.data["operation"])
         self.assertEqual(1200, result.data["payload"]["resolution_x"])
         self.assertEqual(0.2, result.data["payload"]["world_strength"])
+
+
+
+    def test_bake_work_proxy_dispatches_closed_world_request(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.blender_live_bake_work_proxy(
+                    {
+                        "object_name": "HighPoly",
+                        "proxy_name": "HighPoly_Work",
+                        "target_faces": 90000,
+                        "remove_source": True,
+                    }
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("bake_work_proxy", result.data["operation"])
+        self.assertEqual("HighPoly_Work", result.data["payload"]["proxy_name"])
+        self.assertEqual(90000, result.data["payload"]["target_faces"])
+        self.assertTrue(result.data["payload"]["remove_source"])
+
+    def test_bake_work_proxy_rejects_invalid_proxy_name(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.blender_live_bake_work_proxy(
+                    {
+                        "object_name": "HighPoly",
+                        "proxy_name": "../bad",
+                    }
+                )
+
+        self.assertFalse(result.ok)
+        self.assertIn("unsupported characters", result.summary)
+        live.assert_not_called()
 
 
 
