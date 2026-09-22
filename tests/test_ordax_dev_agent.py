@@ -765,6 +765,8 @@ class AgentActionRegistryTests(unittest.TestCase):
                         "transmission": 1.0,
                         "alpha": 0.18,
                         "ior": 1.49,
+                        "surface_render_method": "BLENDED",
+                        "transparency_overlap": True,
                     },
                 )
 
@@ -773,6 +775,27 @@ class AgentActionRegistryTests(unittest.TestCase):
         self.assertEqual("Crystal", result.data["payload"]["material_name"])
         self.assertEqual(1.0, result.data["payload"]["transmission"])
         self.assertEqual(0.18, result.data["payload"]["alpha"])
+        self.assertEqual("BLENDED", result.data["payload"]["surface_render_method"])
+        self.assertTrue(result.data["payload"]["transparency_overlap"])
+
+    def test_material_apply_rejects_invalid_surface_render_method(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.execute(
+                    "blender.live_material_apply",
+                    {
+                        "object_name": "Acrylic",
+                        "material_name": "Crystal",
+                        "surface_render_method": "NOISY",
+                    },
+                )
+
+        self.assertFalse(result.ok)
+        self.assertIn("DITHERED or BLENDED", result.summary)
+        live.assert_not_called()
 
     def test_material_apply_rejects_unknown_fields(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
