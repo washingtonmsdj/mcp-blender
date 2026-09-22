@@ -1174,19 +1174,20 @@ def _material_apply(command: dict) -> None:
         elif "Transmission" in inputs:
             inputs["Transmission"].default_value = arguments["transmission"]
 
-        if arguments["alpha"] < 0.999 or arguments["transmission"] > 0.0:
-            if hasattr(material, "surface_render_method"):
-                for value in ("DITHERED", "BLENDED"):
-                    try:
-                        material.surface_render_method = value
-                        break
-                    except Exception:
-                        continue
-            elif hasattr(material, "blend_method"):
-                try:
-                    material.blend_method = "BLEND"
-                except Exception:
-                    pass
+        if hasattr(material, "surface_render_method"):
+            material.surface_render_method = arguments["surface_render_method"]
+        elif hasattr(material, "blend_method"):
+            try:
+                material.blend_method = (
+                    "BLEND"
+                    if arguments["surface_render_method"] == "BLENDED"
+                    else "HASHED"
+                )
+            except Exception:
+                pass
+
+        if hasattr(material, "use_transparency_overlap"):
+            material.use_transparency_overlap = arguments["transparency_overlap"]
 
         obj.data.materials.clear()
         obj.data.materials.append(material)
@@ -1206,6 +1207,8 @@ def _material_apply(command: dict) -> None:
                 "transmission": arguments["transmission"],
                 "alpha": arguments["alpha"],
                 "ior": arguments["ior"],
+                "surface_render_method": arguments["surface_render_method"],
+                "transparency_overlap": arguments["transparency_overlap"],
             },
         )
     except Exception as error:
