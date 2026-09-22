@@ -928,6 +928,26 @@ class BlenderActions:
             timeout_seconds=float(payload.get("timeout_seconds", 120)),
         )
 
+    def blender_live_cleanup_orphans(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {
+            "project",
+            "timeout_seconds",
+            "remove_empty_collections",
+        }
+        unsupported = sorted(set(payload) - supported)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        remove_empty_collections = payload.get("remove_empty_collections", False)
+        if not isinstance(remove_empty_collections, bool):
+            return ActionResult(False, "remove_empty_collections must be boolean")
+
+        return self._blender_live(payload).request(
+            "cleanup_orphans",
+            {"remove_empty_collections": remove_empty_collections},
+            timeout_seconds=float(payload.get("timeout_seconds", 120)),
+        )
+
     def blender_live_create_primitive(self, payload: dict[str, Any]) -> ActionResult:
         try:
             plan = plan_modeling_operation("create_primitive", payload)
@@ -1169,6 +1189,7 @@ class BlenderActions:
             "object_transform": self.blender_live_object_transform,
             "object_remove": self.blender_live_object_remove,
             "extract_region": self.blender_live_extract_region,
+            "cleanup_orphans": self.blender_live_cleanup_orphans,
             "create_primitive": self.blender_live_create_primitive,
             "create_box_with_cutouts": self.blender_live_create_box_with_cutouts,
             "add_modifier": self.blender_live_add_modifier,

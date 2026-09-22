@@ -72,6 +72,7 @@ class ActionRegistry(
             "blender.live_object_transform": self.blender_live_object_transform,
             "blender.live_object_remove": self.blender_live_object_remove,
             "blender.live_extract_region": self.blender_live_extract_region,
+            "blender.live_cleanup_orphans": self.blender_live_cleanup_orphans,
             "blender.live_create_primitive": self.blender_live_create_primitive,
             "blender.live_create_box_with_cutouts": self.blender_live_create_box_with_cutouts,
             "blender.live_add_modifier": self.blender_live_add_modifier,

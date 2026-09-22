@@ -1248,6 +1248,45 @@ class AgentActionRegistryTests(unittest.TestCase):
         self.assertIn("maximum must be greater", result.summary)
         live.assert_not_called()
 
+    def test_live_cleanup_orphans_dispatches_typed_request(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.blender_live_cleanup_orphans(
+                    {"remove_empty_collections": True}
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("cleanup_orphans", result.data["operation"])
+        self.assertTrue(result.data["payload"]["remove_empty_collections"])
+
+    def test_live_cleanup_orphans_rejects_non_boolean_option(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.blender_live_cleanup_orphans(
+                    {"remove_empty_collections": "yes"}
+                )
+
+        self.assertFalse(result.ok)
+        self.assertIn("must be boolean", result.summary)
+        live.assert_not_called()
+
     def test_live_object_remove_dispatches_typed_request(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
