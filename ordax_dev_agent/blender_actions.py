@@ -919,6 +919,60 @@ class BlenderActions:
         )
 
 
+    def blender_live_bake_work_proxy(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {
+            "project",
+            "timeout_seconds",
+            "object_name",
+            "ordax_object_id",
+            "proxy_name",
+            "target_faces",
+            "remove_source",
+        }
+        unsupported = sorted(set(payload) - supported)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        try:
+            selector = normalize_object_selector(payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+
+        proxy_name = payload.get("proxy_name")
+        if not isinstance(proxy_name, str):
+            return ActionResult(False, "proxy_name must be a string")
+        proxy_name = proxy_name.strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. -]{0,126}", proxy_name):
+            return ActionResult(False, "proxy_name contains unsupported characters")
+
+        target_faces = payload.get("target_faces", 120000)
+        if (
+            isinstance(target_faces, bool)
+            or not isinstance(target_faces, int)
+            or target_faces < 10000
+            or target_faces > 500000
+        ):
+            return ActionResult(
+                False,
+                "target_faces must be an integer between 10000 and 500000",
+            )
+
+        remove_source = payload.get("remove_source", False)
+        if not isinstance(remove_source, bool):
+            return ActionResult(False, "remove_source must be boolean")
+
+        return self._blender_live(payload).request(
+            "bake_work_proxy",
+            {
+                **selector,
+                "proxy_name": proxy_name,
+                "target_faces": target_faces,
+                "remove_source": remove_source,
+            },
+            timeout_seconds=float(payload.get("timeout_seconds", 300)),
+        )
+
+
     def blender_live_batch(self, payload: dict[str, Any]) -> ActionResult:
         supported = {"project", "steps", "stop_on_error"}
         unsupported = sorted(set(payload) - supported)
@@ -943,6 +997,7 @@ class BlenderActions:
             "scene_presentation": self.blender_live_scene_presentation,
             "animate_transform": self.blender_live_animate_transform,
             "viewport_proxy": self.blender_live_viewport_proxy,
+            "bake_work_proxy": self.blender_live_bake_work_proxy,
             "checkpoint_create": self.blender_live_checkpoint_create,
             "object_metadata": self.blender_live_object_metadata,
             "scene_snapshot": self.blender_live_scene_snapshot,
