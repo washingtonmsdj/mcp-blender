@@ -75,6 +75,7 @@ class ActionRegistry(
             "blender.live_animate_transform": self.blender_live_animate_transform,
             "blender.live_batch": self.blender_live_batch,
             "blender.live_viewport_proxy": self.blender_live_viewport_proxy,
+            "blender.live_bake_work_proxy": self.blender_live_bake_work_proxy,
             "blender.live_object_metadata": self.blender_live_object_metadata,
             "blender.live_api_schema": self.blender_live_api_schema,
             "blender.live_api_lookup": self.blender_live_api_lookup,
