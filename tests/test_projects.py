@@ -388,5 +388,69 @@ class ProjectTests(unittest.TestCase):
 
 
 
+    def test_archive_rejects_include_path_escape(self):
+        workspace = self.root / "github"
+        hordax = workspace / "HORDAX-game"
+        project = workspace / "project"
+        hordax.mkdir(parents=True)
+        project.mkdir()
+        config = replace(
+            self.config,
+            hordax_path=hordax,
+            projects={
+                "model": {
+                    "path": str(project),
+                    "apps": ["blender"],
+                }
+            },
+            default_project="model",
+        )
+        registry = ActionRegistry(config)
+
+        result = registry.execute(
+            "project.archive_to_hordax",
+            {
+                "project": "model",
+                "family": "tests",
+                "include_paths": ["../secret.blend"],
+            },
+        )
+
+        self.assertFalse(result.ok)
+        self.assertIn("escapes project", result.summary)
+
+    def test_archive_rejects_missing_selective_path_before_git(self):
+        workspace = self.root / "github"
+        hordax = workspace / "HORDAX-game"
+        project = workspace / "project"
+        hordax.mkdir(parents=True)
+        project.mkdir()
+        config = replace(
+            self.config,
+            hordax_path=hordax,
+            projects={
+                "model": {
+                    "path": str(project),
+                    "apps": ["blender"],
+                }
+            },
+            default_project="model",
+        )
+        registry = ActionRegistry(config)
+
+        result = registry.execute(
+            "project.archive_to_hordax",
+            {
+                "project": "model",
+                "family": "tests",
+                "include_paths": ["missing.blend"],
+            },
+        )
+
+        self.assertFalse(result.ok)
+        self.assertIn("include path not found", result.summary)
+
+
+
 if __name__ == '__main__':
     unittest.main()
