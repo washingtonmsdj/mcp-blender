@@ -167,6 +167,7 @@ CAPABILITIES = [
     "create_primitive",
     "add_modifier",
     "material_apply",
+    "import_asset",
     "object_metadata",
     "api_schema",
     "api_lookup",
@@ -1208,6 +1209,100 @@ def _material_apply(command: dict) -> None:
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
             operation="material_apply",
             before=before,
+        )
+
+
+def _import_asset(command: dict) -> None:
+    command_id = command["id"]
+    source = None
+    created = []
+    try:
+        _modeling_runtime_preconditions()
+
+        allowed = {"id", "operation", "source_path", "source_size_bytes", "object_name"}
+        unsupported = sorted(set(command) - allowed)
+        if unsupported:
+            raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+        raw_source = command.get("source_path")
+        if not isinstance(raw_source, str) or not raw_source.strip():
+            raise ValueError("source_path is required")
+        source = Path(raw_source.strip()).expanduser().resolve()
+        home = Path.home().resolve()
+        if not _inside(source, home):
+            raise ValueError("source_path must be inside the current user's home directory")
+        if not source.is_file():
+            raise ValueError(f"source asset not found: {source}")
+        if source.suffix.lower() not in {".obj", ".glb", ".gltf"}:
+            raise ValueError("source asset must be OBJ, GLB, or glTF")
+        expected_size = command.get("source_size_bytes")
+        if expected_size is not None:
+            try:
+                expected_size = int(expected_size)
+            except (TypeError, ValueError):
+                raise ValueError("source_size_bytes must be an integer")
+            if expected_size != source.stat().st_size:
+                raise ValueError("source asset changed after host validation")
+
+        requested_name = command.get("object_name")
+        if requested_name is not None:
+            if not isinstance(requested_name, str):
+                raise ValueError("object_name must be a string")
+            requested_name = requested_name.strip()
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. -]{0,126}", requested_name):
+                raise ValueError("object_name contains unsupported characters")
+
+        before_names = set(bpy.data.objects.keys())
+        bpy.ops.object.select_all(action="DESELECT")
+
+        suffix = source.suffix.lower()
+        if suffix == ".obj":
+            result = bpy.ops.wm.obj_import(filepath=str(source))
+        else:
+            result = bpy.ops.import_scene.gltf(filepath=str(source))
+        if "FINISHED" not in set(result):
+            raise RuntimeError(f"Blender import operator returned: {sorted(result)}")
+
+        created = [
+            obj
+            for obj in bpy.context.scene.objects
+            if obj.name not in before_names
+        ]
+        if not created:
+            raise RuntimeError("Blender import created no scene objects")
+
+        if requested_name:
+            if len(created) == 1:
+                created[0].name = requested_name
+                if getattr(created[0], "data", None) is not None:
+                    try:
+                        created[0].data.name = requested_name
+                    except Exception:
+                        pass
+            else:
+                for index, obj in enumerate(created, start=1):
+                    obj.name = f"{requested_name}_{index:02d}"
+
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender asset imported",
+            operation="import_asset",
+            source_path=str(source),
+            source_size_bytes=source.stat().st_size,
+            imported_object_count=len(created),
+            objects=[_object_details(obj) for obj in created[:100]],
+            truncated=len(created) > 100,
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="import_asset",
+            source_path=str(source) if source is not None else None,
+            imported_object_count=len(created),
         )
 
 
@@ -3371,6 +3466,8 @@ def _process(path: Path) -> None:
             _modeling_add_modifier(command)
         elif operation == "material_apply":
             _material_apply(command)
+        elif operation == "import_asset":
+            _import_asset(command)
         elif operation == "object_metadata":
             _object_metadata(command)
         elif operation == "api_schema":
