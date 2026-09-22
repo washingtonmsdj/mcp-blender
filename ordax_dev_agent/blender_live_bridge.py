@@ -181,7 +181,7 @@ class BlenderLiveBridge:
             self.request("quit", timeout_seconds=15.0)
             deadline = time.monotonic() + 15.0
             while time.monotonic() < deadline and self.presence_is_fresh():
-                time.sleep(0.2)
+                time.sleep(0.05)
 
         blender = find_blender()
         if blender is None:
@@ -276,7 +276,7 @@ class BlenderLiveBridge:
                         "log_file": str(startup_log),
                     },
                 )
-            time.sleep(0.35)
+            time.sleep(0.10)
 
         return ActionResult(
             False,
@@ -369,7 +369,7 @@ class BlenderLiveBridge:
                         **self.status(),
                     },
                 )
-            time.sleep(0.2)
+            time.sleep(0.05)
 
         inflight = inflight_path.is_file()
         # Delete only commands that were never consumed. Once inflight, the
