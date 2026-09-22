@@ -756,6 +756,41 @@ class BlenderActions:
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
 
+    def blender_live_object_remove(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {"project", "timeout_seconds", "object_names", "missing_ok"}
+        unsupported = sorted(set(payload) - supported)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        object_names = payload.get("object_names")
+        if (
+            not isinstance(object_names, list)
+            or not object_names
+            or len(object_names) > 64
+            or not all(isinstance(name, str) and name.strip() for name in object_names)
+        ):
+            return ActionResult(
+                False,
+                "object_names must be a non-empty list of at most 64 object names",
+            )
+        normalized: list[str] = []
+        for raw_name in object_names:
+            name = raw_name.strip()
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. +\-]{0,126}", name):
+                return ActionResult(False, f"object name contains unsupported characters: {name}")
+            if name not in normalized:
+                normalized.append(name)
+
+        missing_ok = payload.get("missing_ok", False)
+        if not isinstance(missing_ok, bool):
+            return ActionResult(False, "missing_ok must be boolean")
+
+        return self._blender_live(payload).request(
+            "object_remove",
+            {"object_names": normalized, "missing_ok": missing_ok},
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+
     def blender_live_create_primitive(self, payload: dict[str, Any]) -> ActionResult:
         try:
             plan = plan_modeling_operation("create_primitive", payload)
@@ -995,6 +1030,7 @@ class BlenderActions:
 
         handlers = {
             "object_transform": self.blender_live_object_transform,
+            "object_remove": self.blender_live_object_remove,
             "create_primitive": self.blender_live_create_primitive,
             "add_modifier": self.blender_live_add_modifier,
             "material_apply": self.blender_live_material_apply,
