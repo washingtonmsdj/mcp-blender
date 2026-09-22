@@ -166,6 +166,7 @@ CAPABILITIES = [
     "object_transform",
     "object_remove",
     "extract_region",
+    "cleanup_orphans",
     "create_primitive",
     "create_box_with_cutouts",
     "add_modifier",
@@ -1352,6 +1353,84 @@ def _create_box_with_cutouts(command: dict) -> None:
             False,
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
             operation="create_box_with_cutouts",
+        )
+
+
+def _cleanup_orphans(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        _modeling_runtime_preconditions()
+        allowed = {
+            "id",
+            "operation",
+            "remove_empty_collections",
+        }
+        unsupported = sorted(set(command) - allowed)
+        if unsupported:
+            raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+        remove_empty_collections = command.get(
+            "remove_empty_collections",
+            False,
+        )
+        if not isinstance(remove_empty_collections, bool):
+            raise ValueError("remove_empty_collections must be boolean")
+
+        removed = {}
+        datablock_groups = {
+            "meshes": bpy.data.meshes,
+            "materials": bpy.data.materials,
+            "images": bpy.data.images,
+            "curves": bpy.data.curves,
+            "cameras": bpy.data.cameras,
+            "lights": bpy.data.lights,
+            "textures": bpy.data.textures,
+            "node_groups": bpy.data.node_groups,
+        }
+        for label, datablocks in datablock_groups.items():
+            count = 0
+            for datablock in list(datablocks):
+                if getattr(datablock, "library", None) is not None:
+                    continue
+                if getattr(datablock, "users", 0) != 0:
+                    continue
+                if bool(getattr(datablock, "use_fake_user", False)):
+                    continue
+                try:
+                    datablocks.remove(datablock)
+                    count += 1
+                except Exception:
+                    pass
+            removed[label] = count
+
+        removed_collections = []
+        if remove_empty_collections:
+            for collection in list(bpy.data.collections):
+                if getattr(collection, "library", None) is not None:
+                    continue
+                if len(collection.objects) != 0 or len(collection.children) != 0:
+                    continue
+                try:
+                    removed_collections.append(collection.name)
+                    bpy.data.collections.remove(collection)
+                except Exception:
+                    pass
+
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender orphan data cleaned",
+            operation="cleanup_orphans",
+            removed=removed,
+            removed_empty_collections=removed_collections,
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="cleanup_orphans",
         )
 
 
@@ -4548,6 +4627,8 @@ def _process(path: Path) -> None:
             _object_remove(command)
         elif operation == "extract_region":
             _extract_region(command)
+        elif operation == "cleanup_orphans":
+            _cleanup_orphans(command)
         elif operation == "create_primitive":
             _modeling_create_primitive(command)
         elif operation == "create_box_with_cutouts":
