@@ -164,6 +164,7 @@ CAPABILITIES = [
     "contact_audit",
     "quality_gate",
     "object_transform",
+    "object_remove",
     "create_primitive",
     "add_modifier",
     "material_apply",
@@ -953,6 +954,75 @@ def _object_transform(command: dict) -> None:
         before=before,
         object=_object_details(obj),
     )
+
+
+def _object_remove(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        _modeling_runtime_preconditions()
+        allowed = {"id", "operation", "object_names", "missing_ok"}
+        unsupported = sorted(set(command) - allowed)
+        if unsupported:
+            raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+        names = command.get("object_names")
+        if (
+            not isinstance(names, list)
+            or not names
+            or len(names) > 64
+            or not all(isinstance(name, str) and name.strip() for name in names)
+        ):
+            raise ValueError(
+                "object_names must be a non-empty list of at most 64 object names"
+            )
+        missing_ok = command.get("missing_ok", False)
+        if not isinstance(missing_ok, bool):
+            raise ValueError("missing_ok must be boolean")
+
+        removed = []
+        missing = []
+        for raw_name in names:
+            name = raw_name.strip()
+            obj = bpy.data.objects.get(name)
+            if obj is None:
+                missing.append(name)
+                continue
+            if obj.library is not None or obj.override_library is not None:
+                raise ValueError(f"linked object cannot be removed: {name}")
+
+            data = getattr(obj, "data", None)
+            data_type = getattr(obj, "type", "")
+            bpy.data.objects.remove(obj, do_unlink=True)
+            if data is not None and getattr(data, "users", 0) == 0:
+                if data_type == "MESH":
+                    bpy.data.meshes.remove(data)
+                elif data_type == "CURVE":
+                    bpy.data.curves.remove(data)
+                elif data_type == "CAMERA":
+                    bpy.data.cameras.remove(data)
+                elif data_type == "LIGHT":
+                    bpy.data.lights.remove(data)
+            removed.append(name)
+
+        if missing and not missing_ok:
+            raise ValueError("object(s) not found: " + ", ".join(missing))
+
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender object(s) removed",
+            operation="object_remove",
+            removed=removed,
+            missing=missing,
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="object_remove",
+        )
 
 
 def _modeling_runtime_preconditions() -> None:
@@ -4144,6 +4214,8 @@ def _process(path: Path) -> None:
             _quality_gate(command)
         elif operation == "object_transform":
             _object_transform(command)
+        elif operation == "object_remove":
+            _object_remove(command)
         elif operation == "create_primitive":
             _modeling_create_primitive(command)
         elif operation == "add_modifier":
