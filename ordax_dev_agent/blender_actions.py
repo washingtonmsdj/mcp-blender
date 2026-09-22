@@ -16,7 +16,12 @@ from typing import Any
 
 from mcp_blender_unity.config import find_blender
 
-from .assets.blender_modeling_contracts import modeling_schemas, plan_modeling_operation
+from .assets.blender_modeling_contracts import (
+    modeling_schemas,
+    normalize_object_selector,
+    normalize_transform_fields,
+    plan_modeling_operation,
+)
 from .assets.blender_material_contracts import normalize_material_request
 from .blender_asset_sources import polyhaven_file_manifest, search_polyhaven
 from .blender_live_bridge import BlenderLiveBridge
@@ -26,6 +31,87 @@ from .process_runner import run_command as _run
 
 _LOCAL_IMPORT_EXTENSIONS = frozenset({".obj", ".glb", ".gltf"})
 _LOCAL_IMPORT_MAX_BYTES = 1024 * 1024 * 1024
+_ANIMATION_TRANSFORM_FIELDS = frozenset({"location", "rotation_euler", "scale"})
+
+
+def _normalize_transform_animation_request(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "project",
+        "timeout_seconds",
+        "object_name",
+        "ordax_object_id",
+        "keyframes",
+        "interpolation",
+        "replace_existing",
+        "set_scene_range",
+        "fps",
+    }
+    unsupported = sorted(set(payload) - allowed)
+    if unsupported:
+        raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+    selector = normalize_object_selector(payload)
+    raw_keyframes = payload.get("keyframes")
+    if not isinstance(raw_keyframes, list) or not (2 <= len(raw_keyframes) <= 64):
+        raise ValueError("keyframes must be a list containing 2 to 64 entries")
+
+    normalized_keyframes = []
+    previous_frame = None
+    for index, raw in enumerate(raw_keyframes):
+        if not isinstance(raw, dict):
+            raise ValueError(f"keyframes[{index}] must be an object")
+        unknown = sorted(set(raw) - ({"frame"} | _ANIMATION_TRANSFORM_FIELDS))
+        if unknown:
+            raise ValueError(
+                f"keyframes[{index}] unsupported field(s): " + ", ".join(unknown)
+            )
+        frame = raw.get("frame")
+        if isinstance(frame, bool) or not isinstance(frame, int):
+            raise ValueError(f"keyframes[{index}].frame must be an integer")
+        if frame < 0 or frame > 100000:
+            raise ValueError(f"keyframes[{index}].frame must be between 0 and 100000")
+        if previous_frame is not None and frame <= previous_frame:
+            raise ValueError("keyframe frames must be strictly increasing")
+        previous_frame = frame
+
+        transform_payload = {
+            key: raw[key]
+            for key in _ANIMATION_TRANSFORM_FIELDS
+            if key in raw
+        }
+        try:
+            transform = normalize_transform_fields(transform_payload)
+        except ValueError as error:
+            raise ValueError(f"keyframes[{index}]: {error}") from error
+        if "dimensions" in transform:
+            transform.pop("dimensions", None)
+        normalized_keyframes.append({"frame": frame, **transform})
+
+    interpolation = str(payload.get("interpolation", "BEZIER")).strip().upper()
+    if interpolation not in {"BEZIER", "LINEAR", "CONSTANT"}:
+        raise ValueError("interpolation must be BEZIER, LINEAR, or CONSTANT")
+
+    replace_existing = payload.get("replace_existing", True)
+    set_scene_range = payload.get("set_scene_range", True)
+    for value, field in (
+        (replace_existing, "replace_existing"),
+        (set_scene_range, "set_scene_range"),
+    ):
+        if not isinstance(value, bool):
+            raise ValueError(f"{field} must be boolean")
+
+    fps = payload.get("fps", 24)
+    if isinstance(fps, bool) or not isinstance(fps, int) or not (1 <= fps <= 120):
+        raise ValueError("fps must be an integer between 1 and 120")
+
+    return {
+        **selector,
+        "keyframes": normalized_keyframes,
+        "interpolation": interpolation,
+        "replace_existing": replace_existing,
+        "set_scene_range": set_scene_range,
+        "fps": fps,
+    }
 
 
 def _resolve_local_import_source(payload: dict[str, Any]) -> tuple[Path | None, list[str] | None, str | None]:
@@ -513,6 +599,19 @@ class BlenderActions:
             request,
             timeout_seconds=timeout,
         )
+
+    def blender_live_animate_transform(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            arguments = _normalize_transform_animation_request(payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+
+        return self._blender_live(payload).request(
+            "animate_transform",
+            arguments,
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+
 
     def blender_live_object_metadata(self, payload: dict[str, Any]) -> ActionResult:
         object_name = str(payload.get("object_name") or "").strip()
