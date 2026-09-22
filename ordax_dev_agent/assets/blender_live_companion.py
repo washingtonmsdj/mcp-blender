@@ -1090,6 +1090,7 @@ def _extract_region(command: dict) -> None:
             )
         keep_names = {name.strip() for name in raw_keep_names}
 
+        bpy.context.view_layer.update()
         scene_objects = list(bpy.context.scene.objects)
         keep_objects = []
         remove_objects = []
@@ -1102,6 +1103,8 @@ def _extract_region(command: dict) -> None:
             bounds = _world_bounds(obj)
             aabb_min = bounds.get("aabb_min")
             aabb_max = bounds.get("aabb_max")
+            world_coordinate = float(obj.matrix_world.translation[axis_index])
+            local_coordinate = float(obj.location[axis_index])
             if (
                 isinstance(aabb_min, list)
                 and isinstance(aabb_max, list)
@@ -1112,7 +1115,17 @@ def _extract_region(command: dict) -> None:
                     float(aabb_min[axis_index]) + float(aabb_max[axis_index])
                 ) / 2.0
             else:
-                coordinate = float(obj.matrix_world.translation[axis_index])
+                coordinate = world_coordinate
+
+            # Hidden/legacy Blender objects can retain a stale matrix_world while
+            # their root-level location contains the actual authored placement.
+            # Detect that specific disagreement without breaking meshes whose
+            # geometry is intentionally offset from an origin at zero.
+            if obj.parent is None:
+                local_world_delta = abs(local_coordinate - world_coordinate)
+                bounds_world_delta = abs(coordinate - world_coordinate)
+                if local_world_delta > 1e-5 and bounds_world_delta <= 1e-4:
+                    coordinate = local_coordinate
 
             if minimum <= coordinate <= maximum:
                 keep_objects.append(obj)
@@ -1159,9 +1172,12 @@ def _extract_region(command: dict) -> None:
             kept_set_after = set(kept_after)
             for obj in kept_after:
                 if obj.parent is None or obj.parent not in kept_set_after:
-                    matrix = obj.matrix_world.copy()
-                    matrix.translation = matrix.translation + delta
-                    obj.matrix_world = matrix
+                    if obj.parent is None:
+                        obj.location = obj.location + delta
+                    else:
+                        matrix = obj.matrix_world.copy()
+                        matrix.translation = matrix.translation + delta
+                        obj.matrix_world = matrix
 
         scene = bpy.context.scene
         if scene.camera is None or scene.camera.name not in bpy.data.objects:
