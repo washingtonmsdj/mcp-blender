@@ -73,6 +73,7 @@ class ActionRegistry(
             "blender.live_object_remove": self.blender_live_object_remove,
             "blender.live_extract_region": self.blender_live_extract_region,
             "blender.live_create_primitive": self.blender_live_create_primitive,
+            "blender.live_create_box_with_cutouts": self.blender_live_create_box_with_cutouts,
             "blender.live_add_modifier": self.blender_live_add_modifier,
             "blender.live_material_apply": self.blender_live_material_apply,
             "blender.live_create_camera": self.blender_live_create_camera,
