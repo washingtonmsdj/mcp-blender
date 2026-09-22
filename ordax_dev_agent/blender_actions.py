@@ -863,6 +863,71 @@ class BlenderActions:
             timeout_seconds=float(payload.get("timeout_seconds", 180)),
         )
 
+    def blender_live_create_box_with_cutouts(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {
+            "project",
+            "timeout_seconds",
+            "name",
+            "location",
+            "dimensions",
+            "cutouts",
+        }
+        unsupported = sorted(set(payload) - supported)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        try:
+            name = _presentation_name(payload.get("name"), "name")
+            location = _presentation_vector(payload.get("location"), "location")
+            dimensions = _presentation_vector(
+                payload.get("dimensions"),
+                "dimensions",
+                minimum=0.001,
+                maximum=1000.0,
+            )
+        except ValueError as error:
+            return ActionResult(False, str(error))
+
+        raw_cutouts = payload.get("cutouts")
+        if not isinstance(raw_cutouts, list) or not (1 <= len(raw_cutouts) <= 8):
+            return ActionResult(False, "cutouts must contain 1 to 8 entries")
+
+        cutouts: list[dict[str, Any]] = []
+        for index, raw in enumerate(raw_cutouts):
+            if not isinstance(raw, dict):
+                return ActionResult(False, f"cutouts[{index}] must be an object")
+            unknown = sorted(set(raw) - {"offset", "dimensions"})
+            if unknown:
+                return ActionResult(
+                    False,
+                    f"cutouts[{index}] unsupported field(s): " + ", ".join(unknown),
+                )
+            try:
+                offset = _presentation_vector(
+                    raw.get("offset"),
+                    f"cutouts[{index}].offset",
+                )
+                cut_dimensions = _presentation_vector(
+                    raw.get("dimensions"),
+                    f"cutouts[{index}].dimensions",
+                    minimum=0.001,
+                    maximum=1000.0,
+                )
+            except ValueError as error:
+                return ActionResult(False, str(error))
+            cutouts.append({"offset": offset, "dimensions": cut_dimensions})
+
+        return self._blender_live(payload).request(
+            "create_box_with_cutouts",
+            {
+                "name": name,
+                "location": location,
+                "dimensions": dimensions,
+                "cutouts": cutouts,
+            },
+            timeout_seconds=float(payload.get("timeout_seconds", 120)),
+        )
+
     def blender_live_create_primitive(self, payload: dict[str, Any]) -> ActionResult:
         try:
             plan = plan_modeling_operation("create_primitive", payload)
@@ -1105,6 +1170,7 @@ class BlenderActions:
             "object_remove": self.blender_live_object_remove,
             "extract_region": self.blender_live_extract_region,
             "create_primitive": self.blender_live_create_primitive,
+            "create_box_with_cutouts": self.blender_live_create_box_with_cutouts,
             "add_modifier": self.blender_live_add_modifier,
             "material_apply": self.blender_live_material_apply,
             "create_camera": self.blender_live_create_camera,
