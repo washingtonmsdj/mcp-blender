@@ -24,6 +24,47 @@ from .models import ActionResult
 from .process_runner import run_command as _run
 
 
+_LOCAL_IMPORT_EXTENSIONS = frozenset({".obj", ".glb", ".gltf"})
+_LOCAL_IMPORT_MAX_BYTES = 1024 * 1024 * 1024
+
+
+def _resolve_local_import_source(payload: dict[str, Any]) -> tuple[Path | None, list[str] | None, str | None]:
+    raw = payload.get("source_path")
+    if not isinstance(raw, str) or not raw.strip():
+        return None, None, "source_path is required"
+    source = Path(raw.strip()).expanduser().resolve()
+    home = Path.home().resolve()
+    try:
+        source.relative_to(home)
+    except ValueError:
+        return None, None, "source_path must be inside the current user's home directory"
+
+    if not source.exists():
+        return None, None, f"source_path not found: {source}"
+
+    if source.is_dir():
+        candidates = sorted(
+            path
+            for path in source.iterdir()
+            if path.is_file() and path.suffix.lower() in _LOCAL_IMPORT_EXTENSIONS
+        )
+        if not candidates:
+            return None, [], "no supported 3D asset found in source directory"
+        if len(candidates) != 1:
+            return None, [str(path) for path in candidates[:50]], (
+                "source directory must contain exactly one supported 3D asset"
+            )
+        source = candidates[0]
+
+    if source.suffix.lower() not in _LOCAL_IMPORT_EXTENSIONS:
+        return None, None, "source asset must be OBJ, GLB, or glTF"
+    if source.stat().st_size <= 0:
+        return None, None, "source asset is empty"
+    if source.stat().st_size > _LOCAL_IMPORT_MAX_BYTES:
+        return None, None, "source asset exceeds the 1 GiB import limit"
+    return source, None, None
+
+
 class BlenderActions:
     def _blender_live(self, payload: dict[str, Any]) -> BlenderLiveBridge:
         return BlenderLiveBridge(self.config, self._project(payload))
@@ -429,6 +470,48 @@ class BlenderActions:
             "material_apply",
             arguments,
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_import_asset(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {"project", "source_path", "object_name", "timeout_seconds"}
+        unsupported = sorted(set(payload) - supported)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        source, candidates, error = _resolve_local_import_source(payload)
+        if error:
+            return ActionResult(
+                False,
+                error,
+                {"candidates": candidates} if candidates is not None else {},
+            )
+        assert source is not None
+
+        object_name = payload.get("object_name")
+        if object_name is not None:
+            if not isinstance(object_name, str):
+                return ActionResult(False, "object_name must be a string")
+            object_name = object_name.strip()
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. -]{0,126}", object_name):
+                return ActionResult(False, "object_name contains unsupported characters")
+
+        try:
+            timeout = float(payload.get("timeout_seconds", 900))
+        except (TypeError, ValueError):
+            return ActionResult(False, "timeout_seconds must be numeric")
+        timeout = max(10.0, min(timeout, 1800.0))
+
+        request = {
+            "source_path": str(source),
+            "source_size_bytes": source.stat().st_size,
+        }
+        if object_name:
+            request["object_name"] = object_name
+
+        return self._blender_live(payload).request(
+            "import_asset",
+            request,
+            timeout_seconds=timeout,
         )
 
     def blender_live_object_metadata(self, payload: dict[str, Any]) -> ActionResult:
