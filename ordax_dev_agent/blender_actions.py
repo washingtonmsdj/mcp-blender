@@ -214,10 +214,16 @@ def _normalize_scene_presentation_request(payload: dict[str, Any]) -> dict[str, 
     unsupported = sorted(set(payload) - allowed)
     if unsupported:
         raise ValueError("unsupported field(s): " + ", ".join(unsupported))
-    engine = str(payload.get("render_engine") or "BLENDER_EEVEE_NEXT").strip().upper()
-    if engine not in {"BLENDER_EEVEE_NEXT", "BLENDER_WORKBENCH", "CYCLES"}:
+    engine = str(payload.get("render_engine") or "BLENDER_EEVEE").strip().upper()
+    if engine not in {
+        "BLENDER_EEVEE",
+        "BLENDER_EEVEE_NEXT",
+        "BLENDER_WORKBENCH",
+        "CYCLES",
+    }:
         raise ValueError(
-            "render_engine must be BLENDER_EEVEE_NEXT, BLENDER_WORKBENCH, or CYCLES"
+            "render_engine must be BLENDER_EEVEE, BLENDER_EEVEE_NEXT, "
+            "BLENDER_WORKBENCH, or CYCLES"
         )
     transparent = payload.get("transparent_film", False)
     if not isinstance(transparent, bool):
