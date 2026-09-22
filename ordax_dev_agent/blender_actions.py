@@ -613,6 +613,95 @@ class BlenderActions:
         )
 
 
+    def blender_live_batch(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {"project", "steps", "stop_on_error"}
+        unsupported = sorted(set(payload) - supported)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        project = self._project(payload)
+        steps = payload.get("steps")
+        if not isinstance(steps, list) or not (1 <= len(steps) <= 128):
+            return ActionResult(False, "steps must be a list containing 1 to 128 entries")
+        stop_on_error = payload.get("stop_on_error", True)
+        if not isinstance(stop_on_error, bool):
+            return ActionResult(False, "stop_on_error must be boolean")
+
+        handlers = {
+            "object_transform": self.blender_live_object_transform,
+            "create_primitive": self.blender_live_create_primitive,
+            "add_modifier": self.blender_live_add_modifier,
+            "material_apply": self.blender_live_material_apply,
+            "animate_transform": self.blender_live_animate_transform,
+            "checkpoint_create": self.blender_live_checkpoint_create,
+            "object_metadata": self.blender_live_object_metadata,
+            "scene_snapshot": self.blender_live_scene_snapshot,
+            "save": self.blender_live_save,
+        }
+
+        results: list[dict[str, Any]] = []
+        last_data: dict[str, Any] = {}
+        failed_index: int | None = None
+        for index, raw_step in enumerate(steps):
+            if not isinstance(raw_step, dict):
+                return ActionResult(False, f"steps[{index}] must be an object")
+            unknown = sorted(set(raw_step) - {"op", "payload"})
+            if unknown:
+                return ActionResult(
+                    False,
+                    f"steps[{index}] unsupported field(s): " + ", ".join(unknown),
+                )
+            op = str(raw_step.get("op") or "").strip()
+            handler = handlers.get(op)
+            if handler is None:
+                return ActionResult(
+                    False,
+                    f"steps[{index}].op is not allowed in blender.live_batch: {op}",
+                )
+            step_payload = raw_step.get("payload") or {}
+            if not isinstance(step_payload, dict):
+                return ActionResult(False, f"steps[{index}].payload must be an object")
+            if "project" in step_payload and step_payload.get("project") != project.slug:
+                return ActionResult(False, f"steps[{index}].payload project must match the batch project")
+            step_payload = {**step_payload, "project": project.slug}
+            result = handler(step_payload)
+            compact = {
+                "index": index,
+                "op": op,
+                "ok": result.ok,
+                "summary": result.summary,
+            }
+            if not result.ok:
+                compact["data"] = result.data
+                failed_index = index
+            elif isinstance(result.data, dict):
+                last_data = result.data
+                obj = result.data.get("object")
+                if isinstance(obj, dict) and isinstance(obj.get("name"), str):
+                    compact["object_name"] = obj["name"]
+                if isinstance(result.data.get("file"), str):
+                    compact["file"] = result.data["file"]
+            results.append(compact)
+            if not result.ok and stop_on_error:
+                break
+
+        ok = failed_index is None
+        return ActionResult(
+            ok,
+            "Blender live batch completed"
+            if ok
+            else f"Blender live batch stopped at step {failed_index}",
+            {
+                "project": project.slug,
+                "requested_steps": len(steps),
+                "completed_steps": len(results),
+                "failed_index": failed_index,
+                "results": results,
+                "last_data": last_data,
+            },
+        )
+
+
     def blender_live_object_metadata(self, payload: dict[str, Any]) -> ActionResult:
         object_name = str(payload.get("object_name") or "").strip()
         object_id = str(payload.get("ordax_object_id") or "").strip()
