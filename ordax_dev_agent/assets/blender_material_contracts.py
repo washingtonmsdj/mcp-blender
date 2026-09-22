@@ -54,7 +54,11 @@ def _selector(payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def normalize_material_request(payload: dict[str, Any]) -> dict[str, Any]:
+def normalize_material_request(
+    payload: dict[str, Any],
+    *,
+    transport_fields: set[str] | None = None,
+) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("material payload must be an object")
     allowed = {
@@ -68,7 +72,8 @@ def normalize_material_request(payload: dict[str, Any]) -> dict[str, Any]:
         "alpha",
         "ior",
     }
-    unsupported = sorted(set(payload) - allowed - _HOST_META_FIELDS)
+    ignored = _HOST_META_FIELDS if transport_fields is None else set(transport_fields)
+    unsupported = sorted(set(payload) - allowed - ignored)
     if unsupported:
         raise ValueError("unsupported field(s): " + ", ".join(unsupported))
 
