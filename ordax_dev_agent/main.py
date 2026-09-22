@@ -113,7 +113,11 @@ def _upload_result_artifacts(
         candidates.append((snapshot_path, "scene-snapshot"))
 
     for artifact in result.data.get("artifacts", []):
-        candidates.append((artifact["path"], artifact.get("kind", "artifact")))
+        if not isinstance(artifact, dict):
+            continue
+        raw_path = artifact.get("path") or artifact.get("artifact")
+        if isinstance(raw_path, str) and raw_path:
+            candidates.append((raw_path, artifact.get("kind", "artifact")))
 
     for key in ("log_file", "upm_log_file"):
         value = result.data.get(key)
