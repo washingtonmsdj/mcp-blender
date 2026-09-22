@@ -2850,21 +2850,69 @@ def _scene_unit_metadata(scene) -> tuple[str, float | None]:
 def _multiview_render_engine(
     scene,
     *,
-    require_workbench: bool = False,
+    mode: str,
 ) -> tuple[str, str]:
     original = str(scene.render.engine)
-    for candidate in ("BLENDER_WORKBENCH_NEXT", "BLENDER_WORKBENCH"):
+    if mode == "silhouette":
+        candidates = ("BLENDER_WORKBENCH_NEXT", "BLENDER_WORKBENCH")
+        failure = (
+            "silhouette multiview requires a supported Blender Workbench render engine"
+        )
+    elif mode == "material":
+        candidates = ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE")
+        failure = (
+            "material multiview requires a supported Blender Eevee render engine"
+        )
+    else:
+        raise ValueError("multiview mode must be material or silhouette")
+
+    for candidate in candidates:
         try:
             scene.render.engine = candidate
             return original, candidate
         except Exception:
             continue
+
     scene.render.engine = original
-    if require_workbench:
-        raise RuntimeError(
-            "silhouette multiview requires a supported Blender Workbench render engine"
+    raise RuntimeError(failure)
+
+
+def _multiview_add_material_lights(
+    scene,
+    *,
+    center: Vector,
+    diagonal: float,
+    command_id: str,
+) -> list[tuple[object, object]]:
+    distance = max(float(diagonal) * 4.0, 0.4)
+    size = max(float(diagonal) * 2.5, 0.2)
+    base_energy = min(max(350.0 * (distance ** 2), 70.0), 100000.0)
+    specs = (
+        ("KEY", Vector((-0.8, -1.2, 1.3)), 1.0),
+        ("FILL", Vector((1.2, -0.35, 0.65)), 0.50),
+        ("RIM", Vector((0.25, 1.0, 1.45)), 0.65),
+    )
+    created: list[tuple[object, object]] = []
+    for label, direction, factor in specs:
+        light_data = bpy.data.lights.new(
+            f"__ORDAX_MULTIVIEW_{label}_{command_id[:8]}",
+            type="AREA",
         )
-    return original, original
+        light_data.energy = base_energy * factor
+        light_data.shape = "DISK"
+        light_data.size = size
+
+        light = bpy.data.objects.new(
+            f"__ORDAX_MULTIVIEW_{label}_{command_id[:8]}",
+            light_data,
+        )
+        scene.collection.objects.link(light)
+        light.location = center + (direction.normalized() * distance)
+        light.rotation_euler = (
+            center - light.location
+        ).to_track_quat("-Z", "Y").to_euler()
+        created.append((light, light_data))
+    return created
 
 
 def _multiview_shading_state(scene) -> tuple[object | None, dict]:
@@ -3009,6 +3057,7 @@ def _multiview_capture(command: dict) -> None:
 
     camera_data = None
     camera = None
+    material_lights: list[tuple[object, object]] = []
     engine_used = old_engine
     records = []
     error = None
@@ -3043,10 +3092,17 @@ def _multiview_capture(command: dict) -> None:
 
         _, engine_used = _multiview_render_engine(
             scene,
-            require_workbench=(mode == "silhouette"),
+            mode=mode,
         )
         if mode == "silhouette":
             _multiview_apply_silhouette(scene)
+        else:
+            material_lights = _multiview_add_material_lights(
+                scene,
+                center=center,
+                diagonal=diagonal,
+                command_id=command_id,
+            )
         distance = max(diagonal * 2.5, 2.0)
         aspect = float(width) / float(height)
 
@@ -3129,6 +3185,15 @@ def _multiview_capture(command: dict) -> None:
                     obj.hide_render = hidden
                 except Exception:
                     pass
+        for light, light_data in material_lights:
+            try:
+                bpy.data.objects.remove(light, do_unlink=True)
+            except Exception:
+                pass
+            try:
+                bpy.data.lights.remove(light_data)
+            except Exception:
+                pass
         if camera is not None:
             try:
                 bpy.data.objects.remove(camera, do_unlink=True)
