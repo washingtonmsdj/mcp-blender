@@ -791,6 +791,78 @@ class BlenderActions:
             timeout_seconds=float(payload.get("timeout_seconds", 60)),
         )
 
+    def blender_live_extract_region(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {
+            "project",
+            "timeout_seconds",
+            "axis",
+            "minimum",
+            "maximum",
+            "translate",
+            "keep_names",
+        }
+        unsupported = sorted(set(payload) - supported)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        axis = str(payload.get("axis") or "X").strip().upper()
+        if axis not in {"X", "Y", "Z"}:
+            return ActionResult(False, "axis must be X, Y, or Z")
+
+        def _number(value: Any, field: str) -> float:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{field} must be numeric")
+            result = float(value)
+            if not math.isfinite(result) or abs(result) > 100000.0:
+                raise ValueError(f"{field} is outside the allowed range")
+            return result
+
+        try:
+            minimum = _number(payload.get("minimum"), "minimum")
+            maximum = _number(payload.get("maximum"), "maximum")
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        if maximum <= minimum:
+            return ActionResult(False, "maximum must be greater than minimum")
+
+        raw_translate = payload.get("translate", [0.0, 0.0, 0.0])
+        if not isinstance(raw_translate, list) or len(raw_translate) != 3:
+            return ActionResult(False, "translate must be a list of three numbers")
+        try:
+            translate = [_number(value, "translate") for value in raw_translate]
+        except ValueError as error:
+            return ActionResult(False, str(error))
+
+        raw_keep_names = payload.get("keep_names", [])
+        if (
+            not isinstance(raw_keep_names, list)
+            or len(raw_keep_names) > 64
+            or not all(isinstance(name, str) and name.strip() for name in raw_keep_names)
+        ):
+            return ActionResult(
+                False,
+                "keep_names must be a list of at most 64 non-empty object names",
+            )
+        keep_names: list[str] = []
+        for raw_name in raw_keep_names:
+            name = raw_name.strip()
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. +\-]{0,126}", name):
+                return ActionResult(False, f"keep name contains unsupported characters: {name}")
+            if name not in keep_names:
+                keep_names.append(name)
+
+        return self._blender_live(payload).request(
+            "extract_region",
+            {
+                "axis": axis,
+                "minimum": minimum,
+                "maximum": maximum,
+                "translate": translate,
+                "keep_names": keep_names,
+            },
+            timeout_seconds=float(payload.get("timeout_seconds", 180)),
+        )
+
     def blender_live_create_primitive(self, payload: dict[str, Any]) -> ActionResult:
         try:
             plan = plan_modeling_operation("create_primitive", payload)
@@ -1031,6 +1103,7 @@ class BlenderActions:
         handlers = {
             "object_transform": self.blender_live_object_transform,
             "object_remove": self.blender_live_object_remove,
+            "extract_region": self.blender_live_extract_region,
             "create_primitive": self.blender_live_create_primitive,
             "add_modifier": self.blender_live_add_modifier,
             "material_apply": self.blender_live_material_apply,
