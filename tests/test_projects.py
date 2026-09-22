@@ -246,5 +246,97 @@ class ProjectTests(unittest.TestCase):
         foreground_helper.assert_not_called()
 
 
+    def test_workspace_bind_project_only_allows_hordax_parent_workspace(self):
+        workspace = self.root / "github"
+        hordax = workspace / "HORDAX-game"
+        target = workspace / "dioramas-biblicos" / "diorama_jesus_samaritana_10cm"
+        hordax.mkdir(parents=True)
+        target.mkdir(parents=True)
+        config = replace(
+            self.config,
+            state_dir=self.root / "state-bind",
+            hordax_path=hordax,
+        )
+        registry = ActionRegistry(config)
+
+        result = registry.execute(
+            "workspace.bind_project",
+            {
+                "slug": "diorama-jesus-samaritana-10cm",
+                "relative_path": "dioramas-biblicos/diorama_jesus_samaritana_10cm",
+                "apps": ["blender"],
+                "set_default": True,
+            },
+        )
+
+        self.assertTrue(result.ok, f"{result.summary}: {result.data}")
+        self.assertTrue(result.data["restart_required"])
+        settings = json.loads(
+            (config.state_dir / "agent-settings.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            str(target.resolve()),
+            settings["projects"]["diorama-jesus-samaritana-10cm"]["path"],
+        )
+        self.assertEqual(
+            "diorama-jesus-samaritana-10cm",
+            settings["default_project"],
+        )
+
+    def test_workspace_bind_project_rejects_escape(self):
+        workspace = self.root / "github"
+        hordax = workspace / "HORDAX-game"
+        outside = self.root / "outside"
+        hordax.mkdir(parents=True)
+        outside.mkdir()
+        config = replace(
+            self.config,
+            state_dir=self.root / "state-bind-bad",
+            hordax_path=hordax,
+        )
+        registry = ActionRegistry(config)
+
+        result = registry.execute(
+            "workspace.bind_project",
+            {
+                "slug": "outside",
+                "relative_path": "../outside",
+                "apps": ["blender"],
+            },
+        )
+
+        self.assertFalse(result.ok)
+        self.assertIn("inside the GitHub workspace", result.summary)
+
+    def test_archive_rejects_hordax_self_archive(self):
+        workspace = self.root / "github"
+        hordax = workspace / "HORDAX-game"
+        hordax.mkdir(parents=True)
+        config = replace(
+            self.config,
+            hordax_path=hordax,
+            projects={
+                "hordax-copy": {
+                    "path": str(hordax),
+                    "apps": ["blender"],
+                }
+            },
+            default_project="hordax-copy",
+        )
+        registry = ActionRegistry(config)
+
+        result = registry.execute(
+            "project.archive_to_hordax",
+            {
+                "project": "hordax-copy",
+                "family": "tests",
+            },
+        )
+
+        self.assertFalse(result.ok)
+        self.assertIn("into itself", result.summary)
+
+
+
 if __name__ == '__main__':
     unittest.main()
