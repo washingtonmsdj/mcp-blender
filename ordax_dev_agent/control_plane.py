@@ -4,7 +4,7 @@ import hashlib
 import json
 import mimetypes
 import os
-import urllib.request
+import httpx
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,20 @@ class ControlPlane:
         self.pairing_path = config.state_dir / "pairing-code.txt"
         self.agent_token = self._read_secret(self.token_path)
         self.storage = create_client(config.supabase_url, config.publishable_key)
+        self.http = httpx.Client(
+            timeout=httpx.Timeout(45.0),
+            limits=httpx.Limits(
+                max_connections=8,
+                max_keepalive_connections=4,
+                keepalive_expiry=30.0,
+            ),
+            headers={
+                "apikey": self.publishable_key,
+                "Authorization": f"Bearer {self.publishable_key}",
+                "content-type": "application/json",
+                "user-agent": "OrdaX-Dev-Agent/0.1",
+            },
+        )
 
     @staticmethod
     def _read_secret(path: Path) -> str | None:
@@ -58,34 +72,30 @@ class ControlPlane:
         authenticated: bool = True,
     ) -> dict[str, Any]:
         body = {"op": op, **(payload or {})}
-        headers = {
-            "apikey": self.publishable_key,
-            "Authorization": f"Bearer {self.publishable_key}",
-            "content-type": "application/json",
-            "user-agent": "OrdaX-Dev-Agent/0.1",
-        }
+        headers: dict[str, str] = {}
         if authenticated:
             if not self.agent_token:
                 raise RuntimeError("OrdaX Dev Agent is not paired.")
             headers["x-ordax-agent-token"] = self.agent_token
 
-        request = urllib.request.Request(
-            self.endpoint,
-            data=json.dumps(body).encode("utf-8"),
-            headers=headers,
-            method="POST",
-        )
-
         try:
-            with urllib.request.urlopen(request, timeout=45) as response:
-                raw = response.read().decode("utf-8")
-        except urllib.error.HTTPError as error:
-            raw = error.read().decode("utf-8", errors="replace")
+            response = self.http.post(
+                self.endpoint,
+                json=body,
+                headers=headers,
+            )
+        except httpx.HTTPError as error:
             raise RuntimeError(
-                f"control-plane HTTP {error.code}: {raw[-4000:]}"
+                f"control-plane request failed: {type(error).__name__}: {error}"
             ) from error
 
-        result = json.loads(raw) if raw else {}
+        raw = response.text
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"control-plane HTTP {response.status_code}: {raw[-4000:]}"
+            )
+
+        result = response.json() if raw else {}
         if isinstance(result, dict) and result.get("error"):
             raise RuntimeError(
                 f"control-plane error: {result['error']}: "
