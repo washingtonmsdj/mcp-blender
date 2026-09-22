@@ -10,13 +10,24 @@ from pathlib import Path
 from .models import ActionResult
 
 
-def run_command(command: list[str], *, cwd: Path | None = None, timeout: int = 1800) -> ActionResult:
+def run_command(
+    command: list[str],
+    *,
+    cwd: Path | None = None,
+    timeout: int = 1800,
+    env: dict[str, str] | None = None,
+) -> ActionResult:
     creationflags = 0
     start_new_session = False
     if sys.platform == "win32":
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     else:
         start_new_session = True
+
+    process_env = None
+    if env is not None:
+        process_env = os.environ.copy()
+        process_env.update({str(key): str(value) for key, value in env.items()})
 
     process = subprocess.Popen(
         command,
@@ -27,6 +38,7 @@ def run_command(command: list[str], *, cwd: Path | None = None, timeout: int = 1
         shell=False,
         creationflags=creationflags,
         start_new_session=start_new_session,
+        env=process_env,
     )
     timed_out = False
     try:

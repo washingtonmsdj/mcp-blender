@@ -274,6 +274,7 @@ class WorkspaceActions:
             "message",
             "push",
             "include_paths",
+            "rebuild_cache",
         }
         unsupported = sorted(set(payload) - allowed)
         if unsupported:
@@ -290,6 +291,10 @@ class WorkspaceActions:
         push = payload.get("push", True)
         if not isinstance(push, bool):
             return ActionResult(False, "push must be boolean")
+
+        rebuild_cache = payload.get("rebuild_cache", False)
+        if not isinstance(rebuild_cache, bool):
+            return ActionResult(False, "rebuild_cache must be boolean")
 
         source = project.root.resolve()
         if source == self.config.hordax_path.resolve() or source.is_relative_to(self.config.hordax_path.resolve()):
@@ -327,6 +332,22 @@ class WorkspaceActions:
                     include_paths.append(rel)
 
         archive_clone = self.config.state_dir / "project-archive" / "HORDAX-game"
+        lfs_skip_smudge = {"GIT_LFS_SKIP_SMUDGE": "1"}
+
+        if rebuild_cache and archive_clone.exists():
+            expected_parent = (self.config.state_dir / "project-archive").resolve()
+            try:
+                archive_clone.resolve().relative_to(expected_parent)
+            except ValueError:
+                return ActionResult(False, "refusing to rebuild archive cache outside state directory")
+            try:
+                shutil.rmtree(archive_clone)
+            except Exception as error:
+                return ActionResult(
+                    False,
+                    f"cannot rebuild HORDAX archive cache: {type(error).__name__}: {error}",
+                )
+
         origin = _run(
             ["git", "-C", str(self.config.hordax_path), "remote", "get-url", "origin"],
             timeout=30,
@@ -342,11 +363,12 @@ class WorkspaceActions:
             cloned = _run(
                 ["git", "clone", "--branch", "main", "--single-branch", origin_url, str(archive_clone)],
                 timeout=900,
+                env=lfs_skip_smudge,
             )
             if not cloned.ok:
                 return cloned
         else:
-            dirty = _run(["git", "-C", str(archive_clone), "status", "--porcelain"], timeout=60)
+            dirty = _run(["git", "-C", str(archive_clone), "status", "--porcelain"], timeout=60, env=lfs_skip_smudge)
             if not dirty.ok:
                 return dirty
             if dirty.data.get("stdout", "").strip():
@@ -355,12 +377,13 @@ class WorkspaceActions:
                     "dedicated HORDAX archive clone is dirty; manual recovery required",
                     {"status": dirty.data.get("stdout", "")[-4000:]},
                 )
-            fetch = _run(["git", "-C", str(archive_clone), "fetch", "--quiet", "origin", "main"], timeout=300)
+            fetch = _run(["git", "-C", str(archive_clone), "fetch", "--quiet", "origin", "main"], timeout=300, env=lfs_skip_smudge)
             if not fetch.ok:
                 return fetch
             merge = _run(
                 ["git", "-C", str(archive_clone), "merge", "--ff-only", "--quiet", "origin/main"],
                 timeout=300,
+                env=lfs_skip_smudge,
             )
             if not merge.ok:
                 return merge
@@ -438,6 +461,8 @@ class WorkspaceActions:
         if not head.ok:
             return head
 
+        cache_compacted = False
+        cache_cleanup_error = None
         if push:
             pushed = _run(["git", "-C", str(archive_clone), "push", "origin", "main"], timeout=1800)
             if not pushed.ok:
@@ -451,6 +476,32 @@ class WorkspaceActions:
                     },
                 )
 
+            compact = _run(
+                [
+                    "git",
+                    "-C",
+                    str(archive_clone),
+                    "checkout",
+                    "--force",
+                    "HEAD",
+                    "--",
+                    destination_rel.as_posix(),
+                ],
+                timeout=300,
+                env=lfs_skip_smudge,
+            )
+            if compact.ok:
+                pruned = _run(
+                    ["git", "-C", str(archive_clone), "lfs", "prune"],
+                    timeout=600,
+                    env=lfs_skip_smudge,
+                )
+                cache_compacted = pruned.ok
+                if not pruned.ok:
+                    cache_cleanup_error = pruned.data
+            else:
+                cache_cleanup_error = compact.data
+
         return ActionResult(
             True,
             "project archived to HORDAX-game",
@@ -460,6 +511,9 @@ class WorkspaceActions:
                 "commit": head.data.get("stdout", "").strip(),
                 "pushed": push,
                 "changed": True,
+                "archive_cache_rebuilt": rebuild_cache,
+                "archive_cache_compacted": cache_compacted,
+                "archive_cache_cleanup_error": cache_cleanup_error,
                 "include_paths": (
                     [path.as_posix() for path in include_paths]
                     if include_paths is not None
