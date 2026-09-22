@@ -1939,7 +1939,7 @@ def _scene_presentation(command: dict) -> None:
             raise ValueError("unsupported field(s): " + ", ".join(unsupported))
 
         scene = bpy.context.scene
-        engine = str(command.get("render_engine") or "BLENDER_EEVEE_NEXT").strip().upper()
+        engine = str(command.get("render_engine") or "BLENDER_EEVEE").strip().upper()
         try:
             scene.render.engine = engine
         except Exception as error:
