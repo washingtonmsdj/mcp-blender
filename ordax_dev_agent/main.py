@@ -14,6 +14,22 @@ from .config import AgentConfig
 from .status_server import start_status_server
 
 
+_VERBOSE_JOB_LIFECYCLE_EVENTS = frozenset(
+    {
+        "agent.update",
+        "agent.resilience_repair",
+        "blender.benchmark",
+        "blender.live_start",
+        "blender.live_export",
+        "blender.export_headless",
+        "git.sync",
+        "unity.hub_install_editor",
+        "unity.direct_install_editor",
+        "unity.recover_resume",
+    }
+)
+
+
 def _startup_log(config: AgentConfig | None, message: str) -> None:
     try:
         if config is not None:
@@ -275,7 +291,9 @@ def main() -> int:
                 runtime["last_job_id"] = job.id
                 runtime["last_job_action"] = job.action
                 runtime["progress"] = None
-                control.append_event(job.id, "info", f"starting {job.action}")
+                verbose_lifecycle = job.action in _VERBOSE_JOB_LIFECYCLE_EVENTS
+                if verbose_lifecycle:
+                    control.append_event(job.id, "info", f"starting {job.action}")
                 artifact_cache = {}
 
                 def publish_observation(observation: dict) -> None:
@@ -333,11 +351,12 @@ def main() -> int:
                     keepalive_stop.set()
                     keepalive_thread.join(timeout=2.0)
 
-                control.append_event(
-                    job.id,
-                    "info" if result.ok else "error",
-                    result.summary,
-                )
+                if verbose_lifecycle or not result.ok:
+                    control.append_event(
+                        job.id,
+                        "info" if result.ok else "error",
+                        result.summary,
+                    )
                 control.complete(job, result)
                 runtime["last_result"] = {
                     "ok": result.ok,
