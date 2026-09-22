@@ -34,6 +34,233 @@ _LOCAL_IMPORT_MAX_BYTES = 1024 * 1024 * 1024
 _ANIMATION_TRANSFORM_FIELDS = frozenset({"location", "rotation_euler", "scale"})
 
 
+def _presentation_name(value: Any, field: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    result = value.strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_. -]{0,126}", result):
+        raise ValueError(f"{field} contains unsupported characters")
+    return result
+
+
+def _presentation_number(
+    value: Any,
+    field: str,
+    *,
+    minimum: float,
+    maximum: float,
+) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be numeric")
+    result = float(value)
+    if not math.isfinite(result) or result < minimum or result > maximum:
+        raise ValueError(f"{field} must be between {minimum} and {maximum}")
+    return result
+
+
+def _presentation_vector(
+    value: Any,
+    field: str,
+    *,
+    minimum: float = -1000.0,
+    maximum: float = 1000.0,
+) -> list[float]:
+    if not isinstance(value, list) or len(value) != 3:
+        raise ValueError(f"{field} must be a list of three numbers")
+    return [
+        _presentation_number(component, field, minimum=minimum, maximum=maximum)
+        for component in value
+    ]
+
+
+def _presentation_color(value: Any, field: str = "color") -> list[float]:
+    if not isinstance(value, list) or len(value) != 3:
+        raise ValueError(f"{field} must be an RGB list")
+    return [
+        _presentation_number(component, field, minimum=0.0, maximum=1.0)
+        for component in value
+    ]
+
+
+def _normalize_camera_request(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "project",
+        "timeout_seconds",
+        "name",
+        "location",
+        "target",
+        "lens_mm",
+        "sensor_width_mm",
+        "clip_start",
+        "clip_end",
+        "make_active",
+    }
+    unsupported = sorted(set(payload) - allowed)
+    if unsupported:
+        raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+    make_active = payload.get("make_active", True)
+    if not isinstance(make_active, bool):
+        raise ValueError("make_active must be boolean")
+    clip_start = _presentation_number(
+        payload.get("clip_start", 0.001),
+        "clip_start",
+        minimum=0.0001,
+        maximum=10.0,
+    )
+    clip_end = _presentation_number(
+        payload.get("clip_end", 100.0),
+        "clip_end",
+        minimum=0.01,
+        maximum=100000.0,
+    )
+    if clip_end <= clip_start:
+        raise ValueError("clip_end must be greater than clip_start")
+    return {
+        "name": _presentation_name(payload.get("name"), "name"),
+        "location": _presentation_vector(payload.get("location"), "location"),
+        "target": _presentation_vector(payload.get("target"), "target"),
+        "lens_mm": _presentation_number(
+            payload.get("lens_mm", 50.0),
+            "lens_mm",
+            minimum=1.0,
+            maximum=500.0,
+        ),
+        "sensor_width_mm": _presentation_number(
+            payload.get("sensor_width_mm", 36.0),
+            "sensor_width_mm",
+            minimum=1.0,
+            maximum=100.0,
+        ),
+        "clip_start": clip_start,
+        "clip_end": clip_end,
+        "make_active": make_active,
+    }
+
+
+def _normalize_light_request(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "project",
+        "timeout_seconds",
+        "name",
+        "light_type",
+        "location",
+        "target",
+        "energy",
+        "color",
+        "size",
+        "angle_degrees",
+        "spot_size_degrees",
+        "spot_blend",
+    }
+    unsupported = sorted(set(payload) - allowed)
+    if unsupported:
+        raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+    light_type = str(payload.get("light_type") or "AREA").strip().upper()
+    if light_type not in {"AREA", "POINT", "SUN", "SPOT"}:
+        raise ValueError("light_type must be AREA, POINT, SUN, or SPOT")
+    result = {
+        "name": _presentation_name(payload.get("name"), "name"),
+        "light_type": light_type,
+        "location": _presentation_vector(payload.get("location"), "location"),
+        "target": _presentation_vector(payload.get("target", [0.0, 0.0, 0.0]), "target"),
+        "energy": _presentation_number(
+            payload.get("energy", 100.0),
+            "energy",
+            minimum=0.0,
+            maximum=1000000.0,
+        ),
+        "color": _presentation_color(payload.get("color", [1.0, 1.0, 1.0])),
+        "size": _presentation_number(
+            payload.get("size", 0.1),
+            "size",
+            minimum=0.0001,
+            maximum=1000.0,
+        ),
+        "angle_degrees": _presentation_number(
+            payload.get("angle_degrees", 0.526),
+            "angle_degrees",
+            minimum=0.0,
+            maximum=180.0,
+        ),
+        "spot_size_degrees": _presentation_number(
+            payload.get("spot_size_degrees", 45.0),
+            "spot_size_degrees",
+            minimum=1.0,
+            maximum=179.0,
+        ),
+        "spot_blend": _presentation_number(
+            payload.get("spot_blend", 0.15),
+            "spot_blend",
+            minimum=0.0,
+            maximum=1.0,
+        ),
+    }
+    return result
+
+
+def _normalize_scene_presentation_request(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "project",
+        "timeout_seconds",
+        "render_engine",
+        "resolution_x",
+        "resolution_y",
+        "resolution_percentage",
+        "world_color",
+        "world_strength",
+        "transparent_film",
+    }
+    unsupported = sorted(set(payload) - allowed)
+    if unsupported:
+        raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+    engine = str(payload.get("render_engine") or "BLENDER_EEVEE_NEXT").strip().upper()
+    if engine not in {"BLENDER_EEVEE_NEXT", "BLENDER_WORKBENCH", "CYCLES"}:
+        raise ValueError(
+            "render_engine must be BLENDER_EEVEE_NEXT, BLENDER_WORKBENCH, or CYCLES"
+        )
+    transparent = payload.get("transparent_film", False)
+    if not isinstance(transparent, bool):
+        raise ValueError("transparent_film must be boolean")
+    return {
+        "render_engine": engine,
+        "resolution_x": int(
+            _presentation_number(
+                payload.get("resolution_x", 1080),
+                "resolution_x",
+                minimum=64,
+                maximum=8192,
+            )
+        ),
+        "resolution_y": int(
+            _presentation_number(
+                payload.get("resolution_y", 1080),
+                "resolution_y",
+                minimum=64,
+                maximum=8192,
+            )
+        ),
+        "resolution_percentage": int(
+            _presentation_number(
+                payload.get("resolution_percentage", 100),
+                "resolution_percentage",
+                minimum=1,
+                maximum=100,
+            )
+        ),
+        "world_color": _presentation_color(
+            payload.get("world_color", [0.035, 0.035, 0.035]),
+            "world_color",
+        ),
+        "world_strength": _presentation_number(
+            payload.get("world_strength", 0.35),
+            "world_strength",
+            minimum=0.0,
+            maximum=1000.0,
+        ),
+        "transparent_film": transparent,
+    }
+
+
 def _normalize_transform_animation_request(payload: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "project",
@@ -558,6 +785,39 @@ class BlenderActions:
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
 
+    def blender_live_create_camera(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            arguments = _normalize_camera_request(payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        return self._blender_live(payload).request(
+            "create_camera",
+            arguments,
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_create_light(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            arguments = _normalize_light_request(payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        return self._blender_live(payload).request(
+            "create_light",
+            arguments,
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_scene_presentation(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            arguments = _normalize_scene_presentation_request(payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        return self._blender_live(payload).request(
+            "scene_presentation",
+            arguments,
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
     def blender_live_import_asset(self, payload: dict[str, Any]) -> ActionResult:
         supported = {"project", "source_path", "object_name", "timeout_seconds"}
         unsupported = sorted(set(payload) - supported)
@@ -677,6 +937,9 @@ class BlenderActions:
             "create_primitive": self.blender_live_create_primitive,
             "add_modifier": self.blender_live_add_modifier,
             "material_apply": self.blender_live_material_apply,
+            "create_camera": self.blender_live_create_camera,
+            "create_light": self.blender_live_create_light,
+            "scene_presentation": self.blender_live_scene_presentation,
             "animate_transform": self.blender_live_animate_transform,
             "viewport_proxy": self.blender_live_viewport_proxy,
             "checkpoint_create": self.blender_live_checkpoint_create,
