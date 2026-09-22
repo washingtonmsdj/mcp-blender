@@ -18,6 +18,7 @@ from .agent_actions import AgentActions
 from .artifact_actions import ArtifactActions
 from .git_actions import GitActions
 from .project_text_actions import ProjectTextActions
+from .workspace_actions import WorkspaceActions
 from .execution_lock import ExecutionLock
 
 
@@ -33,6 +34,7 @@ class ActionRegistry(
     ArtifactActions,
     GitActions,
     ProjectTextActions,
+    WorkspaceActions,
 ):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
@@ -43,6 +45,8 @@ class ActionRegistry(
         self._execution_lock = threading.Lock()
         self._actions: dict[str, Action] = {
             "projects.list": self.projects_list,
+            "workspace.bind_project": self.workspace_bind_project,
+            "project.archive_to_hordax": self.project_archive_to_hordax,
             "project.observe": self.project_observe,
             "project.references": self.project_references,
             "project.reference_images": self.project_reference_images,
