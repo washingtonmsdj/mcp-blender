@@ -165,6 +165,7 @@ CAPABILITIES = [
     "quality_gate",
     "object_transform",
     "object_remove",
+    "extract_region",
     "create_primitive",
     "add_modifier",
     "material_apply",
@@ -1022,6 +1023,176 @@ def _object_remove(command: dict) -> None:
             False,
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
             operation="object_remove",
+        )
+
+
+def _extract_region(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        _modeling_runtime_preconditions()
+        allowed = {
+            "id",
+            "operation",
+            "axis",
+            "minimum",
+            "maximum",
+            "translate",
+            "keep_names",
+        }
+        unsupported = sorted(set(command) - allowed)
+        if unsupported:
+            raise ValueError("unsupported field(s): " + ", ".join(unsupported))
+
+        axis = str(command.get("axis") or "X").strip().upper()
+        if axis not in {"X", "Y", "Z"}:
+            raise ValueError("axis must be X, Y, or Z")
+        axis_index = {"X": 0, "Y": 1, "Z": 2}[axis]
+
+        minimum = command.get("minimum")
+        maximum = command.get("maximum")
+        if (
+            isinstance(minimum, bool)
+            or isinstance(maximum, bool)
+            or not isinstance(minimum, (int, float))
+            or not isinstance(maximum, (int, float))
+        ):
+            raise ValueError("minimum and maximum must be numeric")
+        minimum = float(minimum)
+        maximum = float(maximum)
+        if not math.isfinite(minimum) or not math.isfinite(maximum):
+            raise ValueError("minimum and maximum must be finite")
+        if maximum <= minimum:
+            raise ValueError("maximum must be greater than minimum")
+
+        translate = command.get("translate", [0.0, 0.0, 0.0])
+        if not isinstance(translate, list) or len(translate) != 3:
+            raise ValueError("translate must be a list of three numbers")
+        delta_values = []
+        for value in translate:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError("translate must contain only numbers")
+            numeric = float(value)
+            if not math.isfinite(numeric) or abs(numeric) > 100000.0:
+                raise ValueError("translate contains a value outside the allowed range")
+            delta_values.append(numeric)
+        delta = Vector(delta_values)
+
+        raw_keep_names = command.get("keep_names", [])
+        if (
+            not isinstance(raw_keep_names, list)
+            or len(raw_keep_names) > 64
+            or not all(isinstance(name, str) and name.strip() for name in raw_keep_names)
+        ):
+            raise ValueError(
+                "keep_names must be a list of at most 64 non-empty object names"
+            )
+        keep_names = {name.strip() for name in raw_keep_names}
+
+        scene_objects = list(bpy.context.scene.objects)
+        keep_objects = []
+        remove_objects = []
+
+        for obj in scene_objects:
+            if obj.name in keep_names:
+                keep_objects.append(obj)
+                continue
+
+            bounds = _world_bounds(obj)
+            aabb_min = bounds.get("aabb_min")
+            aabb_max = bounds.get("aabb_max")
+            if (
+                isinstance(aabb_min, list)
+                and isinstance(aabb_max, list)
+                and len(aabb_min) == 3
+                and len(aabb_max) == 3
+            ):
+                coordinate = (
+                    float(aabb_min[axis_index]) + float(aabb_max[axis_index])
+                ) / 2.0
+            else:
+                coordinate = float(obj.matrix_world.translation[axis_index])
+
+            if minimum <= coordinate <= maximum:
+                keep_objects.append(obj)
+            else:
+                remove_objects.append(obj)
+
+        keep_set = set(keep_objects)
+        for obj in keep_objects:
+            parent = obj.parent
+            if parent is not None and parent not in keep_set:
+                world_matrix = obj.matrix_world.copy()
+                obj.parent = None
+                obj.matrix_world = world_matrix
+
+        for obj in remove_objects:
+            if obj.library is not None or obj.override_library is not None:
+                raise ValueError(f"linked object cannot be removed: {obj.name}")
+
+        removed_names = [obj.name for obj in remove_objects]
+        for obj in remove_objects:
+            data = getattr(obj, "data", None)
+            data_type = getattr(obj, "type", "")
+            bpy.data.objects.remove(obj, do_unlink=True)
+            if data is not None and getattr(data, "users", 0) == 0:
+                try:
+                    if data_type == "MESH":
+                        bpy.data.meshes.remove(data)
+                    elif data_type in {"CURVE", "FONT", "SURFACE"}:
+                        bpy.data.curves.remove(data)
+                    elif data_type == "CAMERA":
+                        bpy.data.cameras.remove(data)
+                    elif data_type == "LIGHT":
+                        bpy.data.lights.remove(data)
+                except Exception:
+                    pass
+
+        if delta.length > 0.0:
+            kept_after = [
+                bpy.data.objects.get(obj.name)
+                for obj in keep_objects
+                if bpy.data.objects.get(obj.name) is not None
+            ]
+            kept_after = [obj for obj in kept_after if obj is not None]
+            kept_set_after = set(kept_after)
+            for obj in kept_after:
+                if obj.parent is None or obj.parent not in kept_set_after:
+                    matrix = obj.matrix_world.copy()
+                    matrix.translation = matrix.translation + delta
+                    obj.matrix_world = matrix
+
+        scene = bpy.context.scene
+        if scene.camera is None or scene.camera.name not in bpy.data.objects:
+            cameras = [obj for obj in scene.objects if obj.type == "CAMERA"]
+            scene.camera = cameras[0] if cameras else None
+
+        bpy.context.view_layer.update()
+        kept_names = [
+            obj.name
+            for obj in bpy.context.scene.objects
+        ]
+        _response(
+            command_id,
+            True,
+            "Blender scene region extracted",
+            operation="extract_region",
+            axis=axis,
+            minimum=minimum,
+            maximum=maximum,
+            translate=delta_values,
+            kept_count=len(kept_names),
+            removed_count=len(removed_names),
+            kept_names=kept_names[:200],
+            removed_names=removed_names[:200],
+            truncated_kept=len(kept_names) > 200,
+            truncated_removed=len(removed_names) > 200,
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="extract_region",
         )
 
 
@@ -4216,6 +4387,8 @@ def _process(path: Path) -> None:
             _object_transform(command)
         elif operation == "object_remove":
             _object_remove(command)
+        elif operation == "extract_region":
+            _extract_region(command)
         elif operation == "create_primitive":
             _modeling_create_primitive(command)
         elif operation == "add_modifier":
