@@ -11,6 +11,7 @@ from .references import MANIFEST_VERSION as REFERENCE_CONTRACT_VERSION
 def component_versions() -> dict[str, object]:
     return {
         "bridge_package": bridge_package_version,
+        "device_agent": dev_agent_version,
         "dev_agent": dev_agent_version,
         "blender_live_protocol": EXPECTED_PROTOCOL_VERSION,
         "blender_companion_bundle_format": BUNDLE_FORMAT_VERSION,
