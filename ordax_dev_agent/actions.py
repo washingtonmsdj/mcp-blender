@@ -25,6 +25,7 @@ from .game_asset_actions import GameAssetActions
 from .mixamo_actions import MixamoActions
 from .rodin_actions import RodinActions
 from .comfyui_actions import ComfyUIActions
+from .aleph_actions import AlephActions
 from .execution_lock import ExecutionLock
 
 
@@ -47,6 +48,7 @@ class ActionRegistry(
     MixamoActions,
     RodinActions,
     ComfyUIActions,
+    AlephActions,
 ):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
@@ -137,6 +139,15 @@ class ActionRegistry(
             "game_assets.comfyui_node_info": self.game_assets_comfyui_node_info,
             "game_assets.comfyui_run_workflow": self.game_assets_comfyui_run_workflow,
             "game_assets.comfyui_history": self.game_assets_comfyui_history,
+            "geo.aleph_status": self.geo_aleph_status,
+            "geo.aleph_ensure": self.geo_aleph_ensure,
+            "geo.aleph_update": self.geo_aleph_update,
+            "geo.aleph_resolve": self.geo_aleph_resolve,
+            "geo.aleph_satellite": self.geo_aleph_satellite,
+            "geo.aleph_streetview": self.geo_aleph_streetview,
+            "geo.aleph_capture": self.geo_aleph_capture,
+            "geo.aleph_capture_resume": self.geo_aleph_capture_resume,
+            "geo.aleph_capture_export": self.geo_aleph_capture_export,
             "unity.install_companion": self.unity_install_companion,
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
@@ -185,7 +196,7 @@ class ActionRegistry(
         self._app_prefixes = {"unity", "blender"}
         available = {entry.name: entry for entry in entry_points(group="ordax_dev_agent.adapters")}
         for name in config.adapters:
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets"}:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets", "geo"}:
                 raise ValueError(f"invalid or reserved adapter name: {name}")
             if name not in available:
                 raise ValueError(f"configured adapter is not installed: {name}")
