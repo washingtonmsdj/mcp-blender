@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -108,11 +109,13 @@ class MixamoRoundTripTests(unittest.TestCase):
 
             def fake_run(command, *, cwd=None, timeout=0, env=None):
                 self.assertIn("--factory-startup", command)
-                self.assertIn(str(source), command)
-                self.assertIn(str(output), command)
-                self.assertEqual(project, cwd)
+                input_arg = Path(command[command.index("--input") + 1])
+                output_arg = Path(command[command.index("--output") + 1])
+                self.assertTrue(os.path.samefile(input_arg, source))
+                self.assertTrue(os.path.samefile(cwd, project))
+                self.assertEqual(output.name, output_arg.name)
+                self.assertTrue(os.path.samefile(output_arg.parent, output.parent))
                 self.assertEqual(321, timeout)
-                output.parent.mkdir(parents=True, exist_ok=True)
                 output.write_bytes(b"blend")
                 artifact_dir = config.state_dir / "artifacts" / "game" / "game-assets"
                 reports = list(artifact_dir.glob("mixamo-import-*.json"))
@@ -145,7 +148,7 @@ class MixamoRoundTripTests(unittest.TestCase):
                 )
 
             self.assertTrue(result.ok, result.summary)
-            self.assertEqual(str(output), result.data["output_blend"])
+            self.assertTrue(os.path.samefile(result.data["output_blend"], output))
             self.assertTrue(result.data["report"]["mixamo_rig_detected"])
 
 
