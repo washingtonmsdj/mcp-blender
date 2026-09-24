@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from .aleph_actions import ALEPH_PINNED_REF
 from .models import ActionResult
 
 
@@ -96,6 +97,36 @@ class GameAssetCatalogActions:
                 ],
                 "security": "loopback-only",
             },
+            "alephgeo": {
+                "mode": "managed_external_component",
+                "configured": True,
+                "auto_install_on_first_use": True,
+                "upstream": "Belluxx/Aleph",
+                "pinned_ref": ALEPH_PINNED_REF,
+                "capabilities": [
+                    "place_resolution",
+                    "satellite_imagery",
+                    "streetview_reference_photos",
+                    "osm_buildings_and_roads",
+                    "terrain_elevation",
+                    "resumable_area_capture",
+                ],
+                "actions": [
+                    "geo.aleph_status",
+                    "geo.aleph_ensure",
+                    "geo.aleph_update",
+                    "geo.aleph_resolve",
+                    "geo.aleph_satellite",
+                    "geo.aleph_streetview",
+                    "geo.aleph_capture",
+                    "geo.aleph_capture_resume",
+                    "geo.aleph_capture_export",
+                ],
+                "notes": [
+                    "Installed into an isolated Device Agent state-directory virtual environment.",
+                    "Upstream explicitly warns that it uses undocumented APIs and may break or hit rate limits.",
+                ],
+            },
         }
         return ActionResult(True, "game-asset providers inspected", {"providers": providers})
 
@@ -107,9 +138,27 @@ class GameAssetCatalogActions:
             "integrated": {
                 "cloud_generation": ["tripo", "meshy", "hyper3d_rodin"],
                 "local_generation_host": ["comfyui_local"],
+                "world_reference_capture": ["alephgeo"],
                 "rig_animation": ["adobe_mixamo", "tripo", "meshy"],
                 "dcc": ["blender"],
                 "engines": ["unity", "unreal_export", "godot_export", "web_gltf"],
+            },
+            "world_generation_pipeline": {
+                "reference_source": "alephgeo",
+                "inputs": [
+                    "satellite_png_or_geotiff",
+                    "terrain_geotiff",
+                    "osm_buildings_roads_and_pois",
+                    "streetview_reference_photos",
+                ],
+                "next_stages": [
+                    "normalize_geospatial_capture",
+                    "construct_blender_terrain",
+                    "extrude_osm_buildings",
+                    "apply_or_generate_materials",
+                    "engine_export_and_runtime_lod",
+                ],
+                "reliability_note": "Aleph uses undocumented upstream data APIs; capture artifacts should be cached and reproducible locally.",
             },
             "local_model_candidates": {
                 "trellis_2": {
