@@ -102,6 +102,69 @@ class AlephActionsTests(unittest.TestCase):
             self.assertIn("--json", command)
             self.assertTrue(Path(result.data["output_root"]).is_dir())
 
+    def test_satellite_exact_tile_selector_is_supported(self):
+        response = ActionResult(
+            True,
+            "command completed",
+            {"stdout": json.dumps({"ok": True}), "stderr": "", "returncode": 0},
+        )
+        with tempfile.TemporaryDirectory() as raw, patch(
+            "ordax_dev_agent.aleph_actions.AlephActions._aleph_ready",
+            return_value=(Path("alephgeo"), None),
+        ), patch("ordax_dev_agent.aleph_actions._run", return_value=response) as run:
+            registry = ActionRegistry(self.make_config(Path(raw)))
+            result = registry.execute(
+                "geo.aleph_satellite",
+                {"project": "world", "tile": "19/280337/194891"},
+            )
+            self.assertTrue(result.ok, result.summary)
+            command = run.call_args.args[0]
+            self.assertIn("--tile", command)
+            self.assertIn("19/280337/194891", command)
+
+    def test_streetview_named_street_is_primary_selector(self):
+        response = ActionResult(
+            True,
+            "command completed",
+            {"stdout": json.dumps({"ok": True, "views": 10}), "stderr": "", "returncode": 0},
+        )
+        with tempfile.TemporaryDirectory() as raw, patch(
+            "ordax_dev_agent.aleph_actions.AlephActions._aleph_ready",
+            return_value=(Path("alephgeo"), None),
+        ), patch("ordax_dev_agent.aleph_actions._run", return_value=response) as run:
+            registry = ActionRegistry(self.make_config(Path(raw)))
+            result = registry.execute(
+                "geo.aleph_streetview",
+                {
+                    "project": "world",
+                    "street": "Avenida Sete de Setembro, Salvador",
+                    "best_match": True,
+                    "stops": 10,
+                    "view": "both",
+                },
+            )
+            self.assertTrue(result.ok, result.summary)
+            command = run.call_args.args[0]
+            self.assertIn("--street", command)
+            self.assertIn("Avenida Sete de Setembro, Salvador", command)
+            self.assertIn("--best-match", command)
+            self.assertIn("--stops", command)
+            self.assertNotIn("--place", command)
+
+    def test_streetview_rejects_multiple_primary_selectors(self):
+        with tempfile.TemporaryDirectory() as raw:
+            registry = ActionRegistry(self.make_config(Path(raw)))
+            result = registry.execute(
+                "geo.aleph_streetview",
+                {
+                    "project": "world",
+                    "place": "Pelourinho, Salvador",
+                    "street": "Rua Chile, Salvador",
+                },
+            )
+            self.assertFalse(result.ok)
+            self.assertIn("exactly one", result.summary)
+
     def test_output_directory_cannot_escape_registered_project(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
