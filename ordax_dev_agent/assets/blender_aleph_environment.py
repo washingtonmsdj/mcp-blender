@@ -38,28 +38,58 @@ def _collection(name: str) -> bpy.types.Collection:
     return collection
 
 
-def _move_to_collection(obj: bpy.types.Object, collection: bpy.types.Collection) -> None:
-    for current in list(obj.users_collection):
-        current.objects.unlink(obj)
+def _load_local_obj(path: Path, object_name: str, collection: bpy.types.Collection) -> list[bpy.types.Object]:
+    """Load our tiny OBJ subset without axis conversion from Blender's OBJ importer."""
+    vertices: list[tuple[float, float, float]] = []
+    uvs: list[tuple[float, float]] = []
+    faces: list[list[int]] = []
+    face_uvs: list[list[int | None]] = []
+    with path.open("r", encoding="utf-8") as stream:
+        for raw in stream:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if parts[0] == "v" and len(parts) >= 4:
+                vertices.append((float(parts[1]), float(parts[2]), float(parts[3])))
+            elif parts[0] == "vt" and len(parts) >= 3:
+                uvs.append((float(parts[1]), float(parts[2])))
+            elif parts[0] == "f" and len(parts) >= 4:
+                indices: list[int] = []
+                uv_indices: list[int | None] = []
+                for token in parts[1:]:
+                    values = token.split("/")
+                    vertex_index = int(values[0])
+                    if vertex_index <= 0:
+                        raise RuntimeError("Aleph staging OBJ must use positive vertex indices")
+                    indices.append(vertex_index - 1)
+                    uv_index: int | None = None
+                    if len(values) >= 2 and values[1]:
+                        parsed = int(values[1])
+                        if parsed <= 0:
+                            raise RuntimeError("Aleph staging OBJ must use positive UV indices")
+                        uv_index = parsed - 1
+                    uv_indices.append(uv_index)
+                faces.append(indices)
+                face_uvs.append(uv_indices)
+    if not vertices or not faces:
+        raise RuntimeError(f"Aleph staging mesh {path.name} has no usable geometry")
+    if len(vertices) > 5_000_000 or len(faces) > 5_000_000:
+        raise RuntimeError(f"Aleph staging mesh {path.name} exceeds the safety geometry limit")
+
+    mesh = bpy.data.meshes.new(f"{object_name}_Mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    if uvs and any(any(index is not None for index in values) for values in face_uvs):
+        layer = mesh.uv_layers.new(name="UVMap")
+        for polygon, uv_indices in zip(mesh.polygons, face_uvs):
+            for loop_index, uv_index in zip(polygon.loop_indices, uv_indices):
+                if uv_index is not None and 0 <= uv_index < len(uvs):
+                    layer.data[loop_index].uv = uvs[uv_index]
+
+    obj = bpy.data.objects.new(object_name, mesh)
     collection.objects.link(obj)
-
-
-def _import_obj(path: Path, object_name: str, collection: bpy.types.Collection) -> list[bpy.types.Object]:
-    before = set(bpy.data.objects)
-    if hasattr(bpy.ops.wm, "obj_import"):
-        bpy.ops.wm.obj_import(filepath=str(path), forward_axis="NEGATIVE_Z", up_axis="Y")
-    elif hasattr(bpy.ops.import_scene, "obj"):
-        bpy.ops.import_scene.obj(filepath=str(path), axis_forward="-Z", axis_up="Y")
-    else:
-        raise RuntimeError("This Blender build has no OBJ importer")
-    created = [obj for obj in bpy.data.objects if obj not in before]
-    if not created:
-        raise RuntimeError(f"OBJ importer created no objects for {path.name}")
-    if len(created) == 1:
-        created[0].name = object_name
-    for obj in created:
-        _move_to_collection(obj, collection)
-    return created
+    return [obj]
 
 
 def _satellite_material(image_path: Path) -> bpy.types.Material:
@@ -233,13 +263,13 @@ def main() -> int:
         terrain_objects: list[bpy.types.Object] = []
         terrain_info = assets.get("terrain")
         if isinstance(terrain_info, dict) and terrain_info.get("path"):
-            terrain_objects = _import_obj(Path(terrain_info["path"]), "Aleph_Terrain", terrain_collection)
+            terrain_objects = _load_local_obj(Path(terrain_info["path"]), "Aleph_Terrain", terrain_collection)
             all_objects.extend(terrain_objects)
 
         building_objects: list[bpy.types.Object] = []
         building_info = assets.get("buildings")
         if isinstance(building_info, dict) and building_info.get("path"):
-            building_objects = _import_obj(Path(building_info["path"]), "Aleph_Buildings", building_collection)
+            building_objects = _load_local_obj(Path(building_info["path"]), "Aleph_Buildings", building_collection)
             material = _building_material()
             _assign_material(building_objects, material)
             all_objects.extend(building_objects)
