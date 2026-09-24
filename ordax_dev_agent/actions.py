@@ -20,6 +20,7 @@ from .git_actions import GitActions
 from .project_text_actions import ProjectTextActions
 from .workspace_actions import WorkspaceActions
 from .component_actions import ComponentActions
+from .game_asset_catalog_actions import GameAssetCatalogActions
 from .game_asset_actions import GameAssetActions
 from .mixamo_actions import MixamoActions
 from .rodin_actions import RodinActions
@@ -41,6 +42,7 @@ class ActionRegistry(
     ProjectTextActions,
     WorkspaceActions,
     ComponentActions,
+    GameAssetCatalogActions,
     GameAssetActions,
     MixamoActions,
     RodinActions,
@@ -120,6 +122,7 @@ class ActionRegistry(
             "blender.reference_generation_pass": self.blender_reference_generation_pass,
             "blender.reference_decision": self.blender_reference_decision,
             "game_assets.providers": self.game_assets_providers,
+            "game_assets.ecosystem_catalog": self.game_assets_ecosystem_catalog,
             "game_assets.export_profiles": self.game_assets_export_profiles,
             "game_assets.mixamo_handoff": self.game_assets_mixamo_handoff,
             "game_assets.provider_submit": self.game_assets_provider_submit,
