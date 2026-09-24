@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ordax_dev_agent.actions import ActionRegistry
+from ordax_dev_agent.aleph_actions import ALEPH_PINNED_REF
 from ordax_dev_agent.config import AgentConfig
 
 
@@ -31,7 +32,7 @@ class GameAssetCatalogTests(unittest.TestCase):
             default_project="game",
         )
 
-    def test_provider_catalog_includes_cloud_local_and_mixamo_routes(self) -> None:
+    def test_provider_catalog_includes_cloud_local_mixamo_and_world_capture_routes(self) -> None:
         with tempfile.TemporaryDirectory() as raw, patch.dict(
             os.environ,
             {
@@ -46,11 +47,20 @@ class GameAssetCatalogTests(unittest.TestCase):
             self.assertTrue(result.ok, result.summary)
             providers = result.data["providers"]
             self.assertEqual(
-                {"adobe_mixamo", "tripo", "meshy", "hyper3d_rodin", "comfyui_local"},
+                {
+                    "adobe_mixamo",
+                    "tripo",
+                    "meshy",
+                    "hyper3d_rodin",
+                    "comfyui_local",
+                    "alephgeo",
+                },
                 set(providers),
             )
             self.assertTrue(providers["hyper3d_rodin"]["configured"])
             self.assertEqual("loopback-only", providers["comfyui_local"]["security"])
+            self.assertTrue(providers["alephgeo"]["auto_install_on_first_use"])
+            self.assertEqual(ALEPH_PINNED_REF, providers["alephgeo"]["pinned_ref"])
             self.assertNotIn("tripo-secret", repr(result.data))
             self.assertNotIn("meshy-secret", repr(result.data))
             self.assertNotIn("rodin-secret", repr(result.data))
@@ -63,6 +73,8 @@ class GameAssetCatalogTests(unittest.TestCase):
             candidates = result.data["catalog"]["local_model_candidates"]
             self.assertEqual("candidate_not_bundled", candidates["trellis_2"]["integration_state"])
             self.assertEqual("candidate_not_bundled", candidates["hunyuan3d_2_1"]["integration_state"])
+            self.assertEqual(["alephgeo"], result.data["catalog"]["integrated"]["world_reference_capture"])
+            self.assertIn("terrain_geotiff", result.data["catalog"]["world_generation_pipeline"]["inputs"])
             self.assertIn("DeepMotion".lower(), repr(result.data).lower())
 
 
