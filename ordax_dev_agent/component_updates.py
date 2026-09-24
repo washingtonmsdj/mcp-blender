@@ -141,7 +141,7 @@ def component_catalog() -> dict[str, Any]:
 
 
 def _normalize_path(value: str) -> str:
-    path = str(value).replace("\\", "/").strip().lstrip("./")
+    path = str(value).replace("\\", "/").strip()
     if not path or "\0" in path:
         raise ValueError("changed path must be a non-empty relative path")
     pure = PurePosixPath(path)
@@ -155,9 +155,9 @@ def _matches(path: str, pattern: str) -> bool:
         return path.startswith(pattern)
     # Several adapter domains intentionally use a filename prefix so new typed
     # modules remain owned without continuously editing this catalog.
-    if pattern.endswith("_"):
+    if pattern.endswith(("_", "-")):
         return path.startswith(pattern)
-    return path == pattern or path.startswith(pattern)
+    return path == pattern
 
 
 def plan_component_update(
