@@ -1,8 +1,8 @@
 """Convert an Aleph capture into neutral local-metre assets for Blender.
 
-Runs with the managed Aleph virtualenv (Pillow available). It intentionally
-consumes only project-local capture files and writes only into the supplied
-staging directory. No network access is performed here.
+Runs with the managed Aleph virtualenv (Pillow available). It consumes only
+project-local capture files and writes only into the supplied staging directory.
+No network access is performed here.
 """
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import argparse
 import json
 import math
 import re
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -19,7 +18,6 @@ from PIL import Image
 
 R = 6_378_137.0
 MAX_MERCATOR_LAT = 85.0511287798066
-
 ROAD_WIDTHS = {
     "motorway": 12.0,
     "motorway_link": 7.0,
@@ -42,7 +40,6 @@ ROAD_WIDTHS = {
     "pedestrian": 3.0,
     "steps": 1.2,
 }
-
 _HEIGHT_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*(m|meter|meters|metre|metres|ft|feet|')?\s*$", re.I)
 
 
@@ -74,13 +71,11 @@ def _json(path: Path) -> dict[str, Any]:
 def _height(value: str | None) -> float | None:
     if not value:
         return None
-    text = value.split(";")[0].strip()
-    match = _HEIGHT_RE.fullmatch(text)
+    match = _HEIGHT_RE.fullmatch(value.split(";")[0].strip())
     if not match:
         return None
     result = float(match.group(1))
-    unit = (match.group(2) or "m").lower()
-    if unit in {"ft", "feet", "'"}:
+    if (match.group(2) or "m").lower() in {"ft", "feet", "'"}:
         result *= 0.3048
     return result if math.isfinite(result) else None
 
@@ -101,8 +96,7 @@ def _building_height(tags: dict[str, str]) -> tuple[float, float]:
         except ValueError:
             min_levels = 0.0
         minimum = min_levels * 3.2 if 0 < min_levels <= 100 else 0.0
-    minimum = max(0.0, min(explicit - 0.1, minimum))
-    return minimum, explicit
+    return max(0.0, min(explicit - 0.1, minimum)), explicit
 
 
 def _road_width(tags: dict[str, str]) -> float:
@@ -112,46 +106,76 @@ def _road_width(tags: dict[str, str]) -> float:
     return ROAD_WIDTHS.get(tags.get("highway", ""), 3.0)
 
 
-def _load_osm(path: Path) -> tuple[dict[int, tuple[float, float]], dict[int, tuple[list[int], dict[str, str]]], list[dict[str, Any]]]:
+def _load_osm(path: Path) -> tuple[
+    dict[int, tuple[float, float]],
+    dict[int, tuple[list[int], dict[str, str]]],
+    list[dict[str, Any]],
+]:
+    """Stream OSM while capturing child attributes before elements are cleared."""
     nodes: dict[int, tuple[float, float]] = {}
     ways: dict[int, tuple[list[int], dict[str, str]]] = {}
     relations: list[dict[str, Any]] = []
-    for event, elem in ET.iterparse(path, events=("end",)):
-        if elem.tag == "node":
+    current_way: dict[str, Any] | None = None
+    current_relation: dict[str, Any] | None = None
+
+    for event, elem in ET.iterparse(path, events=("start", "end")):
+        tag = elem.tag
+        if event == "start":
+            if tag == "way":
+                try:
+                    identity = int(elem.attrib["id"])
+                except (KeyError, ValueError):
+                    identity = 0
+                current_way = {"id": identity, "refs": [], "tags": {}}
+            elif tag == "relation":
+                current_relation = {"tags": {}, "members": []}
+            elif tag == "nd" and current_way is not None:
+                try:
+                    current_way["refs"].append(int(elem.attrib["ref"]))
+                except (KeyError, ValueError):
+                    pass
+            elif tag == "member" and current_relation is not None:
+                try:
+                    current_relation["members"].append(
+                        (
+                            elem.attrib.get("type", ""),
+                            int(elem.attrib.get("ref", "0")),
+                            elem.attrib.get("role", ""),
+                        )
+                    )
+                except ValueError:
+                    pass
+            elif tag == "tag":
+                key = elem.attrib.get("k")
+                value = elem.attrib.get("v")
+                if key is not None and value is not None:
+                    if current_way is not None:
+                        current_way["tags"][key] = value
+                    elif current_relation is not None:
+                        current_relation["tags"][key] = value
+            continue
+
+        if tag == "node":
             try:
-                nodes[int(elem.attrib["id"])] = (float(elem.attrib["lat"]), float(elem.attrib["lon"]))
+                nodes[int(elem.attrib["id"])] = (
+                    float(elem.attrib["lat"]),
+                    float(elem.attrib["lon"]),
+                )
             except (KeyError, ValueError):
                 pass
-        elif elem.tag == "way":
-            try:
-                identity = int(elem.attrib["id"])
-            except (KeyError, ValueError):
-                elem.clear()
-                continue
-            refs = []
-            tags: dict[str, str] = {}
-            for child in elem:
-                if child.tag == "nd" and "ref" in child.attrib:
-                    try:
-                        refs.append(int(child.attrib["ref"]))
-                    except ValueError:
-                        pass
-                elif child.tag == "tag" and "k" in child.attrib and "v" in child.attrib:
-                    tags[child.attrib["k"]] = child.attrib["v"]
-            ways[identity] = (refs, tags)
-        elif elem.tag == "relation":
-            tags: dict[str, str] = {}
-            members: list[tuple[str, int, str]] = []
-            for child in elem:
-                if child.tag == "tag" and "k" in child.attrib and "v" in child.attrib:
-                    tags[child.attrib["k"]] = child.attrib["v"]
-                elif child.tag == "member":
-                    try:
-                        members.append((child.attrib.get("type", ""), int(child.attrib.get("ref", "0")), child.attrib.get("role", "")))
-                    except ValueError:
-                        pass
-            if tags.get("type") == "multipolygon" and tags.get("building") not in {None, "no"}:
-                relations.append({"tags": tags, "members": members})
+        elif tag == "way":
+            if current_way is not None and current_way["id"]:
+                ways[current_way["id"]] = (
+                    current_way["refs"],
+                    current_way["tags"],
+                )
+            current_way = None
+        elif tag == "relation":
+            if current_relation is not None:
+                tags = current_relation["tags"]
+                if tags.get("type") == "multipolygon" and tags.get("building") not in {None, "no"}:
+                    relations.append(current_relation)
+            current_relation = None
         elem.clear()
     return nodes, ways, relations
 
@@ -185,31 +209,27 @@ def _stitch(ref_chains: list[list[int]]) -> list[list[int]]:
 
 class TerrainSampler:
     def __init__(self, path: Path, bbox: tuple[float, float, float, float], max_samples: int):
-        self.path = path
-        self.image = Image.open(path)
-        self.image.load()
-        self.image = self.image.convert("F")
-        tags = getattr(self.image, "tag_v2", None)
-        if tags is None:
-            # convert() may drop TIFF tags, reopen only for metadata.
-            original = Image.open(path)
-            tags = original.tag_v2
-            self._metadata_image = original
-        else:
-            self._metadata_image = None
+        metadata_image = Image.open(path)
+        tags = metadata_image.tag_v2
         scale = tags.get(33550)
         tie = tags.get(33922)
         if not scale or not tie or len(scale) < 2 or len(tie) < 6:
+            metadata_image.close()
             raise ValueError("terrain.tif is missing GeoTIFF scale/tiepoint tags")
         self.scale_x = float(scale[0])
         self.scale_y = float(scale[1])
         self.west = float(tie[3])
         self.north = float(tie[4])
         if self.scale_x <= 0 or self.scale_y <= 0:
+            metadata_image.close()
             raise ValueError("terrain.tif has invalid pixel scale")
-        self.south_lat, self.west_lon, self.north_lat, self.east_lon = bbox
-        self.min_x, self.min_y = _mercator(self.south_lat, self.west_lon)
-        self.max_x, self.max_y = _mercator(self.north_lat, self.east_lon)
+        metadata_image.load()
+        self.image = metadata_image.convert("F")
+        metadata_image.close()
+
+        south_lat, west_lon, north_lat, east_lon = bbox
+        self.min_x, self.min_y = _mercator(south_lat, west_lon)
+        self.max_x, self.max_y = _mercator(north_lat, east_lon)
         width = max(1.0, self.max_x - self.min_x)
         height = max(1.0, self.max_y - self.min_y)
         max_samples = max(16, min(512, int(max_samples)))
@@ -238,8 +258,6 @@ class TerrainSampler:
 
     def close(self) -> None:
         self.image.close()
-        if self._metadata_image is not None:
-            self._metadata_image.close()
 
     def _sample_xy_absolute(self, x: float, y: float) -> float:
         px = int(round((x - self.west) / self.scale_x))
@@ -285,7 +303,9 @@ class TerrainSampler:
         }
 
 
-def _local_point(nodes: dict[int, tuple[float, float]], ref: int, origin: tuple[float, float]) -> tuple[float, float] | None:
+def _local_point(
+    nodes: dict[int, tuple[float, float]], ref: int, origin: tuple[float, float]
+) -> tuple[float, float] | None:
     point = nodes.get(ref)
     if point is None:
         return None
@@ -329,10 +349,7 @@ def _write_buildings(
             candidates.append((f"way_{identity}", refs, tags))
 
     vertex_index = 1
-    buildings = 0
-    vertices = 0
-    faces = 0
-    skipped = 0
+    buildings = vertices = faces = skipped = 0
     with path.open("w", encoding="utf-8", newline="\n") as out:
         out.write("o Aleph_Buildings\n")
         for name, refs, tags in candidates:
@@ -356,8 +373,7 @@ def _write_buildings(
                 ground = terrain.sample_latlon(lat, lon)
             else:
                 ground = 0.0
-            bottom = ground + min_h
-            top = ground + height
+            bottom, top = ground + min_h, ground + height
             out.write(f"g {name}\n")
             for x, y in points:
                 out.write(f"v {x:.6f} {y:.6f} {bottom:.6f}\n")
@@ -419,7 +435,11 @@ def _write_roads(
             }
         )
     path.write_text(json.dumps({"roads": roads}, separators=(",", ":")), encoding="utf-8")
-    return {"roads": len(roads), "skipped": skipped, "points": sum(len(r["points"]) for r in roads)}
+    return {
+        "roads": len(roads),
+        "skipped": skipped,
+        "points": sum(len(road["points"]) for road in roads),
+    }
 
 
 def main() -> int:
@@ -436,7 +456,7 @@ def main() -> int:
     bounds = manifest.get("bounds")
     if not isinstance(bounds, list) or len(bounds) != 4:
         raise SystemExit("Aleph manifest bounds are missing")
-    bbox = tuple(float(v) for v in bounds)
+    bbox = tuple(float(value) for value in bounds)
     south, west, north, east = bbox
     if not (-90 <= south < north <= 90 and -180 <= west < east <= 180):
         raise SystemExit("Aleph manifest bounds are invalid")
@@ -456,8 +476,8 @@ def main() -> int:
     }
 
     terrain: TerrainSampler | None = None
-    terrain_path = capture / "terrain.tif"
     try:
+        terrain_path = capture / "terrain.tif"
         if not args.no_terrain and terrain_path.is_file():
             terrain = TerrainSampler(terrain_path, bbox, args.terrain_samples)
             terrain_obj = staging / "terrain.obj"
@@ -471,7 +491,11 @@ def main() -> int:
         osm_path = capture / "map.osm"
         if (not args.no_buildings or not args.no_roads) and osm_path.is_file():
             nodes, ways, relations = _load_osm(osm_path)
-            report["osm"] = {"nodes": len(nodes), "ways": len(ways), "building_relations": len(relations)}
+            report["osm"] = {
+                "nodes": len(nodes),
+                "ways": len(ways),
+                "building_relations": len(relations),
+            }
             if not args.no_buildings:
                 building_obj = staging / "buildings.obj"
                 report["assets"]["buildings"] = {
@@ -484,12 +508,15 @@ def main() -> int:
                     "path": str(roads_json),
                     **_write_roads(roads_json, nodes, ways, origin, terrain),
                 }
-        elif (not args.no_buildings or not args.no_roads):
+        elif not args.no_buildings or not args.no_roads:
             report["warnings"].append("map.osm is not available")
 
         satellite = capture / "satellite.png"
         if satellite.is_file():
-            report["assets"]["satellite"] = {"path": str(satellite), "bytes": satellite.stat().st_size}
+            report["assets"]["satellite"] = {
+                "path": str(satellite),
+                "bytes": satellite.stat().st_size,
+            }
     finally:
         if terrain is not None:
             terrain.close()
