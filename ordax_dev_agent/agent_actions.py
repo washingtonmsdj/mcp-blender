@@ -245,6 +245,7 @@ class AgentActions:
                 "-q",
                 "mcp_blender_unity",
                 "ordax_dev_agent",
+                "ordax_device_agent",
             ],
             cwd=repo,
             timeout=min(int(payload.get("compile_timeout_seconds", 120)), 300),
