@@ -20,6 +20,11 @@ from .git_actions import GitActions
 from .project_text_actions import ProjectTextActions
 from .workspace_actions import WorkspaceActions
 from .component_actions import ComponentActions
+from .game_asset_catalog_actions import GameAssetCatalogActions
+from .game_asset_actions import GameAssetActions
+from .mixamo_actions import MixamoActions
+from .rodin_actions import RodinActions
+from .comfyui_actions import ComfyUIActions
 from .execution_lock import ExecutionLock
 
 
@@ -37,6 +42,11 @@ class ActionRegistry(
     ProjectTextActions,
     WorkspaceActions,
     ComponentActions,
+    GameAssetCatalogActions,
+    GameAssetActions,
+    MixamoActions,
+    RodinActions,
+    ComfyUIActions,
 ):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
@@ -111,6 +121,22 @@ class ActionRegistry(
             "blender.reference_review": self.blender_reference_review,
             "blender.reference_generation_pass": self.blender_reference_generation_pass,
             "blender.reference_decision": self.blender_reference_decision,
+            "game_assets.providers": self.game_assets_providers,
+            "game_assets.ecosystem_catalog": self.game_assets_ecosystem_catalog,
+            "game_assets.export_profiles": self.game_assets_export_profiles,
+            "game_assets.mixamo_handoff": self.game_assets_mixamo_handoff,
+            "game_assets.provider_submit": self.game_assets_provider_submit,
+            "game_assets.provider_status": self.game_assets_provider_status,
+            "game_assets.blender_character_preflight": self.game_assets_blender_character_preflight,
+            "game_assets.blender_export": self.game_assets_blender_export,
+            "game_assets.blender_import_fbx": self.game_assets_blender_import_fbx,
+            "game_assets.rodin_submit_text": self.game_assets_rodin_submit_text,
+            "game_assets.rodin_status": self.game_assets_rodin_status,
+            "game_assets.rodin_download_manifest": self.game_assets_rodin_download_manifest,
+            "game_assets.comfyui_status": self.game_assets_comfyui_status,
+            "game_assets.comfyui_node_info": self.game_assets_comfyui_node_info,
+            "game_assets.comfyui_run_workflow": self.game_assets_comfyui_run_workflow,
+            "game_assets.comfyui_history": self.game_assets_comfyui_history,
             "unity.install_companion": self.unity_install_companion,
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
@@ -159,7 +185,7 @@ class ActionRegistry(
         self._app_prefixes = {"unity", "blender"}
         available = {entry.name: entry for entry in entry_points(group="ordax_dev_agent.adapters")}
         for name in config.adapters:
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender"}:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets"}:
                 raise ValueError(f"invalid or reserved adapter name: {name}")
             if name not in available:
                 raise ValueError(f"configured adapter is not installed: {name}")
