@@ -45,6 +45,11 @@ class AgentActions:
             "agent ready",
             {
                 **self.config.public_status(),
+                "product": {
+                    "name": "OrdaX Device Agent",
+                    "role": "typed-local-capability-runtime",
+                    "legacy_runtime_name": "OrdaX Dev Agent",
+                },
                 "actions": self.names,
                 "projects": [project.public() for project in self.projects.values()],
                 "default_project": self.config.default_project,
