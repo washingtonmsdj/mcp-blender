@@ -23,6 +23,7 @@ from .component_actions import ComponentActions
 from .game_asset_actions import GameAssetActions
 from .mixamo_actions import MixamoActions
 from .rodin_actions import RodinActions
+from .comfyui_actions import ComfyUIActions
 from .execution_lock import ExecutionLock
 
 
@@ -43,6 +44,7 @@ class ActionRegistry(
     GameAssetActions,
     MixamoActions,
     RodinActions,
+    ComfyUIActions,
 ):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
@@ -128,6 +130,10 @@ class ActionRegistry(
             "game_assets.rodin_submit_text": self.game_assets_rodin_submit_text,
             "game_assets.rodin_status": self.game_assets_rodin_status,
             "game_assets.rodin_download_manifest": self.game_assets_rodin_download_manifest,
+            "game_assets.comfyui_status": self.game_assets_comfyui_status,
+            "game_assets.comfyui_node_info": self.game_assets_comfyui_node_info,
+            "game_assets.comfyui_run_workflow": self.game_assets_comfyui_run_workflow,
+            "game_assets.comfyui_history": self.game_assets_comfyui_history,
             "unity.install_companion": self.unity_install_companion,
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
