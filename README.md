@@ -1,8 +1,10 @@
-# MCP Blender + Unity CLI
+# OrdaX Device Agent
+
+> Nome histórico do repositório: `mcp-blender`. O produto evolui agora para **OrdaX Device Agent**. Os comandos e pacotes antigos permanecem como aliases de compatibilidade durante a migração.
 
 ## OrdaX multi-projeto (0.3.0)
 
-O agente aceita projetos locais cadastrados, companion Unity genérico, auditoria
+O Device Agent aceita projetos locais cadastrados, companion Unity genérico, auditoria
 espacial de cenas, inspeção/preview Blender e sequências de capturas com snapshots
 e imagens entregues ao modelo por MCP. A fila Supabase existente continua atendendo clientes remotos.
 
@@ -15,11 +17,22 @@ estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 Veja [configuração e limites](docs/MULTI_PROJECT_AGENT.md) e
 [exemplo de projetos](config/projects.example.json).
 
-Ponte local para controlar **Blender CLI** e **Unity CLI** por MCP e para executar validações pelo GitHub em um self-hosted runner.
+Agente local tipado do OrdaX para projetos e ferramentas. **Blender**, **Unity** e **Git** são capabilities/adapters do mesmo agente; novos adapters poderão ser adicionados sem criar outro sistema. O agente também mantém o caminho MCP local e validações pelo GitHub em self-hosted runner.
 
 Implementações históricas removidas da linha ativa são preservadas sob
 `archive/*` quando ainda têm valor de diagnóstico/projeto. O índice e a política
 de reutilização seletiva estão em [docs/ARCHIVES.md](docs/ARCHIVES.md).
+
+Veja [o plano de evolução do OrdaX Device Agent](docs/ORDAX_DEVICE_AGENT_EVOLUTION.md) para GitHub, Product MCP, app Projetos, controle Web e atualização contínua.
+
+Novos aliases compatíveis:
+
+```powershell
+ordax-device-agent
+ordax-device-mcp
+```
+
+Os aliases antigos continuam válidos enquanto bootstrap, recovery e estações são migrados com prova de compatibilidade.
 
 ## Arquitetura
 
