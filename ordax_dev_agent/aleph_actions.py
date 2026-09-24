@@ -1,15 +1,16 @@
 """Managed Belluxx/Aleph geospatial capture integration.
 
-Aleph is intentionally installed as an isolated external component instead of
-being vendored into the Device Agent.  The upstream project uses undocumented
-remote APIs, so keeping it replaceable and pinning a known-good revision is a
-reliability boundary rather than an implementation detail.
+Aleph is installed as an isolated external component rather than vendored into
+OrdaX.  The upstream project explicitly relies on undocumented remote APIs, so
+pinning a known-good revision and keeping a strict typed wrapper gives the
+Device Agent a replaceable failure boundary.
 """
 from __future__ import annotations
 
 import json
 import math
 import os
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -22,7 +23,7 @@ from .process_runner import run_command as _run
 
 ALEPH_REPOSITORY = "https://github.com/Belluxx/Aleph.git"
 ALEPH_UPSTREAM = "Belluxx/Aleph"
-# Audited on 2026-09-24.  Updates are explicit through geo.aleph_update.
+# Audited on 2026-09-24. Updates are explicit through geo.aleph_update.
 ALEPH_PINNED_REF = "502667d0b46e67555c7956d4ff281be5e8511a30"
 ALEPH_PACKAGE_VERSION = "0.1.0"
 ALEPH_COMPONENT_SCHEMA = "ordax.external-component/1"
@@ -32,6 +33,7 @@ MAX_CAPTURE_AREA_KM2 = 100.0
 _ALLOWED_SOURCES = frozenset({"streetview", "satellite", "osm"})
 _ALLOWED_STREET_VIEWS = frozenset({"forward", "backward", "left", "right", "both"})
 _ALLOWED_IMAGE_FORMATS = frozenset({"jpg", "png"})
+_TILE_RE = re.compile(r"^(\d{1,2})/(\d{1,10})/(\d{1,10})$")
 
 
 def _finite_number(value: Any, field: str) -> float:
@@ -57,7 +59,13 @@ def _longitude(value: Any, field: str = "longitude") -> float:
     return result
 
 
-def _bounded_int(value: Any, field: str, minimum: int, maximum: int, default: int | None = None) -> int | None:
+def _bounded_int(
+    value: Any,
+    field: str,
+    minimum: int,
+    maximum: int,
+    default: int | None = None,
+) -> int | None:
     if value is None:
         return default
     if isinstance(value, bool) or not isinstance(value, int):
@@ -115,6 +123,20 @@ def _bbox_area_km2(box: tuple[float, float, float, float]) -> float:
     height_km = abs(north - south) * 111.32
     width_km = abs(east - west) * 111.32 * max(0.01, abs(math.cos(mean_lat)))
     return height_km * width_km
+
+
+def _tile(value: Any) -> str:
+    text = _nonempty_text(value, "tile", 64)
+    match = _TILE_RE.fullmatch(text)
+    if not match:
+        raise ValueError("tile must use Z/X/Y, for example 19/280337/194891")
+    zoom, x, y = (int(part) for part in match.groups())
+    if zoom < 1 or zoom > 21:
+        raise ValueError("tile zoom must be between 1 and 21")
+    maximum = (1 << zoom) - 1
+    if x > maximum or y > maximum:
+        raise ValueError("tile X/Y are outside the selected zoom")
+    return text
 
 
 def _component_paths(state_dir: Path) -> dict[str, Path]:
@@ -194,10 +216,35 @@ class AlephActions:
             if not clone.ok:
                 return ActionResult(False, "Aleph repository clone failed", {"process": clone.data})
 
-        target = "origin/main" if update else ALEPH_PINNED_REF
-        fetch_args = [git, "-C", str(paths["repo"]), "fetch", "--prune", "origin"]
-        if not update:
-            fetch_args.extend([ALEPH_PINNED_REF, "--depth=1"])
+        remote = _run(
+            [git, "-C", str(paths["repo"]), "remote", "get-url", "origin"],
+            timeout=30,
+        )
+        if not remote.ok:
+            return ActionResult(False, "Aleph origin inspection failed", {"process": remote.data})
+        remote_url = str(remote.data.get("stdout") or "").strip().rstrip("/")
+        if remote_url not in {
+            ALEPH_REPOSITORY.rstrip("/"),
+            "https://github.com/Belluxx/Aleph",
+            "git@github.com:Belluxx/Aleph.git",
+        }:
+            return ActionResult(False, "Aleph origin does not match Belluxx/Aleph")
+
+        if update:
+            fetch_args = [git, "-C", str(paths["repo"]), "fetch", "--prune", "origin"]
+            target = "origin/main"
+        else:
+            fetch_args = [
+                git,
+                "-C",
+                str(paths["repo"]),
+                "fetch",
+                "--prune",
+                "--depth=1",
+                "origin",
+                ALEPH_PINNED_REF,
+            ]
+            target = ALEPH_PINNED_REF
         fetch = _run(fetch_args, timeout=600)
         if not fetch.ok:
             return ActionResult(False, "Aleph upstream fetch failed", {"process": fetch.data})
@@ -213,7 +260,7 @@ class AlephActions:
         if not rev.ok:
             return ActionResult(False, "Aleph revision inspection failed", {"process": rev.data})
         commit = str(rev.data.get("stdout") or "").strip()
-        if len(commit) != 40:
+        if not re.fullmatch(r"[0-9a-f]{40}", commit):
             return ActionResult(False, "Aleph returned an invalid Git revision")
 
         if not paths["python"].is_file():
@@ -253,6 +300,7 @@ class AlephActions:
             "id": "external-alephgeo",
             "upstream": ALEPH_UPSTREAM,
             "repository": ALEPH_REPOSITORY,
+            "license": "MIT",
             "package_version": ALEPH_PACKAGE_VERSION,
             "requested_ref": "origin/main" if update else ALEPH_PINNED_REF,
             "resolved_commit": commit,
@@ -367,7 +415,7 @@ class AlephActions:
 
     def geo_aleph_satellite(self, payload: dict[str, Any]) -> ActionResult:
         supported = {
-            "project", "place", "at", "bbox", "size", "zoom", "best_match", "match",
+            "project", "place", "at", "bbox", "tile", "size", "zoom", "best_match", "match",
             "format", "output_dir", "refresh",
         }
         unsupported = set(payload) - supported
@@ -375,24 +423,31 @@ class AlephActions:
             return ActionResult(False, f"unsupported fields: {', '.join(sorted(unsupported))}")
         project = self._project(payload)
         args = ["satellite"]
-        selectors = [payload.get("place") is not None, payload.get("at") is not None, payload.get("bbox") is not None]
-        if sum(selectors) != 1:
-            return ActionResult(False, "provide exactly one of place, at, or bbox")
+        selectors = {
+            "place": payload.get("place"),
+            "at": payload.get("at"),
+            "bbox": payload.get("bbox"),
+            "tile": payload.get("tile"),
+        }
+        if sum(value is not None for value in selectors.values()) != 1:
+            return ActionResult(False, "provide exactly one of place, at, bbox, or tile")
         try:
-            if payload.get("place") is not None:
-                args.extend(["--place", _nonempty_text(payload.get("place"), "place")])
+            if selectors["place"] is not None:
+                args.extend(["--place", _nonempty_text(selectors["place"], "place")])
                 if payload.get("best_match") is True:
                     args.append("--best-match")
                 if payload.get("match") is not None:
                     args.extend(["--match", _nonempty_text(payload.get("match"), "match", 100)])
-            elif payload.get("at") is not None:
-                at = payload.get("at")
+            elif selectors["at"] is not None:
+                at = selectors["at"]
                 if not isinstance(at, (list, tuple)) or len(at) != 2:
                     raise ValueError("at must be [latitude, longitude]")
                 args.extend(["--at", str(_latitude(at[0])), str(_longitude(at[1]))])
-            else:
-                box = _bbox(payload.get("bbox"))
+            elif selectors["bbox"] is not None:
+                box = _bbox(selectors["bbox"])
                 args.extend(["--bbox", *[str(value) for value in box]])
+            else:
+                args.extend(["--tile", _tile(selectors["tile"])])
             size = _bounded_float(payload.get("size"), "size", 10, 20000)
             if size is not None:
                 args.extend(["--size", str(size)])
@@ -417,42 +472,57 @@ class AlephActions:
 
     def geo_aleph_streetview(self, payload: dict[str, Any]) -> ActionResult:
         supported = {
-            "project", "place", "at", "street", "best_match", "match", "radius", "heading",
-            "look_at", "route", "reverse", "stops", "step", "view", "pitch", "fov", "format",
-            "output_dir", "refresh",
+            "project", "place", "at", "street", "pano_id", "best_match", "match", "radius",
+            "heading", "look_at", "route", "reverse", "stops", "step", "view", "pitch", "fov",
+            "format", "output_dir", "refresh",
         }
         unsupported = set(payload) - supported
         if unsupported:
             return ActionResult(False, f"unsupported fields: {', '.join(sorted(unsupported))}")
         project = self._project(payload)
         args = ["streetview"]
-        selectors = [payload.get("place") is not None, payload.get("at") is not None]
-        if sum(selectors) != 1:
-            return ActionResult(False, "provide exactly one of place or at")
+        selectors = {
+            "place": payload.get("place"),
+            "at": payload.get("at"),
+            "street": payload.get("street"),
+            "pano_id": payload.get("pano_id"),
+        }
+        if sum(value is not None for value in selectors.values()) != 1:
+            return ActionResult(False, "provide exactly one of place, at, street, or pano_id")
         try:
-            if payload.get("place") is not None:
-                args.extend(["--place", _nonempty_text(payload.get("place"), "place")])
+            if selectors["place"] is not None:
+                args.extend(["--place", _nonempty_text(selectors["place"], "place")])
+            elif selectors["at"] is not None:
+                at = selectors["at"]
+                if not isinstance(at, (list, tuple)) or len(at) != 2:
+                    raise ValueError("at must be [latitude, longitude]")
+                args.extend(["--at", str(_latitude(at[0])), str(_longitude(at[1]))])
+            elif selectors["street"] is not None:
+                args.extend(["--street", _nonempty_text(selectors["street"], "street")])
+            else:
+                args.extend(["--pano-id", _nonempty_text(selectors["pano_id"], "pano_id", 256)])
+
+            if selectors["place"] is not None or selectors["street"] is not None:
                 if payload.get("best_match") is True:
                     args.append("--best-match")
                 if payload.get("match") is not None:
                     args.extend(["--match", _nonempty_text(payload.get("match"), "match", 100)])
-            else:
-                at = payload.get("at")
-                if not isinstance(at, (list, tuple)) or len(at) != 2:
-                    raise ValueError("at must be [latitude, longitude]")
-                args.extend(["--at", str(_latitude(at[0])), str(_longitude(at[1]))])
-            if payload.get("street") is not None:
-                args.extend(["--street", _nonempty_text(payload.get("street"), "street")])
+            elif payload.get("best_match") is True or payload.get("match") is not None:
+                raise ValueError("best_match/match are valid only for place or street selectors")
+
             radius = _bounded_float(payload.get("radius"), "radius", 1, 5000)
             if radius is not None:
                 args.extend(["--radius", str(radius)])
-            if payload.get("heading") is not None:
-                args.extend(["--heading", str(_finite_number(payload.get("heading"), "heading"))])
-            if payload.get("look_at") is not None:
-                look = payload.get("look_at")
-                if not isinstance(look, (list, tuple)) or len(look) != 2:
+            heading = payload.get("heading")
+            look_at = payload.get("look_at")
+            if heading is not None and look_at is not None:
+                raise ValueError("heading and look_at are mutually exclusive")
+            if heading is not None:
+                args.extend(["--heading", str(_finite_number(heading, "heading"))])
+            if look_at is not None:
+                if not isinstance(look_at, (list, tuple)) or len(look_at) != 2:
                     raise ValueError("look_at must be [latitude, longitude]")
-                args.extend(["--look-at", str(_latitude(look[0])), str(_longitude(look[1]))])
+                args.extend(["--look-at", str(_latitude(look_at[0])), str(_longitude(look_at[1]))])
             route = _bounded_int(payload.get("route"), "route", 1, 10000)
             if route is not None:
                 args.extend(["--route", str(route)])
