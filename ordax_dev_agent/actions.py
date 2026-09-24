@@ -26,6 +26,7 @@ from .mixamo_actions import MixamoActions
 from .rodin_actions import RodinActions
 from .comfyui_actions import ComfyUIActions
 from .aleph_actions import AlephActions
+from .aleph_scene_actions import AlephSceneActions
 from .execution_lock import ExecutionLock
 
 
@@ -49,6 +50,7 @@ class ActionRegistry(
     RodinActions,
     ComfyUIActions,
     AlephActions,
+    AlephSceneActions,
 ):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
@@ -148,6 +150,8 @@ class ActionRegistry(
             "geo.aleph_capture": self.geo_aleph_capture,
             "geo.aleph_capture_resume": self.geo_aleph_capture_resume,
             "geo.aleph_capture_export": self.geo_aleph_capture_export,
+            "geo.aleph_capture_inspect": self.geo_aleph_capture_inspect,
+            "geo.aleph_blender_stage": self.geo_aleph_blender_stage,
             "unity.install_companion": self.unity_install_companion,
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
