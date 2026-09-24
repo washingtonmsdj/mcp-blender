@@ -22,6 +22,7 @@ from .workspace_actions import WorkspaceActions
 from .component_actions import ComponentActions
 from .game_asset_actions import GameAssetActions
 from .mixamo_actions import MixamoActions
+from .rodin_actions import RodinActions
 from .execution_lock import ExecutionLock
 
 
@@ -41,6 +42,7 @@ class ActionRegistry(
     ComponentActions,
     GameAssetActions,
     MixamoActions,
+    RodinActions,
 ):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
@@ -123,6 +125,9 @@ class ActionRegistry(
             "game_assets.blender_character_preflight": self.game_assets_blender_character_preflight,
             "game_assets.blender_export": self.game_assets_blender_export,
             "game_assets.blender_import_fbx": self.game_assets_blender_import_fbx,
+            "game_assets.rodin_submit_text": self.game_assets_rodin_submit_text,
+            "game_assets.rodin_status": self.game_assets_rodin_status,
+            "game_assets.rodin_download_manifest": self.game_assets_rodin_download_manifest,
             "unity.install_companion": self.unity_install_companion,
             "unity.project_profile": self.unity_project_profile,
             "unity.capabilities": self.unity_capabilities,
