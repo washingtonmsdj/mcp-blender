@@ -178,7 +178,7 @@ function Invoke-SafeUpdate {
             }
         }
 
-        & $python -m compileall -q (Join-Path $repoRootResolved "mcp_blender_unity") (Join-Path $repoRootResolved "ordax_dev_agent")
+        & $python -m compileall -q (Join-Path $repoRootResolved "mcp_blender_unity") (Join-Path $repoRootResolved "ordax_dev_agent") (Join-Path $repoRootResolved "ordax_device_agent")
         if ($LASTEXITCODE -ne 0) {
             throw "compile gate failed"
         }

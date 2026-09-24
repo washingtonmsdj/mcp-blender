@@ -9,7 +9,7 @@ espacial de cenas, inspeção/preview Blender e sequências de capturas com snap
 e imagens entregues ao modelo por MCP. A fila Supabase existente continua atendendo clientes remotos.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.19.22`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.20.0`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -23,7 +23,7 @@ Implementações históricas removidas da linha ativa são preservadas sob
 `archive/*` quando ainda têm valor de diagnóstico/projeto. O índice e a política
 de reutilização seletiva estão em [docs/ARCHIVES.md](docs/ARCHIVES.md).
 
-Veja [o plano de evolução do OrdaX Device Agent](docs/ORDAX_DEVICE_AGENT_EVOLUTION.md) para GitHub, Product MCP, app Projetos, controle Web e atualização contínua.
+Veja [o plano de evolução do OrdaX Device Agent](docs/ORDAX_DEVICE_AGENT_EVOLUTION.md) para GitHub, Product MCP, app Projetos, controle Web e atualização contínua. A política de [atualização por componentes](docs/COMPONENT-UPDATES.md) separa core, MCP e adapters para evitar reinstalação/reboot do sistema por mudanças comuns.
 
 Novos aliases compatíveis:
 

@@ -12,6 +12,7 @@ from .process_runner import run_command as _run
 from .update_policy import install_contract_changed, managed_repo_clean_check
 from .versioning import component_versions
 from .capability_contracts import capability_contracts
+from .component_updates import component_catalog, plan_component_update
 
 
 class AgentActions:
@@ -56,6 +57,7 @@ class AgentActions:
                 "busy": self._execution_lock.locked(),
                 "versions": component_versions(),
                 "capability_contracts": capability_contracts(),
+                "components": component_catalog(),
                 "live_apps": live_apps,
             },
         )
@@ -243,6 +245,7 @@ class AgentActions:
                 "-q",
                 "mcp_blender_unity",
                 "ordax_dev_agent",
+                "ordax_device_agent",
             ],
             cwd=repo,
             timeout=min(int(payload.get("compile_timeout_seconds", 120)), 300),
@@ -480,6 +483,28 @@ class AgentActions:
                     {"error": str(error)},
                 )
 
+        changed_paths: list[str] = []
+        if before_head and after_head and before_head != after_head:
+            changed = _run(
+                [*git, "diff", "--name-only", before_head, after_head, "--"],
+                timeout=30,
+            )
+            if not changed.ok:
+                return ActionResult(
+                    False,
+                    "agent update could not classify changed components",
+                    changed.data,
+                )
+            changed_paths = [
+                line.strip()
+                for line in changed.data.get("stdout", "").splitlines()
+                if line.strip()
+            ]
+        update_plan = plan_component_update(
+            changed_paths,
+            install_contract_changed=dependency_refresh,
+        )
+
         if dependency_refresh:
             install = _run(
                 [sys.executable, "-m", "pip", "install", "-e", str(repo)],
@@ -498,6 +523,7 @@ class AgentActions:
                 "dependencies_refreshed": dependency_refresh,
                 "install_contract_changed": dependency_refresh,
                 "tracked_check": "index-object-hash+index-tree-hash",
+                "component_update_plan": update_plan,
             },
         )
 

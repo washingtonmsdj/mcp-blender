@@ -10,12 +10,12 @@ meanings, so each one owns a separate version.
 | Component | Version | Meaning |
 | --- | --- | --- |
 | `mcp-blender-unity` distribution / bridge | `0.3.0` | Python package and local Blender/Unity bridge release line |
-| OrdaX Dev Agent | `1.19.22` | Remote/local typed action implementation and orchestration |
+| OrdaX Device Agent | `1.20.0` | Typed local capability runtime, orchestration and update planning |
 | Blender Live protocol | `9` | IPC compatibility contract between host bridge and visible Blender companion |
 | Blender companion bundle format | `1` | Manifest/fingerprint format for the multi-file Blender runtime bundle |
 | Reference Contract | `1` | Project-local visual-reference manifest schema |
 
-These numbers are intentionally independent. A Dev Agent patch does not imply a
+These numbers are intentionally independent. A Device Agent patch does not imply a
 Blender protocol change. A Reference Contract schema bump does not imply a bridge
 package release unless packaging/runtime code also changes.
 
@@ -23,7 +23,7 @@ package release unless packaging/runtime code also changes.
 
 - Bump the **bridge package** when the installable `mcp-blender-unity`
   distribution changes in a release-significant way.
-- Bump the **Dev Agent** for agent actions, orchestration, validation, control
+- Bump the **Device Agent** for agent actions, orchestration, validation, control
   plane behavior or packaged runtime behavior.
 - Bump the **Blender Live protocol** only for an IPC compatibility change that
   requires host/companion agreement.
@@ -41,6 +41,13 @@ This is the canonical runtime inventory for diagnostics and update decisions.
 The installable distribution version in `pyproject.toml` must match
 `mcp_blender_unity.__version__`. CI tests enforce that invariant.
 
-Do not copy the Dev Agent version into every app/module just to make the numbers
+Do not copy the Device Agent version into every app/module just to make the numbers
 look synchronized. Components should advance only when their own contract or
 implementation changes.
+
+The Device Agent now also publishes `ordax.device-agent-components/1`. Adapter
+identities (Blender, Unity, Git, MCP interface and CLI bridge) have independent
+versions/failure domains. In Owner/Development they are still delivered by Git
+main for speed; this does not mean the whole OS is reinstalled. Production
+independent activation remains gated on signed component slots with health,
+promotion and rollback. See [COMPONENT-UPDATES.md](COMPONENT-UPDATES.md).

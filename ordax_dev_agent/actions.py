@@ -19,6 +19,7 @@ from .artifact_actions import ArtifactActions
 from .git_actions import GitActions
 from .project_text_actions import ProjectTextActions
 from .workspace_actions import WorkspaceActions
+from .component_actions import ComponentActions
 from .execution_lock import ExecutionLock
 
 
@@ -35,6 +36,7 @@ class ActionRegistry(
     GitActions,
     ProjectTextActions,
     WorkspaceActions,
+    ComponentActions,
 ):
     """Strict allow-list. No arbitrary remote shell command is accepted."""
 
@@ -125,6 +127,8 @@ class ActionRegistry(
             "unity.spatial_audit": self.unity_spatial_audit,
             "unity.benchmark_islands_generate": self.unity_benchmark_islands_generate,
             "agent.status": self.agent_status,
+            "agent.component_catalog": self.agent_component_catalog,
+            "agent.component_update_plan": self.agent_component_update_plan,
             "agent.resilience_status": self.agent_resilience_status,
             "agent.resilience_repair": self.agent_resilience_repair,
             "agent.update": self.agent_update,
@@ -177,7 +181,7 @@ class ActionRegistry(
         if handler is None:
             return ActionResult(False, f"action not allowed: {action}")
         payload = payload or {}
-        if action in ("agent.status", "projects.list"):
+        if action in ("agent.status", "agent.component_catalog", "agent.component_update_plan", "projects.list"):
             return handler(payload)
         # A busy application must not receive a second editor/render operation.
         if not self._execution_lock.acquire(blocking=False):

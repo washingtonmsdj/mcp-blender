@@ -1,0 +1,58 @@
+import unittest
+
+from ordax_dev_agent.component_updates import component_catalog, plan_component_update
+
+
+class ComponentUpdateTests(unittest.TestCase):
+    def test_catalog_keeps_components_independently_versioned(self):
+        catalog = component_catalog()
+        self.assertEqual(catalog["schema"], "ordax.device-agent-components/1")
+        versions = {
+            item["id"]: item["version"]
+            for item in catalog["components"]
+        }
+        self.assertIn("device-agent-core", versions)
+        self.assertIn("adapter-blender", versions)
+        self.assertNotEqual(versions["device-agent-core"], versions["adapter-blender"])
+        self.assertFalse(
+            catalog["delivery_policy"]["whole_os_reinstall_required_for_component_update"]
+        )
+
+    def test_blender_change_does_not_require_whole_os_reinstall_or_reboot(self):
+        plan = plan_component_update([
+            "ordax_dev_agent/blender_actions.py",
+            "ordax_dev_agent/assets/blender_quality_rules.py",
+        ])
+        self.assertEqual(plan["affected_components"], ["adapter-blender"])
+        self.assertTrue(plan["device_agent_restart_required"])
+        self.assertFalse(plan["whole_os_reinstall_required"])
+        self.assertFalse(plan["whole_os_reboot_required"])
+        self.assertFalse(plan["install_refresh_required"])
+
+    def test_git_change_stays_in_git_adapter_failure_domain(self):
+        plan = plan_component_update(["ordax_dev_agent/git_actions.py"])
+        self.assertEqual(plan["affected_components"], ["adapter-git"])
+
+    def test_packaging_change_refreshes_install_contract_without_os_reinstall(self):
+        plan = plan_component_update(["pyproject.toml"])
+        self.assertTrue(plan["install_refresh_required"])
+        self.assertIn("device-agent-core", plan["affected_components"])
+        self.assertIn("adapter-unity", plan["affected_components"])
+        self.assertFalse(plan["whole_os_reinstall_required"])
+
+    def test_docs_only_change_needs_no_runtime_restart(self):
+        plan = plan_component_update(["docs/ORDAX_DEVICE_AGENT_EVOLUTION.md"])
+        self.assertEqual(plan["affected_components"], [])
+        self.assertFalse(plan["device_agent_restart_required"])
+        self.assertEqual(
+            plan["unknown_paths"],
+            ["docs/ORDAX_DEVICE_AGENT_EVOLUTION.md"],
+        )
+
+    def test_rejects_repository_escape(self):
+        with self.assertRaises(ValueError):
+            plan_component_update(["../secret"])
+
+
+if __name__ == "__main__":
+    unittest.main()
