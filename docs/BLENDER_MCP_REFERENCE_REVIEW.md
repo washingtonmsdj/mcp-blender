@@ -60,6 +60,34 @@ loose-vertex, degenerate-face and zero-length-edge counts; it can also require
 a minimum quad ratio plus UV and material presence. Every check returns measured
 evidence from the live Blender session and refuses client-supplied completion
 claims such as `passed`, `ok`, or `result`.
+
+`mesh_quality` also returns bounded `diagnostics` for boundary/wire/non-manifold
+edges, loose/non-finite vertices, n-gons, degenerate faces and zero-length
+edges. Each example includes indices from the audited mesh snapshot and
+object-local coordinates to help identify where a defect is. Non-finite
+coordinates are encoded as JSON `null`; `max_non_finite_vertices` can make them
+an explicit failed rule. The default `diagnostic_limit` is 8 examples per
+category, can be set from 0 to 16, and `0` disables examples while keeping the
+aggregate metrics. When `evaluated=true`, indices belong to the evaluated mesh
+after modifiers; set `evaluated=false` to get indices from the source mesh.
+
+Example request to inspect the source mesh and sample up to four issues per
+category:
+
+```json
+{
+  "checks": [
+    {
+      "type": "mesh_quality",
+      "object_name": "Hull",
+      "evaluated": false,
+      "diagnostic_limit": 4,
+      "max_non_manifold_edges": 0
+    }
+  ]
+}
+```
+
 ### UV quality acceptance
 
 - `blender.live_quality_gate` with `type=uv_quality`

@@ -74,12 +74,14 @@ Sources: [Hardflow workflow discussion](https://www.reddit.com/r/blender/comment
 ### 4. Retopology guidance rather than automated retopology
 
 One user described manually extruding edges across a surface and asked for a
-faster way to turn drawn guides into topology. That is a real friction point,
-but automated retopology and interactive stroke tools depend on artistic
-judgment and viewport interaction. For this MCP, a safer first contribution is
-read-only guidance: target mesh density, non-manifold/boundary counts, normal
-consistency, quad distribution and reference coverage. Only later consider a
-typed retopo operation with explicit target density and a preview/rollback gate.
+faster way to turn drawn guides into topology. Automated retopology and
+interactive stroke tools depend on artistic judgment and viewport interaction.
+The existing mesh-quality gate already measures topology counts; it now also
+returns bounded edge/face/vertex examples with indices and local coordinates,
+including n-gons and non-finite coordinates, so the artist or agent can locate
+defects without another scene mutation. A future increment can add
+connected-region grouping and repair hints. Only later consider a typed retopo
+operation with explicit target density and a preview/rollback gate.
 
 Source: [surface-conforming modeling question](https://www.reddit.com/r/blenderhelp/comments/1iqqfnw/what_are_some_more_efficient_workflow_for_modeling_along_a_surface/).
 
@@ -93,8 +95,8 @@ Source: [surface-conforming modeling question](https://www.reddit.com/r/blenderh
    count and memory budgets.
 3. Expand box cutouts into a constrained library of slot, circle, polygon and
    vent cutters; retain live boolean previews and one-operation rollback.
-4. Add mesh diagnostics for retopology and shading issues before attempting
-   automated topology changes.
+4. Add connected-region analysis and repair hints to the read-only mesh
+   diagnostics before attempting automated topology changes.
 
 Each mutation should stay small in the MCP surface: one composable typed action,
 strict schemas, clear failure evidence, and visual/geometry inspection after
