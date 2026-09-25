@@ -83,7 +83,7 @@ Import-Module ScheduledTasks -ErrorAction Stop
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 
 $powershellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
-$bootstrapArguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$bootstrapPath`" -RepoRoot `"$repoRoot`""
+$bootstrapArguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$bootstrapPath`" -RepoRoot `"$repoRoot`""
 $actionParams = @{
     Execute = $powershellPath
     Argument = $bootstrapArguments

@@ -7,6 +7,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$entryDir = [System.IO.Path]::Combine($env:LOCALAPPDATA, 'OrdaX', 'DevAgent', 'bootstrap')
+[void][System.IO.Directory]::CreateDirectory($entryDir)
+[System.IO.File]::AppendAllText([System.IO.Path]::Combine($entryDir, 'bootstrap.log'),
+    ([DateTime]::UtcNow.ToString('o') + " BOOTSTRAP_ENTER pid=$PID" + [Environment]::NewLine))
 
 if (-not (Test-Path (Join-Path $RepoRoot ".git"))) {
     throw "Managed OrdaX repository not found: $RepoRoot"
@@ -24,7 +28,7 @@ New-Item -ItemType Directory -Force -Path $bootstrapDir | Out-Null
 
 function Write-BootstrapLog([string]$Message) {
     $stamp = [DateTime]::UtcNow.ToString("o")
-    Add-Content -Path $logPath -Value "$stamp $Message" -Encoding UTF8
+    [System.IO.File]::AppendAllText($logPath, "$stamp $Message" + [Environment]::NewLine)
 }
 
 function Ensure-DevelopmentV2Settings {
@@ -288,14 +292,13 @@ function Invoke-SafeUpdate {
 $retrySeconds = [Math]::Max(1, $InitialRetrySeconds)
 $needsSafeUpdate = $false
 $env:ORDAX_SUPERVISOR_PID = [string]$PID
+$credentialRecovery = $false
 
 while ($true) {
-    $runtimeHealthy = $false
-    if (Test-Path $python) {
-        & $python -c "import httpx, mcp, supabase, ordax_dev_agent" 2>$null
-        $runtimeHealthy = $LASTEXITCODE -eq 0
-    }
-    if (-not $runtimeHealthy) {
+    # Never import optional MCP/Supabase SDKs before bringing local health up.
+    # The configured development-v2 Agent only needs its own runtime imports.
+    Write-BootstrapLog 'LAUNCH_PREFLIGHT'
+    if (-not [System.IO.File]::Exists($python)) {
         try {
             $basePython = Get-Command python -ErrorAction Stop
             & $basePython.Source -m venv (Join-Path $repoRootResolved '.venv')
@@ -303,7 +306,19 @@ while ($true) {
         } catch { Write-BootstrapLog 'VENV_REPAIR_RETRY' }
     }
     try {
-        [void](Ensure-DevelopmentV2Settings)
+        $settingsFile = [System.IO.Path]::Combine($stateDir, 'agent-settings.json')
+        $tokenFile = [System.IO.Path]::Combine($stateDir, 'device-token.txt')
+        $configured = $false
+        if ([System.IO.File]::Exists($settingsFile) -and [System.IO.File]::Exists($tokenFile)) {
+            $savedSettings = [System.IO.File]::ReadAllText($settingsFile) | ConvertFrom-Json
+            $configured = $savedSettings.control_plane_protocol -eq 'development-v2' -and $savedSettings.development_device_id
+        }
+        if ($credentialRecovery -or -not $configured) {
+            Write-BootstrapLog 'IDENTITY_RECOVERY_START'
+            [void](Ensure-DevelopmentV2Settings)
+        } else {
+            Write-BootstrapLog 'IDENTITY_LOCAL_READY'
+        }
     } catch {
         Write-BootstrapLog "V2_IDENTITY_ERROR $($_.Exception.GetType().Name)"
     }
@@ -323,6 +338,7 @@ while ($true) {
     Write-BootstrapLog "AGENT_START repo=$repoRootResolved"
     & $python -m ordax_dev_agent.main
     $code = $LASTEXITCODE
+    $credentialRecovery = $code -eq 43
     Write-BootstrapLog "AGENT_EXIT code=$code"
 
     # Exit code 42 is emitted only after agent.update has already completed
