@@ -13,6 +13,8 @@ from typing import Any
 MAX_MODIFIER_STACK = 8
 MAX_EVALUATED_FACES = 200000
 MAX_PROJECTED_SUBSURF_FACES = 500000
+MAX_ARRAY_COUNT = 64
+MAX_PROJECTED_ARRAY_FACES = 500000
 
 
 MODELING_SCHEMAS = {
@@ -82,20 +84,50 @@ MODELING_SCHEMAS = {
             "max_evaluated_faces": MAX_EVALUATED_FACES,
             "max_projected_subsurf_faces": MAX_PROJECTED_SUBSURF_FACES,
         },
+        "pending_types": {
+            "ARRAY": {
+                "status": "pending_blender_smoke",
+                "runtime_requirements": [
+                    "object_mode",
+                    "no_render_job",
+                    "local_nonlinked_mesh_target",
+                    "unique_modifier_name",
+                    "animated_or_constrained_target_requires_dedicated_workflow",
+                    "fixed_count_linear_array_only",
+                ],
+                "runtime_guards": {
+                    "max_array_count": MAX_ARRAY_COUNT,
+                    "max_evaluated_faces": MAX_EVALUATED_FACES,
+                    "max_projected_array_faces": MAX_PROJECTED_ARRAY_FACES,
+                },
+                "failure_policy": [
+                    "remove_new_modifier_on_failure",
+                    "preserve_existing_modifier_stack",
+                ],
+                "description": (
+                    "Non-destructive fixed-count linear array. This variant stays "
+                    "non-executable until BlenderBench verifies the live modifier."
+                ),
+            }
+        },
         "description": (
             "Typed modifier insertion validated by BlenderBench on Blender 5.2.2. "
-            "Supports BEVEL, SUBSURF, SOLIDIFY and MIRROR under runtime budgets."
+            "Supports BEVEL, SUBSURF, SOLIDIFY and MIRROR under runtime budgets. "
+            "ARRAY has a typed plan but is pending live Blender validation."
         ),
         "required": ["name", "type"],
         "selectors": ["object_name", "ordax_object_id"],
         "properties": {
             "name": {"type": "string", "max_utf8_bytes": 63},
-            "type": {"enum": ["BEVEL", "SUBSURF", "SOLIDIFY", "MIRROR"]},
+            "type": {"enum": ["BEVEL", "SUBSURF", "SOLIDIFY", "MIRROR", "ARRAY"]},
             "width": {"type": "number", "minimum": 0, "maximum": 100},
             "segments": {"type": "integer", "minimum": 1, "maximum": 6},
             "levels": {"type": "integer", "minimum": 0, "maximum": 2},
             "thickness": {"type": "number", "minimum": -100, "maximum": 100},
             "axis": {"enum": ["X", "Y", "Z"]},
+            "count": {"type": "integer", "minimum": 2, "maximum": MAX_ARRAY_COUNT},
+            "relative_offset": {"type": "vector3", "minimum": -100, "maximum": 100},
+            "constant_offset": {"type": "vector3", "minimum": -10000, "maximum": 10000},
         },
     },
 }
@@ -343,15 +375,18 @@ def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
         "levels",
         "thickness",
         "axis",
+        "count",
+        "relative_offset",
+        "constant_offset",
     }
     _reject_unknown_fields(payload, allowed)
 
     selector = normalize_object_selector(payload)
     name = _bounded_string(payload.get("name"), "name")
     modifier_type = str(payload.get("type") or "").strip().upper()
-    if modifier_type not in {"BEVEL", "SUBSURF", "SOLIDIFY", "MIRROR"}:
+    if modifier_type not in {"BEVEL", "SUBSURF", "SOLIDIFY", "MIRROR", "ARRAY"}:
         raise ValueError(
-            "type must be BEVEL, SUBSURF, SOLIDIFY, or MIRROR"
+            "type must be BEVEL, SUBSURF, SOLIDIFY, MIRROR, or ARRAY"
         )
 
     arguments: dict[str, Any] = {
@@ -360,7 +395,14 @@ def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
         "type": modifier_type,
     }
     if modifier_type == "BEVEL":
-        forbidden = {"levels", "thickness", "axis"} & set(payload)
+        forbidden = {
+            "levels",
+            "thickness",
+            "axis",
+            "count",
+            "relative_offset",
+            "constant_offset",
+        } & set(payload)
         if forbidden:
             raise ValueError(
                 "unsupported field(s) for BEVEL: " + ", ".join(sorted(forbidden))
@@ -379,7 +421,15 @@ def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
             integer=True,
         )
     elif modifier_type == "SUBSURF":
-        forbidden = {"width", "segments", "thickness", "axis"} & set(payload)
+        forbidden = {
+            "width",
+            "segments",
+            "thickness",
+            "axis",
+            "count",
+            "relative_offset",
+            "constant_offset",
+        } & set(payload)
         if forbidden:
             raise ValueError(
                 "unsupported field(s) for SUBSURF: "
@@ -393,7 +443,15 @@ def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
             integer=True,
         )
     elif modifier_type == "SOLIDIFY":
-        forbidden = {"width", "segments", "levels", "axis"} & set(payload)
+        forbidden = {
+            "width",
+            "segments",
+            "levels",
+            "axis",
+            "count",
+            "relative_offset",
+            "constant_offset",
+        } & set(payload)
         if forbidden:
             raise ValueError(
                 "unsupported field(s) for SOLIDIFY: "
@@ -405,8 +463,16 @@ def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
             -100.0,
             100.0,
         )
-    else:
-        forbidden = {"width", "segments", "levels", "thickness"} & set(payload)
+    elif modifier_type == "MIRROR":
+        forbidden = {
+            "width",
+            "segments",
+            "levels",
+            "thickness",
+            "count",
+            "relative_offset",
+            "constant_offset",
+        } & set(payload)
         if forbidden:
             raise ValueError(
                 "unsupported field(s) for MIRROR: "
@@ -416,6 +482,34 @@ def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
         if axis not in {"X", "Y", "Z"}:
             raise ValueError("axis must be X, Y, or Z")
         arguments["axis"] = axis
+    else:
+        forbidden = {"width", "segments", "levels", "thickness", "axis"} & set(payload)
+        if forbidden:
+            raise ValueError(
+                "unsupported field(s) for ARRAY: " + ", ".join(sorted(forbidden))
+            )
+        arguments["count"] = _bounded_number(
+            payload.get("count", 2),
+            "count",
+            2,
+            MAX_ARRAY_COUNT,
+            integer=True,
+        )
+        arguments["relative_offset"] = (
+            _vector3(payload["relative_offset"], "relative_offset", -100.0, 100.0)
+            if "relative_offset" in payload
+            else [1.0, 0.0, 0.0]
+        )
+        if "constant_offset" in payload:
+            arguments["constant_offset"] = _vector3(
+                payload["constant_offset"], "constant_offset", -10000.0, 10000.0
+            )
+        if not any(arguments["relative_offset"]) and not any(
+            arguments.get("constant_offset", [0.0, 0.0, 0.0])
+        ):
+            raise ValueError(
+                "ARRAY requires a non-zero relative_offset or constant_offset"
+            )
     return arguments
 
 
@@ -425,13 +519,14 @@ def evaluate_modifier_runtime_budget(
     modifier_count: Any,
     evaluated_faces: Any,
     levels: Any = 1,
+    array_count: Any = 1,
 ) -> dict[str, Any]:
     normalized_type = str(modifier_type or "").strip().upper()
-    if normalized_type not in {"BEVEL", "SUBSURF", "SOLIDIFY", "MIRROR"}:
+    if normalized_type not in {"BEVEL", "SUBSURF", "SOLIDIFY", "MIRROR", "ARRAY"}:
         raise ValueError(
-            "modifier_type must be BEVEL, SUBSURF, SOLIDIFY, or MIRROR"
+            "modifier_type must be BEVEL, SUBSURF, SOLIDIFY, MIRROR, or ARRAY"
         )
-    count = _bounded_number(
+    modifier_stack_count = _bounded_number(
         modifier_count,
         "modifier_count",
         0,
@@ -454,9 +549,18 @@ def evaluate_modifier_runtime_budget(
             2,
             integer=True,
         )
+    normalized_count = 1
+    if normalized_type == "ARRAY":
+        normalized_count = _bounded_number(
+            array_count,
+            "array_count",
+            1,
+            MAX_ARRAY_COUNT,
+            integer=True,
+        )
 
     reasons: list[str] = []
-    if count >= MAX_MODIFIER_STACK:
+    if modifier_stack_count >= MAX_MODIFIER_STACK:
         reasons.append("modifier stack limit reached")
     if faces > MAX_EVALUATED_FACES:
         reasons.append("evaluated mesh exceeds interactive face budget")
@@ -466,11 +570,15 @@ def evaluate_modifier_runtime_budget(
         projected_faces = int(faces * (4 ** int(normalized_levels)))
         if projected_faces > MAX_PROJECTED_SUBSURF_FACES:
             reasons.append("projected SUBSURF mesh exceeds interactive face budget")
+    elif normalized_type == "ARRAY":
+        projected_faces = int(faces * int(normalized_count))
+        if projected_faces > MAX_PROJECTED_ARRAY_FACES:
+            reasons.append("projected ARRAY mesh exceeds interactive face budget")
 
-    return {
+    result = {
         "allowed": not reasons,
         "modifier_type": normalized_type,
-        "modifier_count": int(count),
+        "modifier_count": int(modifier_stack_count),
         "evaluated_faces": int(faces),
         "levels": int(normalized_levels) if normalized_type == "SUBSURF" else None,
         "projected_faces": projected_faces,
@@ -481,6 +589,15 @@ def evaluate_modifier_runtime_budget(
         },
         "reasons": reasons,
     }
+    if normalized_type == "ARRAY":
+        result["count"] = int(normalized_count)
+        result["limits"].update(
+            {
+                "max_array_count": MAX_ARRAY_COUNT,
+                "max_projected_array_faces": MAX_PROJECTED_ARRAY_FACES,
+            }
+        )
+    return result
 
 
 def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str, Any]:
@@ -500,10 +617,16 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         arguments = _plan_modifier(payload)
 
     schema = MODELING_SCHEMAS[normalized_operation]
-    executable = schema["status"] == "available"
+    pending_variant = (
+        schema.get("pending_types", {}).get(arguments.get("type"))
+        if normalized_operation == "add_modifier"
+        else None
+    )
+    status = pending_variant.get("status") if pending_variant else schema["status"]
+    executable = status == "available"
     result = {
         "operation": normalized_operation,
-        "status": schema["status"],
+        "status": status,
         "executable": executable,
         "action": schema.get("action") if executable else None,
         "requires_real_blender_smoke": not executable,
@@ -514,6 +637,7 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         "runtime_guards",
         "failure_policy",
     ):
-        if metadata_key in schema:
-            result[metadata_key] = copy.deepcopy(schema[metadata_key])
+        metadata_source = pending_variant if pending_variant else schema
+        if metadata_key in metadata_source:
+            result[metadata_key] = copy.deepcopy(metadata_source[metadata_key])
     return result

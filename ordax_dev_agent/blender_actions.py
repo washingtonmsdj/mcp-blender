@@ -966,6 +966,13 @@ class BlenderActions:
         except ValueError as error:
             return ActionResult(False, str(error))
 
+        if not plan["executable"]:
+            return ActionResult(
+                False,
+                f"{plan['status']}: modifier variant is not enabled for execution",
+                {"plan": plan},
+            )
+
         return self._blender_live(payload).request(
             "add_modifier",
             plan["arguments"],

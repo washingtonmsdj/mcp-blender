@@ -7,8 +7,9 @@ from .assets.blender_modeling_contracts import modeling_schemas
 
 
 def capability_contracts() -> dict[str, Any]:
+    schemas = modeling_schemas()
     modeling = {}
-    for name, schema in modeling_schemas().items():
+    for name, schema in schemas.items():
         modeling[name] = {
             "status": schema.get("status"),
             "action": schema.get("action"),
@@ -21,6 +22,11 @@ def capability_contracts() -> dict[str, Any]:
     return {
         "blender_modeling": {
             "operations": modeling,
+            "pending_variants": {
+                name: sorted(schema.get("pending_types", {}))
+                for name, schema in schemas.items()
+                if schema.get("pending_types")
+            },
             "available_actions": sorted(
                 item["action"]
                 for item in modeling.values()

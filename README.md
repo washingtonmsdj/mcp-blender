@@ -16,6 +16,8 @@ estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.capability_contracts` expõe também o estado de promoção das operações tipadas, ações concretas disponíveis e runtime guards relevantes; isso permite distinguir capacidade compilada de simples versão instalada.
 Veja [configuração e limites](docs/MULTI_PROJECT_AGENT.md) e
 [exemplo de projetos](config/projects.example.json).
+O diagnóstico do catálogo Blender e as prioridades de modelagem baseadas em
+pesquisa estão em [docs/BLENDER_MODELING_ROADMAP.md](docs/BLENDER_MODELING_ROADMAP.md).
 
 Agente local tipado do OrdaX para projetos e ferramentas. **Blender**, **Unity** e **Git** são capabilities/adapters do mesmo agente; novos adapters poderão ser adicionados sem criar outro sistema. O agente também mantém o caminho MCP local e validações pelo GitHub em self-hosted runner.
 
