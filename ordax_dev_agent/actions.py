@@ -26,6 +26,7 @@ from .game_asset_status_actions import GameAssetStatusActions
 from .game_asset_actions import GameAssetActions
 from .game_asset_artifact_actions import GameAssetArtifactActions
 from .game_asset_image_actions import GameAssetImageActions
+from .game_asset_runtime_actions import GameAssetRuntimeActions
 from .generated_asset_actions import GeneratedAssetActions
 from .mixamo_actions import MixamoActions
 from .rodin_actions import RodinActions
@@ -55,6 +56,7 @@ class ActionRegistry(
     GameAssetActions,
     GameAssetArtifactActions,
     GameAssetImageActions,
+    GameAssetRuntimeActions,
     GeneratedAssetActions,
     MixamoActions,
     RodinActions,
@@ -147,6 +149,7 @@ class ActionRegistry(
             "game_assets.rodin_submit_images": self.game_assets_rodin_submit_images,
             "game_assets.artifact_verify": self.game_assets_artifact_verify,
             "game_assets.blender_ingest_generated": self.game_assets_blender_ingest_generated,
+            "game_assets.blender_runtime_audit": self.game_assets_blender_runtime_audit,
             "game_assets.blender_character_preflight": self.game_assets_blender_character_preflight,
             "game_assets.blender_export": self.game_assets_blender_export,
             "game_assets.blender_import_fbx": self.game_assets_blender_import_fbx,
