@@ -57,3 +57,49 @@ known full-file checksum from the export can additionally validate the assembly.
 - This release adds the Agent capability and usage contract. A remote download
   client is not installed automatically. No end-to-end transfer or test suite
   was run as part of this implementation.
+
+## Receiver library
+
+`ordax_dev_agent.artifact_download.download_artifact` implements the receiving
+algorithm. It accepts the remote client's existing synchronous job submission
+function. That function must wait for completion and return the inner
+`{ok, summary, data}` action result, not the queue envelope.
+
+```python
+from ordax_dev_agent.artifact_download import download_artifact
+
+# submit_and_wait is supplied by your authenticated remote queue client.
+receipt = download_artifact(
+    submit_and_wait,
+    selector={
+        "project": "cerco-no-interior-mvp",
+        "project_artifact_path": "exports/model.glb",
+    },
+    destination="downloads/model.glb",
+    max_size_bytes=256 * 1024 * 1024,
+    # expected_sha256="...",  # use the export's full-file digest when available
+    progress=lambda state: print(state["received_bytes"], state["total_bytes"]),
+)
+```
+
+The receiver checks every decoded chunk and writes durable checkpoints beside
+the destination in `<filename>.ordax-transfer`. Repeating the call with the same
+selector, expected checksum and destination resumes after validating the saved
+prefix checksum. It discards only an uncommitted partial-file tail. A changed
+source or corrupt prefix stops the download; use a new destination to restart.
+
+An OS lock prevents concurrent writers to the same destination. Existing
+destinations are never overwritten. Successful publication uses a same-volume
+hard link, then removes the partial file and checkpoint. A filesystem without
+hard-link support produces an error and retains the completed partial file.
+The small lock directory remains for reuse. A crash after publication can leave
+that directory and checkpoint; the already published destination is preserved.
+
+Limits: default maximum file size is 1 GiB, configurable by the caller; memory
+stays bounded. The prefix is hashed once when resuming, not once per chunk.
+Transport timeouts and retries belong to `submit_and_wait`; the receiver does
+not acquire credentials, issue new grants, or rerun modeling actions.
+
+This repository does not contain the external remote queue client, so its
+`submit_and_wait` integration must be supplied there. No receiver test suite or
+end-to-end transfer was run for this addition.
