@@ -9,6 +9,7 @@ class GameAssetComponentOwnershipTests(unittest.TestCase):
             [
                 "ordax_dev_agent/game_asset_image_actions.py",
                 "ordax_dev_agent/game_asset_artifact_actions.py",
+                "ordax_dev_agent/game_asset_engine_export_actions.py",
                 "ordax_dev_agent/game_asset_status_actions.py",
                 "ordax_dev_agent/game_asset_runtime_actions.py",
                 "ordax_dev_agent/game_asset_lod_actions.py",
