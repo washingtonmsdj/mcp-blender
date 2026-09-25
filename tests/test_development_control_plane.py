@@ -63,6 +63,7 @@ class DevelopmentControlPlaneTests(unittest.TestCase):
         action, payload, project = DevelopmentControlPlane._dispatch(
             {"capability": "ordax.dev.adapter.invoke"},
             {
+                "adapter": "blender",
                 "action": "blender.live_inspect",
                 "payload": {"limit": 25},
                 "project": "cerco-no-interior-mvp",
@@ -84,6 +85,7 @@ class DevelopmentControlPlaneTests(unittest.TestCase):
             DevelopmentControlPlane._dispatch(
                 {"capability": "ordax.dev.adapter.invoke"},
                 {
+                    "adapter": "blender",
                     "action": "blender.live_status",
                     "payload": {},
                     "project": "scene",
