@@ -53,9 +53,30 @@ O resultado persistente será `%LOCALAPPDATA%\OrdaX\DevAgent\setup-verification.
 O teste exige boot do Windows diferente, supervisor vivo, heartbeat recente e
 nenhum runner ativo; a tarefa se desabilita após sucesso.
 
-**No momento de gravação deste documento, o reboot ainda está pendente.**
-Restart de tarefa e recuperação de processo não são contados como reboot real.
-Atualizar esta seção somente depois de observar `real_reboot_observed=true`.
+**Resultado observado: FALHA no retorno automático após reboot.**
+O Windows reiniciou em `2026-09-25T21:03:24Z`, diferente da baseline. A tarefa
+foi iniciada após login às 21:08 UTC, mas o Agent não voltou: o heartbeat
+permaneceu em 21:01:19 UTC e a tarefa de verificação expirou sem gerar sucesso.
+O supervisor existia sem processo Agent nem novos registros de inicialização.
+
+Foi necessária intervenção nesta tarefa. Os commits `c90e3a0` e `dfd9533`
+retiraram importações de dependências e consulta de identidade da inicialização
+de uma instalação já configurada, evitaram autoload de PowerShell.Utility nesse
+caminho, adicionaram logs desde a entrada do supervisor e modo NonInteractive.
+O ponto interno exato do bloqueio original não foi observado; os logs antigos
+começavam somente depois dessas operações. Não tratar a hipótese como diagnóstico
+comprovado de uma biblioteca específica.
+
+Depois de atualizar e relançar a tarefa manualmente, o Agent iniciou às 21:21 UTC.
+O Control Plane confirmou heartbeat em `2026-09-25T21:21:49.171607Z`, boot ID
+`43d34f36-121f-43a1-bc64-b49298332e73`. Os 18 testes de scripts passaram novamente,
+assim como o parser PowerShell. A CI das correções está associada ao commit
+`dfd9533`. A tarefa de verificação de reboot foi desabilitada para evitar que um
+login posterior transforme esta tentativa assistida em falso sucesso.
+
+**A correção ainda precisa de outro reboot autorizado para comprovar retorno
+automático. Nenhum segundo reboot foi executado.** O Agent foi recuperado, mas
+o critério final de conclusão do projeto permanece pendente.
 
 ## Comando único
 
