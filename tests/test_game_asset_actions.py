@@ -157,7 +157,7 @@ class GameAssetActionsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw, patch.dict(
             os.environ, {"MESHY_API_KEY": "msy_secret"}, clear=False
         ), patch(
-            "ordax_dev_agent.game_asset_actions.httpx.get", return_value=response
+            "ordax_dev_agent.game_asset_status_actions.httpx.get", return_value=response
         ) as get:
             registry = ActionRegistry(self.make_config(Path(raw)))
             result = registry.execute(
@@ -175,6 +175,7 @@ class GameAssetActionsTests(unittest.TestCase):
                 "https://api.meshy.ai/openapi/v1/rigging/rig-123",
                 args[0],
             )
+            self.assertFalse(result.data["signed_result_urls_returned"])
 
 
 if __name__ == "__main__":
