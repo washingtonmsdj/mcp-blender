@@ -1,5 +1,5 @@
 {
-  "job_id": "9b4b9f71-bae8-44d8-9c4d-a0b5cfe20925",
-  "reason": "activate development-v2 enrollment and Blender adapter for cerco-no-interior-mvp using the shared ordax-control-plane",
+  "job_id": "7c5b2d29-c5e4-45d4-b084-59d4cc7c64a4",
+  "reason": "activate canonical ordax-control-plane development-v2 transport, external bootstrap recovery and Blender adapter for cerco-no-interior-mvp",
   "requested_by": "ChatGPT OrdaX control loop"
 }
