@@ -23,6 +23,7 @@ from .component_actions import ComponentActions
 from .game_asset_catalog_actions import GameAssetCatalogActions
 from .game_asset_actions import GameAssetActions
 from .game_asset_artifact_actions import GameAssetArtifactActions
+from .game_asset_image_actions import GameAssetImageActions
 from .mixamo_actions import MixamoActions
 from .rodin_actions import RodinActions
 from .comfyui_actions import ComfyUIActions
@@ -48,6 +49,7 @@ class ActionRegistry(
     GameAssetCatalogActions,
     GameAssetActions,
     GameAssetArtifactActions,
+    GameAssetImageActions,
     MixamoActions,
     RodinActions,
     ComfyUIActions,
@@ -134,6 +136,9 @@ class ActionRegistry(
             "game_assets.provider_submit": self.game_assets_provider_submit,
             "game_assets.provider_status": self.game_assets_provider_status,
             "game_assets.provider_download": self.game_assets_provider_download,
+            "game_assets.meshy_submit_images": self.game_assets_meshy_submit_images,
+            "game_assets.tripo_submit_images": self.game_assets_tripo_submit_images,
+            "game_assets.rodin_submit_images": self.game_assets_rodin_submit_images,
             "game_assets.blender_character_preflight": self.game_assets_blender_character_preflight,
             "game_assets.blender_export": self.game_assets_blender_export,
             "game_assets.blender_import_fbx": self.game_assets_blender_import_fbx,
