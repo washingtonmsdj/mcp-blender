@@ -89,7 +89,7 @@ class GameAssetEngineHandoffTests(unittest.TestCase):
             self.assertFalse(result.data["validated_in_engine"])
             self.assertFalse(result.data["engine_validation_available"])
             self.assertEqual("unreal_engine_import_validation", result.data["next_gate"])
-            self.assertEqual(str(artifact), result.data["artifact_path"])
+            self.assertTrue(Path(result.data["artifact_path"]).samefile(artifact))
 
     def test_godot_rejects_fbx_even_when_manifest_hashes_are_valid(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
