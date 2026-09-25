@@ -39,7 +39,22 @@ For static LOD assets, exporting a multi-level derivative is not itself proof th
 
 ## Godot
 
-The verified handoff formats are GLB/glTF 2.0. The current handoff audit validates provenance and format/profile coherence. A Godot-side import/runtime gate is still required before marking the asset engine-validated.
+The verified handoff formats are GLB/glTF 2.0. OrdaX now exposes a real engine-side validation gate:
+
+```text
+game_assets.godot_import_validate
+```
+
+The action requires a verified `ordax.engine-export/1` artifact targeted to Godot and a project-local directory containing `project.godot`. It then:
+
+1. copies the artifact and provenance sidecar atomically into the Godot project;
+2. refuses destinations outside the selected Godot project and requires explicit overwrite;
+3. resolves the Godot executable only from `ORDAX_GODOT_BIN` or `godot`/`godot4` on `PATH` — the job cannot supply an arbitrary executable;
+4. runs Godot headless in recovery mode with `--import`;
+5. runs a temporary OrdaX validation script under Godot itself and requires `ResourceLoader` to load the resulting `res://` resource;
+6. reports `engine_validated=true` only after that proof is returned.
+
+Recovery mode is intentionally used to reduce execution of project editor plugins/tool scripts during the validation pass. If import or load fails, the copied derivative is retained for diagnostics while the canonical source artifact is preserved.
 
 ## Web / realtime glTF
 
