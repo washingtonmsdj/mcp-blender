@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: hordax-unity-autopilot
+  cancel-in-progress: true
+
 jobs:
   observe:
     runs-on: [self-hosted, Windows, X64]
