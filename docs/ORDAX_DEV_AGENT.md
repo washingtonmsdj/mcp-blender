@@ -78,34 +78,33 @@ Later:
 - `unity.playtest_suite`
 - `git.create_diagnostic_branch`
 
-## Supabase
+## Supabase / OrdaX Control Plane
 
-For the temporary integration, use the active Supabase project **Ordax-2026-1**.
-The control-plane tables are isolated with the `ordax_dev_` prefix so they do
-not overlap the existing application's tables. This is temporary: later we can
-migrate the control plane to a dedicated Supabase project without changing the
-local agent protocol.
+The canonical development backend is the dedicated Supabase project
+**ordax-control-plane**, owned by `washingtonmsdj/prototipo-ordax-os`.
+The historical `Ordax-2026-1` integration is retired and must not be selected
+for new Device Agent installations.
 
-Suggested tables:
+Product and engineering share the backend project but **not authority**:
+product/account credentials never authenticate development jobs, and the
+Device Agent uses a dedicated device-scoped development credential.
 
-- `ordax_dev_agents`: registered machines/capabilities/heartbeat
-- `ordax_dev_projects`: allowed local projects per agent
-- `ordax_dev_jobs`: typed commands and state
-- `ordax_dev_job_events`: append-only logs/progress
-- `ordax_dev_artifacts`: screenshots, JSON snapshots, logs and hashes
+The Windows Device Agent uses development protocol v2 through
+`ordax-development-device`. Mutable Blender work is routed through the
+closed-world capability `ordax.dev.adapter.invoke`, which carries only a
+registered project slug, a `blender.*` action and a bounded JSON payload.
+The local ActionRegistry remains the final allow-list; the cloud does not gain a
+generic shell or raw-device capability through this adapter.
 
-Presence is lease-like rather than permanent. The local agent normally refreshes
-`last_seen_at` about every 20 seconds (including long-running job renewals).
-Migration `004_agent_presence_expiry.sql` installs a one-minute `pg_cron` job:
-if no heartbeat/renewal arrives for 90 seconds, a non-offline agent becomes
-`offline`. The row keeps `last_seen_at`, `last_job_id` and `last_error` for
-diagnosis. A database trigger also updates `updated_at` on every agent-row
-change, so presence timestamps cannot claim a row is current when it is not.
+Jobs use the canonical v2 queue and execution context
+(`effect_id`, `attempt_id`, lease, execution epoch and device identity).
+Presence/leases are refreshed while work is active. Realtime wake-up is used
+when available, with bounded polling/wait fallback.
 
-
-Use RLS for client-visible tables. The agent should authenticate as a dedicated
-machine identity. Realtime can then wake the agent as new jobs arrive, with
-polling retained as a fallback.
+Source ownership for Control Plane extensions lives under
+`prototipo-ordax-os/infra/supabase/development/`. The legacy
+`control-plane/supabase/` directory in this repository is historical
+incubation evidence only and is not the production/source authority.
 
 ## Visual loop
 
