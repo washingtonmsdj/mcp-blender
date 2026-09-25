@@ -36,6 +36,9 @@ def _destination(value: Any) -> str:
     result = value.strip().rstrip("/")
     if not _PACKAGE_RE.fullmatch(result):
         raise ValueError("destination_path must be a normalized /Game/... package path")
+    segments = result.split("/")[2:]
+    if not segments or any(segment in {".", ".."} for segment in segments):
+        raise ValueError("destination_path must not contain dot path segments")
     return result
 
 
@@ -83,6 +86,7 @@ task.set_editor_property("destination_path", destination)
 task.set_editor_property("automated", True)
 task.set_editor_property("replace_existing", replace_existing)
 task.set_editor_property("replace_existing_settings", replace_existing)
+task.set_editor_property("save", True)
 
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
 asset_tools.import_asset_tasks([task])
@@ -103,8 +107,9 @@ print("ORDAX_UNREAL_IMPORT_OK|" + json.dumps({{"paths": [str(x) for x in paths],
 '''
 
 
-def _proof(stdout: str) -> dict[str, Any] | None:
+def _proof(stdout: str, destination: str) -> dict[str, Any] | None:
     prefix = "ORDAX_UNREAL_IMPORT_OK|"
+    expected_prefix = destination.rstrip("/") + "/"
     for line in stdout.splitlines():
         if not line.startswith(prefix):
             continue
@@ -119,7 +124,7 @@ def _proof(stdout: str) -> dict[str, Any] | None:
         if (
             isinstance(paths, list)
             and paths
-            and all(isinstance(item, str) and item.startswith("/Game/") for item in paths)
+            and all(isinstance(item, str) and item.startswith(expected_prefix) for item in paths)
             and isinstance(classes, list)
             and len(classes) == len(paths)
             and all(isinstance(item, str) and item for item in classes)
@@ -207,7 +212,7 @@ class GameAssetUnrealActions:
                         "command": result.data,
                     },
                 )
-            proof = _proof(str(result.data.get("stdout") or ""))
+            proof = _proof(str(result.data.get("stdout") or ""), destination)
             if proof is None:
                 return ActionResult(
                     False,
