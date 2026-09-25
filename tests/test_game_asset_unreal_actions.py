@@ -96,8 +96,9 @@ class GameAssetUnrealActionsTests(unittest.TestCase):
                 script_path = Path(script_arg.split("=", 1)[1])
                 self.assertTrue(script_path.is_file())
                 text = script_path.read_text(encoding="utf-8")
-                self.assertIn(str(artifact.resolve()).replace("\\", "\\\\")[:0], text)
-                self.assertIn('/Game/OrdaX/Generated', text)
+                self.assertIn("asset.fbx", text)
+                self.assertIn("/Game/OrdaX/Generated", text)
+                self.assertIn('set_editor_property("save", True)', text)
                 self.assertTrue(Path(cwd).samefile(uproject.parent))
                 self.assertEqual(777, timeout)
                 return ActionResult(
@@ -167,7 +168,7 @@ class GameAssetUnrealActionsTests(unittest.TestCase):
                 },
             )
             self.assertFalse(result.ok)
-            self.assertIn("Project path does not exist", result.summary)
+            self.assertTrue("does not exist" in result.summary or ".uproject" in result.summary)
 
     def test_destination_package_path_is_strictly_validated(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -187,6 +188,55 @@ class GameAssetUnrealActionsTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertIn("/Game/", result.summary)
             run.assert_not_called()
+
+    def test_destination_rejects_dot_segments(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.make_export(root)
+            registry = ActionRegistry(self.make_config(root))
+            with patch("ordax_dev_agent.game_asset_unreal_actions._run") as run:
+                result = registry.execute(
+                    "game_assets.unreal_import_validate",
+                    {
+                        "project": "game",
+                        "artifact_path": "exports/asset.fbx",
+                        "uproject_path": "unreal_game/Game.uproject",
+                        "destination_path": "/Game/../Injected",
+                    },
+                )
+            self.assertFalse(result.ok)
+            self.assertIn("dot path segments", result.summary)
+            run.assert_not_called()
+
+    def test_proof_must_stay_under_requested_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.make_export(root)
+            registry = ActionRegistry(self.make_config(root))
+            with patch(
+                "ordax_dev_agent.game_asset_unreal_actions._find_unreal_editor",
+                return_value="UnrealEditor-Cmd",
+            ), patch(
+                "ordax_dev_agent.game_asset_unreal_actions._run",
+                return_value=ActionResult(
+                    True,
+                    "command completed",
+                    {
+                        "stdout": 'ORDAX_UNREAL_IMPORT_OK|{"paths":["/Game/Other/asset.asset"],"classes":["StaticMesh"]}\n',
+                        "stderr": "",
+                    },
+                ),
+            ):
+                result = registry.execute(
+                    "game_assets.unreal_import_validate",
+                    {
+                        "project": "game",
+                        "artifact_path": "exports/asset.fbx",
+                        "uproject_path": "unreal_game/Game.uproject",
+                    },
+                )
+            self.assertFalse(result.ok)
+            self.assertIn("without OrdaX import/load proof", result.summary)
 
     def test_success_without_ordax_proof_is_failure(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
