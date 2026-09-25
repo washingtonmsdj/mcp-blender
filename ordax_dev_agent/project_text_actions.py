@@ -24,7 +24,8 @@ _READABLE_SUFFIXES = {
     ".unity", ".prefab", ".meta",
 }
 _WRITABLE_SUFFIXES = _READABLE_SUFFIXES - {".unity", ".prefab", ".meta"}
-_ALLOWED_TOP_LEVEL = {"Assets", "Packages", "ProjectSettings", "automation", "docs"}
+_ALLOWED_TOP_LEVEL = {"Assets", "Packages", "ProjectSettings", "automation", "docs", "blender", "src"}
+_ALLOWED_ROOT_FILES = {"README.md", "package.json", "index.html", "pnpm-lock.yaml"}
 _BLOCKED_PARTS = {"Library", "Temp", "Logs", "Builds", "obj", ".git"}
 _MAX_READ_BYTES = 2 * 1024 * 1024
 _MAX_WRITE_BYTES = 1024 * 1024
@@ -41,9 +42,10 @@ def _relative_project_path(project, raw: str, *, must_exist: bool) -> tuple[Path
     relative = path.relative_to(project.root.resolve())
     if not relative.parts:
         raise ValueError("path must identify a file inside the project")
-    if relative.parts[0] not in _ALLOWED_TOP_LEVEL:
+    root_file_allowed = len(relative.parts) == 1 and relative.as_posix() in _ALLOWED_ROOT_FILES
+    if relative.parts[0] not in _ALLOWED_TOP_LEVEL and not root_file_allowed:
         raise ValueError(
-            "text actions are limited to Assets, Packages, ProjectSettings, automation, or docs"
+            "text actions are limited to approved project source/document paths"
         )
     if any(part in _BLOCKED_PARTS for part in relative.parts):
         raise ValueError("path is inside a generated, build, cache, or repository-control directory")
