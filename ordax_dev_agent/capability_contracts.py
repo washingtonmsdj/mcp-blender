@@ -19,6 +19,15 @@ def capability_contracts() -> dict[str, Any]:
         }
 
     return {
+        "artifact_transfer": {
+            "action": "artifact.read_chunk",
+            "max_chunk_bytes": 32768,
+            "encoding": "base64",
+            "integrity": "chunk_sha256",
+            "resume_requires": ["source_version", "offset"],
+            "roots": ["project/Artifacts", "agent-artifacts/project"],
+            "source_version_is_content_hash": False,
+        },
         "blender_modeling": {
             "operations": modeling,
             "available_actions": sorted(
