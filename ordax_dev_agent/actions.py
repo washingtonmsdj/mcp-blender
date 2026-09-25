@@ -160,6 +160,7 @@ class ActionRegistry(
             "game_assets.blender_export_verified": self.game_assets_blender_export_verified,
             "game_assets.engine_export_verify": self.game_assets_engine_export_verify,
             "game_assets.engine_handoff_audit": self.game_assets_engine_handoff_audit,
+            "game_assets.web_glb_audit": self.game_assets_web_glb_audit,
             "game_assets.unity_import_generated": self.game_assets_unity_import_generated,
             "game_assets.unity_import_engine_export": self.game_assets_unity_import_engine_export,
             "game_assets.unity_model_audit": self.game_assets_unity_model_audit,
