@@ -27,7 +27,8 @@ namespace OrdaX.EditorTools
             public string id, summary, protocol = "ordax-game-assets-v1";
             public bool ok;
             public string assetPath, animationType, avatarSetup;
-            public int avatarCount, validAvatarCount, humanAvatarCount, humanoidMappedBoneCount;
+            public bool sourceAvatarPresent, sourceAvatarValid, sourceAvatarHuman;
+            public int avatarCount, avatarEvidenceCount, validAvatarCount, humanAvatarCount, humanoidMappedBoneCount;
             public int animationClipCount, rootCurveClipCount, motionCurveClipCount;
             public int humanMotionClipCount, genericRootTransformClipCount;
             public int animatorCount, animatorWithAvatarCount, humanAnimatorCount;
@@ -160,12 +161,27 @@ namespace OrdaX.EditorTools
                 }
             }
 
+            Avatar sourceAvatar = importer.sourceAvatar;
+            var avatarEvidence = new List<Avatar>();
+            avatarEvidence.AddRange(avatars.Where(avatar => avatar != null));
+            if (sourceAvatar != null) avatarEvidence.Add(sourceAvatar);
+            avatarEvidence.AddRange(
+                animators
+                    .Where(animator => animator != null && animator.avatar != null)
+                    .Select(animator => animator.avatar));
+            var uniqueAvatarEvidence = avatarEvidence
+                .Where(avatar => avatar != null)
+                .GroupBy(avatar => avatar.GetInstanceID())
+                .Select(group => group.First())
+                .ToArray();
+
             int mappedHumanBones = 0;
-            foreach (var avatar in avatars.Where(item => item != null && item.isValid && item.isHuman))
+            foreach (var avatar in uniqueAvatarEvidence.Where(item => item.isValid && item.isHuman))
             {
                 try
                 {
-                    mappedHumanBones = Math.Max(mappedHumanBones, avatar.humanDescription.human.Length);
+                    var human = avatar.humanDescription.human;
+                    mappedHumanBones = Math.Max(mappedHumanBones, human != null ? human.Length : 0);
                 }
                 catch (InvalidOperationException) { }
             }
@@ -173,9 +189,13 @@ namespace OrdaX.EditorTools
             reply.assetPath = assetPath;
             reply.animationType = importer.animationType.ToString();
             reply.avatarSetup = importer.avatarSetup.ToString();
+            reply.sourceAvatarPresent = sourceAvatar != null;
+            reply.sourceAvatarValid = sourceAvatar != null && sourceAvatar.isValid;
+            reply.sourceAvatarHuman = sourceAvatar != null && sourceAvatar.isValid && sourceAvatar.isHuman;
             reply.avatarCount = avatars.Length;
-            reply.validAvatarCount = avatars.Count(avatar => avatar != null && avatar.isValid);
-            reply.humanAvatarCount = avatars.Count(avatar => avatar != null && avatar.isValid && avatar.isHuman);
+            reply.avatarEvidenceCount = uniqueAvatarEvidence.Length;
+            reply.validAvatarCount = uniqueAvatarEvidence.Count(avatar => avatar.isValid);
+            reply.humanAvatarCount = uniqueAvatarEvidence.Count(avatar => avatar.isValid && avatar.isHuman);
             reply.humanoidMappedBoneCount = mappedHumanBones;
             reply.animationClipCount = clips.Length;
             reply.rootCurveClipCount = clips.Count(clip => clip.hasRootCurves);
