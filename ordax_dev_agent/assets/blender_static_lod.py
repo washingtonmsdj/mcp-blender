@@ -72,6 +72,7 @@ def main() -> int:
     args = _args()
     output = Path(args.output).resolve()
     report_path = Path(args.report).resolve()
+    source_blend = str(Path(bpy.data.filepath).resolve()) if bpy.data.filepath else ""
     try:
         ratios = _parse_ratios(args.ratios)
         if output.suffix.lower() != ".blend":
@@ -113,9 +114,6 @@ def main() -> int:
                 }
             )
 
-        # The derivative contains only the generated LOD geometry. This avoids
-        # accidentally exporting source cameras/lights/helpers together with the
-        # runtime LOD set.
         bpy.ops.object.select_all(action="SELECT")
         bpy.ops.object.delete(use_global=False)
         for collection in list(bpy.data.collections):
@@ -166,6 +164,7 @@ def main() -> int:
         scene = bpy.context.scene
         source_total = sum(record["triangles"] for record in source_records)
         scene["ordax_lod_schema"] = "ordax.static-lod/1"
+        scene["ordax_lod_source_blend"] = source_blend
         scene["ordax_lod_source_triangles"] = source_total
         scene["ordax_lod_ratios"] = json.dumps(ratios)
 
@@ -175,7 +174,7 @@ def main() -> int:
         report = {
             "ok": True,
             "schema": "ordax.static-lod/1",
-            "source_blend": bpy.data.filepath,
+            "source_blend": source_blend,
             "output_blend": str(output),
             "source": {
                 "mesh_objects": len(source_records),
