@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import struct
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +37,9 @@ _ENGINE_HANDOFF_CONTRACTS: dict[str, dict[str, Any]] = {
     },
 }
 
+_GLTF_JSON_CHUNK = 0x4E4F534A
+_GLTF_BIN_CHUNK = 0x004E4942
+
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -57,6 +61,97 @@ def _relative(project, path: Path) -> str:
 
 def _manifest_path(artifact: Path) -> Path:
     return artifact.with_name(artifact.name + ".ordax.json")
+
+
+def _external_gltf_uris(document: dict[str, Any]) -> list[str]:
+    result: list[str] = []
+    for key in ("buffers", "images"):
+        records = document.get(key)
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            uri = record.get("uri")
+            if isinstance(uri, str) and uri and not uri.startswith("data:"):
+                result.append(uri)
+    return result
+
+
+def _inspect_glb(path: Path) -> dict[str, Any]:
+    raw = path.read_bytes()
+    if len(raw) < 20:
+        raise ValueError("GLB is too small to contain a glTF 2.0 JSON chunk")
+    magic, version, declared_length = struct.unpack_from("<4sII", raw, 0)
+    if magic != b"glTF":
+        raise ValueError("GLB magic header is invalid")
+    if version != 2:
+        raise ValueError(f"GLB version must be 2, got {version}")
+    if declared_length != len(raw):
+        raise ValueError("GLB declared length does not match file byte size")
+
+    offset = 12
+    chunks: list[dict[str, Any]] = []
+    json_document: dict[str, Any] | None = None
+    while offset < len(raw):
+        if offset + 8 > len(raw):
+            raise ValueError("GLB contains a truncated chunk header")
+        chunk_length, chunk_type = struct.unpack_from("<II", raw, offset)
+        offset += 8
+        if chunk_length % 4 != 0:
+            raise ValueError("GLB chunk length must be 4-byte aligned")
+        end = offset + chunk_length
+        if end > len(raw):
+            raise ValueError("GLB chunk extends beyond declared file length")
+        body = raw[offset:end]
+        offset = end
+        chunks.append({"type": chunk_type, "bytes": chunk_length})
+        if len(chunks) == 1 and chunk_type != _GLTF_JSON_CHUNK:
+            raise ValueError("GLB first chunk must be JSON")
+        if chunk_type == _GLTF_JSON_CHUNK:
+            if json_document is not None:
+                raise ValueError("GLB must not contain multiple JSON chunks")
+            try:
+                decoded = body.rstrip(b" \t\r\n\x00").decode("utf-8")
+                parsed = json.loads(decoded)
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise ValueError("GLB JSON chunk is not valid UTF-8 JSON") from error
+            if not isinstance(parsed, dict):
+                raise ValueError("GLB JSON chunk must contain an object")
+            json_document = parsed
+    if offset != len(raw):
+        raise ValueError("GLB chunk table does not terminate at file boundary")
+    if json_document is None:
+        raise ValueError("GLB has no JSON chunk")
+
+    asset = json_document.get("asset")
+    if not isinstance(asset, dict):
+        raise ValueError("glTF document is missing asset metadata")
+    asset_version = str(asset.get("version") or "")
+    if asset_version != "2.0":
+        raise ValueError(f"glTF asset.version must be 2.0, got {asset_version or 'missing'}")
+    external_uris = _external_gltf_uris(json_document)
+    return {
+        "glb_version": version,
+        "asset_version": asset_version,
+        "generator": asset.get("generator"),
+        "bytes": len(raw),
+        "chunk_count": len(chunks),
+        "chunks": chunks,
+        "has_bin_chunk": any(chunk["type"] == _GLTF_BIN_CHUNK for chunk in chunks),
+        "scenes": len(json_document.get("scenes") or []),
+        "nodes": len(json_document.get("nodes") or []),
+        "meshes": len(json_document.get("meshes") or []),
+        "materials": len(json_document.get("materials") or []),
+        "textures": len(json_document.get("textures") or []),
+        "images": len(json_document.get("images") or []),
+        "animations": len(json_document.get("animations") or []),
+        "skins": len(json_document.get("skins") or []),
+        "external_uris": external_uris,
+        "self_contained": not external_uris,
+        "extensions_used": list(json_document.get("extensionsUsed") or []),
+        "extensions_required": list(json_document.get("extensionsRequired") or []),
+    }
 
 
 def verify_engine_export(project, artifact: Path, manifest: Path) -> dict[str, Any]:
@@ -301,5 +396,45 @@ class GameAssetEngineExportActions:
                     "profile_matches_artifact": True,
                     "source_freshness_required": require_current_source,
                 },
+            },
+        )
+
+    def game_assets_web_glb_audit(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {"project", "artifact_path", "manifest_path", "require_self_contained"}
+        unsupported = set(payload) - supported
+        if unsupported:
+            return ActionResult(False, f"unsupported fields: {', '.join(sorted(unsupported))}")
+        project = self._project(payload)
+        try:
+            artifact = project.path(str(payload.get("artifact_path") or ""))
+            raw_manifest = payload.get("manifest_path")
+            manifest = (
+                project.path(str(raw_manifest))
+                if raw_manifest is not None
+                else _manifest_path(artifact)
+            )
+            verification = verify_engine_export(project, artifact, manifest)
+            if str(verification.get("engine") or "").strip().lower() != "web":
+                raise ValueError("web GLB audit requires provenance targeted to the web engine profile")
+            if artifact.suffix.lower() != ".glb":
+                raise ValueError("web GLB audit requires a .glb artifact")
+            glb = _inspect_glb(artifact)
+            require_self_contained = bool(payload.get("require_self_contained", True))
+            if require_self_contained and not glb["self_contained"]:
+                raise ValueError("web GLB contains external buffer/image URIs; self-contained artifact required")
+        except (ValueError, OSError, FileNotFoundError) as error:
+            return ActionResult(False, str(error))
+        return ActionResult(
+            True,
+            "web GLB container and glTF 2.0 structure validated",
+            {
+                "engine": "web",
+                "artifact_path": str(artifact),
+                "sha256": verification["sha256"],
+                "container_valid": True,
+                "self_contained_required": require_self_contained,
+                "glb": glb,
+                "validated_in_browser": False,
+                "next_gate": "web_runtime_load_visual_performance_validation",
             },
         )
