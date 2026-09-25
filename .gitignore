@@ -15,6 +15,7 @@ build/
 logs/
 Logs/
 *.log
+control-plane/supabase/.temp/
 
 # Blender
 *.blend1
