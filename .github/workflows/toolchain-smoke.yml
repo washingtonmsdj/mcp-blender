@@ -17,9 +17,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: toolchain-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   detect:
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, Windows, X64, ordax-toolchain]
     timeout-minutes: 10
 
     steps:

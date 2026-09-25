@@ -8,6 +8,7 @@ import os
 import secrets
 import socket
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -118,8 +119,39 @@ def request(client, body: dict, headers: dict) -> dict:
         raise SetupError("CONTROL_PLANE_UNAVAILABLE") from None
 
 
-def configure(state: Path, *, interactive: bool = False, client=None, binding=None, home=None) -> dict:
+@contextmanager
+def setup_lock(state: Path):
+    with (state / '.device-setup.lock').open('a+b') as lock:
+        if lock.seek(0, os.SEEK_END) == 0:
+            lock.write(b'0')
+            lock.flush()
+        lock.seek(0)
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise SetupError('SETUP_ALREADY_RUNNING') from None
+        try:
+            yield
+        finally:
+            lock.seek(0)
+            if os.name == 'nt':
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def configure(state: Path, **kwargs) -> dict:
     private_directory(state)
+    with setup_lock(state):
+        return _configure(state, **kwargs)
+
+
+def _configure(state: Path, *, interactive: bool = False, client=None, binding=None, home=None) -> dict:
     settings_path = state / "agent-settings.json"
     settings = load_settings(settings_path)
     binding = binding or machine_id()

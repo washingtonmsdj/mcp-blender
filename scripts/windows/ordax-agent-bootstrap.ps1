@@ -13,6 +13,7 @@ if (-not (Test-Path (Join-Path $RepoRoot ".git"))) {
 }
 
 $repoRootResolved = (Resolve-Path $RepoRoot).Path
+Set-Location -LiteralPath $repoRootResolved
 $stateDir = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent"
 $bootstrapDir = Join-Path $stateDir "bootstrap"
 $policyScript = Join-Path $bootstrapDir "update_policy.py"
@@ -289,7 +290,12 @@ $needsSafeUpdate = $false
 $env:ORDAX_SUPERVISOR_PID = [string]$PID
 
 while ($true) {
-    if (-not (Test-Path $python)) {
+    $runtimeHealthy = $false
+    if (Test-Path $python) {
+        & $python -c "import httpx, mcp, supabase, ordax_dev_agent" 2>$null
+        $runtimeHealthy = $LASTEXITCODE -eq 0
+    }
+    if (-not $runtimeHealthy) {
         try {
             $basePython = Get-Command python -ErrorAction Stop
             & $basePython.Source -m venv (Join-Path $repoRootResolved '.venv')
@@ -323,7 +329,8 @@ while ($true) {
     # the guarded fetch/fast-forward/install-contract check itself. Repeating
     # Invoke-SafeUpdate here causes a second network fetch while the control
     # plane is offline, which unnecessarily stretches restart time.
-    $needsSafeUpdate = $code -ne 42
+    # Credential recovery must not wait for a Git fetch or install operation.
+    $needsSafeUpdate = $code -notin @(42, 43)
     if ($code -eq 42) {
         $retrySeconds = [Math]::Max(1, $InitialRetrySeconds)
         Write-BootstrapLog "AGENT_RESTART update-complete skip-duplicate-safe-update"

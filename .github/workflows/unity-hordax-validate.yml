@@ -17,9 +17,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: unity-hordax-validate-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: [self-hosted, Windows, X64, hordax-unity]
     timeout-minutes: 45
 
     steps:

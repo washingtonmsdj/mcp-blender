@@ -1,6 +1,6 @@
 # Instalação e recuperação do Device Agent
 
-No Windows, com Python 3.11+, Git e GitHub CLI instalados, execute na cópia do repositório:
+No Windows, execute na cópia do repositório:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\ordax-device-agent-setup.ps1
@@ -10,6 +10,8 @@ O setup usa o checkout gerenciado `%LOCALAPPDATA%\OrdaX\DevAgent\src`, faz
 fast-forward da `main`, repara o ambiente Python e instala a tarefa. Uma árvore
 com alterações ou histórico divergente é preservada e diagnosticada. Não há
 `reset --hard`. O comando pode ser repetido. `-NonInteractive` nunca abre login.
+Git, Python e GitHub CLI ausentes são instalados pelo WinGet oficial. Se WinGet
+também não estiver disponível, o setup informa qual pré-requisito falta.
 
 Na primeira autenticação, o usuário entra no GitHub pelo navegador, via `gh`.
 Este Control Plane de engenharia permite cadastrar dispositivos a usuários com
@@ -54,11 +56,14 @@ identidade, projeto, tarefa externa e heartbeat aceito há menos de 60 segundos.
 ## GitHub Actions
 
 Runner não participa do boot, heartbeat, enrollment nem recovery normal.
-Recovery Actions é secundário: requer label `ordax-recovery`, cancela execuções
+Recovery Actions é secundário: execução manual ou `ORDAX_RECOVERY_ENABLED=true`,
+requer label `ordax-recovery`, cancela execuções
 superadas e verifica HEAD atual antes de alterar o PC. Autopilot requer a
 variável `HORDAX_AUTOPILOT_ENABLED=true` e a label `hordax-autopilot` para não
 consumir um runner de recuperação. Filas antigas devem ser canceladas na
 implantação, porque editar um workflow não reescreve execuções já enfileiradas.
+Smoke e validação Unity usam labels `ordax-toolchain` e `hordax-unity`, com
+concorrência limitada e cancelamento de execução superada.
 
 ## Verificação
 

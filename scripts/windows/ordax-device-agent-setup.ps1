@@ -10,10 +10,22 @@ $remote = 'https://github.com/washingtonmsdj/mcp-blender.git'
 $taskName = 'OrdaX Dev Agent'
 $mutex = New-Object System.Threading.Mutex($false, 'Local\OrdaXDeviceSetup')
 $restartExisting = $false
+$changedLocation = $false
 if (-not $mutex.WaitOne(0)) { throw 'SETUP_ALREADY_RUNNING' }
 try {
     New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'GIT_REQUIRED' }
+    foreach ($dependency in @(
+        @{Command='git'; Package='Git.Git'},
+        @{Command='python'; Package='Python.Python.3.13'},
+        @{Command='gh'; Package='GitHub.cli'}
+    )) {
+        if (-not (Get-Command $dependency.Command -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw "PREREQUISITE_REQUIRED: $($dependency.Package)" }
+            & winget install --id $dependency.Package --exact --source winget --silent --accept-package-agreements --accept-source-agreements
+            if ($LASTEXITCODE -ne 0) { throw "PREREQUISITE_INSTALL_FAILED: $($dependency.Package)" }
+            $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+        }
+    }
     if (-not (Test-Path (Join-Path $repo '.git'))) {
         if (Test-Path $repo) { throw 'MANAGED_DIRECTORY_NOT_A_CHECKOUT' }
         & git clone --branch main --single-branch $remote $repo
@@ -50,6 +62,8 @@ try {
     }
     & git -C $repo merge --ff-only origin/main
     if ($LASTEXITCODE -ne 0) { throw 'UPDATE_FAILED' }
+    Push-Location -LiteralPath $repo
+    $changedLocation = $true
 
     $python = Join-Path $repo '.venv\Scripts\python.exe'
     $healthy = $false
@@ -64,8 +78,15 @@ try {
         & $basePython.Source -m venv (Join-Path $repo '.venv')
         if ($LASTEXITCODE -ne 0) { throw 'VENV_REPAIR_FAILED' }
     }
-    & $python -m pip install --disable-pip-version-check -e $repo
-    if ($LASTEXITCODE -ne 0) { throw 'EDITABLE_INSTALL_FAILED_RETRY_SETUP' }
+    $contract = (Get-FileHash (Join-Path $repo 'pyproject.toml') -Algorithm SHA256).Hash
+    $contractPath = Join-Path $stateDir 'setup-install-contract.txt'
+    $previousContract = if (Test-Path $contractPath) { (Get-Content $contractPath -Raw).Trim() } else { '' }
+    if (-not $healthy -or $previousContract -ne $contract) {
+        & $python -m pip install --disable-pip-version-check -e $repo
+        if ($LASTEXITCODE -ne 0) { throw 'EDITABLE_INSTALL_FAILED_RETRY_SETUP' }
+        [System.IO.File]::WriteAllText("$contractPath.next", $contract)
+        Move-Item -LiteralPath "$contractPath.next" -Destination $contractPath -Force
+    }
 
     # Install the external supervisor even if pairing/network needs a retry.
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'scripts\windows\ordax-agent-install.ps1')
@@ -77,6 +98,7 @@ try {
     Enable-ScheduledTask -TaskName $taskName | Out-Null
     Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     Start-ScheduledTask -TaskName $taskName
+    $restartExisting = $false
     if ($pairingCode -ne 0) { throw 'SETUP_PENDING_AUTH_OR_NETWORK_RETRY_SETUP' }
 
     $deadline = [DateTime]::UtcNow.AddSeconds($ReadyTimeoutSeconds)
@@ -102,6 +124,7 @@ try {
     }
     throw 'AGENT_NOT_READY_CHECK_LOCAL_STATUS'
 } finally {
+    if ($changedLocation) { Pop-Location }
     if ($restartExisting) {
         Enable-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue | Out-Null
         Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue

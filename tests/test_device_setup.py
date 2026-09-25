@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import httpx
 
-from ordax_dev_agent.device_setup import CONTROL_PLANE, SetupError, configure
+from ordax_dev_agent.device_setup import CONTROL_PLANE, SetupError, configure, setup_lock
 
 
 class SetupTests(unittest.TestCase):
@@ -131,6 +131,14 @@ class SetupTests(unittest.TestCase):
                 self.run_setup()
         self.assertEqual([], self.calls)
         self.assertEqual([], list(self.state.iterdir()))
+
+    def test_concurrent_supervisor_and_setup_cannot_rotate_twice(self):
+        with setup_lock(self.state):
+            with self.assertRaisesRegex(SetupError, 'SETUP_ALREADY_RUNNING'):
+                self.run_setup()
+        self.assertEqual([], self.calls)
+        self.run_setup()
+        self.assertEqual(1, self.enrollments)
 
 
 if __name__ == '__main__':

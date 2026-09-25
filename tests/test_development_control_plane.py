@@ -5,11 +5,12 @@ import hashlib
 import json
 import tempfile
 import unittest
+import httpx
 from pathlib import Path
 
 from ordax_dev_agent.config import AgentConfig
 from ordax_dev_agent.control_plane import build_control_plane
-from ordax_dev_agent.development_control_plane import DevelopmentControlPlane
+from ordax_dev_agent.development_control_plane import DevelopmentControlPlane, DeviceAuthorizationError
 
 
 DEVICE_ID = "11111111-1111-4111-8111-111111111111"
@@ -31,6 +32,15 @@ def make_config(root: Path) -> AgentConfig:
 
 
 class DevelopmentControlPlaneTests(unittest.TestCase):
+    def test_revoked_token_requests_supervisor_recovery(self):
+        control = object.__new__(DevelopmentControlPlane)
+        control.device_id = DEVICE_ID
+        control.endpoint = 'https://example.supabase.co/functions/v1/device'
+        with httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(401, json={'error':'invalid_device_token'}))) as client:
+            control.http = client
+            with self.assertRaises(DeviceAuthorizationError):
+                control._call('heartbeat')
+
     def test_v2_builder_uses_device_scoped_local_credential(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)

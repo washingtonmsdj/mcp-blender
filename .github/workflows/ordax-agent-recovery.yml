@@ -36,7 +36,7 @@ jobs:
             core.setOutput('current', context.ref === 'refs/heads/main' && data.commit.sha === context.sha);
   recover-if-offline:
     needs: current-head
-    if: needs.current-head.outputs.current == 'true'
+    if: needs.current-head.outputs.current == 'true' && (github.event_name == 'workflow_dispatch' || vars.ORDAX_RECOVERY_ENABLED == 'true')
     runs-on: [self-hosted, Windows, X64, ordax-recovery]
     timeout-minutes: 10
 
