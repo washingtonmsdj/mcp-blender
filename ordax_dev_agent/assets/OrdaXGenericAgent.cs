@@ -16,7 +16,7 @@ namespace OrdaX.EditorTools
     {
         [Serializable] private class Command
         {
-            public string id, action, outputPath, scenePath;
+            public string id, action, outputPath, scenePath, assetPath;
             public int width = 1280, height = 720;
         }
         [Serializable] private class Reply
@@ -41,6 +41,11 @@ namespace OrdaX.EditorTools
             public string cameraGroundCollider;
             public string[] cameraInsideColliderNames, cameraBoundsContainingColliderNames;
             public string[] auditWarnings;
+            public string assetPath, assetImporterType, modelAnimationType, modelMeshCompression;
+            public bool modelImporterPresent, modelReadable, modelImportAnimation;
+            public float modelGlobalScale;
+            public int modelMeshCount, modelVertexCount, modelTriangleCount, modelMaterialCount;
+            public int modelAnimationClipCount, modelBoneCount, modelLodGroupCount;
         }
         [Serializable] private class SceneObject
         {
@@ -136,6 +141,7 @@ namespace OrdaX.EditorTools
                     case "scene_summary": SceneSummary(reply, false); break;
                     case "physics_audit": SceneSummary(reply, true); break;
                     case "spatial_audit": SpatialAudit(reply); break;
+                    case "asset_model_audit": AssetModelAudit(command, reply); break;
                     default: throw new InvalidOperationException("Unsupported companion action: " + command.action);
                 }
             }
@@ -426,6 +432,95 @@ namespace OrdaX.EditorTools
 
             UnityEditor.SceneManagement.EditorSceneManager.OpenScene(command.scenePath, UnityEditor.SceneManagement.OpenSceneMode.Single);
             reply.summary = "Scene opened: " + command.scenePath;
+        }
+
+        private static void AssetModelAudit(Command command, Reply reply)
+        {
+            string assetPath = (command.assetPath ?? string.Empty).Replace('\\', '/').Trim();
+            if (string.IsNullOrWhiteSpace(assetPath) ||
+                !assetPath.StartsWith("Assets/", StringComparison.Ordinal) ||
+                assetPath.Contains("../") || assetPath.Contains("/.."))
+                throw new InvalidOperationException("assetPath must stay inside Assets/");
+
+            string extension = Path.GetExtension(assetPath).ToLowerInvariant();
+            string[] allowed = { ".fbx", ".obj", ".blend", ".glb", ".gltf" };
+            if (!allowed.Contains(extension))
+                throw new InvalidOperationException("assetPath must be a supported model asset");
+
+            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+            string rootPrefix = Path.GetFullPath(projectRoot + Path.DirectorySeparatorChar);
+            string fullPath = Path.GetFullPath(Path.Combine(projectRoot, assetPath.Replace('/', Path.DirectorySeparatorChar)));
+            if (!fullPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) || !File.Exists(fullPath))
+                throw new InvalidOperationException("Model asset does not exist inside the project");
+
+            AssetDatabase.ImportAsset(
+                assetPath,
+                ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+
+            AssetImporter importer = AssetImporter.GetAtPath(assetPath);
+            if (importer == null)
+                throw new InvalidOperationException("Unity did not create an AssetImporter for the model");
+
+            GameObject modelRoot = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+            if (modelRoot == null)
+                throw new InvalidOperationException("Unity did not import the model as a GameObject");
+
+            var meshes = new HashSet<Mesh>();
+            foreach (var filter in modelRoot.GetComponentsInChildren<MeshFilter>(true))
+                if (filter.sharedMesh != null) meshes.Add(filter.sharedMesh);
+            var skinnedRenderers = modelRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            foreach (var renderer in skinnedRenderers)
+                if (renderer.sharedMesh != null) meshes.Add(renderer.sharedMesh);
+
+            int vertices = 0;
+            long triangles = 0;
+            foreach (var mesh in meshes)
+            {
+                vertices += mesh.vertexCount;
+                for (int subMesh = 0; subMesh < mesh.subMeshCount; subMesh++)
+                    triangles += (long)mesh.GetIndexCount(subMesh) / 3L;
+            }
+
+            var materials = new HashSet<Material>();
+            foreach (var renderer in modelRoot.GetComponentsInChildren<Renderer>(true))
+                foreach (var material in renderer.sharedMaterials)
+                    if (material != null) materials.Add(material);
+
+            var bones = new HashSet<Transform>();
+            foreach (var renderer in skinnedRenderers)
+                foreach (var bone in renderer.bones)
+                    if (bone != null) bones.Add(bone);
+
+            var clips = AssetDatabase.LoadAllAssetsAtPath(assetPath)
+                .OfType<AnimationClip>()
+                .Where(clip => clip != null && !clip.name.StartsWith("__preview__", StringComparison.Ordinal))
+                .ToArray();
+
+            reply.assetPath = assetPath;
+            reply.assetImporterType = importer.GetType().FullName;
+            reply.modelMeshCount = meshes.Count;
+            reply.modelVertexCount = vertices;
+            reply.modelTriangleCount = triangles > int.MaxValue ? int.MaxValue : (int)triangles;
+            reply.modelMaterialCount = materials.Count;
+            reply.modelAnimationClipCount = clips.Length;
+            reply.modelBoneCount = bones.Count;
+            reply.modelLodGroupCount = modelRoot.GetComponentsInChildren<LODGroup>(true).Length;
+
+            var modelImporter = importer as ModelImporter;
+            reply.modelImporterPresent = modelImporter != null;
+            if (modelImporter != null)
+            {
+                reply.modelGlobalScale = modelImporter.globalScale;
+                reply.modelReadable = modelImporter.isReadable;
+                reply.modelImportAnimation = modelImporter.importAnimation;
+                reply.modelAnimationType = modelImporter.animationType.ToString();
+                reply.modelMeshCompression = modelImporter.meshCompression.ToString();
+            }
+
+            reply.ok = meshes.Count > 0 && vertices > 0 && triangles > 0;
+            reply.summary = reply.ok
+                ? "Unity model import audit passed"
+                : "Unity imported the asset but no usable mesh geometry was found";
         }
 
         private static string Hierarchy(Transform transform)
