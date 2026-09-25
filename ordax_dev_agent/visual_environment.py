@@ -8,6 +8,7 @@ from typing import Any
 ENVIRONMENT_SCHEMA = "ordax.visual-environment/1"
 
 _TONE_MAPPINGS = {"agx", "aces", "neutral"}
+_OCEAN_PROFILES = {"bay", "coastal", "open_ocean"}
 
 
 def _number(value: Any, field: str, minimum: float, maximum: float) -> float:
@@ -41,6 +42,31 @@ def _bounded_name(value: Any, field: str = "name") -> str:
     if not result or len(result.encode("utf-8")) > 96:
         raise ValueError(f"{field} must be a non-empty string up to 96 UTF-8 bytes")
     return result
+
+
+def _ocean_spectrum_defaults(
+    *,
+    profile: str,
+    swell_spread_deg: float,
+    wind_wave_height_m: float,
+    wind_wave_period_s: float,
+    wind_wave_direction_deg: float,
+    short_wave_strength: float,
+    short_wave_scale_m: float,
+    crest_foam_threshold: float,
+    shore_foam_amount: float,
+) -> dict[str, Any]:
+    return {
+        "profile": profile,
+        "swell_spread_deg": swell_spread_deg,
+        "wind_wave_height_m": wind_wave_height_m,
+        "wind_wave_period_s": wind_wave_period_s,
+        "wind_wave_direction_deg": wind_wave_direction_deg,
+        "short_wave_strength": short_wave_strength,
+        "short_wave_scale_m": short_wave_scale_m,
+        "crest_foam_threshold": crest_foam_threshold,
+        "shore_foam_amount": shore_foam_amount,
+    }
 
 
 PRESETS: dict[str, dict[str, Any]] = {
@@ -80,6 +106,17 @@ PRESETS: dict[str, dict[str, Any]] = {
             "shallow_color": [0.03, 0.33, 0.38],
             "roughness": 0.18,
             "absorption": 0.45,
+            "spectrum": _ocean_spectrum_defaults(
+                profile="bay",
+                swell_spread_deg=18.0,
+                wind_wave_height_m=0.24,
+                wind_wave_period_s=2.8,
+                wind_wave_direction_deg=110.0,
+                short_wave_strength=0.58,
+                short_wave_scale_m=0.85,
+                crest_foam_threshold=0.64,
+                shore_foam_amount=0.18,
+            ),
         },
         "exposure": {"ev100": 14.2, "tone_mapping": "agx"},
     },
@@ -119,6 +156,17 @@ PRESETS: dict[str, dict[str, Any]] = {
             "shallow_color": [0.035, 0.27, 0.31],
             "roughness": 0.22,
             "absorption": 0.52,
+            "spectrum": _ocean_spectrum_defaults(
+                profile="bay",
+                swell_spread_deg=14.0,
+                wind_wave_height_m=0.18,
+                wind_wave_period_s=3.1,
+                wind_wave_direction_deg=120.0,
+                short_wave_strength=0.46,
+                short_wave_scale_m=1.0,
+                crest_foam_threshold=0.68,
+                shore_foam_amount=0.14,
+            ),
         },
         "exposure": {"ev100": 11.2, "tone_mapping": "agx"},
     },
@@ -134,7 +182,31 @@ def environment_schema() -> dict[str, Any]:
             "sky": ["turbidity", "rayleigh", "mie_coefficient", "mie_directional_g", "cloud_coverage", "cloud_density"],
             "atmosphere": ["horizon_haze", "visibility_km", "fog_density", "fog_height_m"],
             "wind": ["speed_mps", "direction_deg"],
-            "ocean": ["enabled", "sea_level_m", "significant_wave_height_m", "swell_period_s", "swell_direction_deg", "choppiness", "foam_amount", "deep_color", "shallow_color", "roughness", "absorption"],
+            "ocean": [
+                "enabled",
+                "sea_level_m",
+                "significant_wave_height_m",
+                "swell_period_s",
+                "swell_direction_deg",
+                "choppiness",
+                "foam_amount",
+                "deep_color",
+                "shallow_color",
+                "roughness",
+                "absorption",
+                "spectrum",
+            ],
+            "ocean.spectrum": [
+                "profile",
+                "swell_spread_deg",
+                "wind_wave_height_m",
+                "wind_wave_period_s",
+                "wind_wave_direction_deg",
+                "short_wave_strength",
+                "short_wave_scale_m",
+                "crest_foam_threshold",
+                "shore_foam_amount",
+            ],
             "exposure": ["ev100", "tone_mapping"],
         },
     }
@@ -166,21 +238,65 @@ def normalize_environment(payload: dict[str, Any]) -> dict[str, Any]:
         base["name"] = _bounded_name(payload["name"])
 
     for section in ("sun", "sky", "atmosphere", "wind", "ocean", "exposure"):
-        if section in payload:
-            if not isinstance(payload[section], dict):
-                raise ValueError(f"{section} must be an object")
+        if section not in payload:
+            continue
+        if not isinstance(payload[section], dict):
+            raise ValueError(f"{section} must be an object")
+        if section == "ocean" and "spectrum" in payload[section]:
+            ocean_update = dict(payload[section])
+            spectrum_update = ocean_update.pop("spectrum")
+            if not isinstance(spectrum_update, dict):
+                raise ValueError("ocean.spectrum must be an object")
+            base["ocean"].update(ocean_update)
+            base["ocean"]["spectrum"].update(spectrum_update)
+        else:
             base[section].update(payload[section])
 
     sun = _object(base["sun"], "sun", {"elevation_deg", "azimuth_deg", "intensity_lux", "color_temperature_k"})
     sky = _object(base["sky"], "sky", {"turbidity", "rayleigh", "mie_coefficient", "mie_directional_g", "cloud_coverage", "cloud_density"})
     atmosphere = _object(base["atmosphere"], "atmosphere", {"horizon_haze", "visibility_km", "fog_density", "fog_height_m"})
     wind = _object(base["wind"], "wind", {"speed_mps", "direction_deg"})
-    ocean = _object(base["ocean"], "ocean", {"enabled", "sea_level_m", "significant_wave_height_m", "swell_period_s", "swell_direction_deg", "choppiness", "foam_amount", "deep_color", "shallow_color", "roughness", "absorption"})
+    ocean = _object(
+        base["ocean"],
+        "ocean",
+        {
+            "enabled",
+            "sea_level_m",
+            "significant_wave_height_m",
+            "swell_period_s",
+            "swell_direction_deg",
+            "choppiness",
+            "foam_amount",
+            "deep_color",
+            "shallow_color",
+            "roughness",
+            "absorption",
+            "spectrum",
+        },
+    )
+    spectrum = _object(
+        ocean.get("spectrum"),
+        "ocean.spectrum",
+        {
+            "profile",
+            "swell_spread_deg",
+            "wind_wave_height_m",
+            "wind_wave_period_s",
+            "wind_wave_direction_deg",
+            "short_wave_strength",
+            "short_wave_scale_m",
+            "crest_foam_threshold",
+            "shore_foam_amount",
+        },
+    )
     exposure = _object(base["exposure"], "exposure", {"ev100", "tone_mapping"})
 
     enabled = ocean.get("enabled")
     if not isinstance(enabled, bool):
         raise ValueError("ocean.enabled must be boolean")
+    profile = spectrum.get("profile")
+    if not isinstance(profile, str) or profile.strip().lower() not in _OCEAN_PROFILES:
+        raise ValueError("ocean.spectrum.profile must be one of bay, coastal, open_ocean")
     tone_mapping = exposure.get("tone_mapping")
     if not isinstance(tone_mapping, str) or tone_mapping.lower() not in _TONE_MAPPINGS:
         raise ValueError("exposure.tone_mapping must be one of agx, aces, neutral")
@@ -224,6 +340,17 @@ def normalize_environment(payload: dict[str, Any]) -> dict[str, Any]:
             "shallow_color": _rgb(ocean["shallow_color"], "ocean.shallow_color"),
             "roughness": _number(ocean["roughness"], "ocean.roughness", 0.0, 1.0),
             "absorption": _number(ocean["absorption"], "ocean.absorption", 0.0, 10.0),
+            "spectrum": {
+                "profile": profile.strip().lower(),
+                "swell_spread_deg": _number(spectrum["swell_spread_deg"], "ocean.spectrum.swell_spread_deg", 0.0, 90.0),
+                "wind_wave_height_m": _number(spectrum["wind_wave_height_m"], "ocean.spectrum.wind_wave_height_m", 0.0, 10.0),
+                "wind_wave_period_s": _number(spectrum["wind_wave_period_s"], "ocean.spectrum.wind_wave_period_s", 0.5, 20.0),
+                "wind_wave_direction_deg": _number(spectrum["wind_wave_direction_deg"], "ocean.spectrum.wind_wave_direction_deg", 0.0, 360.0),
+                "short_wave_strength": _number(spectrum["short_wave_strength"], "ocean.spectrum.short_wave_strength", 0.0, 1.0),
+                "short_wave_scale_m": _number(spectrum["short_wave_scale_m"], "ocean.spectrum.short_wave_scale_m", 0.05, 20.0),
+                "crest_foam_threshold": _number(spectrum["crest_foam_threshold"], "ocean.spectrum.crest_foam_threshold", 0.0, 1.0),
+                "shore_foam_amount": _number(spectrum["shore_foam_amount"], "ocean.spectrum.shore_foam_amount", 0.0, 1.0),
+            },
         },
         "exposure": {
             "ev100": _number(exposure["ev100"], "exposure.ev100", -16.0, 24.0),
