@@ -159,14 +159,17 @@ class DevelopmentControlPlane:
     def _dispatch(row: dict[str, Any], payload: dict[str, Any]) -> tuple[str, dict[str, Any], str | None]:
         capability = str(row.get("capability") or row.get("operation") or "")
         if capability == "ordax.dev.adapter.invoke":
-            allowed = {"action", "payload", "project"}
+            allowed = {"adapter", "action", "payload", "project"}
             if set(payload) - allowed:
                 raise RuntimeError("adapter invocation contains unsupported fields")
+            adapter = payload.get("adapter")
             action = payload.get("action")
             action_payload = payload.get("payload", {})
             project = payload.get("project")
-            if not isinstance(action, str) or not action:
-                raise RuntimeError("adapter invocation action is missing")
+            if adapter != "blender":
+                raise RuntimeError("adapter invocation is not a Blender capability")
+            if not isinstance(action, str) or not action.startswith("blender."):
+                raise RuntimeError("adapter invocation action is not a Blender action")
             if not isinstance(action_payload, dict):
                 raise RuntimeError("adapter invocation payload must be an object")
             if project is not None and not isinstance(project, str):
