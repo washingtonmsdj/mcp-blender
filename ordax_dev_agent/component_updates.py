@@ -68,8 +68,25 @@ _COMPONENTS: tuple[dict[str, Any], ...] = (
         "independent_activation_ready": False,
         "paths": (
             "ordax_dev_agent/blender_",
-            "ordax_dev_agent/assets/blender_",
             "scripts/blender_",
+        ),
+    },
+    {
+        "id": "adapter-game-assets",
+        "version": "0.1.0",
+        "kind": "adapter",
+        "failure_domain": "game-asset-generation",
+        "development_delivery": "git-main + provider-apis + local-workflows",
+        "production_delivery_target": "signed-component-slot",
+        "restart_policy": "adapter-or-device-agent",
+        "independent_activation_ready": False,
+        "paths": (
+            "ordax_dev_agent/game_asset_",
+            "ordax_dev_agent/mixamo_",
+            "ordax_dev_agent/rodin_",
+            "ordax_dev_agent/comfyui_",
+            "ordax_dev_agent/assets/blender_game_asset_pipeline.py",
+            "ordax_dev_agent/assets/blender_fbx_ingest.py",
         ),
     },
     {
@@ -100,7 +117,10 @@ _COMPONENTS: tuple[dict[str, Any], ...] = (
         "upstream_package_version": "0.1.0",
         "upstream_pinned_commit": "502667d0b46e67555c7956d4ff281be5e8511a30",
         "notes": "Runtime is isolated in the Device Agent state directory; upstream uses undocumented remote APIs.",
-        "paths": ("ordax_dev_agent/aleph_actions.py",),
+        "paths": (
+            "ordax_dev_agent/aleph_",
+            "ordax_dev_agent/assets/blender_aleph_",
+        ),
     },
     {
         "id": "adapter-git",
