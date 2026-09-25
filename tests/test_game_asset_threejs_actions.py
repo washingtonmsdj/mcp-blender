@@ -121,9 +121,11 @@ class GameAssetThreeJsActionTests(unittest.TestCase):
             package = json.loads((viewer / "package.json").read_text(encoding="utf-8"))
             self.assertEqual(THREE_VERSION, package["dependencies"]["three"])
             self.assertEqual(VITE_VERSION, package["devDependencies"]["vite"])
-            self.assertIn("WebGPURenderer", (viewer / "src" / "main.js").read_text(encoding="utf-8"))
-            self.assertIn("SkyMesh", (viewer / "src" / "main.js").read_text(encoding="utf-8"))
-            self.assertIn("WaterMesh", (viewer / "src" / "main.js").read_text(encoding="utf-8"))
+            main_js = (viewer / "src" / "main.js").read_text(encoding="utf-8")
+            self.assertIn("WebGPURenderer", main_js)
+            self.assertIn("SkyMesh", main_js)
+            self.assertIn("WaterMesh", main_js)
+            self.assertIn("intensity_lux / 50000", main_js)
 
             audited = registry.execute(
                 "game_assets.threejs_runtime_audit",

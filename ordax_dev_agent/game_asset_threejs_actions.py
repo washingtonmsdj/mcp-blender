@@ -145,7 +145,10 @@ if (sky.cloudCoverage) sky.cloudCoverage.value = environment.sky.cloud_coverage;
 if (sky.cloudDensity) sky.cloudDensity.value = environment.sky.cloud_density;
 scene.add(sky);
 
-const sun = new THREE.DirectionalLight(0xffffff, environment.sun.intensity_lux);
+// Keep illuminance in the shared physical contract, but map it to Three.js's
+// unitless DirectionalLight intensity instead of feeding lux directly.
+const sunIntensity = THREE.MathUtils.clamp(environment.sun.intensity_lux / 50000, 0, 5);
+const sun = new THREE.DirectionalLight(0xffffff, sunIntensity);
 sun.position.copy(sunDir).multiplyScalar(8000);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
