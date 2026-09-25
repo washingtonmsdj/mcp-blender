@@ -22,7 +22,7 @@ function Write-PrivateTokenFile([string]$Path, [string]$Token) {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($Path, $Token + [Environment]::NewLine, $utf8NoBom)
     try {
-        & icacls.exe $Path /inheritance:r /grant:r "$env:USERNAME:F" | Out-Null
+        & icacls.exe $Path /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
     } catch {
         Write-Warning "Could not tighten token ACL with icacls; continuing with user-local state path."
     }
