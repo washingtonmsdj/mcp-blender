@@ -26,12 +26,14 @@ from .game_asset_status_actions import GameAssetStatusActions
 from .game_asset_actions import GameAssetActions
 from .game_asset_artifact_actions import GameAssetArtifactActions
 from .game_asset_engine_export_actions import GameAssetEngineExportActions
+from .game_asset_threejs_actions import GameAssetThreeJsActions
 from .game_asset_godot_actions import GameAssetGodotActions
 from .game_asset_image_actions import GameAssetImageActions
 from .game_asset_lod_actions import GameAssetLodActions
 from .game_asset_runtime_actions import GameAssetRuntimeActions
 from .game_asset_unity_actions import GameAssetUnityActions
 from .game_asset_unreal_actions import GameAssetUnrealActions
+from .visual_environment_actions import VisualEnvironmentActions
 from .generated_asset_actions import GeneratedAssetActions
 from .mixamo_actions import MixamoActions
 from .rodin_actions import RodinActions
@@ -61,12 +63,14 @@ class ActionRegistry(
     GameAssetActions,
     GameAssetArtifactActions,
     GameAssetEngineExportActions,
+    GameAssetThreeJsActions,
     GameAssetGodotActions,
     GameAssetImageActions,
     GameAssetLodActions,
     GameAssetRuntimeActions,
     GameAssetUnityActions,
     GameAssetUnrealActions,
+    VisualEnvironmentActions,
     GeneratedAssetActions,
     MixamoActions,
     RodinActions,
@@ -93,6 +97,9 @@ class ActionRegistry(
             "project.text_write": self.project_text_write,
             "project.text_patch": self.project_text_patch,
             "observation.capture": self.observation_capture,
+            "visual.environment_schema": self.visual_environment_schema,
+            "visual.environment_preset": self.visual_environment_preset,
+            "visual.environment_write": self.visual_environment_write,
             "blender.inspect": self.blender_inspect,
             "blender.benchmark": self.blender_benchmark,
             "blender.render_preview": self.blender_render_preview,
@@ -165,6 +172,8 @@ class ActionRegistry(
             "game_assets.engine_export_verify": self.game_assets_engine_export_verify,
             "game_assets.engine_handoff_audit": self.game_assets_engine_handoff_audit,
             "game_assets.web_glb_audit": self.game_assets_web_glb_audit,
+            "game_assets.threejs_prepare_viewer": self.game_assets_threejs_prepare_viewer,
+            "game_assets.threejs_runtime_audit": self.game_assets_threejs_runtime_audit,
             "game_assets.godot_import_validate": self.game_assets_godot_import_validate,
             "game_assets.unreal_import_validate": self.game_assets_unreal_import_validate,
             "game_assets.unity_import_generated": self.game_assets_unity_import_generated,
@@ -240,7 +249,7 @@ class ActionRegistry(
         self._app_prefixes = {"unity", "blender"}
         available = {entry.name: entry for entry in entry_points(group="ordax_dev_agent.adapters")}
         for name in config.adapters:
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets", "geo"}:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets", "geo", "visual"}:
                 raise ValueError(f"invalid or reserved adapter name: {name}")
             if name not in available:
                 raise ValueError(f"configured adapter is not installed: {name}")
