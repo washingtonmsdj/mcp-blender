@@ -82,11 +82,11 @@ Import-Module ScheduledTasks -ErrorAction Stop
 
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 
-$pythonw = Join-Path $repoRoot ".venv\Scripts\pythonw.exe"
-$taskPython = if (Test-Path $pythonw) { $pythonw } else { $python }
+$powershellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
+$bootstrapArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$bootstrapPath`" -RepoRoot `"$repoRoot`""
 $actionParams = @{
-    Execute = $taskPython
-    Argument = '-m ordax_dev_agent.task_entry'
+    Execute = $powershellPath
+    Argument = $bootstrapArguments
     WorkingDirectory = $repoRoot
 }
 $action = New-ScheduledTaskAction @actionParams
@@ -118,7 +118,7 @@ Write-Host "Run context: $userId (interactive desktop)"
 Write-Host "Restart policy: 999 attempts, 1 minute interval"
 Write-Host "Maintenance trigger: every 1 minute for self-recovery; duplicate starts are ignored"
 Write-Host "Local status endpoint: http://127.0.0.1:8765/status"
-Write-Host ("Task executable: " + $taskPython)
+Write-Host ("Task executable: " + $powershellPath)\nWrite-Host ("Task bootstrap: " + $bootstrapPath)
 Write-Host ("External bootstrap retained for maintenance: " + $bootstrapPath)
 
 if ($SupabaseUrl -and $PublishableKey) {
