@@ -29,6 +29,20 @@ def _wait_seconds(value: Any) -> float:
     return result
 
 
+def _unity_asset_path(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ValueError("asset_path must be a string")
+    result = value.strip().replace("\\", "/")
+    if not result.startswith("Assets/") or result.startswith("Assets/../"):
+        raise ValueError("asset_path must stay inside Assets/")
+    if "/../" in result or result.endswith("/.."):
+        raise ValueError("asset_path must stay inside Assets/")
+    suffix = "." + result.rsplit(".", 1)[-1].lower() if "." in result.rsplit("/", 1)[-1] else ""
+    if suffix not in _SUPPORTED_ENGINE_MODELS and suffix != ".blend":
+        raise ValueError("asset_path must be FBX, OBJ, Blend, GLB, or glTF")
+    return result
+
+
 class GameAssetUnityActions:
     """Move immutable generated evidence into Unity with an active import gate."""
 
@@ -68,7 +82,8 @@ class GameAssetUnityActions:
             destination_raw = payload.get("destination_path")
             if destination_raw is None:
                 destination_raw = f"{_DEFAULT_DESTINATION_ROOT}/{artifact.name}"
-            destination = project.path(str(destination_raw), must_exist=False)
+            destination_asset_path = _unity_asset_path(str(destination_raw))
+            destination = project.path(destination_asset_path, must_exist=False)
             overwrite = bool(payload.get("overwrite", False))
             copy_report = import_project_asset(
                 project.root,
@@ -141,5 +156,49 @@ class GameAssetUnityActions:
                 "engine": "unity",
                 "source_preserved": True,
                 "import_confirmed": refresh_requested,
+            },
+        )
+
+    def game_assets_unity_model_audit(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {"project", "asset_path", "timeout_seconds"}
+        unsupported = set(payload) - supported
+        if unsupported:
+            return ActionResult(False, f"unsupported fields: {', '.join(sorted(unsupported))}")
+
+        project = self._project(payload)
+        try:
+            if "unity" not in project.apps:
+                raise ValueError(f"Unity is not enabled for project {project.slug}")
+            asset_path = _unity_asset_path(payload.get("asset_path"))
+            physical = project.path(asset_path)
+            if not physical.is_file():
+                raise ValueError("asset_path must exist inside the Unity project")
+            timeout = payload.get("timeout_seconds", 180)
+            if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 5 or timeout > 600:
+                raise ValueError("timeout_seconds must be an integer between 5 and 600")
+            editor = self._editor({"project": project.slug})
+            response = editor.request(
+                "asset_model_audit",
+                {"assetPath": asset_path},
+                timeout_seconds=float(timeout),
+            )
+            if response is None:
+                return ActionResult(
+                    False,
+                    "Unity companion is not ready for model import audit",
+                    {"asset_path": asset_path, "retryable": True},
+                )
+            if not response.ok:
+                return response
+        except (ValueError, OSError, FileNotFoundError) as error:
+            return ActionResult(False, str(error))
+
+        return ActionResult(
+            True,
+            "Unity model import audit passed",
+            {
+                "asset_path": asset_path,
+                "engine": "unity",
+                "audit": response.data,
             },
         )
