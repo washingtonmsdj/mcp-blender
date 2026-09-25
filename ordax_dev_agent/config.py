@@ -20,6 +20,8 @@ class AgentConfig:
     projects: dict | None = None
     default_project: str = "hordax"
     adapters: tuple[str, ...] = ()
+    control_plane_protocol: str = "legacy-v1"
+    development_device_id: str | None = None
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -62,6 +64,14 @@ class AgentConfig:
             projects=projects,
             default_project=default_project,
             adapters=tuple(settings.get("adapters", [])),
+            control_plane_protocol=os.environ.get(
+                "ORDAX_CONTROL_PLANE_PROTOCOL",
+                settings.get("control_plane_protocol", "legacy-v1"),
+            ),
+            development_device_id=os.environ.get(
+                "ORDAX_DEVICE_ID",
+                settings.get("development_device_id"),
+            ),
             agent_name=os.environ.get(
                 "ORDAX_AGENT_NAME",
                 settings.get("agent_name") or socket.gethostname(),
@@ -124,6 +134,8 @@ class AgentConfig:
             "hordax_path": str(self.hordax_path),
             "bridge_path": str(self.bridge_path),
             "supabase_configured": bool(self.supabase_url and self.publishable_key),
+            "control_plane_protocol": self.control_plane_protocol,
+            "development_device_id_configured": bool(self.development_device_id),
         }
 
     def write_public_status(self) -> None:
