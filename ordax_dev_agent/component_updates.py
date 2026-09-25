@@ -16,9 +16,6 @@ from mcp_blender_unity import __version__ as bridge_package_version
 COMPONENT_CATALOG_SCHEMA = "ordax.device-agent-components/1"
 UPDATE_PLAN_SCHEMA = "ordax.device-agent-update-plan/1"
 
-# Adapter versions intentionally do not mirror the Device Agent version.  They
-# start on an independent pre-stable line and advance only when their own
-# compatibility/behavior changes.
 _COMPONENTS: tuple[dict[str, Any], ...] = (
     {
         "id": "device-agent-core",
@@ -82,11 +79,13 @@ _COMPONENTS: tuple[dict[str, Any], ...] = (
         "independent_activation_ready": False,
         "paths": (
             "ordax_dev_agent/game_asset_",
+            "ordax_dev_agent/generated_asset_",
             "ordax_dev_agent/mixamo_",
             "ordax_dev_agent/rodin_",
             "ordax_dev_agent/comfyui_",
             "ordax_dev_agent/assets/blender_game_asset_pipeline.py",
             "ordax_dev_agent/assets/blender_fbx_ingest.py",
+            "ordax_dev_agent/assets/blender_generated_asset_ingest.py",
         ),
     },
     {
@@ -154,11 +153,7 @@ _RUNTIME_SHARED_PATHS = (
 
 
 def _public_component(component: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in component.items()
-        if key != "paths"
-    }
+    return {key: value for key, value in component.items() if key != "paths"}
 
 
 def component_catalog() -> dict[str, Any]:
@@ -188,8 +183,6 @@ def _normalize_path(value: str) -> str:
 def _matches(path: str, pattern: str) -> bool:
     if pattern.endswith("/"):
         return path.startswith(pattern)
-    # Several adapter domains intentionally use a filename prefix so new typed
-    # modules remain owned without continuously editing this catalog.
     if pattern.endswith(("_", "-")):
         return path.startswith(pattern)
     return path == pattern
@@ -207,7 +200,6 @@ def plan_component_update(
         for component in _COMPONENTS:
             if any(_matches(path, pattern) for pattern in component["paths"]):
                 affected.add(component["id"])
-
         if any(_matches(path, pattern) for pattern in _RUNTIME_SHARED_PATHS):
             affected.add("device-agent-core")
 
@@ -217,8 +209,6 @@ def plan_component_update(
         for pattern in _GLOBAL_INSTALL_PATHS
     )
     if install_refresh:
-        # Packaging/install-contract changes can change every importable
-        # component even when the source diff looks narrowly scoped.
         affected.update(component["id"] for component in _COMPONENTS)
 
     component_by_id = {component["id"]: component for component in _COMPONENTS}
@@ -226,7 +216,6 @@ def plan_component_update(
         component_by_id[component_id]["restart_policy"]
         for component_id in affected
     })
-
     runtime_restart = any(
         policy in {"device-agent", "adapter-or-device-agent"}
         for policy in restart_policies
