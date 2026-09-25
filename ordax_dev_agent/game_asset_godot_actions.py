@@ -1,6 +1,7 @@
 """Verified Godot import/runtime-load validation for OrdaX engine exports."""
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import uuid
@@ -23,6 +24,14 @@ def _timeout(value: Any) -> int:
         raise ValueError("timeout_seconds must be an integer")
     if value < 10 or value > 1200:
         raise ValueError("timeout_seconds must be between 10 and 1200")
+    return value
+
+
+def _minimum(value: Any, field: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1 or value > 1000000:
+        raise ValueError(f"{field} must be an integer between 1 and 1000000")
     return value
 
 
@@ -66,6 +75,33 @@ def _atomic_copy(source: Path, destination: Path) -> None:
 def _validator_script() -> str:
     return """extends SceneTree
 
+func _walk(node: Node, stats: Dictionary, material_ids: Dictionary):
+    stats["nodes"] += 1
+    if node is MeshInstance3D:
+        stats["mesh_instances"] += 1
+        var mesh = node.mesh
+        if mesh != null:
+            var surfaces = mesh.get_surface_count()
+            stats["mesh_surfaces"] += surfaces
+            if mesh.has_method("get_blend_shape_count"):
+                stats["blend_shapes"] += mesh.get_blend_shape_count()
+            for surface in range(surfaces):
+                var material = mesh.surface_get_material(surface)
+                if material != null:
+                    material_ids[material.get_instance_id()] = true
+    if node is Skeleton3D:
+        stats["skeletons"] += 1
+        stats["bones"] += node.get_bone_count()
+    if node is AnimationPlayer:
+        stats["animation_players"] += 1
+        stats["animations"] += node.get_animation_list().size()
+    if node is CollisionObject3D:
+        stats["collision_objects"] += 1
+    if node is CollisionShape3D and node.shape != null:
+        stats["collision_shapes"] += 1
+    for child in node.get_children():
+        _walk(child, stats, material_ids)
+
 func _init():
     var args = OS.get_cmdline_user_args()
     if args.size() != 1:
@@ -83,6 +119,37 @@ func _init():
         quit(4)
         return
     print("ORDAX_GODOT_RESOURCE_OK|" + resource_path + "|" + resource.get_class())
+    var stats = {
+        "packed_scene": resource is PackedScene,
+        "root_class": null,
+        "nodes": 0,
+        "mesh_instances": 0,
+        "mesh_surfaces": 0,
+        "materials": 0,
+        "blend_shapes": 0,
+        "skeletons": 0,
+        "bones": 0,
+        "animation_players": 0,
+        "animations": 0,
+        "collision_objects": 0,
+        "collision_shapes": 0,
+    }
+    if resource is PackedScene:
+        if not resource.can_instantiate():
+            push_error("ORDAX PackedScene cannot instantiate: " + resource_path)
+            quit(5)
+            return
+        var root = resource.instantiate()
+        if root == null:
+            push_error("ORDAX PackedScene instantiate returned null: " + resource_path)
+            quit(6)
+            return
+        stats["root_class"] = root.get_class()
+        var material_ids = {}
+        _walk(root, stats, material_ids)
+        stats["materials"] = material_ids.size()
+        root.free()
+    print("ORDAX_GODOT_SEMANTIC_OK|" + JSON.stringify(stats))
     quit(0)
 """
 
@@ -98,6 +165,66 @@ def _marker(stdout: str, expected_resource: str) -> dict[str, str] | None:
     return None
 
 
+def _semantic_marker(stdout: str) -> dict[str, Any] | None:
+    prefix = "ORDAX_GODOT_SEMANTIC_OK|"
+    for line in stdout.splitlines():
+        if not line.startswith(prefix):
+            continue
+        try:
+            data = json.loads(line[len(prefix) :])
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        required = {
+            "packed_scene",
+            "root_class",
+            "nodes",
+            "mesh_instances",
+            "mesh_surfaces",
+            "materials",
+            "blend_shapes",
+            "skeletons",
+            "bones",
+            "animation_players",
+            "animations",
+            "collision_objects",
+            "collision_shapes",
+        }
+        if not required.issubset(data):
+            return None
+        numeric = required - {"packed_scene", "root_class"}
+        if any(isinstance(data[key], bool) or not isinstance(data[key], int) or data[key] < 0 for key in numeric):
+            return None
+        if not isinstance(data["packed_scene"], bool):
+            return None
+        return data
+    return None
+
+
+def _semantic_failures(
+    semantic: dict[str, Any],
+    *,
+    min_mesh_instances: int | None,
+    min_skeletons: int | None,
+    min_bones: int | None,
+    min_animations: int | None,
+    require_collision: bool,
+) -> list[str]:
+    failures: list[str] = []
+    if min_mesh_instances is not None and semantic["mesh_instances"] < min_mesh_instances:
+        failures.append(f"Godot scene has fewer than {min_mesh_instances} MeshInstance3D nodes")
+    if min_skeletons is not None and semantic["skeletons"] < min_skeletons:
+        failures.append(f"Godot scene has fewer than {min_skeletons} Skeleton3D nodes")
+    if min_bones is not None and semantic["bones"] < min_bones:
+        failures.append(f"Godot scene has fewer than {min_bones} total skeleton bones")
+    if min_animations is not None and semantic["animations"] < min_animations:
+        failures.append(f"Godot scene has fewer than {min_animations} animations")
+    if require_collision and semantic["collision_shapes"] < 1:
+        failures.append("Godot scene has no CollisionShape3D with an assigned shape")
+    return failures
+
+
 class GameAssetGodotActions:
     """Copy a verified Godot derivative into a project and prove Godot can load it."""
 
@@ -110,6 +237,11 @@ class GameAssetGodotActions:
             "destination_path",
             "overwrite",
             "timeout_seconds",
+            "min_mesh_instances",
+            "min_skeletons",
+            "min_bones",
+            "min_animations",
+            "require_collision",
         }
         unsupported = set(payload) - supported
         if unsupported:
@@ -152,6 +284,12 @@ class GameAssetGodotActions:
             overwrite = bool(payload.get("overwrite", False))
             if (destination.exists() or destination_manifest.exists()) and not overwrite:
                 raise ValueError("Godot destination already exists; set overwrite=true explicitly")
+
+            min_mesh_instances = _minimum(payload.get("min_mesh_instances"), "min_mesh_instances")
+            min_skeletons = _minimum(payload.get("min_skeletons"), "min_skeletons")
+            min_bones = _minimum(payload.get("min_bones"), "min_bones")
+            min_animations = _minimum(payload.get("min_animations"), "min_animations")
+            require_collision = bool(payload.get("require_collision", False))
 
             godot = _find_godot()
             timeout = _timeout(payload.get("timeout_seconds"))
@@ -218,6 +356,7 @@ class GameAssetGodotActions:
                     },
                 )
             proof = _marker(str(loaded.data.get("stdout") or ""), resource_path)
+            semantic = _semantic_marker(str(loaded.data.get("stdout") or ""))
             if proof is None:
                 return ActionResult(
                     False,
@@ -228,26 +367,55 @@ class GameAssetGodotActions:
                         "source_preserved": True,
                     },
                 )
+            if semantic is None:
+                return ActionResult(
+                    False,
+                    "Godot process exited successfully without OrdaX semantic scene proof",
+                    {
+                        "destination_path": str(destination),
+                        "resource_path": resource_path,
+                        "source_preserved": True,
+                        "engine_loaded": True,
+                    },
+                )
+            failures = _semantic_failures(
+                semantic,
+                min_mesh_instances=min_mesh_instances,
+                min_skeletons=min_skeletons,
+                min_bones=min_bones,
+                min_animations=min_animations,
+                require_collision=require_collision,
+            )
         except (ValueError, OSError, FileNotFoundError) as error:
             return ActionResult(False, str(error))
         finally:
             if validator_path is not None:
                 validator_path.unlink(missing_ok=True)
 
-        return ActionResult(
-            True,
-            "Godot imported and loaded the verified engine export",
-            {
-                "engine": "godot",
-                "engine_validated": True,
-                "artifact_path": str(artifact),
-                "destination_path": str(destination),
-                "destination_manifest": str(destination_manifest),
-                "resource_path": resource_path,
-                "resource_class": proof["resource_class"],
-                "sha256": verification["sha256"],
-                "source_current_matches": verification["source_current_matches"],
-                "source_preserved": True,
-                "recovery_mode": True,
+        data = {
+            "engine": "godot",
+            "engine_validated": True,
+            "engine_loaded": True,
+            "semantic_requirements_passed": not failures,
+            "artifact_path": str(artifact),
+            "destination_path": str(destination),
+            "destination_manifest": str(destination_manifest),
+            "resource_path": resource_path,
+            "resource_class": proof["resource_class"],
+            "semantic": semantic,
+            "requirements": {
+                "min_mesh_instances": min_mesh_instances,
+                "min_skeletons": min_skeletons,
+                "min_bones": min_bones,
+                "min_animations": min_animations,
+                "require_collision": require_collision,
             },
-        )
+            "failures": failures,
+            "sha256": verification["sha256"],
+            "source_current_matches": verification["source_current_matches"],
+            "source_preserved": True,
+            "recovery_mode": True,
+        }
+        if failures:
+            return ActionResult(False, "Godot imported and loaded the asset but semantic requirements failed", data)
+        return ActionResult(True, "Godot imported, loaded and semantically audited the verified engine export", data)
