@@ -334,6 +334,7 @@ function createOcean() {
     resolutionScale: 0.5,
   });
   water.material.positionNode = spectrum.positionNode;
+  water.rotation.x = -Math.PI / 2;
   water.position.y = ocean.sea_level_m;
   scene.add(water);
 
@@ -352,6 +353,7 @@ function createOcean() {
     1,
   ).mul(Math.min(1, ocean.foam_amount * 2.4));
   foam = new THREE.Mesh(geometry.clone(), foamMaterial);
+  foam.rotation.x = -Math.PI / 2;
   foam.position.y = ocean.sea_level_m;
   foam.renderOrder = 2;
   scene.add(foam);
