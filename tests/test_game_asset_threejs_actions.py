@@ -146,6 +146,8 @@ class GameAssetThreeJsActionTests(unittest.TestCase):
             self.assertIn("material.positionNode", main_js)
             self.assertIn("crest_foam_threshold", main_js)
             self.assertIn("PlaneGeometry(4096, 4096, 256, 256)", main_js)
+            self.assertIn("water.rotation.x = -Math.PI / 2", main_js)
+            self.assertIn("foam.rotation.x = -Math.PI / 2", main_js)
             self.assertIn("intensity_lux / 50000", main_js)
             self.assertNotIn("PCFSoftShadowMap", main_js)
 
