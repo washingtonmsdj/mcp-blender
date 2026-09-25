@@ -18,6 +18,8 @@ from .visual_environment import (
     normalize_environment,
 )
 
+MAX_ENVIRONMENT_BYTES = 256 * 1024
+
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -97,6 +99,8 @@ class VisualEnvironmentActions:
             path = project.path(path_raw.strip())
             if path.suffix.lower() != ".json":
                 raise ValueError("environment_path must be a .json file")
+            if path.stat().st_size > MAX_ENVIRONMENT_BYTES:
+                raise ValueError("environment_path exceeds the 256 KiB safety limit")
             try:
                 loaded = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as error:
@@ -169,6 +173,7 @@ class VisualEnvironmentActions:
         if unsupported:
             return ActionResult(False, f"unsupported fields: {', '.join(sorted(unsupported))}")
         project = self._project(payload)
+        temporary: Path | None = None
         try:
             blend_raw = payload.get("blend_file") or project.blender.get("blend_file", "")
             blend_file = project.path(str(blend_raw))
@@ -185,27 +190,45 @@ class VisualEnvironmentActions:
                 raise ValueError("output_path must be a .blend file")
             if output == blend_file:
                 raise ValueError("output_path must differ from the source blend_file")
-            if output.exists() and not bool(payload.get("overwrite", False)):
+            overwrite = bool(payload.get("overwrite", False))
+            if output.exists() and not overwrite:
                 raise ValueError("environment derivative already exists; set overwrite=true explicitly")
             timeout = payload.get("timeout_seconds", 300)
             if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 1800:
                 raise ValueError("timeout_seconds must be an integer between 1 and 1800")
 
+            output.parent.mkdir(parents=True, exist_ok=True)
+            temporary = output.with_name(f".{output.stem}.ordax-{uuid.uuid4().hex}.tmp.blend")
+            temporary.unlink(missing_ok=True)
             source_hash_before = _sha256(blend_file)
             process, report, request_path = self._blender_environment_request(
                 project=project,
                 blend_file=blend_file,
                 operation="apply",
                 environment=environment,
-                output_path=output,
+                output_path=temporary,
                 timeout_seconds=timeout,
             )
             source_hash_after = _sha256(blend_file)
             source_preserved = source_hash_before == source_hash_after
+            temporary_valid = temporary.is_file() and temporary.stat().st_size > 0
+            ok = bool(process.get("ok") and report.get("ok") and temporary_valid and source_preserved)
+            generated_path = report.get("output_blend")
+            if ok:
+                temporary.replace(output)
+                temporary = None
+                report = {
+                    **report,
+                    "generated_output_blend": generated_path,
+                    "output_blend": str(output),
+                }
             output_valid = output.is_file() and output.stat().st_size > 0
-            ok = bool(process.get("ok") and report.get("ok") and output_valid and source_preserved)
+            ok = bool(ok and output_valid)
         except (ValueError, OSError, FileNotFoundError) as error:
             return ActionResult(False, str(error))
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         return ActionResult(
             ok,
             "Blender visual environment derivative built" if ok else "Blender visual environment build failed",
