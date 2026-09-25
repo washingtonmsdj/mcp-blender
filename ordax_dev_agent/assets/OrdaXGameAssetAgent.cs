@@ -13,7 +13,11 @@ namespace OrdaX.EditorTools
     {
         [Serializable] private class Command
         {
-            public string id, action, assetPath;
+            public string id, action, assetPath, animationType, avatarSetup, sourceAvatarPath;
+            public bool setImportAnimation, importAnimation;
+            public bool setOptimizeGameObjects, optimizeGameObjects;
+            public bool setResampleCurves, resampleCurves;
+            public bool setIsReadable, isReadable;
         }
 
         [Serializable] private class LodLevelEvidence
@@ -35,6 +39,12 @@ namespace OrdaX.EditorTools
             public int meshRendererCount, skinnedMeshRendererCount, colliderCount;
             public int lodGroupCount, lodLevelCount, lodRendererCount, lodEmptyLevelCount;
             public LodLevelEvidence[] lodLevels;
+
+            public bool reimported, rollbackAttempted, rollbackSucceeded;
+            public string beforeAnimationType, beforeAvatarSetup, beforeSourceAvatarPath;
+            public string afterAnimationType, afterAvatarSetup, afterSourceAvatarPath;
+            public bool beforeImportAnimation, beforeOptimizeGameObjects, beforeResampleCurves, beforeIsReadable;
+            public bool afterImportAnimation, afterOptimizeGameObjects, afterResampleCurves, afterIsReadable;
         }
 
         private static string Root => Path.Combine(
@@ -94,10 +104,19 @@ namespace OrdaX.EditorTools
                 File.Delete(file);
                 if (command == null || command.id != id)
                     throw new InvalidOperationException("Command ID mismatch");
-                if (command.action != "asset_character_audit")
-                    throw new InvalidOperationException("Unsupported game asset action: " + command.action);
-                reply = State(id, true, "Unity game asset telemetry completed");
-                CharacterAudit(command, reply);
+                reply = State(id, true, "Completed");
+                switch (command.action)
+                {
+                    case "asset_character_audit":
+                        reply.summary = "Unity game asset telemetry completed";
+                        CharacterAudit(command, reply);
+                        break;
+                    case "asset_character_import_configure":
+                        ConfigureCharacterImport(command, reply);
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unsupported game asset action: " + command.action);
+                }
             }
             catch (Exception error)
             {
@@ -115,6 +134,274 @@ namespace OrdaX.EditorTools
             if (AssetDatabase.LoadMainAssetAtPath(path) == null)
                 throw new InvalidOperationException("assetPath is not a loaded Unity asset");
             return path;
+        }
+
+        private static string Compact(string value)
+        {
+            return new string((value ?? "")
+                .Where(character => char.IsLetterOrDigit(character))
+                .Select(char.ToLowerInvariant)
+                .ToArray());
+        }
+
+        private static ModelImporterAnimationType ParseAnimationType(string value)
+        {
+            switch (Compact(value))
+            {
+                case "none": return ModelImporterAnimationType.None;
+                case "legacy": return ModelImporterAnimationType.Legacy;
+                case "generic": return ModelImporterAnimationType.Generic;
+                case "human":
+                case "humanoid": return ModelImporterAnimationType.Human;
+                default: throw new InvalidOperationException("Unsupported animationType");
+            }
+        }
+
+        private static ModelImporterAvatarSetup ParseAvatarSetup(string value)
+        {
+            switch (Compact(value))
+            {
+                case "noavatar":
+                case "none": return ModelImporterAvatarSetup.NoAvatar;
+                case "create":
+                case "createfromthismodel": return ModelImporterAvatarSetup.CreateFromThisModel;
+                case "copy":
+                case "copyfromother": return ModelImporterAvatarSetup.CopyFromOther;
+                default: throw new InvalidOperationException("Unsupported avatarSetup");
+            }
+        }
+
+        private static Avatar LoadSourceAvatar(string rawPath, string targetAssetPath)
+        {
+            string path = ValidateAssetPath(rawPath);
+            if (string.Equals(path, targetAssetPath, StringComparison.Ordinal))
+                throw new InvalidOperationException("sourceAvatarPath must reference a different Unity asset");
+            Avatar avatar = AssetDatabase.LoadAssetAtPath<Avatar>(path);
+            if (avatar == null)
+            {
+                avatar = AssetDatabase.LoadAllAssetsAtPath(path)
+                    .OfType<Avatar>()
+                    .FirstOrDefault(item => item != null && item.isValid)
+                    ?? AssetDatabase.LoadAllAssetsAtPath(path).OfType<Avatar>().FirstOrDefault();
+            }
+            if (avatar == null || !avatar.isValid)
+                throw new InvalidOperationException("sourceAvatarPath does not expose a valid Avatar");
+            return avatar;
+        }
+
+        private static string AvatarPath(Avatar avatar)
+        {
+            return avatar != null ? (AssetDatabase.GetAssetPath(avatar) ?? "") : "";
+        }
+
+        private static bool ImporterMatches(
+            ModelImporter importer,
+            ModelImporterAnimationType animationType,
+            ModelImporterAvatarSetup avatarSetup,
+            Avatar sourceAvatar,
+            bool importAnimation,
+            bool optimizeGameObjects,
+            bool resampleCurves,
+            bool isReadable)
+        {
+            return importer != null &&
+                importer.animationType == animationType &&
+                importer.avatarSetup == avatarSetup &&
+                importer.sourceAvatar == sourceAvatar &&
+                importer.importAnimation == importAnimation &&
+                importer.optimizeGameObjects == optimizeGameObjects &&
+                importer.resampleCurves == resampleCurves &&
+                importer.isReadable == isReadable;
+        }
+
+        private static bool RestoreImporter(
+            string assetPath,
+            ModelImporterAnimationType animationType,
+            ModelImporterAvatarSetup avatarSetup,
+            Avatar sourceAvatar,
+            bool importAnimation,
+            bool optimizeGameObjects,
+            bool resampleCurves,
+            bool isReadable)
+        {
+            try
+            {
+                var importer = AssetImporter.GetAtPath(assetPath) as ModelImporter;
+                if (importer == null) return false;
+                importer.animationType = animationType;
+                importer.avatarSetup = avatarSetup;
+                importer.sourceAvatar = sourceAvatar;
+                importer.importAnimation = importAnimation;
+                importer.optimizeGameObjects = optimizeGameObjects;
+                importer.resampleCurves = resampleCurves;
+                importer.isReadable = isReadable;
+                importer.SaveAndReimport();
+                importer = AssetImporter.GetAtPath(assetPath) as ModelImporter;
+                return ImporterMatches(
+                    importer,
+                    animationType,
+                    avatarSetup,
+                    sourceAvatar,
+                    importAnimation,
+                    optimizeGameObjects,
+                    resampleCurves,
+                    isReadable);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static void RecordBefore(Reply reply, ModelImporter importer)
+        {
+            reply.beforeAnimationType = importer.animationType.ToString();
+            reply.beforeAvatarSetup = importer.avatarSetup.ToString();
+            reply.beforeSourceAvatarPath = AvatarPath(importer.sourceAvatar);
+            reply.beforeImportAnimation = importer.importAnimation;
+            reply.beforeOptimizeGameObjects = importer.optimizeGameObjects;
+            reply.beforeResampleCurves = importer.resampleCurves;
+            reply.beforeIsReadable = importer.isReadable;
+        }
+
+        private static void RecordAfter(Reply reply, ModelImporter importer)
+        {
+            reply.afterAnimationType = importer.animationType.ToString();
+            reply.afterAvatarSetup = importer.avatarSetup.ToString();
+            reply.afterSourceAvatarPath = AvatarPath(importer.sourceAvatar);
+            reply.afterImportAnimation = importer.importAnimation;
+            reply.afterOptimizeGameObjects = importer.optimizeGameObjects;
+            reply.afterResampleCurves = importer.resampleCurves;
+            reply.afterIsReadable = importer.isReadable;
+        }
+
+        private static void ConfigureCharacterImport(Command command, Reply reply)
+        {
+            string assetPath = ValidateAssetPath(command.assetPath);
+            var importer = AssetImporter.GetAtPath(assetPath) as ModelImporter;
+            if (importer == null)
+                throw new InvalidOperationException("assetPath is not backed by a ModelImporter");
+
+            var oldAnimationType = importer.animationType;
+            var oldAvatarSetup = importer.avatarSetup;
+            var oldSourceAvatar = importer.sourceAvatar;
+            bool oldImportAnimation = importer.importAnimation;
+            bool oldOptimizeGameObjects = importer.optimizeGameObjects;
+            bool oldResampleCurves = importer.resampleCurves;
+            bool oldIsReadable = importer.isReadable;
+            RecordBefore(reply, importer);
+
+            var desiredAnimationType = string.IsNullOrWhiteSpace(command.animationType)
+                ? oldAnimationType : ParseAnimationType(command.animationType);
+            var desiredAvatarSetup = string.IsNullOrWhiteSpace(command.avatarSetup)
+                ? oldAvatarSetup : ParseAvatarSetup(command.avatarSetup);
+            Avatar desiredSourceAvatar = oldSourceAvatar;
+            if (desiredAvatarSetup == ModelImporterAvatarSetup.CopyFromOther)
+            {
+                if (!string.IsNullOrWhiteSpace(command.sourceAvatarPath))
+                    desiredSourceAvatar = LoadSourceAvatar(command.sourceAvatarPath, assetPath);
+                if (desiredSourceAvatar == null || !desiredSourceAvatar.isValid)
+                    throw new InvalidOperationException("CopyFromOther requires a valid source Avatar");
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(command.sourceAvatarPath))
+                    throw new InvalidOperationException("sourceAvatarPath is only valid with CopyFromOther");
+                desiredSourceAvatar = null;
+            }
+
+            if ((desiredAnimationType == ModelImporterAnimationType.None ||
+                 desiredAnimationType == ModelImporterAnimationType.Legacy) &&
+                desiredAvatarSetup != ModelImporterAvatarSetup.NoAvatar)
+                throw new InvalidOperationException("None/Legacy animation types require NoAvatar");
+            if (desiredAnimationType == ModelImporterAnimationType.Human &&
+                desiredAvatarSetup == ModelImporterAvatarSetup.NoAvatar)
+                throw new InvalidOperationException("Human animation type requires an Avatar setup");
+
+            bool desiredImportAnimation = command.setImportAnimation ? command.importAnimation : oldImportAnimation;
+            bool desiredOptimizeGameObjects = command.setOptimizeGameObjects ? command.optimizeGameObjects : oldOptimizeGameObjects;
+            bool desiredResampleCurves = command.setResampleCurves ? command.resampleCurves : oldResampleCurves;
+            bool desiredIsReadable = command.setIsReadable ? command.isReadable : oldIsReadable;
+
+            bool changed = !ImporterMatches(
+                importer,
+                desiredAnimationType,
+                desiredAvatarSetup,
+                desiredSourceAvatar,
+                desiredImportAnimation,
+                desiredOptimizeGameObjects,
+                desiredResampleCurves,
+                desiredIsReadable);
+
+            reply.assetPath = assetPath;
+            if (!changed)
+            {
+                reply.reimported = false;
+                RecordAfter(reply, importer);
+                reply.summary = "Unity character importer already matches requested settings";
+                return;
+            }
+
+            importer.animationType = desiredAnimationType;
+            importer.avatarSetup = desiredAvatarSetup;
+            importer.sourceAvatar = desiredSourceAvatar;
+            importer.importAnimation = desiredImportAnimation;
+            importer.optimizeGameObjects = desiredOptimizeGameObjects;
+            importer.resampleCurves = desiredResampleCurves;
+            importer.isReadable = desiredIsReadable;
+
+            try
+            {
+                importer.SaveAndReimport();
+                reply.reimported = true;
+            }
+            catch (Exception error)
+            {
+                reply.rollbackAttempted = true;
+                reply.rollbackSucceeded = RestoreImporter(
+                    assetPath,
+                    oldAnimationType,
+                    oldAvatarSetup,
+                    oldSourceAvatar,
+                    oldImportAnimation,
+                    oldOptimizeGameObjects,
+                    oldResampleCurves,
+                    oldIsReadable);
+                reply.ok = false;
+                reply.summary = "Unity character importer reimport failed; rollback " +
+                    (reply.rollbackSucceeded ? "succeeded: " : "failed: ") + error.Message;
+                return;
+            }
+
+            importer = AssetImporter.GetAtPath(assetPath) as ModelImporter;
+            if (!ImporterMatches(
+                importer,
+                desiredAnimationType,
+                desiredAvatarSetup,
+                desiredSourceAvatar,
+                desiredImportAnimation,
+                desiredOptimizeGameObjects,
+                desiredResampleCurves,
+                desiredIsReadable))
+            {
+                reply.rollbackAttempted = true;
+                reply.rollbackSucceeded = RestoreImporter(
+                    assetPath,
+                    oldAnimationType,
+                    oldAvatarSetup,
+                    oldSourceAvatar,
+                    oldImportAnimation,
+                    oldOptimizeGameObjects,
+                    oldResampleCurves,
+                    oldIsReadable);
+                reply.ok = false;
+                reply.summary = "Unity normalized importer settings outside the requested contract; rollback " +
+                    (reply.rollbackSucceeded ? "succeeded" : "failed");
+                return;
+            }
+
+            RecordAfter(reply, importer);
+            reply.summary = "Unity character importer configured and reimported";
         }
 
         private static void CharacterAudit(Command command, Reply reply)
