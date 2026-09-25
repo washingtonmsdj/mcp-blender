@@ -34,6 +34,7 @@ from .game_asset_image_actions import GameAssetImageActions
 from .game_asset_lod_actions import GameAssetLodActions
 from .game_asset_runtime_actions import GameAssetRuntimeActions
 from .game_asset_unity_actions import GameAssetUnityActions
+from .game_asset_unity_semantic_actions import GameAssetUnitySemanticActions
 from .game_asset_unreal_actions import GameAssetUnrealActions
 from .game_asset_unreal_semantic_actions import GameAssetUnrealSemanticActions
 from .visual_environment_actions import VisualEnvironmentActions
@@ -74,6 +75,7 @@ class ActionRegistry(
     GameAssetLodActions,
     GameAssetRuntimeActions,
     GameAssetUnityActions,
+    GameAssetUnitySemanticActions,
     GameAssetUnrealActions,
     GameAssetUnrealSemanticActions,
     VisualEnvironmentActions,
@@ -188,6 +190,7 @@ class ActionRegistry(
             "game_assets.unity_import_generated": self.game_assets_unity_import_generated,
             "game_assets.unity_import_engine_export": self.game_assets_unity_import_engine_export,
             "game_assets.unity_model_audit": self.game_assets_unity_model_audit,
+            "game_assets.unity_semantic_audit": self.game_assets_unity_semantic_audit,
             "game_assets.unity_build_static_lod_prefab": self.game_assets_unity_build_static_lod_prefab,
             "game_assets.blender_character_preflight": self.game_assets_blender_character_preflight,
             "game_assets.blender_export": self.game_assets_blender_export,
