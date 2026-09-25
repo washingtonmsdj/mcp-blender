@@ -28,6 +28,7 @@ from .game_asset_artifact_actions import GameAssetArtifactActions
 from .game_asset_engine_export_actions import GameAssetEngineExportActions
 from .game_asset_threejs_actions import GameAssetThreeJsActions
 from .game_asset_web_runtime_actions import GameAssetWebRuntimeActions
+from .game_asset_threejs_viewer_runtime_actions import GameAssetThreeJsViewerRuntimeActions
 from .game_asset_godot_actions import GameAssetGodotActions
 from .game_asset_image_actions import GameAssetImageActions
 from .game_asset_lod_actions import GameAssetLodActions
@@ -67,6 +68,7 @@ class ActionRegistry(
     GameAssetEngineExportActions,
     GameAssetThreeJsActions,
     GameAssetWebRuntimeActions,
+    GameAssetThreeJsViewerRuntimeActions,
     GameAssetGodotActions,
     GameAssetImageActions,
     GameAssetLodActions,
@@ -179,6 +181,7 @@ class ActionRegistry(
             "game_assets.threejs_prepare_viewer": self.game_assets_threejs_prepare_viewer,
             "game_assets.threejs_runtime_audit": self.game_assets_threejs_runtime_audit,
             "game_assets.threejs_browser_validate": self.game_assets_web_runtime_validate,
+            "game_assets.threejs_viewer_validate": self.game_assets_threejs_viewer_validate,
             "game_assets.godot_import_validate": self.game_assets_godot_import_validate,
             "game_assets.unreal_import_validate": self.game_assets_unreal_import_validate,
             "game_assets.unreal_asset_audit": self.game_assets_unreal_asset_audit,
