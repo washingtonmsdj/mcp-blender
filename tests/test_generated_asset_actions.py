@@ -83,7 +83,7 @@ class GeneratedAssetActionsTests(unittest.TestCase):
             self.assertTrue(result.ok, result.summary)
             self.assertEqual(hashlib.sha256(body).hexdigest(), result.data["sha256"])
             self.assertEqual("meshy", result.data["provenance"]["provider"])
-            self.assertEqual(str(manifest), result.data["manifest_path"])
+            self.assertTrue(os.path.samefile(result.data["manifest_path"], manifest))
 
     def test_artifact_verify_rejects_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -144,12 +144,15 @@ class GeneratedAssetActionsTests(unittest.TestCase):
 
             def fake_run(command, *, cwd=None, timeout=0, env=None):
                 self.assertIn("--factory-startup", command)
-                self.assertEqual(project, cwd)
+                self.assertTrue(os.path.samefile(cwd, project))
                 self.assertEqual(900, timeout)
-                self.assertEqual(str(artifact), command[command.index("--input") + 1])
-                self.assertEqual(str(output), command[command.index("--output") + 1])
-                self.assertEqual(str(manifest), command[command.index("--provenance") + 1])
-                output.parent.mkdir(parents=True, exist_ok=True)
+                input_arg = Path(command[command.index("--input") + 1])
+                output_arg = Path(command[command.index("--output") + 1])
+                provenance_arg = Path(command[command.index("--provenance") + 1])
+                self.assertTrue(os.path.samefile(input_arg, artifact))
+                self.assertEqual(output.name, output_arg.name)
+                self.assertTrue(os.path.samefile(output_arg.parent, output.parent))
+                self.assertTrue(os.path.samefile(provenance_arg, manifest))
                 output.write_bytes(b"blend")
                 report = Path(command[command.index("--report") + 1])
                 report.write_text(
