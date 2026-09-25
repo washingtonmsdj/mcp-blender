@@ -310,8 +310,11 @@ while ($true) {
         $tokenFile = [System.IO.Path]::Combine($stateDir, 'device-token.txt')
         $configured = $false
         if ([System.IO.File]::Exists($settingsFile) -and [System.IO.File]::Exists($tokenFile)) {
-            $savedSettings = [System.IO.File]::ReadAllText($settingsFile) | ConvertFrom-Json
-            $configured = $savedSettings.control_plane_protocol -eq 'development-v2' -and $savedSettings.development_device_id
+            # This is only a launch hint; AgentConfig performs JSON validation.
+            # Avoid loading PowerShell.Utility on the cold startup path.
+            $savedSettings = [System.IO.File]::ReadAllText($settingsFile)
+            $configured = $savedSettings -match '"control_plane_protocol"\s*:\s*"development-v2"' -and
+                $savedSettings -match '"development_device_id"\s*:\s*"[0-9a-fA-F-]{36}"'
         }
         if ($credentialRecovery -or -not $configured) {
             Write-BootstrapLog 'IDENTITY_RECOVERY_START'
