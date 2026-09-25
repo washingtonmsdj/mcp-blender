@@ -112,13 +112,39 @@ class GameAssetThreeJsViewerRuntimeTests(unittest.TestCase):
         if dist.exists():
             shutil.rmtree(dist)
         dist.mkdir(parents=True, exist_ok=True)
-        (dist / "index.html").write_text("<html><body><div id='hud'></div></body></html>", encoding="utf-8")
+        (dist / "index.html").write_text(
+            "<html><body><div id='hud'></div></body></html>", encoding="utf-8"
+        )
         shutil.copytree(viewer / "public" / "ordax", dist / "ordax")
         assets = dist / "assets"
         assets.mkdir(parents=True, exist_ok=True)
         (assets / "main.js").write_text("console.log('viewer');", encoding="utf-8")
 
-    def hud(self, artifact_hash: str, *, backend: str = "WebGPU", triangles: int = 5000, calls: int = 12) -> str:
+    def fake_png(self, path: Path, *, width: int = 1280, height: int = 720) -> bytes:
+        raw = (
+            b"\x89PNG\r\n\x1a\n"
+            + struct.pack(">I4sIIBBBBB", 13, b"IHDR", width, height, 8, 6, 0, 0, 0)
+            + b"\x00\x00\x00\x00"
+            + b"evidence" * 8
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+        return raw
+
+    def screenshot_path(self, command: list[str]) -> Path | None:
+        for item in command:
+            if item.startswith("--screenshot="):
+                return Path(item.split("=", 1)[1])
+        return None
+
+    def hud(
+        self,
+        artifact_hash: str,
+        *,
+        backend: str = "WebGPU",
+        triangles: int = 5000,
+        calls: int = 12,
+    ) -> str:
         return (
             "<html><body><div id=\"hud\">OrdaX ordax.threejs-viewer/1\n"
             f"backend: {backend}\n"
@@ -135,13 +161,15 @@ class GameAssetThreeJsViewerRuntimeTests(unittest.TestCase):
             self.assertTrue(status.ok)
             self.assertIn("game_assets.threejs_viewer_validate", status.data["actions"])
 
-    def test_builds_and_validates_full_viewer_in_browser(self) -> None:
+    def test_builds_validates_and_persists_visual_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             registry, viewer, artifact_hash = self.prepare_viewer(root)
             calls = []
+            screenshot_bytes = b""
 
             def fake_run(command, *, cwd=None, timeout=0, env=None):
+                nonlocal screenshot_bytes
                 calls.append(command)
                 self.assertTrue(Path(cwd).samefile(viewer))
                 if command[0] == "npm":
@@ -152,10 +180,15 @@ class GameAssetThreeJsViewerRuntimeTests(unittest.TestCase):
                 self.assertEqual("chrome", command[0])
                 self.assertIn("--headless=new", command)
                 self.assertIn("--virtual-time-budget=2500", command)
-                self.assertIn("--dump-dom", command)
                 self.assertNotIn("--no-sandbox", command)
                 self.assertNotIn("--enable-unsafe-swiftshader", command)
                 self.assertTrue(command[-1].startswith("http://127.0.0.1:"))
+                screenshot = self.screenshot_path(command)
+                if screenshot is not None:
+                    self.assertIn("--hide-scrollbars", command)
+                    screenshot_bytes = self.fake_png(screenshot)
+                    return ActionResult(True, "command completed", {"stdout": "screenshot", "stderr": ""})
+                self.assertIn("--dump-dom", command)
                 return ActionResult(
                     True,
                     "command completed",
@@ -184,13 +217,25 @@ class GameAssetThreeJsViewerRuntimeTests(unittest.TestCase):
                 )
 
             self.assertTrue(result.ok, result.summary)
-            self.assertEqual(2, len(calls))
+            self.assertEqual(3, len(calls))
             self.assertTrue(result.data["viewer_build_validated"])
             self.assertTrue(result.data["viewer_browser_validated"])
             self.assertTrue(result.data["visual_stack_initialized"])
+            self.assertTrue(result.data["visual_evidence_captured"])
             self.assertEqual("WebGPU", result.data["backend"])
             self.assertEqual(5000, result.data["render"]["triangles"])
-            self.assertEqual({"three": THREE_VERSION, "vite": VITE_VERSION}, result.data["installed_versions"])
+            self.assertEqual(
+                {"three": THREE_VERSION, "vite": VITE_VERSION},
+                result.data["installed_versions"],
+            )
+            evidence = result.data["visual_evidence"]
+            evidence_path = Path(evidence["path"])
+            self.assertTrue(evidence_path.is_file())
+            self.assertEqual(1280, evidence["width"])
+            self.assertEqual(720, evidence["height"])
+            self.assertEqual(len(screenshot_bytes), evidence["bytes"])
+            self.assertEqual(hashlib.sha256(screenshot_bytes).hexdigest(), evidence["sha256"])
+            self.assertTrue(str(evidence_path).startswith(str(root / "state" / "visual-evidence")))
 
     def test_webgl_fallback_can_be_rejected_when_webgpu_is_required(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -201,6 +246,10 @@ class GameAssetThreeJsViewerRuntimeTests(unittest.TestCase):
                 if command[0] == "npm":
                     self.fake_build(viewer)
                     return ActionResult(True, "command completed", {"stdout": "built", "stderr": ""})
+                screenshot = self.screenshot_path(command)
+                if screenshot is not None:
+                    self.fake_png(screenshot)
+                    return ActionResult(True, "command completed", {"stdout": "screenshot", "stderr": ""})
                 return ActionResult(
                     True,
                     "command completed",
@@ -227,6 +276,7 @@ class GameAssetThreeJsViewerRuntimeTests(unittest.TestCase):
                 )
             self.assertFalse(result.ok)
             self.assertTrue(result.data["viewer_browser_validated"])
+            self.assertTrue(result.data["visual_evidence_captured"])
             self.assertIn("WebGL2 fallback", result.data["failures"][0])
 
     def test_missing_dependencies_refuses_to_run_npm_install_implicitly(self) -> None:
@@ -269,10 +319,17 @@ class GameAssetThreeJsViewerRuntimeTests(unittest.TestCase):
                 if command[0] == "npm":
                     self.fake_build(viewer)
                     return ActionResult(True, "command completed", {"stdout": "built", "stderr": ""})
+                screenshot = self.screenshot_path(command)
+                if screenshot is not None:
+                    self.fake_png(screenshot)
+                    return ActionResult(True, "command completed", {"stdout": "screenshot", "stderr": ""})
                 return ActionResult(
                     True,
                     "command completed",
-                    {"stdout": "<html><body><div id='hud'>OrdaX visual runtime</div></body></html>", "stderr": ""},
+                    {
+                        "stdout": "<html><body><div id='hud'>OrdaX visual runtime</div></body></html>",
+                        "stderr": "",
+                    },
                 )
 
             with patch(
@@ -292,6 +349,76 @@ class GameAssetThreeJsViewerRuntimeTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertTrue(result.data["retryable"])
             self.assertIn("rendered HUD proof", result.summary)
+
+    def test_screenshot_success_without_png_file_is_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            registry, viewer, artifact_hash = self.prepare_viewer(root)
+
+            def fake_run(command, *, cwd=None, timeout=0, env=None):
+                if command[0] == "npm":
+                    self.fake_build(viewer)
+                    return ActionResult(True, "command completed", {"stdout": "built", "stderr": ""})
+                if self.screenshot_path(command) is not None:
+                    return ActionResult(True, "command completed", {"stdout": "claimed screenshot", "stderr": ""})
+                return ActionResult(
+                    True,
+                    "command completed",
+                    {"stdout": self.hud(artifact_hash), "stderr": ""},
+                )
+
+            with patch(
+                "ordax_dev_agent.game_asset_threejs_viewer_runtime_actions._find_npm",
+                return_value="npm",
+            ), patch(
+                "ordax_dev_agent.game_asset_threejs_viewer_runtime_actions._find_chrome",
+                return_value="chrome",
+            ), patch(
+                "ordax_dev_agent.game_asset_threejs_viewer_runtime_actions._run",
+                side_effect=fake_run,
+            ):
+                result = registry.execute(
+                    "game_assets.threejs_viewer_validate",
+                    {"project": "game", "viewer_dir": "viewer"},
+                )
+            self.assertFalse(result.ok)
+            self.assertIn("produced no PNG evidence", result.summary)
+
+    def test_wrong_screenshot_dimensions_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            registry, viewer, artifact_hash = self.prepare_viewer(root)
+
+            def fake_run(command, *, cwd=None, timeout=0, env=None):
+                if command[0] == "npm":
+                    self.fake_build(viewer)
+                    return ActionResult(True, "command completed", {"stdout": "built", "stderr": ""})
+                screenshot = self.screenshot_path(command)
+                if screenshot is not None:
+                    self.fake_png(screenshot, width=640, height=480)
+                    return ActionResult(True, "command completed", {"stdout": "screenshot", "stderr": ""})
+                return ActionResult(
+                    True,
+                    "command completed",
+                    {"stdout": self.hud(artifact_hash), "stderr": ""},
+                )
+
+            with patch(
+                "ordax_dev_agent.game_asset_threejs_viewer_runtime_actions._find_npm",
+                return_value="npm",
+            ), patch(
+                "ordax_dev_agent.game_asset_threejs_viewer_runtime_actions._find_chrome",
+                return_value="chrome",
+            ), patch(
+                "ordax_dev_agent.game_asset_threejs_viewer_runtime_actions._run",
+                side_effect=fake_run,
+            ):
+                result = registry.execute(
+                    "game_assets.threejs_viewer_validate",
+                    {"project": "game", "viewer_dir": "viewer"},
+                )
+            self.assertFalse(result.ok)
+            self.assertIn("1280x720", result.summary)
 
 
 if __name__ == "__main__":
