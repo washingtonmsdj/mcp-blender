@@ -66,12 +66,13 @@ def verify_engine_export(project, artifact: Path, manifest: Path) -> dict[str, A
     if not isinstance(expected_hash, str) or actual_hash != expected_hash:
         raise ValueError("engine export artifact SHA-256 no longer matches provenance")
     source_path = source_record.get("path")
+    source_hash = source_record.get("sha256")
     if not isinstance(source_path, str) or not source_path:
         raise ValueError("engine export manifest source path is invalid")
-    source = project.path(source_path)
-    source_hash = source_record.get("sha256")
-    if not isinstance(source_hash, str) or _sha256(source) != source_hash:
-        raise ValueError("engine export source blend no longer matches provenance")
+    if not isinstance(source_hash, str) or len(source_hash) != 64:
+        raise ValueError("engine export manifest source SHA-256 is invalid")
+    source = project.path(source_path, must_exist=False)
+    source_current_matches = source.is_file() and _sha256(source) == source_hash
     return {
         "schema": ENGINE_EXPORT_SCHEMA,
         "engine": data.get("engine"),
@@ -81,6 +82,7 @@ def verify_engine_export(project, artifact: Path, manifest: Path) -> dict[str, A
         "bytes": expected_bytes,
         "source_path": str(source),
         "source_sha256": source_hash,
+        "source_current_matches": source_current_matches,
         "profile": data.get("profile"),
         "created_at": data.get("created_at"),
     }
@@ -100,6 +102,7 @@ class GameAssetEngineExportActions:
         if unsupported:
             return ActionResult(False, f"unsupported fields: {', '.join(sorted(unsupported))}")
         project = self._project(payload)
+        manifest_temp: Path | None = None
         try:
             blend_file = project.path(str(payload.get("blend_file") or ""))
             if blend_file.suffix.lower() != ".blend":
@@ -166,10 +169,14 @@ class GameAssetEngineExportActions:
                 )
                 temporary.replace(output)
                 manifest_temp.replace(manifest)
+                manifest_temp = None
             finally:
                 temporary.unlink(missing_ok=True)
         except (ValueError, OSError, FileNotFoundError) as error:
             return ActionResult(False, str(error))
+        finally:
+            if manifest_temp is not None:
+                manifest_temp.unlink(missing_ok=True)
 
         return ActionResult(
             True,
