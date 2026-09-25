@@ -33,13 +33,21 @@ The static LOD prefab path remains guarded: models with bones, blend shapes, ani
 
 ## Unreal Engine
 
-The verified handoff format is FBX. `game_assets.engine_handoff_audit` validates the export/provenance contract, but the current Device Agent does not yet claim Unreal Editor import success. The next required gate is an Unreal-side import validation that inspects the imported StaticMesh/SkeletalMesh, skeleton/animation assignment and LOD mapping where applicable.
+The verified handoff format is FBX. OrdaX now exposes an Unreal-side import validation gate:
 
-For static LOD assets, exporting a multi-level derivative is not itself proof that Unreal assigned the levels correctly.
+```text
+game_assets.unreal_import_validate
+```
+
+The action requires a verified `ordax.engine-export/1` FBX targeted to Unreal and a project-local `.uproject`. It resolves the editor command only from `ORDAX_UNREAL_EDITOR_CMD` or the Unreal Editor command names on `PATH`; the job cannot provide an arbitrary executable. The destination is restricted to a normalized `/Game/...` package path and dot path segments are rejected.
+
+Validation runs the supported Unreal Python commandlet flow in unattended/null-RHI mode. The temporary script creates an `AssetImportTask`, enables automated import, imports through `AssetTools`, requires non-empty imported object paths, loads each imported object through `EditorAssetLibrary`, saves the loaded assets, and prints an OrdaX proof containing the object paths and classes. OrdaX accepts the proof only when every returned object is under the requested destination path. Only then does the action report `engine_validated=true`.
+
+The Unreal project's Python Scripting Plugin must already be enabled, as required by Epic's command-line Python workflow. This gate proves import/load/save of the derivative. More specialized checks — skeletal assignment, animation semantics, collision policy and explicit LOD mapping — remain separate quality gates for assets that require them.
 
 ## Godot
 
-The verified handoff formats are GLB/glTF 2.0. OrdaX now exposes a real engine-side validation gate:
+The verified handoff formats are GLB/glTF 2.0. OrdaX exposes a real engine-side validation gate:
 
 ```text
 game_assets.godot_import_validate
