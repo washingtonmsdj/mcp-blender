@@ -78,12 +78,24 @@ faster way to turn drawn guides into topology. Automated retopology and
 interactive stroke tools depend on artistic judgment and viewport interaction.
 The existing mesh-quality gate already measures topology counts; it now also
 returns bounded edge/face/vertex examples with indices and local coordinates,
-including n-gons and non-finite coordinates, so the artist or agent can locate
-defects without another scene mutation. A future increment can add
-connected-region grouping and repair hints. Only later consider a typed retopo
-operation with explicit target density and a preview/rollback gate.
+including n-gons and non-finite coordinates. It also groups disconnected mesh
+components and reports bounded summaries with local bounds, so the artist or
+agent can locate islands without another scene mutation. A caller can set
+`max_connected_components` when a single continuous shell is required; multiple
+components can be intentional. Next add repair hints and carefully bounded
+corrective operations. Only later consider a typed retopo operation with an
+explicit target density and a preview/rollback gate.
 
-Source: [surface-conforming modeling question](https://www.reddit.com/r/blenderhelp/comments/1iqqfnw/what_are_some_more_efficient_workflow_for_modeling_along_a_surface/).
+Sources: [surface-conforming modeling question](https://www.reddit.com/r/blenderhelp/comments/1iqqfnw/what_are_some_more_efficient_workflow_for_modeling_along_a_surface/),
+[iterative topology/editability feedback on Blender MCP](https://www.reddit.com/r/OpenAI/comments/1we95z2/blender_mcp_is_impressive_but_not_that_useable_yet/),
+[operator-driven modeling and per-step state feedback discussion](https://www.reddit.com/r/aigamedev/comments/1rml9vj/using_ai_agents_to_control_blender_modeling_tools/).
+
+The newer MCP feedback thread describes the practical gap as iteration and
+topology cleanup after an initial silhouette, rather than one-shot generation.
+The agent-tooling discussion likewise favors editable native operations and
+asks for scene statistics after each step. This supports a short loop of typed
+operation, inspect, measured quality gate and visual review; it does not justify
+automatically declaring every disconnected island or non-quad a defect.
 
 ## Suggested delivery sequence
 
@@ -95,8 +107,8 @@ Source: [surface-conforming modeling question](https://www.reddit.com/r/blenderh
    count and memory budgets.
 3. Expand box cutouts into a constrained library of slot, circle, polygon and
    vent cutters; retain live boolean previews and one-operation rollback.
-4. Add connected-region analysis and repair hints to the read-only mesh
-   diagnostics before attempting automated topology changes.
+4. Add component-aware repair hints and small corrective operations to the
+   read-only mesh diagnostics before attempting automated topology changes.
 
 Each mutation should stay small in the MCP surface: one composable typed action,
 strict schemas, clear failure evidence, and visual/geometry inspection after

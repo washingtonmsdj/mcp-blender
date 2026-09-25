@@ -62,14 +62,19 @@ evidence from the live Blender session and refuses client-supplied completion
 claims such as `passed`, `ok`, or `result`.
 
 `mesh_quality` also returns bounded `diagnostics` for boundary/wire/non-manifold
-edges, loose/non-finite vertices, n-gons, degenerate faces and zero-length
-edges. Each example includes indices from the audited mesh snapshot and
-object-local coordinates to help identify where a defect is. Non-finite
-coordinates are encoded as JSON `null`; `max_non_finite_vertices` can make them
-an explicit failed rule. The default `diagnostic_limit` is 8 examples per
-category, can be set from 0 to 16, and `0` disables examples while keeping the
-aggregate metrics. When `evaluated=true`, indices belong to the evaluated mesh
-after modifiers; set `evaluated=false` to get indices from the source mesh.
+edges, loose/non-finite vertices, connected components, n-gons, degenerate
+faces and zero-length edges. Edge/face/vertex examples include indices from the
+audited mesh snapshot and object-local coordinates. Component examples report
+vertex/edge/face counts, boundary-edge counts and local bounds; disconnected
+components are evidence for review, not an automatic failure. Set
+`max_connected_components` when the asset requires a specific component limit.
+Non-finite coordinates are encoded as JSON `null`; `max_non_finite_vertices`
+can make them an explicit failed rule. The default `diagnostic_limit` is 8
+examples per category, can be set from 0 to 16, and `0` disables examples while
+keeping aggregate metrics. N-gon/degenerate-face examples include at most 32
+vertex indices and report when that list was truncated. When `evaluated=true`,
+indices belong to the evaluated mesh after modifiers; set `evaluated=false` to
+get indices from the source mesh.
 
 Example request to inspect the source mesh and sample up to four issues per
 category:
@@ -82,7 +87,8 @@ category:
       "object_name": "Hull",
       "evaluated": false,
       "diagnostic_limit": 4,
-      "max_non_manifold_edges": 0
+      "max_non_manifold_edges": 0,
+      "max_connected_components": 1
     }
   ]
 }

@@ -2882,9 +2882,16 @@ def _quality_mesh(check: dict) -> dict:
             }
 
         def face_example(face) -> dict:
+            vertex_indices = []
+            for vertex in face.verts:
+                if len(vertex_indices) >= 32:
+                    break
+                vertex_indices.append(int(vertex.index))
             return {
                 "face_index": int(face.index),
-                "vertex_indices": [int(vertex.index) for vertex in face.verts],
+                "vertex_count": len(face.verts),
+                "vertex_indices": vertex_indices,
+                "vertex_indices_truncated": len(vertex_indices) < len(face.verts),
                 "local_center": local_coordinate(face.calc_center_median()),
             }
 
@@ -2894,6 +2901,7 @@ def _quality_mesh(check: dict) -> dict:
             "non_manifold_edges",
             "loose_vertices",
             "non_finite_vertices",
+            "connected_components",
             "ngon_faces",
             "degenerate_faces",
             "zero_length_edges",
@@ -2918,7 +2926,32 @@ def _quality_mesh(check: dict) -> dict:
         wire_edges = 0
         non_manifold_edges = 0
         zero_length_edges = 0
+        # Union-find groups every vertex connected by an edge while keeping
+        # auxiliary memory proportional to the vertex count.
+        component_parent = [-1] * len(bm.verts)
+
+        def component_root(index: int) -> int:
+            root = index
+            while component_parent[root] >= 0:
+                root = component_parent[root]
+            while index != root:
+                parent = component_parent[index]
+                component_parent[index] = root
+                index = parent
+            return root
+
+        def join_component(first_index: int, second_index: int) -> None:
+            first_root = component_root(first_index)
+            second_root = component_root(second_index)
+            if first_root == second_root:
+                return
+            if component_parent[first_root] > component_parent[second_root]:
+                first_root, second_root = second_root, first_root
+            component_parent[first_root] += component_parent[second_root]
+            component_parent[second_root] = first_root
+
         for edge in bm.edges:
+            join_component(edge.verts[0].index, edge.verts[1].index)
             if edge.is_boundary:
                 boundary_edges += 1
                 record_sample("boundary_edges", lambda: edge_example(edge))
@@ -2938,6 +2971,10 @@ def _quality_mesh(check: dict) -> dict:
 
         loose_vertices = 0
         non_finite_vertices = 0
+        connected_component_count = sum(
+            1 for component_size in component_parent if component_size < 0
+        )
+        component_summaries = {}
         for vertex in bm.verts:
             if not vertex.link_edges:
                 loose_vertices += 1
@@ -2957,6 +2994,73 @@ def _quality_mesh(check: dict) -> dict:
                         "local_coordinate": local_coordinate(vertex.co),
                     },
                 )
+            if diagnostic_limit:
+                root = component_root(vertex.index)
+                summary = component_summaries.get(root)
+                if summary is None and len(component_summaries) < diagnostic_limit:
+                    summary = {
+                        "seed_vertex_index": int(vertex.index),
+                        "vertex_count": 0,
+                        "edge_count": 0,
+                        "face_count": 0,
+                        "boundary_edge_count": 0,
+                        "finite_bounds_vertex_count": 0,
+                        "local_min": [math.inf, math.inf, math.inf],
+                        "local_max": [-math.inf, -math.inf, -math.inf],
+                    }
+                    component_summaries[root] = summary
+                if summary is not None:
+                    summary["vertex_count"] += 1
+                    coordinates = [float(component) for component in vertex.co]
+                    if all(math.isfinite(component) for component in coordinates):
+                        summary["finite_bounds_vertex_count"] += 1
+                        for axis, coordinate in enumerate(coordinates):
+                            summary["local_min"][axis] = min(
+                                summary["local_min"][axis], coordinate
+                            )
+                            summary["local_max"][axis] = max(
+                                summary["local_max"][axis], coordinate
+                            )
+
+        if component_summaries:
+            for edge in bm.edges:
+                summary = component_summaries.get(
+                    component_root(edge.verts[0].index)
+                )
+                if summary is not None:
+                    summary["edge_count"] += 1
+                    if edge.is_boundary:
+                        summary["boundary_edge_count"] += 1
+
+            for face in bm.faces:
+                summary = component_summaries.get(
+                    component_root(face.verts[0].index)
+                )
+                if summary is not None:
+                    summary["face_count"] += 1
+
+            bucket = diagnostics.get("connected_components")
+            if bucket is not None:
+                bucket["total"] = connected_component_count
+                ordered_components = sorted(
+                    component_summaries.values(),
+                    key=lambda component: component["seed_vertex_index"],
+                )
+                for component_index, component in enumerate(ordered_components):
+                    finite_bounds_count = component.pop(
+                        "finite_bounds_vertex_count"
+                    )
+                    local_min = component.pop("local_min")
+                    local_max = component.pop("local_max")
+                    component["component_index"] = component_index
+                    component["bounds_complete"] = (
+                        finite_bounds_count == component["vertex_count"]
+                    )
+                    component["local_bounds"] = {
+                        "min": local_coordinate(local_min),
+                        "max": local_coordinate(local_max),
+                    }
+                    bucket["examples"].append(component)
 
         triangle_faces = 0
         quad_faces = 0
@@ -3000,6 +3104,7 @@ def _quality_mesh(check: dict) -> dict:
             "non_manifold_edges": non_manifold_edges,
             "loose_vertices": loose_vertices,
             "non_finite_vertices": non_finite_vertices,
+            "connected_components": connected_component_count,
             "degenerate_faces": degenerate_faces,
             "zero_length_edges": zero_length_edges,
             "uv_layers": uv_layers,
@@ -3028,6 +3133,7 @@ def _quality_mesh(check: dict) -> dict:
         maximum("max_non_manifold_edges", non_manifold_edges)
         maximum("max_loose_vertices", loose_vertices)
         maximum("max_non_finite_vertices", non_finite_vertices)
+        maximum("max_connected_components", connected_component_count)
         maximum("max_degenerate_faces", degenerate_faces)
         maximum("max_zero_length_edges", zero_length_edges)
 
