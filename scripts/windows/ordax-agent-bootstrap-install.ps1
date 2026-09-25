@@ -38,16 +38,15 @@ if ($RetargetTask) {
         throw "Scheduled task not found: $TaskName"
     }
 
-    $python = Join-Path $repoRootResolved ".venv\Scripts\python.exe"
-    $pythonw = Join-Path $repoRootResolved ".venv\Scripts\pythonw.exe"
-    if (-not (Test-Path $python)) {
-        throw "Managed agent Python missing: $python"
+    if (-not (Test-Path $bootstrapPath)) {
+        throw "External OrdaX bootstrap missing: $bootstrapPath"
     }
-    $taskPython = if (Test-Path $pythonw) { $pythonw } else { $python }
+    $powershellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
+    $bootstrapArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$bootstrapPath`" -RepoRoot `"$repoRootResolved`""
 
     $action = New-ScheduledTaskAction `
-        -Execute $taskPython `
-        -Argument '-m ordax_dev_agent.task_entry' `
+        -Execute $powershellPath `
+        -Argument $bootstrapArguments `
         -WorkingDirectory $repoRootResolved
 
     $taskUser = [string]$task.Principal.UserId
