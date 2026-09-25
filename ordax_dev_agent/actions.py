@@ -147,7 +147,7 @@ class ActionRegistry(
             "game_assets.rodin_submit_images": self.game_assets_rodin_submit_images,
             "game_assets.artifact_verify": self.game_assets_artifact_verify,
             "game_assets.blender_ingest_generated": self.game_assets_blender_ingest_generated,
-            "game_assets.blender_character_preflight": self.blender_live_character_preflight if hasattr(self, 'blender_live_character_preflight') else self.game_assets_blender_character_preflight,
+            "game_assets.blender_character_preflight": self.game_assets_blender_character_preflight,
             "game_assets.blender_export": self.game_assets_blender_export,
             "game_assets.blender_import_fbx": self.game_assets_blender_import_fbx,
             "game_assets.rodin_submit_text": self.game_assets_rodin_submit_text,
