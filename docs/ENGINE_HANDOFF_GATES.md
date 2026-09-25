@@ -21,7 +21,7 @@ A successful handoff audit means `ready_for_engine_import=true`. It deliberately
 
 ## Unity
 
-Unity now has separate import, structural-model and semantic gates:
+Unity has separate import, structural-model and semantic gates:
 
 ```text
 game_assets.engine_handoff_audit
@@ -33,9 +33,24 @@ game_assets.engine_handoff_audit
 
 `game_assets.unity_model_audit` obtains real evidence from the Unity Editor companion: ModelImporter presence, animation type/import flag, mesh/vertex/triangle/material counts, animation clips, bones, blend shapes and LODGroup count.
 
-`game_assets.unity_semantic_audit` layers explicit production requirements over that evidence instead of treating a successful import as game-ready. Workflows can require an animation type (`None`, `Legacy`, `Generic` or `Human`/`Humanoid`), animation import state, minimum mesh/bone/clip/blend-shape/LODGroup counts, and an optional maximum LODGroup count. A model may therefore be loaded successfully in Unity while the semantic gate still fails with concrete requirement mismatches.
+`game_assets.unity_semantic_audit` layers explicit production requirements over that evidence instead of treating a successful import as game-ready. Baseline workflows can require an animation type (`None`, `Legacy`, `Generic` or `Human`/`Humanoid`), animation import state, minimum mesh/bone/clip/blend-shape/LODGroup counts, and an optional maximum LODGroup count.
 
-The semantic result deliberately reports current companion limitations rather than inferring unavailable facts: avatar mapping, root-motion semantics and per-LOD renderer assignment are not yet claimed by this gate. Those require additional Unity companion telemetry before they can become hard requirements.
+When advanced requirements are requested, the action installs the isolated managed `OrdaXGameAssetAgent.cs` companion under `Assets/OrdaX/Editor/`, asks Unity to import it through the existing guarded refresh flow, and communicates through a separate `Library/OrdaXAgent/game-assets` inbox. A pre-existing file is overwritten only when it carries the OrdaX-managed protocol/class markers.
+
+The advanced Unity evidence is read from Unity APIs rather than inferred from naming conventions. It reports:
+
+- `ModelImporter.avatarSetup`;
+- Avatar evidence from Avatar sub-assets, `ModelImporter.sourceAvatar` and `Animator.avatar`, deduplicated by Unity instance ID;
+- valid Mecanim Avatar and valid humanoid Avatar counts;
+- mapped humanoid bone count from `Avatar.humanDescription`;
+- animation clips carrying root curves, motion curves, humanoid motion or generic root transforms;
+- `Animator`, `MeshRenderer`, `SkinnedMeshRenderer` and Collider counts;
+- `LODGroup` count, every LOD level, transition height, assigned renderer count and skinned-renderer count;
+- number of LOD levels with no renderer assignment.
+
+Advanced requirements can enforce a valid/humanoid Avatar, root-motion curve evidence, humanoid-motion evidence, a `SkinnedMeshRenderer`, minimum mapped humanoid bones, minimum motion/humanoid clips, minimum LOD levels/renderers/skinned renderers, and non-empty renderer assignment for every LOD level. This also covers Unity's `Copy From Other Avatar` path: the source Avatar is inspected even though Unity does not create a new Avatar sub-asset for that import mode.
+
+Root-motion curve presence is intentionally not treated as a gameplay policy decision. It proves that imported clips contain motion/root evidence; whether a specific runtime Animator should consume root motion remains a separate Play Mode/runtime concern.
 
 The static LOD prefab path remains guarded: models with bones, blend shapes, animation clips or an existing LODGroup are refused rather than silently modified.
 
