@@ -14,7 +14,8 @@ concurrency:
 
 jobs:
   observe:
-    runs-on: [self-hosted, Windows, X64]
+    if: vars.HORDAX_AUTOPILOT_ENABLED == 'true'
+    runs-on: [self-hosted, Windows, X64, hordax-autopilot]
     timeout-minutes: 45
 
     steps:

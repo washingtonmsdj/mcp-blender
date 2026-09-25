@@ -27,6 +27,12 @@ function Write-BootstrapLog([string]$Message) {
 }
 
 function Ensure-DevelopmentV2Settings {
+    # The shared setup client validates binding and can recover missing/revoked
+    # credentials using the user's existing login. It never opens UI at boot.
+    if (Test-Path (Join-Path $repoRootResolved 'ordax_dev_agent\device_setup.py')) {
+        & $python -m ordax_dev_agent.device_setup | ForEach-Object { Write-BootstrapLog "SETUP $_" }
+        return $LASTEXITCODE -eq 0
+    }
     $tokenPath = Join-Path $stateDir "device-token.txt"
     $settingsPath = Join-Path $stateDir "agent-settings.json"
     $controlPlaneUrl = "https://eobcxuyvhkvdmkbaihwh.supabase.co"
@@ -282,6 +288,13 @@ $retrySeconds = [Math]::Max(1, $InitialRetrySeconds)
 $needsSafeUpdate = $false
 
 while ($true) {
+    if (-not (Test-Path $python)) {
+        try {
+            $basePython = Get-Command python -ErrorAction Stop
+            & $basePython.Source -m venv (Join-Path $repoRootResolved '.venv')
+            if ($LASTEXITCODE -eq 0) { & $python -m pip install --disable-pip-version-check -e $repoRootResolved }
+        } catch { Write-BootstrapLog 'VENV_REPAIR_RETRY' }
+    }
     try {
         [void](Ensure-DevelopmentV2Settings)
     } catch {

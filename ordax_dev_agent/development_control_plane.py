@@ -14,6 +14,10 @@ from .config import AgentConfig
 from .models import ActionResult, AgentJob
 
 
+class DeviceAuthorizationError(RuntimeError):
+    """The supervisor must reauthenticate this device before restarting."""
+
+
 class DevelopmentControlPlane:
     """Client for the OrdaX development-device protocol v2.
 
@@ -87,6 +91,8 @@ class DevelopmentControlPlane:
                 f"development control-plane request failed: {type(error).__name__}: {error}"
             ) from error
         raw = response.text
+        if response.status_code == 401:
+            raise DeviceAuthorizationError("DEVICE_CREDENTIAL_REJECTED")
         if response.status_code >= 400:
             raise RuntimeError(
                 f"development control-plane HTTP {response.status_code}: {raw[-4000:]}"

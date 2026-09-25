@@ -42,7 +42,7 @@ if ($RetargetTask) {
         throw "External OrdaX bootstrap missing: $bootstrapPath"
     }
     $powershellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
-    $bootstrapArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$bootstrapPath`" -RepoRoot `"$repoRootResolved`""
+    $bootstrapArguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$bootstrapPath`" -RepoRoot `"$repoRootResolved`""
 
     $action = New-ScheduledTaskAction `
         -Execute $powershellPath `

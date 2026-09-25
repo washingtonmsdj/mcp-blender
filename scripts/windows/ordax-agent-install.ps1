@@ -36,11 +36,11 @@ if (-not (Test-Path $python)) {
     }
 }
 
-& $python -m pip install --upgrade pip
-if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed." }
-
-& $python -m pip install -e $repoRoot
-if ($LASTEXITCODE -ne 0) { throw "OrdaX Dev Agent install failed." }
+& $python -c "import httpx, mcp, supabase, ordax_dev_agent" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    & $python -m pip install --disable-pip-version-check -e $repoRoot
+    if ($LASTEXITCODE -ne 0) { throw "OrdaX Dev Agent install failed." }
+}
 
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 
@@ -83,7 +83,7 @@ Import-Module ScheduledTasks -ErrorAction Stop
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 
 $powershellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
-$bootstrapArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$bootstrapPath`" -RepoRoot `"$repoRoot`""
+$bootstrapArguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$bootstrapPath`" -RepoRoot `"$repoRoot`""
 $actionParams = @{
     Execute = $powershellPath
     Argument = $bootstrapArguments
@@ -118,7 +118,8 @@ Write-Host "Run context: $userId (interactive desktop)"
 Write-Host "Restart policy: 999 attempts, 1 minute interval"
 Write-Host "Maintenance trigger: every 1 minute for self-recovery; duplicate starts are ignored"
 Write-Host "Local status endpoint: http://127.0.0.1:8765/status"
-Write-Host ("Task executable: " + $powershellPath)\nWrite-Host ("Task bootstrap: " + $bootstrapPath)
+Write-Host ("Task executable: " + $powershellPath)
+Write-Host ("Task bootstrap: " + $bootstrapPath)
 Write-Host ("External bootstrap retained for maintenance: " + $bootstrapPath)
 
 if ($SupabaseUrl -and $PublishableKey) {

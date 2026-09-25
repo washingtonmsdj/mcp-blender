@@ -17,15 +17,27 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: ordax-agent-recovery
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
+  current-head:
+    runs-on: ubuntu-latest
+    outputs:
+      current: ${{ steps.head.outputs.current }}
+    steps:
+      - uses: actions/github-script@v7
+        id: head
+        with:
+          script: |
+            const {data} = await github.rest.repos.getBranch({...context.repo, branch: 'main'});
+            core.setOutput('current', context.ref === 'refs/heads/main' && data.commit.sha === context.sha);
   recover-if-offline:
-    runs-on: [self-hosted, Windows, X64]
+    needs: current-head
+    if: needs.current-head.outputs.current == 'true'
+    runs-on: [self-hosted, Windows, X64, ordax-recovery]
     timeout-minutes: 10
 
     steps:
@@ -36,7 +48,7 @@ jobs:
 
       - name: Check whether this main run is still current
         id: freshness
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         shell: pwsh
         run: |
           git fetch --quiet origin "refs/heads/main:refs/remotes/origin/main"
@@ -115,116 +127,18 @@ jobs:
             $env:PYTHONPATH = $previousPythonPath
           }
 
-      - name: Configure OrdaX development v2 transport
+      - name: Configure device through shared user-authenticated setup
         if: steps.freshness.outputs.current != 'false'
         shell: pwsh
         run: |
-          $stateDir = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent"
-          $tokenPath = Join-Path $stateDir "device-token.txt"
-          $settingsPath = Join-Path $stateDir "agent-settings.json"
-          New-Item -ItemType Directory -Force $stateDir | Out-Null
-
-          $settings = $null
-          if (Test-Path $settingsPath) {
-            try {
-              $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
-            } catch {
-              throw "Existing agent-settings.json is invalid JSON."
-            }
+          git fetch --quiet origin "refs/heads/main:refs/remotes/origin/main"
+          if ($LASTEXITCODE -ne 0 -or (git rev-parse origin/main).Trim() -ne "${{ github.sha }}") {
+            throw "Recovery superseded before local mutation."
           }
-          if (-not $settings) {
-            $settings = [pscustomobject]@{}
-          }
+          $python = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent\src\.venv\Scripts\python.exe"
+          & $python -m ordax_dev_agent.device_setup
+          if ($LASTEXITCODE -ne 0) { throw "Run ordax-device-agent-setup.ps1 interactively to authenticate this PC." }
 
-          $protocol = if ($settings.PSObject.Properties["control_plane_protocol"]) {
-            [string]$settings.control_plane_protocol
-          } else { "" }
-          $deviceId = if ($settings.PSObject.Properties["development_device_id"]) {
-            [string]$settings.development_device_id
-          } else { "" }
-
-          if (-not (Test-Path $tokenPath) -or $protocol -ne "development-v2" -or
-              $deviceId -notmatch '^[0-9a-fA-F-]{36}$') {
-            if (-not $env:ACTIONS_ID_TOKEN_REQUEST_URL -or -not $env:ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
-              throw "GitHub OIDC request environment is unavailable."
-            }
-
-            $machineGuid = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Cryptography" -Name MachineGuid -ErrorAction Stop).MachineGuid
-            $bindingInput = "$($env:COMPUTERNAME)|$machineGuid|windows-x64"
-            $sha256 = [System.Security.Cryptography.SHA256]::Create()
-            try {
-              $bindingBytes = [System.Text.Encoding]::UTF8.GetBytes($bindingInput)
-              $bindingHash = ([BitConverter]::ToString($sha256.ComputeHash($bindingBytes))).Replace("-", "").ToLowerInvariant()
-            } finally {
-              $sha256.Dispose()
-            }
-
-            $separator = if ($env:ACTIONS_ID_TOKEN_REQUEST_URL.Contains("?")) { "&" } else { "?" }
-            $oidcUri = $env:ACTIONS_ID_TOKEN_REQUEST_URL + $separator + "audience=ordax-development-enrollment"
-            $oidcResponse = Invoke-RestMethod -Method Get -Uri $oidcUri -Headers @{
-              Authorization = "Bearer $env:ACTIONS_ID_TOKEN_REQUEST_TOKEN"
-            } -TimeoutSec 20
-            if (-not $oidcResponse.value) {
-              throw "GitHub OIDC token response was empty."
-            }
-
-            $requestBody = @{
-              oidc_token = [string]$oidcResponse.value
-              machine_binding_sha256 = $bindingHash
-              device_name = "ordax-device-agent-$($env:COMPUTERNAME)"
-              sha = "${{ github.sha }}"
-            } | ConvertTo-Json -Compress
-
-            $enrollment = Invoke-RestMethod -Method Post `
-              -Uri "https://eobcxuyvhkvdmkbaihwh.supabase.co/functions/v1/ordax-development-github-enroll" `
-              -ContentType "application/json" `
-              -Body $requestBody `
-              -TimeoutSec 30
-
-            if (-not $enrollment.ok -or -not $enrollment.device_id -or -not $enrollment.device_token) {
-              throw "OrdaX development enrollment did not return a usable credential."
-            }
-
-            Set-Content -Path $tokenPath -Value ([string]$enrollment.device_token) -NoNewline -Encoding ascii
-            $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-            & icacls.exe $tokenPath /inheritance:r /grant:r "${identity}:(F)" | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-              Remove-Item $tokenPath -Force -ErrorAction SilentlyContinue
-              throw "Could not restrict Device Agent token ACL."
-            }
-
-            $settings | Add-Member -NotePropertyName supabase_url `
-              -NotePropertyValue "https://eobcxuyvhkvdmkbaihwh.supabase.co" -Force
-            $settings | Add-Member -NotePropertyName control_plane_protocol `
-              -NotePropertyValue "development-v2" -Force
-            $settings | Add-Member -NotePropertyName development_device_id `
-              -NotePropertyValue ([string]$enrollment.device_id) -Force
-          }
-
-          $projectRoot = Join-Path $env:USERPROFILE "Documents\github\cerco-no-interior-mvp"
-          if (Test-Path $projectRoot -PathType Container) {
-            if (-not $settings.PSObject.Properties["projects"] -or -not $settings.projects) {
-              $settings | Add-Member -NotePropertyName projects -NotePropertyValue ([pscustomobject]@{}) -Force
-            }
-            $projectConfig = [pscustomobject]@{
-              path = $projectRoot
-              apps = @("blender")
-              blender = [pscustomobject]@{
-                scripts_dir = "automation/blender"
-              }
-            }
-            $settings.projects | Add-Member -NotePropertyName "cerco-no-interior-mvp" `
-              -NotePropertyValue $projectConfig -Force
-            Write-Host "Registered local Blender project: cerco-no-interior-mvp"
-          } else {
-            Write-Host "Local cerco-no-interior-mvp folder not present; registration skipped."
-          }
-
-          $settingsJson = $settings | ConvertTo-Json -Depth 12
-          $tempSettings = "$settingsPath.tmp"
-          Set-Content -Path $tempSettings -Value $settingsJson -Encoding utf8
-          Move-Item -Force $tempSettings $settingsPath
-          Write-Host "OrdaX Device Agent control plane protocol configured."
       - name: Recover managed agent safely
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.freshness.outputs.current != 'false'
         shell: pwsh

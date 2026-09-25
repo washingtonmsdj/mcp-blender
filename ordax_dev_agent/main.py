@@ -278,6 +278,7 @@ def main() -> int:
                         agent_version=__version__,
                         metadata=_agent_metadata(config),
                     )
+                    runtime["last_heartbeat_at"] = time.time()
                     next_heartbeat = now + 20.0
 
                 job = control.claim_next_job()
@@ -375,6 +376,10 @@ def main() -> int:
 
                 runtime["state"] = "ready"
             except Exception as error:
+                from .development_control_plane import DeviceAuthorizationError
+                if isinstance(error, DeviceAuthorizationError):
+                    runtime["state"] = "credential-recovery-required"
+                    return 43
                 runtime["state"] = "control-plane-error"
                 runtime["last_result"] = {"ok": False, "summary": str(error)}
                 print(f"control-plane error: {error}", file=sys.stderr)

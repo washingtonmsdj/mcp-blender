@@ -136,6 +136,7 @@ class AgentConfig:
             "supabase_configured": bool(self.supabase_url and self.publishable_key),
             "control_plane_protocol": self.control_plane_protocol,
             "development_device_id_configured": bool(self.development_device_id),
+            "development_device_id": self.development_device_id,
         }
 
     def write_public_status(self) -> None:
