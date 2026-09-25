@@ -46,7 +46,7 @@ resolved commit is stored in `component.json`.
 to the latest upstream `main`. Normal first-use installation stays pinned for
 reproducibility.
 
-## Actions
+## Data acquisition actions
 
 ### `geo.aleph_status`
 
@@ -65,8 +65,6 @@ inside the isolated venv and records the resolved commit.
 ### `geo.aleph_resolve`
 
 Typed wrapper around Aleph place/reverse/nearby lookup.
-
-Examples:
 
 ```json
 {
@@ -171,10 +169,153 @@ Continues a project-local Aleph capture containing `manifest.json`.
 
 Rebuilds outputs from an already downloaded capture offline.
 
+## Capture inspection and Blender reconstruction
+
+### `geo.aleph_capture_inspect`
+
+Inspects a capture without downloading anything. It validates the Aleph manifest
+format/version, reports capture bounds/state/stage progress, inventories core
+files and exposes which reconstruction capabilities are available:
+
+- terrain mesh from `terrain.tif`;
+- satellite material from `satellite.png`;
+- buildings and roads from `map.osm`;
+- georeferenced Street View references from `streetview/photos.geojson`.
+
+```json
+{
+  "action": "geo.aleph_capture_inspect",
+  "project": "my-world",
+  "arguments": {
+    "capture_dir": "generated/aleph/captures/aleph-20260924T200000Z-abcd"
+  }
+}
+```
+
+### `geo.aleph_blender_stage`
+
+Builds a new project-local `.blend` from an immutable Aleph capture.
+
+The conversion is two-phase:
+
+```text
+Aleph capture
+    |
+    +--> managed Aleph Python/Pillow preprocessor
+    |      terrain.tif -> sampled terrain mesh + UVs
+    |      map.osm     -> buildings + road polylines
+    |      satellite   -> local texture reference
+    |
+    +--> Blender --background --factory-startup
+           terrain + satellite material
+           OSM building massing
+           width-classed road curves
+           Street View reference cameras
+           provenance / coordinate metadata
+           packed satellite image
+           -> output .blend
+```
+
+Example:
+
+```json
+{
+  "action": "geo.aleph_blender_stage",
+  "project": "my-world",
+  "arguments": {
+    "capture_dir": "generated/aleph/captures/aleph-20260924T200000Z-abcd",
+    "output_blend": "world/salvador_reference.blend",
+    "terrain_samples": 192,
+    "include_terrain": true,
+    "include_buildings": true,
+    "include_roads": true,
+    "use_satellite": true
+  }
+}
+```
+
+`terrain_samples` controls the largest terrain-grid dimension and is bounded to
+16–512. The default is 128. This gives an explicit fidelity/performance knob
+instead of silently producing a huge mesh from every source pixel.
+
+Existing `.blend` output is never replaced unless `overwrite=true` is explicit.
+Temporary neutral staging data is deleted after a successful build unless
+`keep_staging=true` is requested. Diagnostic JSON reports are retained under the
+agent artifact directory.
+
+### Coordinate strategy
+
+Aleph terrain is georeferenced in EPSG:3857 and its capture bounds are WGS84.
+OrdaX converts those coordinates to **local metres centered on the capture**
+before Blender ingestion:
+
+```text
+Web Mercator absolute X/Y
+        - capture center
+        = Blender local X/Y metres
+
+terrain elevation
+        - minimum sampled capture elevation
+        = Blender local Z metres
+```
+
+This deliberately avoids putting multi-million-metre Earth coordinates directly
+into Blender, where float precision becomes an unnecessary problem. The original
+bounds, EPSG:3857 origin and base elevation are stored as scene/object metadata
+so the derived scene remains traceable to geographic space.
+
+### Terrain
+
+`terrain.tif` is sampled only inside the requested capture bounds. The generated
+mesh gets UVs covering 0–1 across the same rectangle. When `satellite.png` is
+available, it is applied as a terrain material and packed into the `.blend` so
+the work scene does not silently lose the texture when staging files are cleaned.
+
+### Buildings
+
+The OSM converter supports ordinary closed building ways and outer rings from
+building multipolygon relations. Heights are resolved in this order:
+
+1. explicit `height` (metres or feet);
+2. `building:levels × 3.2 m`;
+3. 9 m fallback.
+
+`min_height` / `building:min_level` are also honored. Building heights are
+bounded to protect against malformed tags. Buildings are placed against sampled
+terrain elevation when terrain is available.
+
+Current inner multipolygon rings/holes are recorded as simplified rather than
+silently claimed as exact geometry. A later architectural-detail pass can turn
+those into boolean courtyards if required.
+
+### Roads
+
+OSM `highway=*` ways are converted to 3D polylines and grouped by width in
+Blender curve objects. An explicit OSM `width` wins; otherwise OrdaX applies
+bounded class defaults for motorway/trunk/primary/secondary/residential/service,
+footway/cycleway/path and related classes. Road points follow terrain height when
+terrain is present.
+
+These roads are reference/game-blockout geometry, not a claim of civil-survey
+precision. They are designed to provide a structurally useful starting point for
+later road-network, collision and gameplay passes.
+
+### Street View reference cameras
+
+When `streetview/photos.geojson` exists, the Blender builder creates a bounded,
+evenly sampled set of up to 64 `ALEPH_StreetView` cameras. Each camera uses the
+photo's geographic position, heading, pitch and FOV, sits approximately at eye
+height above the terrain, and stores the local reference-image path plus useful
+panorama/road metadata.
+
+The photos are **not packed automatically** into the `.blend`. Keeping them as
+local references avoids turning a work file into a multi-gigabyte archive while
+still making the evidence available to Blender/OrdaX tooling.
+
 ## How this fits the 3D/game pipeline
 
-Aleph is a **world-reference/data acquisition layer**, not a mesh generator by
-itself. The intended OrdaX flow is:
+Aleph is a **world-reference/data acquisition layer**. The new staging layer
+turns that evidence into editable game-world blockout/reference geometry:
 
 ```text
 real-world place / bbox
@@ -186,22 +327,25 @@ Aleph
         v
 project-local immutable/reference capture
         |
-        +--> Blender terrain construction
-        +--> OSM road/building reconstruction
-        +--> Street View / satellite material-reference analysis
-        +--> AI 3D providers for missing/detail assets
-        |
         v
-Blender quality gate
+geo.aleph_blender_stage
+  terrain + UV/satellite
+  building massing
+  road curves
+  Street View cameras
+        |
+        +--> Blender detail/modeling passes
+        +--> AI 3D providers for missing/detail assets
+        +--> Mixamo / animation pipeline for characters
+        +--> reference/visual quality gates
         |
         v
 Unity / Unreal / Godot / GLB export
 ```
 
-The next environment-generation layer should consume the Aleph capture rather
-than calling remote map services directly. That gives us a reusable local
-snapshot and makes iterative 3D work much less dependent on network availability
-or undocumented upstream endpoints.
+The capture remains canonical and unmodified. The `.blend` is a reproducible
+derivative, so terrain/buildings/roads can be regenerated at another fidelity
+without layering destructive edits onto raw geospatial data.
 
 ## Reliability and security rules
 
@@ -216,6 +360,12 @@ or undocumented upstream endpoints.
    returning to model context.
 9. Captures should be retained/cached because the upstream project warns that
    undocumented APIs may break or rate-limit without notice.
+10. Aleph-to-Blender conversion performs no map-network requests; it consumes the
+    completed local capture.
+11. Blender reconstruction starts from `--factory-startup` and writes a new
+    project-local `.blend`; replacement requires explicit overwrite.
+12. Generated geometry is centered in local metre space while geographic
+    provenance remains stored as metadata.
 
 ## Upstream facts verified on 2026-09-24
 
