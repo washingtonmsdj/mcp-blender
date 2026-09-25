@@ -83,6 +83,8 @@ _COMPONENTS: tuple[dict[str, Any], ...] = (
             "ordax_dev_agent/mixamo_",
             "ordax_dev_agent/rodin_",
             "ordax_dev_agent/comfyui_",
+            "ordax_dev_agent/visual_environment.py",
+            "ordax_dev_agent/visual_environment_actions.py",
             "ordax_dev_agent/assets/blender_game_asset_pipeline.py",
             "ordax_dev_agent/assets/blender_fbx_ingest.py",
             "ordax_dev_agent/assets/blender_generated_asset_ingest.py",
