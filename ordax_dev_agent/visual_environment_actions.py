@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from .blender_environment_actions import BlenderEnvironmentActions
 from .models import ActionResult
 from .visual_environment import (
     ENVIRONMENT_SCHEMA,
@@ -30,7 +31,19 @@ class VisualEnvironmentActions:
         unsupported = set(payload) - {"project"}
         if unsupported:
             return ActionResult(False, f"unsupported fields: {', '.join(sorted(unsupported))}")
-        return ActionResult(True, "visual environment schema", environment_schema())
+        schema = environment_schema()
+        schema["materialization"] = {
+            "blender": {
+                "action": "visual.environment_write",
+                "optional_field": "blender",
+                "output": "derived .blend with Nishita sky, Sun light and Ocean modifier",
+            },
+            "threejs": {
+                "action": "game_assets.threejs_prepare_viewer",
+                "environment_schema": ENVIRONMENT_SCHEMA,
+            },
+        }
+        return ActionResult(True, "visual environment schema", schema)
 
     def visual_environment_preset(self, payload: dict[str, Any]) -> ActionResult:
         unsupported = set(payload) - {"project", "preset"}
@@ -43,7 +56,7 @@ class VisualEnvironmentActions:
         return ActionResult(True, "visual environment preset", preset)
 
     def visual_environment_write(self, payload: dict[str, Any]) -> ActionResult:
-        supported = {"project", "environment", "output_path", "overwrite"}
+        supported = {"project", "environment", "output_path", "overwrite", "blender"}
         unsupported = set(payload) - supported
         if unsupported:
             return ActionResult(False, f"unsupported fields: {', '.join(sorted(unsupported))}")
@@ -56,17 +69,66 @@ class VisualEnvironmentActions:
             output = project.path(output_raw.strip(), must_exist=False)
             if output.suffix.lower() != ".json":
                 raise ValueError("output_path must be a .json file")
-            if output.exists() and not bool(payload.get("overwrite", False)):
+            overwrite = bool(payload.get("overwrite", False))
+            if output.exists() and not overwrite:
                 raise ValueError("environment manifest already exists; set overwrite=true explicitly")
             _write_json_atomic(output, environment)
         except (ValueError, OSError, FileNotFoundError) as error:
             return ActionResult(False, str(error))
+
+        blender_result: ActionResult | None = None
+        raw_blender = payload.get("blender")
+        if raw_blender is not None:
+            if not isinstance(raw_blender, dict):
+                return ActionResult(False, "blender must be an object")
+            allowed_blender = {
+                "blend_file",
+                "output_path",
+                "report_path",
+                "timeout_seconds",
+                "overwrite",
+            }
+            unsupported_blender = sorted(set(raw_blender) - allowed_blender)
+            if unsupported_blender:
+                return ActionResult(
+                    False,
+                    "unsupported blender field(s): " + ", ".join(unsupported_blender),
+                )
+            blender_payload = {
+                "project": project.slug,
+                "environment": environment,
+                **raw_blender,
+            }
+            blender_payload.setdefault("overwrite", overwrite)
+            blender_result = BlenderEnvironmentActions.blender_environment_apply(
+                self, blender_payload
+            )
+            if not blender_result.ok:
+                return ActionResult(
+                    False,
+                    "environment manifest written but Blender materialization failed: "
+                    + blender_result.summary,
+                    {
+                        "schema": ENVIRONMENT_SCHEMA,
+                        "output_path": str(output),
+                        "environment": environment,
+                        "blender": blender_result.data,
+                    },
+                )
+
+        data: dict[str, Any] = {
+            "schema": ENVIRONMENT_SCHEMA,
+            "output_path": str(output),
+            "environment": environment,
+        }
+        if blender_result is not None:
+            data["blender"] = blender_result.data
         return ActionResult(
             True,
-            "visual environment manifest written",
-            {
-                "schema": ENVIRONMENT_SCHEMA,
-                "output_path": str(output),
-                "environment": environment,
-            },
+            (
+                "visual environment manifest written and materialized in Blender"
+                if blender_result is not None
+                else "visual environment manifest written"
+            ),
+            data,
         )
