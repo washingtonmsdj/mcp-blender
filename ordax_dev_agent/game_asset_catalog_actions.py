@@ -39,6 +39,8 @@ class GameAssetCatalogActions:
                 "credential_env": "TRIPO_API_KEY",
                 "capabilities": [
                     "text_to_model",
+                    "single_image_to_3d",
+                    "four_view_to_3d",
                     "pre_rig_check",
                     "rig",
                     "mixamo_skeleton_spec",
@@ -48,6 +50,7 @@ class GameAssetCatalogActions:
                 ],
                 "actions": [
                     "game_assets.provider_submit",
+                    "game_assets.tripo_submit_images",
                     "game_assets.provider_status",
                     "game_assets.provider_download",
                 ],
@@ -58,6 +61,8 @@ class GameAssetCatalogActions:
                 "credential_env": "MESHY_API_KEY",
                 "capabilities": [
                     "text_to_3d",
+                    "single_image_to_3d",
+                    "multi_image_to_3d",
                     "pbr_refine",
                     "humanoid_rig",
                     "animation",
@@ -66,6 +71,7 @@ class GameAssetCatalogActions:
                 ],
                 "actions": [
                     "game_assets.provider_submit",
+                    "game_assets.meshy_submit_images",
                     "game_assets.provider_status",
                     "game_assets.provider_download",
                 ],
@@ -76,6 +82,8 @@ class GameAssetCatalogActions:
                 "credential_env": "RODIN_API_KEY",
                 "capabilities": [
                     "text_to_3d",
+                    "one_to_five_image_to_3d",
+                    "orientation_labels",
                     "pbr",
                     "raw_or_quad_mesh",
                     "face_budget",
@@ -85,6 +93,7 @@ class GameAssetCatalogActions:
                 ],
                 "actions": [
                     "game_assets.rodin_submit_text",
+                    "game_assets.rodin_submit_images",
                     "game_assets.rodin_status",
                     "game_assets.rodin_download_manifest",
                     "game_assets.provider_download",
@@ -163,6 +172,31 @@ class GameAssetCatalogActions:
                 "rig_animation": ["adobe_mixamo", "tripo", "meshy"],
                 "dcc": ["blender"],
                 "engines": ["unity", "unreal_export", "godot_export", "web_gltf"],
+            },
+            "image_conditioned_generation": {
+                "security_model": [
+                    "project_local_source_files_only",
+                    "jpeg_png_magic_validation",
+                    "per_image_size_limits",
+                    "no_job_supplied_external_image_urls",
+                ],
+                "meshy": {
+                    "action": "game_assets.meshy_submit_images",
+                    "images": "1-4",
+                    "single": "image_to_3d",
+                    "multiple": "multi_image_to_3d",
+                },
+                "tripo": {
+                    "action": "game_assets.tripo_submit_images",
+                    "images": "1 or 4",
+                    "four_view_order": ["front", "left", "back", "right"],
+                    "upload_tokens_exposed_to_job_result": False,
+                },
+                "rodin": {
+                    "action": "game_assets.rodin_submit_images",
+                    "images": "1-5",
+                    "orientation_labels": ["F", "FL", "FR", "B", "BL", "BR", "L", "R", "U", "D", "?"],
+                },
             },
             "canonical_generated_artifacts": {
                 "action": "game_assets.provider_download",
