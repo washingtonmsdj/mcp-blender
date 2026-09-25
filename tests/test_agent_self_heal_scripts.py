@@ -112,7 +112,7 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertIn('"ordax_device_agent"', recovery)
         self.assertIn('Stop-ScheduledTask -TaskName $taskName', recovery)
 
-    def test_watchdog_requests_restart_without_cim_dependency(self) -> None:
+    def test_windows_v2_recovery_uses_pending_token_and_official_exchange(self) -> None:\n        root = Path(__file__).resolve().parents[1]\n        recovery = (\n            root / "scripts" / "windows" / "ordax-development-v2-recover.ps1"\n        ).read_text(encoding="utf-8")\n\n        self.assertIn("device-token.txt.pending-recovery", recovery)\n        self.assertIn("ordax-development-recovery", recovery)\n        self.assertIn("development-credential-recovery", recovery)\n        self.assertIn("token_sha256", recovery)\n        self.assertIn("Move-Item -Force $pendingPath $tokenPath", recovery)\n        self.assertIn("TOKEN_VALUE=REDACTED", recovery)\n        self.assertNotIn("Write-Host $token", recovery)\n\n    def test_watchdog_requests_restart_without_cim_dependency(self) -> None:
         root = Path(__file__).resolve().parents[1]
         watchdog = (
             root / "scripts" / "windows" / "ordax-agent-watchdog.ps1"
