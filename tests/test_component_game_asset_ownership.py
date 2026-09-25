@@ -15,6 +15,7 @@ class GameAssetComponentOwnershipTests(unittest.TestCase):
                 "ordax_dev_agent/game_asset_runtime_actions.py",
                 "ordax_dev_agent/game_asset_lod_actions.py",
                 "ordax_dev_agent/game_asset_unity_actions.py",
+                "ordax_dev_agent/game_asset_unreal_actions.py",
                 "ordax_dev_agent/generated_asset_actions.py",
                 "ordax_dev_agent/assets/blender_generated_asset_ingest.py",
                 "ordax_dev_agent/assets/blender_runtime_budget.py",
