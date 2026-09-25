@@ -157,6 +157,7 @@ class ActionRegistry(
             "game_assets.blender_generate_static_lods": self.game_assets_blender_generate_static_lods,
             "game_assets.unity_import_generated": self.game_assets_unity_import_generated,
             "game_assets.unity_model_audit": self.game_assets_unity_model_audit,
+            "game_assets.unity_build_static_lod_prefab": self.game_assets_unity_build_static_lod_prefab,
             "game_assets.blender_character_preflight": self.game_assets_blender_character_preflight,
             "game_assets.blender_export": self.game_assets_blender_export,
             "game_assets.blender_import_fbx": self.game_assets_blender_import_fbx,
