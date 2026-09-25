@@ -11,6 +11,12 @@ class AgentJob:
     payload: dict[str, Any] = field(default_factory=dict)
     project_slug: str | None = None
     lease_token: str | None = None
+    effect_id: str | None = None
+    attempt_id: str | None = None
+    execution_epoch: int | None = None
+    agent_instance_id: str | None = None
+    boot_id: str | None = None
+    payload_sha256: str | None = None
 
     def action_payload(self) -> dict[str, Any]:
         payload = dict(self.payload)
