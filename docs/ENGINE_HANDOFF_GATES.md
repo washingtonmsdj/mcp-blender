@@ -21,16 +21,23 @@ A successful handoff audit means `ready_for_engine_import=true`. It deliberately
 
 ## Unity
 
-Unity currently has the automated chain:
+Unity now has separate import, structural-model and semantic gates:
 
 ```text
 game_assets.engine_handoff_audit
   -> game_assets.unity_import_engine_export
   -> game_assets.unity_model_audit
+  -> game_assets.unity_semantic_audit
   -> game_assets.unity_build_static_lod_prefab   # static LOD derivatives only
 ```
 
-The model audit inspects importer and geometry/animation signals in the Unity Editor. The static LOD prefab path remains guarded: models with bones, blend shapes, animation clips or an existing LODGroup are refused rather than silently modified.
+`game_assets.unity_model_audit` obtains real evidence from the Unity Editor companion: ModelImporter presence, animation type/import flag, mesh/vertex/triangle/material counts, animation clips, bones, blend shapes and LODGroup count.
+
+`game_assets.unity_semantic_audit` layers explicit production requirements over that evidence instead of treating a successful import as game-ready. Workflows can require an animation type (`None`, `Legacy`, `Generic` or `Human`/`Humanoid`), animation import state, minimum mesh/bone/clip/blend-shape/LODGroup counts, and an optional maximum LODGroup count. A model may therefore be loaded successfully in Unity while the semantic gate still fails with concrete requirement mismatches.
+
+The semantic result deliberately reports current companion limitations rather than inferring unavailable facts: avatar mapping, root-motion semantics and per-LOD renderer assignment are not yet claimed by this gate. Those require additional Unity companion telemetry before they can become hard requirements.
+
+The static LOD prefab path remains guarded: models with bones, blend shapes, animation clips or an existing LODGroup are refused rather than silently modified.
 
 ## Unreal Engine
 
