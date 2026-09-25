@@ -21,19 +21,24 @@ A successful handoff audit means `ready_for_engine_import=true`. It deliberately
 
 ## Unity
 
-Unity has separate import, structural-model and semantic gates:
+Unity has separate handoff, importer-configuration, structural-model and semantic gates:
 
 ```text
 game_assets.engine_handoff_audit
   -> game_assets.unity_import_engine_export
+  -> game_assets.unity_character_import_configure   # characters when deterministic importer settings are required
   -> game_assets.unity_model_audit
   -> game_assets.unity_semantic_audit
-  -> game_assets.unity_build_static_lod_prefab   # static LOD derivatives only
+  -> game_assets.unity_build_static_lod_prefab      # static LOD derivatives only
 ```
 
 `game_assets.unity_model_audit` obtains real evidence from the Unity Editor companion: ModelImporter presence, animation type/import flag, mesh/vertex/triangle/material counts, animation clips, bones, blend shapes and LODGroup count.
 
-`game_assets.unity_semantic_audit` layers explicit production requirements over that evidence instead of treating a successful import as game-ready. Baseline workflows can require an animation type (`None`, `Legacy`, `Generic` or `Human`/`Humanoid`), animation import state, minimum mesh/bone/clip/blend-shape/LODGroup counts, and an optional maximum LODGroup count.
+`game_assets.unity_character_import_configure` is an explicit mutation gate for one project-local Unity model. It does not install a global `AssetPostprocessor` and it requires `confirm=true`. Typed inputs can control animation type, Avatar setup, an explicit source Avatar for `CopyFromOther`, animation import, `optimizeGameObjects`, curve resampling and mesh readability. The action snapshots the controlled importer values, calls Unity's `SaveAndReimport`, verifies the resulting importer values, and attempts to restore the previous snapshot if reimport fails or Unity normalizes the settings outside the requested contract. After a successful configuration it runs both the standard model audit and the advanced game-asset audit before reporting success.
+
+`CopyFromOther` requires an explicit, different, project-local `source_avatar_path`; `Human`/Humanoid configuration requires either `CreateFromThisModel` or `CopyFromOther`; `None`/`Legacy` are normalized to `NoAvatar`. `is_readable` is never enabled implicitly: Unity keeps a CPU-side copy of readable mesh data, so workflows should request it only when runtime CPU mesh access is actually required.
+
+`game_assets.unity_semantic_audit` layers explicit production requirements over real Editor evidence instead of treating a successful import as game-ready. Baseline workflows can require an animation type (`None`, `Legacy`, `Generic` or `Human`/`Humanoid`), animation import state, minimum mesh/bone/clip/blend-shape/LODGroup counts, and an optional maximum LODGroup count.
 
 When advanced requirements are requested, the action installs the isolated managed `OrdaXGameAssetAgent.cs` companion under `Assets/OrdaX/Editor/`, asks Unity to import it through the existing guarded refresh flow, and communicates through a separate `Library/OrdaXAgent/game-assets` inbox. A pre-existing file is overwritten only when it carries the OrdaX-managed protocol/class markers.
 
@@ -52,7 +57,7 @@ Advanced requirements can enforce a valid/humanoid Avatar, root-motion curve evi
 
 Root-motion curve presence is intentionally not treated as a gameplay policy decision. It proves that imported clips contain motion/root evidence; whether a specific runtime Animator should consume root motion remains a separate Play Mode/runtime concern.
 
-The static LOD prefab path remains guarded: models with bones, blend shapes, animation clips or an existing LODGroup are refused rather than silently modified.
+The static LOD prefab path remains guarded: models with bones, blend shapes, animation clips or an existing LODGroup are refused rather than silently modified. Deformation-aware character LOD remains a separate path rather than reusing static decimation assumptions.
 
 ## Unreal Engine
 
