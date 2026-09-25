@@ -160,6 +160,7 @@ def _upload_result_artifacts(
 
 
 def main() -> int:
+    started_monotonic = time.monotonic()
     _startup_log(None, f"MAIN_ENTER pid={os.getpid()} version={__version__}")
     config = AgentConfig.from_env()
     _startup_log(config, "CONFIG_READY")
@@ -173,10 +174,14 @@ def main() -> int:
         "last_job_id": None,
         "last_job_action": None,
         "last_result": None,
+        "started_at": time.time(),
+        "job_phase": "idle",
+        "jobs_completed": 0,
     }
     registry = None
 
     def status_payload() -> dict:
+        runtime["uptime_seconds"] = round(time.monotonic() - started_monotonic, 2)
         if registry is None:
             return {
                 **config.public_status(),
@@ -281,9 +286,12 @@ def main() -> int:
                         metadata=_agent_metadata(config),
                     )
                     runtime["last_heartbeat_at"] = time.time()
+                    runtime.setdefault("startup_seconds", round(time.monotonic() - started_monotonic, 3))
                     next_heartbeat = now + 20.0
 
+                claim_started = time.monotonic()
                 job = control.claim_next_job()
+                claim_seconds = time.monotonic() - claim_started
                 if job is None:
                     idle_claim_misses += 1
                     # Stay very responsive during interactive work, then ease
@@ -292,13 +300,19 @@ def main() -> int:
                         config.poll_seconds,
                         0.20 * (1.55 ** min(idle_claim_misses - 1, 5)),
                     )
-                    time.sleep(max(0.10, idle_delay))
+                    # v2 already waits on the server; avoid an additional idle gap.
+                    time.sleep(0.10 if getattr(control, "uses_long_poll", False) and claim_seconds >= 1.0
+                               else max(0.10, idle_delay))
                     continue
 
                 idle_claim_misses = 0
                 runtime["state"] = "busy"
                 runtime["last_job_id"] = job.id
                 runtime["last_job_action"] = job.action
+                job_started = time.monotonic()
+                runtime["job_started_at"] = time.time()
+                runtime["job_phase"] = "executing"
+                runtime["job_timings"] = {}
                 runtime["progress"] = None
                 verbose_lifecycle = job.action in _VERBOSE_JOB_LIFECYCLE_EVENTS
                 if verbose_lifecycle:
@@ -325,15 +339,21 @@ def main() -> int:
 
                 keepalive_stop = threading.Event()
 
-                def _keep_job_alive() -> None:
-                    while not keepalive_stop.wait(20.0):
+                def _keep_job_alive(active_job=job, stop_event=keepalive_stop) -> None:
+                    while not stop_event.wait(20.0):
                         try:
-                            control.renew(job)
+                            control.renew(active_job)
                         except Exception as error:
                             print(
-                                f"job keepalive error for {job.id}: {error}",
+                                f"job keepalive error for {active_job.id}: {error}",
                                 file=sys.stderr,
                             )
+                        try:
+                            control.heartbeat(registry.names, agent_version=__version__,
+                                              status="busy")
+                            runtime["last_heartbeat_at"] = time.time()
+                        except Exception as error:
+                            print(f"busy heartbeat error: {error}", file=sys.stderr)
 
                 keepalive_thread = threading.Thread(
                     target=_keep_job_alive,
@@ -347,6 +367,9 @@ def main() -> int:
                         result = registry.execute(job.action, job.action_payload())
                     except Exception as error:
                         result = ActionResult(False, f"{type(error).__name__}: {error}")
+                    runtime["job_timings"]["execution_seconds"] = round(time.monotonic() - job_started, 3)
+                    runtime["job_phase"] = "uploading"
+                    upload_started = time.monotonic()
                     try:
                         uploaded = _upload_result_artifacts(control, job, result, artifact_cache)
                         if uploaded:
@@ -355,6 +378,7 @@ def main() -> int:
                         result.data["upload_error"] = str(error)
                         result.ok = False
                         result.summary += "; artifact upload failed"
+                    runtime["job_timings"]["upload_seconds"] = round(time.monotonic() - upload_started, 3)
                 finally:
                     registry.on_observation = None
                     keepalive_stop.set()
@@ -366,7 +390,14 @@ def main() -> int:
                         "info" if result.ok else "error",
                         result.summary,
                     )
+                runtime["job_phase"] = "reporting"
+                report_started = time.monotonic()
+                result.data["agent_timings"] = dict(runtime["job_timings"])
                 control.complete(job, result)
+                runtime["job_timings"]["report_seconds"] = round(time.monotonic() - report_started, 3)
+                runtime["job_timings"]["total_seconds"] = round(time.monotonic() - job_started, 3)
+                runtime["job_phase"] = "completed" if result.ok else "failed"
+                runtime["jobs_completed"] += 1
                 runtime["last_result"] = {
                     "ok": result.ok,
                     "summary": result.summary,
@@ -383,6 +414,7 @@ def main() -> int:
                     runtime["state"] = "credential-recovery-required"
                     return 43
                 runtime["state"] = "control-plane-error"
+                runtime["job_phase"] = "delivery-error"
                 runtime["last_result"] = {"ok": False, "summary": str(error)}
                 print(f"control-plane error: {error}", file=sys.stderr)
                 time.sleep(max(5.0, config.poll_seconds))

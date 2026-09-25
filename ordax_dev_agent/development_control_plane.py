@@ -25,6 +25,8 @@ class DevelopmentControlPlane:
     device-scoped credential and never reuses product/account credentials.
     """
 
+    uses_long_poll = True
+
     def __init__(self, config: AgentConfig):
         if not config.supabase_url:
             raise RuntimeError("Supabase URL is required for development control plane v2.")

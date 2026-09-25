@@ -8,8 +8,6 @@ import httpx
 from pathlib import Path
 from typing import Any
 
-from supabase import create_client
-
 from .config import AgentConfig
 from .identity import machine_id
 from .models import ActionResult, AgentJob
@@ -32,6 +30,9 @@ class ControlPlane:
         self.token_path = config.state_dir / "agent-token.txt"
         self.pairing_path = config.state_dir / "pairing-code.txt"
         self.agent_token = self._read_secret(self.token_path)
+        # The development-v2 transport does not use this legacy storage SDK.
+        from supabase import create_client
+
         self.storage = create_client(config.supabase_url, config.publishable_key)
         self.http = httpx.Client(
             timeout=httpx.Timeout(45.0),

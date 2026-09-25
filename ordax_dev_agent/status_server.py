@@ -95,6 +95,8 @@ footer { margin-top:22px; color:#658196; font-size:12px; }
     <div class="label">Último job</div>
     <div id="job" class="value">—</div>
     <div id="job-meta" class="meta">—</div>
+    <div id="job-phase" class="meta"></div>
+    <div id="job-timings" class="meta"></div>
   </article>
 
   <article class="card wide">
@@ -149,12 +151,22 @@ async function refresh() {
     document.getElementById('supabase').textContent =
       s.supabase_configured ? 'Configurado' : 'Não configurado';
     document.getElementById('pairing').textContent =
-      r.paired ? 'Máquina pareada e autenticada' : 'Aguardando pareamento';
+      r.last_heartbeat_at
+        ? 'Último heartbeat há ' + Math.max(0, Math.floor(Date.now()/1000-r.last_heartbeat_at)) + 's'
+        : 'Aguardando confirmação do Control Plane';
     document.getElementById('job').textContent = r.last_job_action || 'Nenhum';
     document.getElementById('job-meta').textContent =
       r.last_job_id ? r.last_job_id : 'Sem job nesta sessão';
     document.getElementById('result').textContent =
       r.last_result ? JSON.stringify(r.last_result, null, 2) : 'Nenhum job executado nesta sessão.';
+    const phases = {idle:'Aguardando trabalho', executing:'Executando', uploading:'Enviando arquivos',
+      reporting:'Confirmando resultado', completed:'Concluído', failed:'Falhou', 'delivery-error':'Falha de comunicação'};
+    document.getElementById('job-phase').textContent = phases[r.job_phase] || '';
+    const timings = r.job_timings || {};
+    document.getElementById('job-timings').textContent =
+      Object.entries(timings).map(([key, value]) =>
+        ({execution_seconds:'Execução', upload_seconds:'Envio', report_seconds:'Confirmação', total_seconds:'Total'}[key] || key)
+        + ': ' + value + 's').join(' · ');
     const live = s.live_apps || {};
     const defaultProject = s.default_project || Object.keys(live)[0];
     const appLive = defaultProject ? (live[defaultProject] || {}) : {};
