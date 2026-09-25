@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -92,16 +93,15 @@ class GameAssetLodActionsTests(unittest.TestCase):
             output = project / "generated" / "asset_lods.blend"
 
             def fake_run(command, *, cwd=None, timeout=0, env=None):
-                self.assertEqual(project, cwd)
+                self.assertTrue(os.path.samefile(project, cwd))
                 self.assertEqual(777, timeout)
-                self.assertEqual(str(source), command[2])
+                self.assertTrue(os.path.samefile(source, command[2]))
                 self.assertEqual("--background", command[1])
                 ratio_arg = command[command.index("--ratios") + 1]
                 self.assertEqual("0.600000,0.300000,0.120000", ratio_arg)
                 output_arg = Path(command[command.index("--output") + 1])
                 self.assertEqual(output.name, output_arg.name)
-                self.assertEqual(output.parent.resolve(), output_arg.parent.resolve())
-                output.parent.mkdir(parents=True, exist_ok=True)
+                self.assertTrue(os.path.samefile(output.parent, output_arg.parent))
                 output.write_bytes(b"lod-blend")
                 report = Path(command[command.index("--report") + 1])
                 report.write_text(
