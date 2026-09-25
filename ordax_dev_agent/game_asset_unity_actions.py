@@ -7,7 +7,6 @@ source artifact, so the operation can be retried idempotently.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from .generated_asset_actions import _verification
@@ -49,6 +48,9 @@ class GameAssetUnityActions:
 
         project = self._project(payload)
         try:
+            if "unity" not in project.apps:
+                raise ValueError(f"Unity is not enabled for project {project.slug}")
+
             artifact = project.path(str(payload.get("artifact_path") or ""))
             if not artifact.is_file():
                 raise ValueError("artifact_path must be a file")
