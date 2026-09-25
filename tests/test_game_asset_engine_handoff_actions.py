@@ -73,7 +73,7 @@ class GameAssetEngineHandoffTests(unittest.TestCase):
             self.assertTrue(status.ok)
             self.assertIn("game_assets.engine_handoff_audit", status.data["actions"])
 
-    def test_unreal_fbx_is_ready_but_not_claimed_engine_validated(self) -> None:
+    def test_unreal_fbx_routes_to_real_import_and_semantic_gates(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             _, artifact, _ = self.make_export(
@@ -87,9 +87,38 @@ class GameAssetEngineHandoffTests(unittest.TestCase):
             self.assertTrue(result.ok, result.summary)
             self.assertTrue(result.data["ready_for_engine_import"])
             self.assertFalse(result.data["validated_in_engine"])
-            self.assertFalse(result.data["engine_validation_available"])
-            self.assertEqual("unreal_engine_import_validation", result.data["next_gate"])
+            self.assertTrue(result.data["engine_validation_available"])
+            self.assertEqual("game_assets.unreal_import_validate", result.data["next_gate"])
+            self.assertEqual("game_assets.unreal_asset_audit", result.data["semantic_gate"])
             self.assertTrue(Path(result.data["artifact_path"]).samefile(artifact))
+
+    def test_godot_glb_routes_to_integrated_import_semantic_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.make_export(root, engine="godot", extension="glb", profile_format="glb")
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "game_assets.engine_handoff_audit",
+                {"project": "game", "artifact_path": "exports/asset.glb"},
+            )
+            self.assertTrue(result.ok, result.summary)
+            self.assertTrue(result.data["engine_validation_available"])
+            self.assertEqual("game_assets.godot_import_validate", result.data["next_gate"])
+            self.assertEqual("game_assets.godot_import_validate", result.data["semantic_gate"])
+
+    def test_web_glb_routes_to_structural_audit_without_claiming_browser_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.make_export(root, engine="web", extension="glb", profile_format="glb")
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "game_assets.engine_handoff_audit",
+                {"project": "game", "artifact_path": "exports/asset.glb"},
+            )
+            self.assertTrue(result.ok, result.summary)
+            self.assertFalse(result.data["engine_validation_available"])
+            self.assertEqual("game_assets.web_glb_audit", result.data["next_gate"])
+            self.assertIsNone(result.data["semantic_gate"])
 
     def test_godot_rejects_fbx_even_when_manifest_hashes_are_valid(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
