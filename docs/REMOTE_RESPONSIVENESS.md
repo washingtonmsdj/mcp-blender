@@ -18,8 +18,8 @@
 These are additive Agent changes; no backend schema or credentials changed.
 No tests or performance benchmarks were run for this change. Actual startup
 improvement must be measured; no speedup percentage is claimed.
-The running Agent is intentionally not restarted while another remote session
-is working. The code takes effect after its normal managed update/restart.
+The first delivery left the running Agent unchanged during another remote
+session. The user subsequently authorized restart; deployment is recorded below.
 
 The v2 artifact implementation currently returns local artifact metadata with
 `delivery=local-only-v2-artifact-gateway-pending`; it does not transfer file bytes
@@ -43,3 +43,14 @@ Consumers needing image bytes can call the existing project-scoped
 `artifact.preview` with `thumbnail=true`, `max_width=480`, `max_height=320`,
 and `max_bytes=262144`. Its `base64` field contains the actual preview bytes.
 This does not implement a large-file storage gateway.
+
+## Deployment observed on 2026-09-25
+
+Published code commit `b978585` and ran the noninteractive managed setup with a
+180-second readiness deadline. It completed with `ORDAX_DEVICE_AGENT=READY`.
+Local status then reported Agent 1.20.5, `state=ready`, PID 11616, supervisor
+12872, 166 actions and a heartbeat age of 15.3 seconds at observation.
+`startup_seconds=2.277` measures Agent main entry to its first accepted heartbeat.
+This was a service restart on an already running Windows system, not a cold OS
+boot benchmark; it must not be compared directly with the earlier reboot timing.
+No test suite or Blender modeling job was run during this deployment.
