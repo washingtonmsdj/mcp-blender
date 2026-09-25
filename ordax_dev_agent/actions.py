@@ -103,6 +103,7 @@ class ActionRegistry(
             "workspace.bind_project": self.workspace_bind_project,
             "project.archive_to_hordax": self.project_archive_to_hordax,
             "project.observe": self.project_observe,
+            "project.inventory": self.project_inventory,
             "project.references": self.project_references,
             "project.reference_images": self.project_reference_images,
             "project.text_read": self.project_text_read,
