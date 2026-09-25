@@ -1,14 +1,17 @@
 """Build and browser-validate the complete prepared OrdaX Three.js viewer."""
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import mimetypes
 import os
 import re
 import shutil
+import struct
 import tempfile
 import threading
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -24,6 +27,9 @@ _HUD_RE = re.compile(
     r"backend:\s*(WebGPU|WebGL2 fallback).*?environment:\s*([^\n<]+).*?model:\s*([^\n<]+).*?triangles:\s*(\d+).*?calls:\s*(\d+)",
     re.DOTALL,
 )
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+_SCREENSHOT_WIDTH = 1280
+_SCREENSHOT_HEIGHT = 720
 
 
 def _minimum(value: Any, field: str, *, default: int) -> int:
@@ -84,6 +90,28 @@ def _validate_installed_dependencies(viewer_root: Path) -> dict[str, str]:
             f"installed Vite version must be {VITE_VERSION}, got {installed_vite or 'missing'}"
         )
     return {"three": str(installed_three), "vite": str(installed_vite)}
+
+
+def _screenshot_evidence(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        raise ValueError("Chrome reported screenshot success but produced no PNG evidence")
+    raw = path.read_bytes()
+    if len(raw) < 24 or not raw.startswith(_PNG_SIGNATURE) or raw[12:16] != b"IHDR":
+        raise ValueError("browser screenshot evidence is not a valid PNG header")
+    width, height = struct.unpack(">II", raw[16:24])
+    if width != _SCREENSHOT_WIDTH or height != _SCREENSHOT_HEIGHT:
+        raise ValueError(
+            f"browser screenshot dimensions must be {_SCREENSHOT_WIDTH}x{_SCREENSHOT_HEIGHT}, got {width}x{height}"
+        )
+    digest = hashlib.sha256(raw).hexdigest()
+    return {
+        "path": str(path),
+        "sha256": digest,
+        "bytes": len(raw),
+        "width": width,
+        "height": height,
+        "format": "png",
+    }
 
 
 class _DistServer:
@@ -241,33 +269,54 @@ class GameAssetThreeJsViewerRuntimeActions:
                     {"viewer_dir": str(viewer_root), "source_preserved": True},
                 )
 
+            evidence_dir = self.config.state_dir / "visual-evidence" / project.slug
+            evidence_dir.mkdir(parents=True, exist_ok=True)
+            evidence_path = evidence_dir / (
+                f"threejs-viewer-{expected_hash[:12]}-{uuid.uuid4().hex}.png"
+            )
             self.config.state_dir.mkdir(parents=True, exist_ok=True)
             with tempfile.TemporaryDirectory(
                 prefix="ordax-threejs-viewer-", dir=self.config.state_dir
             ) as profile_raw, _DistServer(dist) as server:
-                profile = Path(profile_raw)
+                profile_root = Path(profile_raw)
+                common = [
+                    chrome,
+                    "--headless=new",
+                    "--disable-extensions",
+                    "--disable-background-networking",
+                    "--disable-component-update",
+                    "--disable-default-apps",
+                    "--disable-sync",
+                    "--metrics-recording-only",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    f"--window-size={_SCREENSHOT_WIDTH},{_SCREENSHOT_HEIGHT}",
+                    f"--timeout={timeout * 1000}",
+                    "--virtual-time-budget=2500",
+                ]
                 browser = _run(
-                    [
-                        chrome,
-                        "--headless=new",
-                        "--disable-extensions",
-                        "--disable-background-networking",
-                        "--disable-component-update",
-                        "--disable-default-apps",
-                        "--disable-sync",
-                        "--metrics-recording-only",
-                        "--no-first-run",
-                        "--no-default-browser-check",
-                        f"--user-data-dir={profile}",
-                        "--window-size=1280,720",
-                        f"--timeout={timeout * 1000}",
-                        "--virtual-time-budget=2500",
+                    common
+                    + [
+                        f"--user-data-dir={profile_root / 'dom-profile'}",
                         "--dump-dom",
                         server.url,
                     ],
                     cwd=viewer_root,
                     timeout=timeout + 15,
                 )
+                screenshot = None
+                if browser.ok:
+                    screenshot = _run(
+                        common
+                        + [
+                            f"--user-data-dir={profile_root / 'screenshot-profile'}",
+                            "--hide-scrollbars",
+                            f"--screenshot={evidence_path}",
+                            server.url,
+                        ],
+                        cwd=viewer_root,
+                        timeout=timeout + 15,
+                    )
             if not browser.ok:
                 return ActionResult(
                     False,
@@ -280,6 +329,19 @@ class GameAssetThreeJsViewerRuntimeActions:
                         "retryable": True,
                     },
                 )
+            if screenshot is None or not screenshot.ok:
+                return ActionResult(
+                    False,
+                    "Three.js viewer rendered but screenshot evidence capture failed",
+                    {
+                        "viewer_dir": str(viewer_root),
+                        "dist_dir": str(dist),
+                        "evidence_path": str(evidence_path),
+                        "source_preserved": True,
+                        "screenshot": screenshot.data if screenshot is not None else None,
+                        "retryable": True,
+                    },
+                )
             proof = _hud_proof(str(browser.data.get("stdout") or ""))
             if proof is None:
                 return ActionResult(
@@ -288,10 +350,12 @@ class GameAssetThreeJsViewerRuntimeActions:
                     {
                         "viewer_dir": str(viewer_root),
                         "dist_dir": str(dist),
+                        "evidence_path": str(evidence_path),
                         "source_preserved": True,
                         "retryable": True,
                     },
                 )
+            evidence = _screenshot_evidence(evidence_path)
 
             failures: list[str] = []
             if proof["environment"] != environment_name:
@@ -315,6 +379,8 @@ class GameAssetThreeJsViewerRuntimeActions:
             "viewer_build_validated": True,
             "viewer_browser_validated": True,
             "visual_stack_initialized": True,
+            "visual_evidence_captured": True,
+            "visual_evidence": evidence,
             "backend": proof["backend"],
             "render": proof,
             "installed_versions": installed,
@@ -329,4 +395,8 @@ class GameAssetThreeJsViewerRuntimeActions:
         }
         if failures:
             return ActionResult(False, "Three.js viewer rendered but runtime requirements failed", data)
-        return ActionResult(True, "Three.js WebGPU viewer built and rendered successfully", data)
+        return ActionResult(
+            True,
+            "Three.js WebGPU viewer built, rendered and captured as visual evidence",
+            data,
+        )
