@@ -11,6 +11,10 @@ from typing import Any
 import bpy
 from mathutils import Vector
 
+R = 6_378_137.0
+MAX_MERCATOR_LAT = 85.0511287798066
+MAX_STREETVIEW_CAMERAS = 64
+
 
 def _args() -> argparse.Namespace:
     raw = sys.argv
@@ -28,6 +32,14 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError(f"{path.name} must contain a JSON object")
     return value
+
+
+def _mercator(lat: float, lon: float) -> tuple[float, float]:
+    lat = max(-MAX_MERCATOR_LAT, min(MAX_MERCATOR_LAT, lat))
+    return (
+        R * math.radians(lon),
+        R * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)),
+    )
 
 
 def _collection(name: str) -> bpy.types.Collection:
@@ -225,6 +237,101 @@ def _create_roads(path: Path, collection: bpy.types.Collection) -> tuple[list[bp
     return objects, spline_count
 
 
+def _terrain_z(objects: list[bpy.types.Object], x: float, y: float) -> float:
+    for obj in objects:
+        if obj.type != "MESH":
+            continue
+        z_top = max((Vector(corner).z for corner in obj.bound_box), default=0.0) + 1000.0
+        hit, location, _normal, _face = obj.ray_cast(
+            Vector((x, y, z_top)),
+            Vector((0.0, 0.0, -1.0)),
+        )
+        if hit:
+            return float(location.z)
+    return 0.0
+
+
+def _sample_indices(count: int, limit: int) -> list[int]:
+    if count <= limit:
+        return list(range(count))
+    if limit <= 1:
+        return [0]
+    return sorted({round(index * (count - 1) / (limit - 1)) for index in range(limit)})
+
+
+def _create_streetview_cameras(
+    data: dict[str, Any],
+    collection: bpy.types.Collection,
+    terrain_objects: list[bpy.types.Object],
+) -> list[bpy.types.Object]:
+    capture = Path(str(data.get("capture") or ""))
+    source = capture / "streetview" / "photos.geojson"
+    if not source.is_file():
+        return []
+    payload = _load_json(source)
+    features = payload.get("features")
+    if not isinstance(features, list):
+        return []
+    origin_raw = data.get("origin_epsg3857")
+    if not isinstance(origin_raw, list) or len(origin_raw) != 2:
+        return []
+    origin_x, origin_y = float(origin_raw[0]), float(origin_raw[1])
+    cameras: list[bpy.types.Object] = []
+    for sequence, index in enumerate(_sample_indices(len(features), MAX_STREETVIEW_CAMERAS), start=1):
+        feature = features[index]
+        if not isinstance(feature, dict):
+            continue
+        geometry = feature.get("geometry")
+        properties = feature.get("properties")
+        if not isinstance(geometry, dict) or not isinstance(properties, dict):
+            continue
+        coordinates = geometry.get("coordinates")
+        if not isinstance(coordinates, list) or len(coordinates) < 2:
+            continue
+        try:
+            lon, lat = float(coordinates[0]), float(coordinates[1])
+            heading = float(properties.get("heading", 0.0)) % 360.0
+            pitch = max(-89.0, min(89.0, float(properties.get("pitch", 0.0))))
+            fov = max(5.0, min(175.0, float(properties.get("fov", 75.0))))
+        except (TypeError, ValueError):
+            continue
+        x_abs, y_abs = _mercator(lat, lon)
+        x, y = x_abs - origin_x, y_abs - origin_y
+        z = _terrain_z(terrain_objects, x, y) + 1.7
+        heading_radians = math.radians(heading)
+        pitch_radians = math.radians(pitch)
+        direction = Vector(
+            (
+                math.sin(heading_radians) * math.cos(pitch_radians),
+                math.cos(heading_radians) * math.cos(pitch_radians),
+                math.sin(pitch_radians),
+            )
+        )
+        camera_data = bpy.data.cameras.new(f"Aleph_StreetView_{sequence:03d}_Data")
+        camera_data.type = "PERSP"
+        camera_data.sensor_fit = "HORIZONTAL"
+        camera_data.angle = math.radians(fov)
+        camera_data.display_size = 0.5
+        camera = bpy.data.objects.new(f"Aleph_StreetView_{sequence:03d}", camera_data)
+        collection.objects.link(camera)
+        camera.location = (x, y, z)
+        camera.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+        filename = properties.get("filename")
+        if isinstance(filename, str):
+            camera["reference_image"] = str((capture / filename).resolve())
+        for key in ("pano_id", "captured_at", "streetview_url", "side", "path_name", "highway"):
+            value = properties.get(key)
+            if isinstance(value, (str, int, float, bool)):
+                camera[key] = value
+        camera["latitude"] = lat
+        camera["longitude"] = lon
+        camera["heading"] = heading
+        camera["pitch"] = pitch
+        camera["fov"] = fov
+        cameras.append(camera)
+    return cameras
+
+
 def _bounds(objects: list[bpy.types.Object]) -> dict[str, list[float]] | None:
     points: list[Vector] = []
     for obj in objects:
@@ -234,7 +341,7 @@ def _bounds(objects: list[bpy.types.Object]) -> dict[str, list[float]] | None:
         return None
     mins = [min(getattr(point, axis) for point in points) for axis in ("x", "y", "z")]
     maxs = [max(getattr(point, axis) for point in points) for axis in ("x", "y", "z")]
-    return {"min": [round(v, 5) for v in mins], "max": [round(v, 5) for v in maxs]}
+    return {"min": [round(value, 5) for value in mins], "max": [round(value, 5) for value in maxs]}
 
 
 def main() -> int:
@@ -258,27 +365,33 @@ def main() -> int:
         building_collection = _collection("ALEPH_Buildings")
         road_collection = _collection("ALEPH_Roads")
         reference_collection = _collection("ALEPH_References")
+        streetview_collection = _collection("ALEPH_StreetView")
         all_objects: list[bpy.types.Object] = []
 
         terrain_objects: list[bpy.types.Object] = []
         terrain_info = assets.get("terrain")
         if isinstance(terrain_info, dict) and terrain_info.get("path"):
-            terrain_objects = _load_local_obj(Path(terrain_info["path"]), "Aleph_Terrain", terrain_collection)
+            terrain_objects = _load_local_obj(
+                Path(terrain_info["path"]), "Aleph_Terrain", terrain_collection
+            )
             all_objects.extend(terrain_objects)
 
         building_objects: list[bpy.types.Object] = []
         building_info = assets.get("buildings")
         if isinstance(building_info, dict) and building_info.get("path"):
-            building_objects = _load_local_obj(Path(building_info["path"]), "Aleph_Buildings", building_collection)
-            material = _building_material()
-            _assign_material(building_objects, material)
+            building_objects = _load_local_obj(
+                Path(building_info["path"]), "Aleph_Buildings", building_collection
+            )
+            _assign_material(building_objects, _building_material())
             all_objects.extend(building_objects)
 
         roads_objects: list[bpy.types.Object] = []
         road_splines = 0
         road_info = assets.get("roads")
         if isinstance(road_info, dict) and road_info.get("path"):
-            roads_objects, road_splines = _create_roads(Path(road_info["path"]), road_collection)
+            roads_objects, road_splines = _create_roads(
+                Path(road_info["path"]), road_collection
+            )
             all_objects.extend(roads_objects)
 
         satellite_info = assets.get("satellite")
@@ -287,12 +400,18 @@ def main() -> int:
             image_path = Path(satellite_info["path"])
             if image_path.is_file():
                 if terrain_objects:
-                    material = _satellite_material(image_path)
-                    _assign_material(terrain_objects, material)
+                    _assign_material(terrain_objects, _satellite_material(image_path))
                 else:
-                    flat = _create_flat_reference(data["size_m"], image_path, reference_collection)
+                    flat = _create_flat_reference(
+                        data["size_m"], image_path, reference_collection
+                    )
                     all_objects.append(flat)
                 satellite_used = True
+
+        streetview_cameras = _create_streetview_cameras(
+            data, streetview_collection, terrain_objects
+        )
+        all_objects.extend(streetview_cameras)
 
         metadata = bpy.data.objects.new("ALEPH_Metadata", None)
         reference_collection.objects.link(metadata)
@@ -302,8 +421,11 @@ def main() -> int:
         metadata["bounds_json"] = json.dumps(data.get("bounds"))
         metadata["origin_epsg3857_json"] = json.dumps(data.get("origin_epsg3857"))
         metadata["size_m_json"] = json.dumps(data.get("size_m"))
+        metadata["streetview_camera_limit"] = MAX_STREETVIEW_CAMERAS
         if isinstance(terrain_info, dict):
-            metadata["terrain_base_elevation_m"] = float(terrain_info.get("base_elevation_m", 0.0))
+            metadata["terrain_base_elevation_m"] = float(
+                terrain_info.get("base_elevation_m", 0.0)
+            )
 
         scene["ordax_source"] = "Belluxx/Aleph"
         scene["ordax_aleph_capture"] = str(data.get("capture", ""))
@@ -323,6 +445,8 @@ def main() -> int:
             "building_objects": len(building_objects),
             "road_objects": len(roads_objects),
             "road_splines": road_splines,
+            "streetview_cameras": len(streetview_cameras),
+            "streetview_camera_limit": MAX_STREETVIEW_CAMERAS,
             "satellite_material": satellite_used,
             "bounds": _bounds(all_objects),
             "source": data,
