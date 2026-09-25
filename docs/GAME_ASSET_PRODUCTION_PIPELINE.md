@@ -6,7 +6,8 @@ game-engine assets.
 
 The pipeline is intentionally evidence-first. A cloud provider result is not
 considered a durable project asset until it has been downloaded into the project,
-hashed, given an OrdaX provenance sidecar and verified before Blender staging.
+hashed, given an OrdaX provenance sidecar and verified before Blender staging or
+an engine handoff.
 
 ## End-to-end flow
 
@@ -42,8 +43,11 @@ game_assets.blender_ingest_generated
                   +--> rig / Mixamo / animation / retarget
                   |
                   v
-engine-specific export
-       Unity FBX | Unreal FBX | Godot GLB | Web GLB
+engine-specific export / handoff
+       Unity: verified copy -> Editor refresh -> model audit
+       Unreal: FBX export/import validation
+       Godot: GLB import validation
+       Web: GLB runtime validation
 ```
 
 ## Source/reference acquisition
@@ -117,7 +121,8 @@ Security/reliability properties:
 
 ## Integrity gate
 
-Before using a generated provider artifact as a source for editing, call:
+Before using a generated provider artifact as a source for editing or engine
+handoff, call:
 
 `game_assets.artifact_verify`
 
@@ -192,7 +197,8 @@ game_assets.blender_runtime_audit
     -> game_assets.blender_generate_static_lods
     -> audit the derivative
     -> visual regression captures
-    -> engine import / LODGroup setup
+    -> engine export/import
+    -> target-engine LOD assignment validation
 ```
 
 Skinned characters and morph-driven assets are intentionally excluded. They need
@@ -210,22 +216,86 @@ Humanoid choices currently include:
 Returned FBX assets can be brought back through the Mixamo/FBX ingestion path,
 then run through the same preflight, runtime and export gates.
 
-## Engine handoff
+## Unity engine gate
+
+Unity handoff is now an explicit two-stage gate rather than a filesystem copy
+being treated as proof of import.
+
+### 1. Verified handoff
+
+`game_assets.unity_import_generated` accepts a canonical generated FBX, OBJ, GLB
+or glTF artifact and:
+
+1. verifies its `ordax.generated-asset/1` sidecar and SHA-256 before copying;
+2. requires the destination to remain below `Assets/`;
+3. copies atomically through the existing idempotent Unity asset copier;
+4. preserves the canonical source even when the Editor is unavailable;
+5. requests a forced Unity Editor refresh and only reports refresh-confirmed
+   handoff when that request succeeds.
+
+The default destination is:
+
+```text
+Assets/OrdaX/Generated/<artifact name>
+```
+
+A failed refresh is retryable. It is not treated as evidence that Unity imported
+the model successfully.
+
+### 2. ModelImporter/runtime audit
+
+After the asset exists below `Assets/`, call:
+
+`game_assets.unity_model_audit`
+
+The Unity companion performs the audit inside the Editor. It forces a synchronous
+`AssetDatabase.ImportAsset`, requires an `AssetImporter`, then requires the model
+to load as a Unity `GameObject`. The audit measures the imported result rather
+than trusting the source file or copy operation.
+
+Evidence returned includes:
+
+- importer type and whether it is a `ModelImporter`;
+- global scale;
+- Read/Write state;
+- animation import state and animation type;
+- mesh compression;
+- mesh count;
+- vertex and triangle counts;
+- unique material count;
+- animation clip count;
+- bone count;
+- `LODGroup` count.
+
+The audit fails when Unity cannot create a usable imported model or when no mesh
+geometry is present. This deliberately exposes missing GLB/glTF importer support
+instead of pretending that copying a `.glb` into `Assets/` was enough. FBX remains
+the preferred exchange format for the current Unity character/skeletal path.
+
+The minimum accepted Unity flow is therefore:
+
+```text
+game_assets.artifact_verify
+    -> game_assets.unity_import_generated
+    -> game_assets.unity_model_audit
+    -> prefab / LODGroup / collision / animation-specific setup
+    -> play-mode or scene validation
+```
+
+## Other engine handoff
 
 Current canonical exchange choices:
 
-- Unity: FBX for characters/skeletal assets; static LOD derivatives remain
-  separate Blender collections until an explicit Unity `LODGroup` import/setup
-  pass creates renderer levels and transition thresholds.
 - Unreal Engine: FBX for the current skeletal/animation pipeline; static LOD
-  derivatives can be exported/imported as an explicit LOD set rather than
+  derivatives should be exported/imported as an explicit LOD set rather than
   treating file export alone as proof that engine LOD assignment succeeded.
-- Godot: GLB/glTF 2.0.
-- Web/realtime: GLB/glTF 2.0.
+- Godot: GLB/glTF 2.0, followed by an engine-side import/runtime gate.
+- Web/realtime: GLB/glTF 2.0, followed by runtime loading and visual/performance
+  validation.
 
-Engine import validation remains a separate gate. Export success alone does not
-prove avatar mapping, root motion, morph targets, collision, materials or runtime
-budgets are correct in the target engine.
+Engine import validation remains a separate gate everywhere. Export success alone
+does not prove avatar mapping, root motion, morph targets, collision, materials,
+LOD assignment or runtime budgets are correct in the target engine.
 
 ## Component ownership
 
