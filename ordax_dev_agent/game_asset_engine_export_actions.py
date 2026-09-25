@@ -18,21 +18,25 @@ _ENGINE_HANDOFF_CONTRACTS: dict[str, dict[str, Any]] = {
     "unity": {
         "formats": {"fbx"},
         "next_gate": "game_assets.unity_import_engine_export",
+        "semantic_gate": "game_assets.unity_model_audit",
         "engine_validation_available": True,
     },
     "unreal": {
         "formats": {"fbx"},
-        "next_gate": "unreal_engine_import_validation",
-        "engine_validation_available": False,
+        "next_gate": "game_assets.unreal_import_validate",
+        "semantic_gate": "game_assets.unreal_asset_audit",
+        "engine_validation_available": True,
     },
     "godot": {
         "formats": {"glb", "gltf"},
-        "next_gate": "godot_engine_import_runtime_validation",
-        "engine_validation_available": False,
+        "next_gate": "game_assets.godot_import_validate",
+        "semantic_gate": "game_assets.godot_import_validate",
+        "engine_validation_available": True,
     },
     "web": {
         "formats": {"glb", "gltf"},
-        "next_gate": "web_runtime_load_visual_performance_validation",
+        "next_gate": "game_assets.web_glb_audit",
+        "semantic_gate": None,
         "engine_validation_available": False,
     },
 }
@@ -389,6 +393,7 @@ class GameAssetEngineExportActions:
                 "validated_in_engine": False,
                 "engine_validation_available": contract["engine_validation_available"],
                 "next_gate": contract["next_gate"],
+                "semantic_gate": contract.get("semantic_gate"),
                 "profile": profile,
                 "contract": {
                     "accepted_formats": sorted(contract["formats"]),
