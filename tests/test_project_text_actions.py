@@ -49,6 +49,14 @@ class ProjectTextActionTests(unittest.TestCase):
         self.assertFalse(any(item["path"].startswith("Build") for item in result.data["entries"]))
 
 
+    def test_read_allows_blender_source_and_selected_root_files(self) -> None:
+        (self.project / "blender").mkdir()
+        (self.project / "blender" / "build_scene.py").write_text("print('scene')\n", encoding="utf-8")
+        (self.project / "README.md").write_text("prototype\n", encoding="utf-8")
+        self.assertTrue(self.registry.execute("project.text_read", {"path": "blender/build_scene.py"}).ok)
+        self.assertTrue(self.registry.execute("project.text_read", {"path": "README.md"}).ok)
+
+
     def test_read_and_sha_guarded_write(self) -> None:
         target = self.project / "Assets" / "Scripts" / "World.cs"
         target.write_bytes(b"class World {}\n")
