@@ -25,6 +25,7 @@ from .game_asset_catalog_actions import GameAssetCatalogActions
 from .game_asset_status_actions import GameAssetStatusActions
 from .game_asset_actions import GameAssetActions
 from .game_asset_artifact_actions import GameAssetArtifactActions
+from .game_asset_engine_export_actions import GameAssetEngineExportActions
 from .game_asset_image_actions import GameAssetImageActions
 from .game_asset_lod_actions import GameAssetLodActions
 from .game_asset_runtime_actions import GameAssetRuntimeActions
@@ -57,6 +58,7 @@ class ActionRegistry(
     GameAssetStatusActions,
     GameAssetActions,
     GameAssetArtifactActions,
+    GameAssetEngineExportActions,
     GameAssetImageActions,
     GameAssetLodActions,
     GameAssetRuntimeActions,
@@ -155,6 +157,8 @@ class ActionRegistry(
             "game_assets.blender_ingest_generated": self.game_assets_blender_ingest_generated,
             "game_assets.blender_runtime_audit": self.game_assets_blender_runtime_audit,
             "game_assets.blender_generate_static_lods": self.game_assets_blender_generate_static_lods,
+            "game_assets.blender_export_verified": self.game_assets_blender_export_verified,
+            "game_assets.engine_export_verify": self.game_assets_engine_export_verify,
             "game_assets.unity_import_generated": self.game_assets_unity_import_generated,
             "game_assets.unity_model_audit": self.game_assets_unity_model_audit,
             "game_assets.unity_build_static_lod_prefab": self.game_assets_unity_build_static_lod_prefab,
