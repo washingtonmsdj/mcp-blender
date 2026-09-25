@@ -84,46 +84,80 @@ ordax/threejs-viewer/
     runtime.json
 ```
 
-Then:
+Dependency installation remains explicit:
 
 ```bash
 npm install
-npm run dev
 ```
 
-`game_assets.threejs_runtime_audit` verifies the generated runtime structure, pinned versions, environment contract, GLB structure and copied GLB hash. It intentionally does **not** claim browser validation yet.
+OrdaX does not silently install npm dependencies because that would introduce network and lifecycle-script execution into an otherwise bounded validation action.
 
-## Why the ocean remains a separate runtime system
+### Viewer gates now implemented
+
+```text
+game_assets.threejs_prepare_viewer
+  -> game_assets.threejs_runtime_audit
+  -> explicit npm install when node_modules is absent
+  -> game_assets.threejs_viewer_validate
+```
+
+`game_assets.threejs_runtime_audit` verifies the generated runtime structure, pinned versions, environment contract, GLB structure and copied GLB hash.
+
+`game_assets.threejs_viewer_validate` goes further. It requires the pinned Three.js and Vite versions to already be installed, refuses a modified build script, executes only the generated `vite build`, requires `dist/index.html` plus the copied GLB, serves the built viewer on an ephemeral `127.0.0.1` server with a restrictive CSP, and runs Chrome/Chromium headless without disabling its sandbox or enabling unsafe SwiftShader fallback.
+
+The built viewer must update its own HUD after rendering. OrdaX reads that proof and checks:
+
+- WebGPU versus WebGL2 fallback;
+- environment name;
+- model provenance hash prefix;
+- rendered triangle count;
+- draw-call count.
+
+Workflows can require WebGPU explicitly. A viewer that successfully renders through WebGL2 still fails when `require_webgpu=true`.
+
+A separate `game_assets.threejs_browser_validate` gate exists for the verified GLB itself. It loads the raw GLB with `GLTFLoader`, renders it to an offscreen WebGL render target, reads pixels back and records geometry/material/animation metrics plus visible-pixel evidence. This keeps raw-asset compatibility separate from the complete Salvador visual stack.
+
+## Ocean implementation status
 
 A Blender Ocean Modifier or Blender shader cannot be treated as a portable realtime artifact. The portable source of truth is the semantic water state: sea level, wind, wave/swell parameters, choppiness, foam, absorption/color and roughness.
 
-Three.js currently maps those values to the first `WaterMesh` implementation. The next visual iterations should add:
+The current Three.js viewer uses `WaterMesh`, which already animates multiple samples of the supplied normal map over time. The current implementation therefore provides reflective moving surface detail, but it is **not yet a geometrically displaced ocean spectrum**. In particular, `significant_wave_height_m` is not yet represented as real crest/trough displacement.
 
-1. multi-band Gerstner displacement in TSL;
-2. camera-centered ocean LOD/rings;
-3. crest foam from slope/Jacobian evidence;
-4. shore foam/depth interaction;
-5. reflection/environment prefiltering;
-6. boat wake emitters;
-7. a spectral/compute path only after the simpler implementation is visually measured.
+The next ocean tranche should therefore focus on measurable improvements rather than replacing the renderer blindly:
+
+1. derive dominant wavelength from swell period and align wave bands to swell/wind direction;
+2. replace random normal noise with deterministic directional multi-band ocean normals;
+3. add multi-band Gerstner displacement in TSL using significant wave height and choppiness;
+4. add camera-centered ocean LOD/rings so large Salvador bay views remain stable;
+5. derive crest foam from slope/Jacobian evidence instead of a constant opacity mask;
+6. add shore foam/depth interaction once shoreline/depth data is available;
+7. improve reflection/environment prefiltering and shallow/deep absorption;
+8. add wake emitters only after the base sea state is visually validated;
+9. consider a spectral/compute path only after the simpler TSL model is measured and shown insufficient.
 
 The same environment manifest should later drive Godot and Unity implementations rather than duplicating authored weather/ocean values per engine.
 
 ## Immediate next gates
 
-### P0 — browser proof
+### P0 — visual evidence and performance
 
-Add a bounded local browser validation path for a prepared viewer:
+The original browser-proof milestone is now partially complete. Implemented today:
 
-- install/build verification;
+- deterministic build verification;
 - local loopback server;
-- deterministic viewport and camera;
-- screenshot artifact;
-- console-error collection;
+- browser execution;
 - WebGPU vs WebGL2-fallback evidence;
-- triangle/draw-call/frame-time telemetry.
+- model/environment provenance checks;
+- triangle and draw-call telemetry;
+- raw-GLB offscreen pixel readback.
 
-Only after this gate should the existing web engine handoff advertise `engine_validation_available=true`.
+Still required for the production-quality visual gate:
+
+- persistent screenshot evidence from the full WebGPU viewer;
+- console-error capture;
+- frame-time/FPS and GPU-memory-friendly telemetry;
+- fixed named camera viewpoints for Salvador landmarks;
+- image regression against approved reference captures with explicit tolerance rather than a single opaque quality score.
 
 ### P0 — Blender environment application
 
