@@ -214,8 +214,12 @@ then run through the same preflight, runtime and export gates.
 
 Current canonical exchange choices:
 
-- Unity: FBX for characters/skeletal assets.
-- Unreal Engine: FBX for the current skeletal/animation pipeline.
+- Unity: FBX for characters/skeletal assets; static LOD derivatives remain
+  separate Blender collections until an explicit Unity `LODGroup` import/setup
+  pass creates renderer levels and transition thresholds.
+- Unreal Engine: FBX for the current skeletal/animation pipeline; static LOD
+  derivatives can be exported/imported as an explicit LOD set rather than
+  treating file export alone as proof that engine LOD assignment succeeded.
 - Godot: GLB/glTF 2.0.
 - Web/realtime: GLB/glTF 2.0.
 
