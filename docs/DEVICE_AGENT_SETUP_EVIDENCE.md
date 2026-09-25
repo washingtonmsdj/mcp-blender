@@ -53,7 +53,7 @@ O resultado persistente será `%LOCALAPPDATA%\OrdaX\DevAgent\setup-verification.
 O teste exige boot do Windows diferente, supervisor vivo, heartbeat recente e
 nenhum runner ativo; a tarefa se desabilita após sucesso.
 
-**Resultado observado: FALHA no retorno automático após reboot.**
+**Primeira tentativa: FALHA no retorno automático após reboot.**
 O Windows reiniciou em `2026-09-25T21:03:24Z`, diferente da baseline. A tarefa
 foi iniciada após login às 21:08 UTC, mas o Agent não voltou: o heartbeat
 permaneceu em 21:01:19 UTC e a tarefa de verificação expirou sem gerar sucesso.
@@ -74,9 +74,35 @@ assim como o parser PowerShell. A CI das correções está associada ao commit
 `dfd9533`. A tarefa de verificação de reboot foi desabilitada para evitar que um
 login posterior transforme esta tentativa assistida em falso sucesso.
 
-**A correção ainda precisa de outro reboot autorizado para comprovar retorno
-automático. Nenhum segundo reboot foi executado.** O Agent foi recuperado, mas
-o critério final de conclusão do projeto permanece pendente.
+### Segunda tentativa — aprovada
+
+O usuário reiniciou novamente e informou nesta tarefa. O boot observado foi
+`2026-09-25T21:26:17.5000000Z`, posterior tanto à baseline quanto à primeira
+tentativa. Nesta verificação não foi executado setup, reparo, start/restart de
+tarefa ou de processo: apenas inspeção e o verificador de leitura.
+
+- Supervisor iniciado automaticamente pela Scheduled Task: PID `6908`,
+  `BOOTSTRAP_ENTER` às `21:41:05.7263278Z`.
+- Processo Agent: PID `13536`, `MAIN_ENTER` às `21:42:34Z`.
+- `/status`: `development-v2`, device ID correto, supervisor vivo e projeto
+  `cerco-no-interior-mvp` disponível.
+- Heartbeat confirmado diretamente no Control Plane às
+  `2026-09-25T21:44:05.847231Z`; novo boot ID do Agent
+  `af608f9a-899e-40f0-b1f5-50df9c4a63ab`.
+- Verificador terminou às `2026-09-25T21:44:07.7198671Z` com
+  `ORDAX_DEVICE_AGENT=READY` e `REBOOT_WITHOUT_RUNNER=PASS`.
+- Zero processos e zero serviços de GitHub Runner ativos.
+- `real_reboot_observed=true`, `without_runner=true`; retorno automático
+  confirmado sem intervenção no runtime nesta segunda tentativa.
+
+O retorno levou aproximadamente três minutos desde a entrada do supervisor
+até o primeiro heartbeat. Essa duração foi observada, não é uma garantia de
+tempo de boot. A tarefa usa sessão interativa e inicia após login no Windows.
+A CI do código corrigido também passou:
+[Bridge CI dfd9533](https://github.com/washingtonmsdj/mcp-blender/actions/runs/36191054341).
+
+**Critério de reboot sem GitHub Runner atendido nesta segunda tentativa.**
+O histórico da falha anterior foi preservado para rastreabilidade.
 
 ## Comando único
 
