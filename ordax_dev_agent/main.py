@@ -198,11 +198,17 @@ def main() -> int:
 
     watchdog_process = _start_local_watchdog(config)
     runtime["watchdog_pid"] = watchdog_process.pid if watchdog_process else None
-    runtime["state"] = (
-        "pairing"
-        if config.supabase_url and config.publishable_key
-        else "local-ready"
+    remote_control_configured = bool(
+        config.supabase_url
+        and (
+            (config.control_plane_protocol == "legacy-v1" and config.publishable_key)
+            or (
+                config.control_plane_protocol == "development-v2"
+                and config.development_device_id
+            )
+        )
     )
+    runtime["state"] = "pairing" if remote_control_configured else "local-ready"
     print(json.dumps(status_payload(), indent=2))
 
     stop = False
@@ -215,10 +221,10 @@ def main() -> int:
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _stop)
 
-    if not config.supabase_url or not config.publishable_key:
+    if not remote_control_configured:
         print(
-            "Supabase is not configured yet. Local action registry is ready; "
-            "configure agent-settings.json to enable the control plane."
+            "Remote control plane is not configured yet. Local action registry is ready; "
+            "configure agent-settings.json/environment to enable the selected transport."
         )
         try:
             while not stop:
@@ -228,10 +234,10 @@ def main() -> int:
             status_server.shutdown()
         return 0
 
-    from .control_plane import ControlPlane
+    from .control_plane import build_control_plane
     from .models import ActionResult
     _startup_log(config, "CONTROL_PLANE_IMPORT_OK")
-    control = ControlPlane(config)
+    control = build_control_plane(config)
     _startup_log(config, "CONTROL_PLANE_READY")
 
     while not stop and not runtime["paired"]:
