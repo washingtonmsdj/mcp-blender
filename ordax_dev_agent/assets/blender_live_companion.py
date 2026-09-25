@@ -1553,6 +1553,10 @@ def _modeling_add_modifier(command: dict) -> None:
     try:
         _modeling_runtime_preconditions()
         plan = _modeling_plan_from_command("add_modifier", command)
+        if not plan["executable"]:
+            raise ValueError(
+                f"{plan['status']}: modifier variant is not enabled for execution"
+            )
         arguments = plan["arguments"]
         obj = _resolve_object(arguments)
 
@@ -1580,6 +1584,7 @@ def _modeling_add_modifier(command: dict) -> None:
             modifier_count=len(obj.modifiers),
             evaluated_faces=evaluated_faces,
             levels=arguments.get("levels", 1),
+            array_count=arguments.get("count", 1),
         )
         if not budget["allowed"]:
             raise ValueError("; ".join(budget["reasons"]))
@@ -1594,6 +1599,14 @@ def _modeling_add_modifier(command: dict) -> None:
             modifier.render_levels = arguments["levels"]
         elif modifier.type == "SOLIDIFY":
             modifier.thickness = arguments["thickness"]
+        elif modifier.type == "ARRAY":
+            modifier.fit_type = "FIXED_COUNT"
+            modifier.count = arguments["count"]
+            modifier.use_relative_offset = True
+            modifier.relative_offset_displace = arguments["relative_offset"]
+            modifier.use_constant_offset = "constant_offset" in arguments
+            if modifier.use_constant_offset:
+                modifier.constant_offset_displace = arguments["constant_offset"]
         else:
             axis = arguments["axis"]
             modifier.use_axis = [candidate == axis for candidate in "XYZ"]
@@ -1605,6 +1618,16 @@ def _modeling_add_modifier(command: dict) -> None:
             "Blender modifier inserted",
             operation="add_modifier",
             runtime_budget=budget,
+            array_parameters=(
+                {
+                    "count": arguments["count"],
+                    "relative_offset": arguments["relative_offset"],
+                    "constant_offset": arguments.get("constant_offset"),
+                    "offsets_combined": "constant_offset" in arguments,
+                }
+                if modifier.type == "ARRAY"
+                else None
+            ),
             before=before,
             object=_object_details(obj),
         )
