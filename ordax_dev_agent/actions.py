@@ -26,6 +26,7 @@ from .game_asset_status_actions import GameAssetStatusActions
 from .game_asset_actions import GameAssetActions
 from .game_asset_artifact_actions import GameAssetArtifactActions
 from .game_asset_engine_export_actions import GameAssetEngineExportActions
+from .game_asset_godot_actions import GameAssetGodotActions
 from .game_asset_image_actions import GameAssetImageActions
 from .game_asset_lod_actions import GameAssetLodActions
 from .game_asset_runtime_actions import GameAssetRuntimeActions
@@ -59,6 +60,7 @@ class ActionRegistry(
     GameAssetActions,
     GameAssetArtifactActions,
     GameAssetEngineExportActions,
+    GameAssetGodotActions,
     GameAssetImageActions,
     GameAssetLodActions,
     GameAssetRuntimeActions,
@@ -161,6 +163,7 @@ class ActionRegistry(
             "game_assets.engine_export_verify": self.game_assets_engine_export_verify,
             "game_assets.engine_handoff_audit": self.game_assets_engine_handoff_audit,
             "game_assets.web_glb_audit": self.game_assets_web_glb_audit,
+            "game_assets.godot_import_validate": self.game_assets_godot_import_validate,
             "game_assets.unity_import_generated": self.game_assets_unity_import_generated,
             "game_assets.unity_import_engine_export": self.game_assets_unity_import_engine_export,
             "game_assets.unity_model_audit": self.game_assets_unity_model_audit,
