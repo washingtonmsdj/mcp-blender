@@ -16,8 +16,10 @@ namespace OrdaX.EditorTools
     {
         [Serializable] private class Command
         {
-            public string id, action, outputPath, scenePath, assetPath;
+            public string id, action, outputPath, scenePath, assetPath, prefabPath;
             public int width = 1280, height = 720;
+            public bool overwrite;
+            public float[] lodThresholds;
         }
         [Serializable] private class Reply
         {
@@ -45,7 +47,10 @@ namespace OrdaX.EditorTools
             public bool modelImporterPresent, modelReadable, modelImportAnimation;
             public float modelGlobalScale;
             public int modelMeshCount, modelVertexCount, modelTriangleCount, modelMaterialCount;
-            public int modelAnimationClipCount, modelBoneCount, modelLodGroupCount;
+            public int modelAnimationClipCount, modelBoneCount, modelBlendShapeCount, modelLodGroupCount;
+            public string prefabPath;
+            public int lodLevelCount, lodRendererCount;
+            public float[] lodTransitionHeights;
         }
         [Serializable] private class SceneObject
         {
@@ -142,6 +147,7 @@ namespace OrdaX.EditorTools
                     case "physics_audit": SceneSummary(reply, true); break;
                     case "spatial_audit": SpatialAudit(reply); break;
                     case "asset_model_audit": AssetModelAudit(command, reply); break;
+                    case "asset_lod_prefab_build": AssetLodPrefabBuild(command, reply); break;
                     default: throw new InvalidOperationException("Unsupported companion action: " + command.action);
                 }
             }
@@ -434,49 +440,73 @@ namespace OrdaX.EditorTools
             reply.summary = "Scene opened: " + command.scenePath;
         }
 
-        private static void AssetModelAudit(Command command, Reply reply)
+        private static string ValidateProjectAssetPath(string raw, string[] extensions, string field)
         {
-            string assetPath = (command.assetPath ?? string.Empty).Replace('\\', '/').Trim();
+            string assetPath = (raw ?? string.Empty).Replace('\\', '/').Trim();
             if (string.IsNullOrWhiteSpace(assetPath) ||
                 !assetPath.StartsWith("Assets/", StringComparison.Ordinal) ||
                 assetPath.Contains("../") || assetPath.Contains("/.."))
-                throw new InvalidOperationException("assetPath must stay inside Assets/");
-
+                throw new InvalidOperationException(field + " must stay inside Assets/");
             string extension = Path.GetExtension(assetPath).ToLowerInvariant();
-            string[] allowed = { ".fbx", ".obj", ".blend", ".glb", ".gltf" };
-            if (!allowed.Contains(extension))
-                throw new InvalidOperationException("assetPath must be a supported model asset");
+            if (!extensions.Contains(extension))
+                throw new InvalidOperationException(field + " has an unsupported extension");
+            return assetPath;
+        }
 
+        private static string ProjectFullPath(string assetPath, bool requireFile)
+        {
             string projectRoot = Directory.GetParent(Application.dataPath).FullName;
             string rootPrefix = Path.GetFullPath(projectRoot + Path.DirectorySeparatorChar);
             string fullPath = Path.GetFullPath(Path.Combine(projectRoot, assetPath.Replace('/', Path.DirectorySeparatorChar)));
-            if (!fullPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) || !File.Exists(fullPath))
-                throw new InvalidOperationException("Model asset does not exist inside the project");
+            if (!fullPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Asset path escaped the Unity project");
+            if (requireFile && !File.Exists(fullPath))
+                throw new InvalidOperationException("Asset does not exist inside the project");
+            return fullPath;
+        }
 
+        private static GameObject ImportModel(string assetPath)
+        {
             AssetDatabase.ImportAsset(
                 assetPath,
                 ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
-
             AssetImporter importer = AssetImporter.GetAtPath(assetPath);
             if (importer == null)
                 throw new InvalidOperationException("Unity did not create an AssetImporter for the model");
-
             GameObject modelRoot = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
             if (modelRoot == null)
                 throw new InvalidOperationException("Unity did not import the model as a GameObject");
+            return modelRoot;
+        }
 
+        private static HashSet<Mesh> ModelMeshes(GameObject modelRoot)
+        {
             var meshes = new HashSet<Mesh>();
             foreach (var filter in modelRoot.GetComponentsInChildren<MeshFilter>(true))
                 if (filter.sharedMesh != null) meshes.Add(filter.sharedMesh);
-            var skinnedRenderers = modelRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            foreach (var renderer in skinnedRenderers)
+            foreach (var renderer in modelRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 if (renderer.sharedMesh != null) meshes.Add(renderer.sharedMesh);
+            return meshes;
+        }
+
+        private static void AssetModelAudit(Command command, Reply reply)
+        {
+            string assetPath = ValidateProjectAssetPath(
+                command.assetPath,
+                new[] { ".fbx", ".obj", ".blend", ".glb", ".gltf" },
+                "assetPath");
+            ProjectFullPath(assetPath, true);
+            GameObject modelRoot = ImportModel(assetPath);
+            AssetImporter importer = AssetImporter.GetAtPath(assetPath);
+            var meshes = ModelMeshes(modelRoot);
 
             int vertices = 0;
             long triangles = 0;
+            int blendShapes = 0;
             foreach (var mesh in meshes)
             {
                 vertices += mesh.vertexCount;
+                blendShapes += mesh.blendShapeCount;
                 for (int subMesh = 0; subMesh < mesh.subMeshCount; subMesh++)
                     triangles += (long)mesh.GetIndexCount(subMesh) / 3L;
             }
@@ -486,6 +516,7 @@ namespace OrdaX.EditorTools
                 foreach (var material in renderer.sharedMaterials)
                     if (material != null) materials.Add(material);
 
+            var skinnedRenderers = modelRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
             var bones = new HashSet<Transform>();
             foreach (var renderer in skinnedRenderers)
                 foreach (var bone in renderer.bones)
@@ -504,6 +535,7 @@ namespace OrdaX.EditorTools
             reply.modelMaterialCount = materials.Count;
             reply.modelAnimationClipCount = clips.Length;
             reply.modelBoneCount = bones.Count;
+            reply.modelBlendShapeCount = blendShapes;
             reply.modelLodGroupCount = modelRoot.GetComponentsInChildren<LODGroup>(true).Length;
 
             var modelImporter = importer as ModelImporter;
@@ -521,6 +553,161 @@ namespace OrdaX.EditorTools
             reply.summary = reply.ok
                 ? "Unity model import audit passed"
                 : "Unity imported the asset but no usable mesh geometry was found";
+        }
+
+        private static bool TryLodLevel(string name, out int level)
+        {
+            level = -1;
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            int marker = name.LastIndexOf("_LOD", StringComparison.OrdinalIgnoreCase);
+            if (marker < 0 || marker + 4 >= name.Length) return false;
+            string suffix = name.Substring(marker + 4);
+            if (suffix.Any(ch => !char.IsDigit(ch))) return false;
+            return int.TryParse(suffix, out level) && level >= 0 && level <= 9;
+        }
+
+        private static bool RendererLodLevel(Renderer renderer, Transform root, out int level)
+        {
+            Transform current = renderer.transform;
+            while (current != null)
+            {
+                if (TryLodLevel(current.name, out level)) return true;
+                if (current == root) break;
+                current = current.parent;
+            }
+            level = -1;
+            return false;
+        }
+
+        private static Dictionary<int, List<Renderer>> LodRendererGroups(GameObject root)
+        {
+            var groups = new Dictionary<int, List<Renderer>>();
+            var unassigned = new List<string>();
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                if (!RendererLodLevel(renderer, root.transform, out int level))
+                {
+                    unassigned.Add(Hierarchy(renderer.transform));
+                    continue;
+                }
+                if (!groups.TryGetValue(level, out var bucket))
+                {
+                    bucket = new List<Renderer>();
+                    groups[level] = bucket;
+                }
+                bucket.Add(renderer);
+            }
+            if (unassigned.Count > 0)
+                throw new InvalidOperationException(
+                    "Every renderer must belong to a _LOD<n> object/hierarchy. Unassigned: " +
+                    string.Join(", ", unassigned.Take(8).ToArray()));
+            return groups;
+        }
+
+        private static float[] LodThresholds(float[] requested, int levelCount)
+        {
+            float[] result;
+            if (requested == null || requested.Length == 0)
+            {
+                result = new float[levelCount];
+                float value = 0.60f;
+                for (int index = 0; index < levelCount; index++)
+                {
+                    result[index] = Mathf.Max(0.01f, value);
+                    value *= 0.5f;
+                }
+            }
+            else
+            {
+                if (requested.Length != levelCount)
+                    throw new InvalidOperationException("lodThresholds count must match detected LOD level count");
+                result = requested.ToArray();
+            }
+            for (int index = 0; index < result.Length; index++)
+            {
+                if (!Finite(result[index]) || result[index] < 0.01f || result[index] > 0.99f)
+                    throw new InvalidOperationException("LOD transition heights must be between 0.01 and 0.99");
+                if (index > 0 && result[index] >= result[index - 1])
+                    throw new InvalidOperationException("LOD transition heights must be strictly descending");
+            }
+            return result;
+        }
+
+        private static void AssetLodPrefabBuild(Command command, Reply reply)
+        {
+            string assetPath = ValidateProjectAssetPath(
+                command.assetPath,
+                new[] { ".fbx", ".obj", ".blend", ".glb", ".gltf" },
+                "assetPath");
+            string prefabPath = ValidateProjectAssetPath(
+                command.prefabPath,
+                new[] { ".prefab" },
+                "prefabPath");
+            ProjectFullPath(assetPath, true);
+            string prefabFullPath = ProjectFullPath(prefabPath, false);
+            string prefabDirectory = Path.GetDirectoryName(prefabFullPath);
+            if (string.IsNullOrWhiteSpace(prefabDirectory) || !Directory.Exists(prefabDirectory))
+                throw new InvalidOperationException("prefabPath parent directory must already exist inside Assets/");
+            if (AssetDatabase.LoadMainAssetAtPath(prefabPath) != null && !command.overwrite)
+                throw new InvalidOperationException("Prefab already exists; set overwrite=true explicitly");
+
+            GameObject modelRoot = ImportModel(assetPath);
+            if (modelRoot.GetComponentsInChildren<LODGroup>(true).Length > 0)
+                throw new InvalidOperationException("Source model already contains LODGroup components");
+            if (modelRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true).Any(r => r.bones != null && r.bones.Length > 0))
+                throw new InvalidOperationException("Static LOD prefab generation refuses skinned models");
+            if (ModelMeshes(modelRoot).Any(mesh => mesh.blendShapeCount > 0))
+                throw new InvalidOperationException("Static LOD prefab generation refuses blend shapes");
+
+            var sourceGroups = LodRendererGroups(modelRoot);
+            if (sourceGroups.Count < 2 || !sourceGroups.ContainsKey(0))
+                throw new InvalidOperationException("Static LOD prefab needs at least contiguous _LOD0 and _LOD1 renderer groups");
+            int maxLevel = sourceGroups.Keys.Max();
+            for (int level = 0; level <= maxLevel; level++)
+                if (!sourceGroups.ContainsKey(level))
+                    throw new InvalidOperationException("LOD levels must be contiguous from _LOD0 through _LOD" + maxLevel);
+            int levelCount = maxLevel + 1;
+            float[] thresholds = LodThresholds(command.lodThresholds, levelCount);
+
+            GameObject instance = null;
+            try
+            {
+                instance = PrefabUtility.InstantiatePrefab(modelRoot) as GameObject;
+                if (instance == null)
+                    throw new InvalidOperationException("Could not instantiate imported model for LOD prefab creation");
+                instance.name = Path.GetFileNameWithoutExtension(prefabPath);
+                var instanceGroups = LodRendererGroups(instance);
+                var lods = new LOD[levelCount];
+                int rendererTotal = 0;
+                for (int level = 0; level < levelCount; level++)
+                {
+                    Renderer[] renderers = instanceGroups[level].ToArray();
+                    rendererTotal += renderers.Length;
+                    lods[level] = new LOD(thresholds[level], renderers);
+                }
+                var lodGroup = instance.AddComponent<LODGroup>();
+                lodGroup.fadeMode = LODFadeMode.None;
+                lodGroup.SetLODs(lods);
+                lodGroup.RecalculateBounds();
+
+                GameObject saved = PrefabUtility.SaveAsPrefabAsset(instance, prefabPath);
+                if (saved == null)
+                    throw new InvalidOperationException("Unity failed to save the LOD prefab");
+                AssetDatabase.SaveAssets();
+                AssetDatabase.ImportAsset(prefabPath, ImportAssetOptions.ForceSynchronousImport);
+
+                reply.assetPath = assetPath;
+                reply.prefabPath = prefabPath;
+                reply.lodLevelCount = levelCount;
+                reply.lodRendererCount = rendererTotal;
+                reply.lodTransitionHeights = thresholds;
+                reply.ok = true;
+                reply.summary = "Static Unity LODGroup prefab created";
+            }
+            finally
+            {
+                if (instance != null) UnityEngine.Object.DestroyImmediate(instance);
+            }
         }
 
         private static string Hierarchy(Transform transform)
