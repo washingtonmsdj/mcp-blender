@@ -286,6 +286,7 @@ function Invoke-SafeUpdate {
 
 $retrySeconds = [Math]::Max(1, $InitialRetrySeconds)
 $needsSafeUpdate = $false
+$env:ORDAX_SUPERVISOR_PID = [string]$PID
 
 while ($true) {
     if (-not (Test-Path $python)) {

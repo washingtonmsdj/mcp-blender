@@ -33,8 +33,20 @@ try {
     if ($health -and $health.runtime.state -eq 'busy') { throw 'AGENT_BUSY_RETRY_SETUP' }
     $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     if ($existingTask) {
+        Disable-ScheduledTask -TaskName $taskName | Out-Null
         Stop-ScheduledTask -TaskName $taskName
         $restartExisting = $true
+    }
+    # Old task_entry/pythonw children can survive a task action replacement.
+    # Match the managed executable and exact Agent modules; never stop Blender.
+    $managedPython = Join-Path $repo '.venv\Scripts\python'
+    $oldAgents = Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'"
+    foreach ($oldAgent in $oldAgents) {
+        if ($oldAgent.CommandLine -and
+            $oldAgent.CommandLine.Contains($managedPython) -and
+            $oldAgent.CommandLine -match '-m ordax_dev_agent\.(task_entry|main)(\s|$)') {
+            Stop-Process -Id $oldAgent.ProcessId -Force -ErrorAction SilentlyContinue
+        }
     }
     & git -C $repo merge --ff-only origin/main
     if ($LASTEXITCODE -ne 0) { throw 'UPDATE_FAILED' }
@@ -62,6 +74,8 @@ try {
     if (-not $NonInteractive) { $setupArgs += '--interactive' }
     & $python @setupArgs
     $pairingCode = $LASTEXITCODE
+    Enable-ScheduledTask -TaskName $taskName | Out-Null
+    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     Start-ScheduledTask -TaskName $taskName
     if ($pairingCode -ne 0) { throw 'SETUP_PENDING_AUTH_OR_NETWORK_RETRY_SETUP' }
 
@@ -76,6 +90,7 @@ try {
             if ($health.control_plane_protocol -eq 'development-v2' -and
                 $health.development_device_id -eq $config.development_device_id -and
                 $health.runtime.last_heartbeat_at -and
+                $health.runtime.supervisor_pid -gt 0 -and
                 ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $health.runtime.last_heartbeat_at) -lt 60 -and
                 $task.Actions.Arguments -match 'bootstrap\\ordax-agent-bootstrap.ps1' -and
                 (-not $cercoExists -or $registered -contains 'cerco-no-interior-mvp')) {
@@ -87,7 +102,10 @@ try {
     }
     throw 'AGENT_NOT_READY_CHECK_LOCAL_STATUS'
 } finally {
-    if ($restartExisting) { Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue }
+    if ($restartExisting) {
+        Enable-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue | Out-Null
+        Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    }
     $mutex.ReleaseMutex()
     $mutex.Dispose()
 }

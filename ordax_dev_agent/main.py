@@ -166,6 +166,8 @@ def main() -> int:
     config.write_public_status()
 
     runtime = {
+        "pid": os.getpid(),
+        "supervisor_pid": int(os.environ.get("ORDAX_SUPERVISOR_PID", "0")),
         "state": "initializing",
         "paired": False,
         "last_job_id": None,
