@@ -13,6 +13,7 @@ from .projects import load_projects, Project
 from .observations import ObservationActions
 from .references import ReferenceActions
 from .blender_actions import BlenderActions
+from .unity_status_actions import UnityStatusActions
 from .unity_actions import UnityActions
 from .agent_actions import AgentActions
 from .artifact_actions import ArtifactActions
@@ -40,6 +41,7 @@ class ActionRegistry(
     ObservationActions,
     ReferenceActions,
     BlenderActions,
+    UnityStatusActions,
     UnityActions,
     AgentActions,
     ArtifactActions,
@@ -216,7 +218,6 @@ class ActionRegistry(
                 raise ValueError(f"invalid or reserved adapter name: {name}")
             if name not in available:
                 raise ValueError(f"configured adapter is not installed: {name}")
-            # Local installed plugin, explicitly enabled by workstation settings.
             handlers = available[name].load()(config)
             for operation, handler in handlers.items():
                 if not re.fullmatch(r"[a-z][a-z0-9_]*", operation) or not callable(handler):
@@ -236,7 +237,6 @@ class ActionRegistry(
         payload = payload or {}
         if action in ("agent.status", "agent.component_catalog", "agent.component_update_plan", "projects.list"):
             return handler(payload)
-        # A busy application must not receive a second editor/render operation.
         if not self._execution_lock.acquire(blocking=False):
             return ActionResult(False, "Agent is busy; retry after the current action", {"retryable": True})
         process_lock = ExecutionLock(self.config.state_dir)
