@@ -51,6 +51,83 @@ def _relative_project_path(project, raw: str, *, must_exist: bool) -> tuple[Path
 
 
 class ProjectTextActions:
+    def project_inventory(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        allowed = {"project", "max_depth", "max_entries"}
+        unsupported = sorted(set(payload) - allowed)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        try:
+            max_depth = int(payload.get("max_depth", 4))
+            max_entries = int(payload.get("max_entries", 500))
+        except (TypeError, ValueError):
+            return ActionResult(False, "max_depth and max_entries must be integers")
+        if not 1 <= max_depth <= 8:
+            return ActionResult(False, "max_depth must be between 1 and 8")
+        if not 1 <= max_entries <= 1000:
+            return ActionResult(False, "max_entries must be between 1 and 1000")
+
+        blocked = {".git", ".venv", "venv", "node_modules", "Library", "Temp", "Logs", "Build", "Builds", "dist", "obj", "__pycache__", ".cache"}
+        root = project.root.resolve()
+        entries: list[dict[str, Any]] = []
+        blend_files: list[str] = []
+        documents: list[str] = []
+        scripts: list[str] = []
+        models: list[str] = []
+        queue: list[tuple[Path, int]] = [(root, 0)]
+
+        while queue and len(entries) < max_entries:
+            directory, depth = queue.pop(0)
+            if depth >= max_depth:
+                continue
+            try:
+                children = sorted(directory.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+            except OSError:
+                continue
+            for child in children:
+                if child.name in blocked or child.name.startswith("."):
+                    continue
+                try:
+                    relative = child.relative_to(root).as_posix()
+                except ValueError:
+                    continue
+                if child.is_dir():
+                    entries.append({"path": relative, "kind": "directory", "depth": depth + 1})
+                    if depth + 1 < max_depth:
+                        queue.append((child, depth + 1))
+                elif child.is_file():
+                    try:
+                        size = child.stat().st_size
+                    except OSError:
+                        size = None
+                    suffix = child.suffix.lower()
+                    entries.append({"path": relative, "kind": "file", "suffix": suffix, "size_bytes": size, "depth": depth + 1})
+                    if suffix == ".blend":
+                        blend_files.append(relative)
+                    if suffix in {".md", ".txt", ".json", ".yaml", ".yml"}:
+                        documents.append(relative)
+                    if suffix in {".py", ".ps1", ".js", ".ts", ".cs"}:
+                        scripts.append(relative)
+                    if suffix in {".blend", ".fbx", ".obj", ".glb", ".gltf", ".stl"}:
+                        models.append(relative)
+                if len(entries) >= max_entries:
+                    break
+
+        return ActionResult(True, "project inventory ready", {
+            "project": project.slug,
+            "project_root": str(root),
+            "max_depth": max_depth,
+            "max_entries": max_entries,
+            "entry_count": len(entries),
+            "truncated": len(entries) >= max_entries,
+            "blend_files": blend_files[:100],
+            "documents": documents[:200],
+            "scripts": scripts[:200],
+            "models": models[:200],
+            "entries": entries,
+        })
+
     def project_text_read(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
         raw = str(payload.get("path") or "")
