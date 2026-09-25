@@ -20,8 +20,10 @@ if ($dirty) {
 $previous = (git -C $repoRoot rev-parse HEAD).Trim()
 if (-not $previous) { throw "Could not resolve current commit." }
 
-git -C $repoRoot fetch origin $Branch
-if ($LASTEXITCODE -ne 0) { throw "Could not fetch $Branch." }
+$remoteRef = "refs/remotes/origin/$Branch"
+$fetchRefspec = "refs/heads/${Branch}:$remoteRef"
+git -c core.fsmonitor=false -C $repoRoot fetch origin $fetchRefspec
+if ($LASTEXITCODE -ne 0) { throw "Could not fetch $Branch into $remoteRef." }
 
 $currentBranch = (git -C $repoRoot rev-parse --abbrev-ref HEAD).Trim()
 if ($currentBranch -ne $Branch) {
@@ -29,7 +31,7 @@ if ($currentBranch -ne $Branch) {
     if ($LASTEXITCODE -ne 0) { throw "Could not checkout $Branch." }
 }
 
-git -C $repoRoot merge --ff-only "origin/$Branch"
+git -c core.fsmonitor=false -C $repoRoot merge --ff-only $remoteRef
 if ($LASTEXITCODE -ne 0) {
     throw "Recovery branch is not fast-forwardable. No force/reset was performed."
 }
@@ -38,11 +40,19 @@ if (-not (Test-Path $python)) {
     throw "Managed .venv is missing: $python"
 }
 
-& $python -m compileall -q (Join-Path $repoRoot "mcp_blender_unity") (Join-Path $repoRoot "ordax_dev_agent")
+& $python -m compileall -q (Join-Path $repoRoot "mcp_blender_unity") (Join-Path $repoRoot "ordax_dev_agent") (Join-Path $repoRoot "ordax_device_agent")
 if ($LASTEXITCODE -ne 0) {
     Write-Warning "Updated code failed compile verification. Restoring previous commit $previous."
     git -C $repoRoot reset --hard $previous
     throw "Remote update failed compile verification and was rolled back."
+}
+
+$taskName = "OrdaX Dev Agent"
+try {
+    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+} catch {
+    Write-Warning "Could not stop previous scheduled task cleanly: $($_.Exception.Message)"
 }
 
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -StartNow
