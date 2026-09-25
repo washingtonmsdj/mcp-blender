@@ -87,6 +87,7 @@ _COMPONENTS: tuple[dict[str, Any], ...] = (
             "ordax_dev_agent/assets/blender_fbx_ingest.py",
             "ordax_dev_agent/assets/blender_generated_asset_ingest.py",
             "ordax_dev_agent/assets/blender_runtime_budget.py",
+            "ordax_dev_agent/assets/blender_static_lod.py",
         ),
     },
     {
