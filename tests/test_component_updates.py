@@ -13,6 +13,8 @@ class ComponentUpdateTests(unittest.TestCase):
         }
         self.assertIn("device-agent-core", versions)
         self.assertIn("adapter-blender", versions)
+        self.assertIn("adapter-game-assets", versions)
+        self.assertIn("adapter-alephgeo", versions)
         self.assertNotEqual(versions["device-agent-core"], versions["adapter-blender"])
         self.assertFalse(
             catalog["delivery_policy"]["whole_os_reinstall_required_for_component_update"]
@@ -29,6 +31,25 @@ class ComponentUpdateTests(unittest.TestCase):
         self.assertFalse(plan["whole_os_reboot_required"])
         self.assertFalse(plan["install_refresh_required"])
 
+    def test_game_asset_change_stays_in_generation_failure_domain(self):
+        plan = plan_component_update([
+            "ordax_dev_agent/game_asset_artifact_actions.py",
+            "ordax_dev_agent/rodin_actions.py",
+            "ordax_dev_agent/comfyui_actions.py",
+            "ordax_dev_agent/assets/blender_game_asset_pipeline.py",
+        ])
+        self.assertEqual(plan["affected_components"], ["adapter-game-assets"])
+        self.assertTrue(plan["device_agent_restart_required"])
+        self.assertEqual(plan["unknown_paths"], [])
+
+    def test_aleph_scene_change_is_owned_by_geospatial_adapter(self):
+        plan = plan_component_update([
+            "ordax_dev_agent/aleph_scene_actions.py",
+            "ordax_dev_agent/assets/blender_aleph_scene.py",
+        ])
+        self.assertEqual(plan["affected_components"], ["adapter-alephgeo"])
+        self.assertEqual(plan["unknown_paths"], [])
+
     def test_git_change_stays_in_git_adapter_failure_domain(self):
         plan = plan_component_update(["ordax_dev_agent/git_actions.py"])
         self.assertEqual(plan["affected_components"], ["adapter-git"])
@@ -38,6 +59,7 @@ class ComponentUpdateTests(unittest.TestCase):
         self.assertTrue(plan["install_refresh_required"])
         self.assertIn("device-agent-core", plan["affected_components"])
         self.assertIn("adapter-unity", plan["affected_components"])
+        self.assertIn("adapter-game-assets", plan["affected_components"])
         self.assertFalse(plan["whole_os_reinstall_required"])
 
     def test_docs_only_change_needs_no_runtime_restart(self):
