@@ -17,7 +17,7 @@ OrdaX treats Blender export, handoff readiness, engine import/load and semantic 
 
 `game_assets.engine_handoff_audit` re-verifies the `ordax.engine-export/1` sidecar and artifact SHA-256, checks that the target engine matches the artifact extension and export profile, and can optionally require that the current source `.blend` still has the same hash captured at export time.
 
-A successful handoff audit means `ready_for_engine_import=true`. It deliberately returns `validated_in_engine=false` until an engine-specific gate proves otherwise. The result now advertises the implemented `next_gate` and, when one exists, a `semantic_gate` rather than conceptual placeholder names.
+A successful handoff audit means `ready_for_engine_import=true`. It deliberately returns `validated_in_engine=false` until an engine-specific gate proves otherwise. The result advertises implemented gate names rather than treating export success as engine success.
 
 ## Unity
 
@@ -34,7 +34,7 @@ The model audit inspects importer and geometry/animation signals in the Unity Ed
 
 ## Unreal Engine
 
-The verified handoff format is FBX. The automated chain is now:
+The verified handoff format is FBX. The automated chain is:
 
 ```text
 game_assets.engine_handoff_audit
@@ -81,28 +81,32 @@ Optional requirements can enforce minimum MeshInstance3D count, minimum Skeleton
 
 Recovery mode is intentionally used to reduce execution of project editor plugins/tool scripts during the validation pass. If import or load fails, the copied derivative is retained for diagnostics while the canonical source artifact is preserved.
 
-## Web / realtime glTF
+## Web / Three.js
 
-Web handoff uses GLB/glTF 2.0. The next implemented gate is:
+Web handoff uses self-contained GLB/glTF 2.0. The implemented chain now has distinct structure, viewer and browser-render gates:
 
 ```text
 game_assets.engine_handoff_audit
   -> game_assets.web_glb_audit
-  -> browser runtime validation   # not implemented yet
+  -> game_assets.threejs_prepare_viewer          # visual Salvador/WebGPU viewer
+  -> game_assets.threejs_runtime_audit           # viewer files/provenance audit
+  -> explicit dependency installation if needed  # npm install is not automated
+  -> game_assets.threejs_browser_validate        # real browser GLTFLoader + render proof
 ```
 
-`game_assets.web_glb_audit` verifies the export provenance and then parses the GLB container locally. It validates:
+`game_assets.web_glb_audit` verifies export provenance and parses the GLB container locally. It validates the `glTF` magic, GLB version 2, declared byte length, aligned chunk boundaries, JSON validity, `asset.version == 2.0`, scene/node/mesh/material/texture/image/animation/skin counts, extension declarations and external buffer/image URIs. By default it requires a self-contained GLB.
 
-- `glTF` magic and GLB version 2;
-- declared byte length;
-- 4-byte-aligned chunk boundaries;
-- first JSON chunk and UTF-8 JSON validity;
-- `asset.version == 2.0`;
-- scene/node/mesh/material/texture/image/animation/skin counts;
-- extension declarations;
-- external buffer/image URIs.
+`game_assets.threejs_prepare_viewer` is the visual-experience path for Salvador. It prepares a pinned Three.js/Vite viewer using the shared OrdaX visual-environment contract, `WebGPURenderer`, procedural sky, sun, atmospheric fog, ocean/water and the verified GLB derivative. The generated viewer is deliberately separate from browser validation so visual-environment work can evolve without weakening the immutable asset gate.
 
-By default the Web gate requires a self-contained GLB, so external image or buffer URIs are rejected. A successful structural audit still returns `validated_in_browser=false`; actual Three.js/browser loading, render/visual proof and performance validation remain the final runtime gate.
+`game_assets.threejs_runtime_audit` audits the prepared viewer structure, pinned dependency declarations, visual-environment schema and copied GLB hash. It does not silently run `npm install`: network access and npm lifecycle scripts remain an explicit workstation step.
+
+`game_assets.threejs_browser_validate` is the final generic Web asset runtime gate. It requires the verified original Web GLB plus a project-local installed `three` package, serves only the validation page, Three.js modules and GLB over an ephemeral `127.0.0.1` HTTP server, and launches Chrome/Chromium from `ORDAX_CHROME_BIN` or `PATH`. No CDN or arbitrary browser executable is accepted.
+
+Inside the real browser, `GLTFLoader` loads the GLB and OrdaX records mesh, skinned-mesh, bone, vertex, triangle, material, texture and animation counts. The scene is fitted to a camera, lit, rendered by `WebGLRenderer` into a render target, and read back to measure draw calls, rendered triangles, luminance range and the ratio of pixels that differ from the clear color. The action reports `validated_in_browser=true` and `render_validated=true` only after that browser proof is parsed. Optional requirements can enforce minimum mesh/triangle/animation counts, require a `SkinnedMesh`, and reject nearly blank frames via a minimum visible-pixel ratio.
+
+The browser gate intentionally does not add `--no-sandbox`, does not enable unsafe SwiftShader fallback and does not fetch runtime code from the public Internet. If the workstation cannot provide an acceptable WebGL browser runtime, validation fails rather than weakening those constraints.
+
+The generic browser gate proves that the GLB loads and renders in Three.js. It is not yet a pixel-equivalence test of the full Salvador WebGPU viewer with ocean/sky/atmosphere enabled; that visual-regression layer remains a separate quality gate.
 
 ## Integrity policy
 
