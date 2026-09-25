@@ -1,7 +1,7 @@
 """Canonical ingestion of generated 3D provider results into registered projects.
 
 The action deliberately retrieves result URLs from the provider API itself rather
-than trusting an arbitrary URL supplied by a job.  Downloads are streamed with
+than trusting an arbitrary URL supplied by a job. Downloads are streamed with
 size limits, written atomically, hashed, and accompanied by a provenance
 manifest that never stores signed query parameters or API credentials.
 """
@@ -35,6 +35,8 @@ _CHUNK_BYTES = 1024 * 1024
 _MESHY_STATUS_ROUTES = {
     "text_to_3d_preview": "/openapi/v2/text-to-3d",
     "text_to_3d_refine": "/openapi/v2/text-to-3d",
+    "image_to_3d": "/openapi/v1/image-to-3d",
+    "multi_image_to_3d": "/openapi/v1/multi-image-to-3d",
     "rigging": "/openapi/v1/rigging",
     "text_to_motion": "/openapi/v1/text-to-motion",
     "animation": "/openapi/v1/animations",
@@ -161,7 +163,6 @@ def _tripo_result(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         timeout=60.0,
     )
     data = _json_response(response, "Tripo")
-    # Tripo's documented SuccessResponse nests task data under `data`.
     task_data = data.get("data") if isinstance(data.get("data"), dict) else data
     status = str(task_data.get("status") or "").lower()
     if status not in {"success", "succeeded", "completed"}:
@@ -170,31 +171,24 @@ def _tripo_result(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if not isinstance(output, dict):
         raise ValueError("Tripo task has no output object")
     fmt = _format(payload.get("format"))
-    candidates: list[Any] = []
-    if fmt in {"glb", "fbx", "obj", "usdz", "stl", "zip"}:
-        candidates.extend(
-            [
-                output.get("model"),
-                output.get("pbr_model"),
-                output.get("base_model"),
-            ]
-        )
+    model_values = [
+        value
+        for value in (output.get("model"), output.get("pbr_model"), output.get("base_model"))
+        if isinstance(value, str)
+    ]
     chosen: str | None = None
-    for candidate in candidates:
-        if not isinstance(candidate, str):
-            continue
-        path = urlsplit(candidate).path.lower()
-        if path.endswith("." + fmt) or (fmt == "zip" and path.endswith(".zip")):
+    for candidate in model_values:
+        if urlsplit(candidate).path.lower().endswith("." + fmt):
             chosen = candidate
             break
-    if chosen is None:
-        # Some signed provider URLs omit a meaningful extension.  In that case,
-        # use the documented primary model only when it is the sole model result.
-        model_values = [value for value in (output.get("model"), output.get("pbr_model"), output.get("base_model")) if isinstance(value, str)]
-        if len(model_values) == 1:
+    if chosen is None and len(model_values) == 1:
+        # Only allow extensionless fallback. If the provider URL explicitly says
+        # another known format, do not silently save it under the requested suffix.
+        suffix = Path(urlsplit(model_values[0]).path).suffix.lower().lstrip(".")
+        if not suffix or suffix not in _ALLOWED_FORMATS:
             chosen = model_values[0]
-        else:
-            raise ValueError(f"Tripo output does not expose an unambiguous {fmt} model")
+    if chosen is None:
+        raise ValueError(f"Tripo output does not expose an unambiguous {fmt} model")
     url = _safe_url(chosen)
     return url, {
         "provider": "tripo",
@@ -340,16 +334,16 @@ class GameAssetArtifactActions:
             output = project.path(str(payload.get("output_path") or ""), must_exist=False)
             if output.suffix.lower() != "." + fmt:
                 raise ValueError(f"output_path must end in .{fmt}")
-            if output.exists() and not bool(payload.get("overwrite", False)):
+            manifest_path = output.with_name(output.name + ".ordax.json")
+            overwrite = bool(payload.get("overwrite", False))
+            if output.exists() and not overwrite:
                 raise ValueError("output_path already exists; set overwrite=true explicitly")
+            if manifest_path.exists() and not overwrite:
+                raise ValueError("provenance manifest already exists; set overwrite=true explicitly")
             limit = _max_bytes(payload.get("max_bytes"))
             url, provenance = _provider_result(payload)
             output.parent.mkdir(parents=True, exist_ok=True)
             transfer = _download(url, output, max_bytes=limit)
-            manifest_path = output.with_name(output.name + ".ordax.json")
-            if manifest_path.exists() and not bool(payload.get("overwrite", False)):
-                output.unlink(missing_ok=True)
-                raise ValueError("provenance manifest already exists; set overwrite=true explicitly")
             manifest = {
                 "schema": "ordax.generated-asset/1",
                 "created_at": datetime.now(timezone.utc).isoformat(),
