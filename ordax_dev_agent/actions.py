@@ -102,6 +102,8 @@ class ActionRegistry(
             "visual.environment_schema": self.visual_environment_schema,
             "visual.environment_preset": self.visual_environment_preset,
             "visual.environment_write": self.visual_environment_write,
+            "visual.blender_environment_build": self.visual_blender_environment_build,
+            "visual.blender_environment_audit": self.visual_blender_environment_audit,
             "blender.inspect": self.blender_inspect,
             "blender.benchmark": self.blender_benchmark,
             "blender.render_preview": self.blender_render_preview,
