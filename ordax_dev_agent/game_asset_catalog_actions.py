@@ -44,8 +44,13 @@ class GameAssetCatalogActions:
                     "mixamo_skeleton_spec",
                     "animation_retarget",
                     "smart_lowpoly",
+                    "canonical_artifact_download",
                 ],
-                "actions": ["game_assets.provider_submit", "game_assets.provider_status"],
+                "actions": [
+                    "game_assets.provider_submit",
+                    "game_assets.provider_status",
+                    "game_assets.provider_download",
+                ],
             },
             "meshy": {
                 "mode": "api",
@@ -57,8 +62,13 @@ class GameAssetCatalogActions:
                     "humanoid_rig",
                     "animation",
                     "text_to_motion",
+                    "canonical_artifact_download",
                 ],
-                "actions": ["game_assets.provider_submit", "game_assets.provider_status"],
+                "actions": [
+                    "game_assets.provider_submit",
+                    "game_assets.provider_status",
+                    "game_assets.provider_download",
+                ],
             },
             "hyper3d_rodin": {
                 "mode": "api",
@@ -71,11 +81,13 @@ class GameAssetCatalogActions:
                     "face_budget",
                     "ta_pose_conditioning",
                     "glb_fbx_obj_stl_usdz",
+                    "canonical_artifact_download",
                 ],
                 "actions": [
                     "game_assets.rodin_submit_text",
                     "game_assets.rodin_status",
                     "game_assets.rodin_download_manifest",
+                    "game_assets.provider_download",
                 ],
             },
             "comfyui_local": {
@@ -151,6 +163,23 @@ class GameAssetCatalogActions:
                 "rig_animation": ["adobe_mixamo", "tripo", "meshy"],
                 "dcc": ["blender"],
                 "engines": ["unity", "unreal_export", "godot_export", "web_gltf"],
+            },
+            "canonical_generated_artifacts": {
+                "action": "game_assets.provider_download",
+                "providers": ["tripo", "meshy", "rodin"],
+                "properties": [
+                    "provider_status_is_retrieved_server_side",
+                    "job_cannot_supply_arbitrary_download_url",
+                    "https_only_result_download",
+                    "bounded_streaming_download",
+                    "atomic_partial_file_replacement",
+                    "sha256_content_identity",
+                    "sidecar_provenance_manifest",
+                    "signed_query_parameters_are_not_persisted",
+                    "explicit_overwrite_required",
+                ],
+                "manifest_schema": "ordax.generated-asset/1",
+                "purpose": "turn short-lived provider task results into durable project-local evidence and pipeline inputs",
             },
             "world_generation_pipeline": {
                 "reference_source": "alephgeo",
