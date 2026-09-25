@@ -41,6 +41,9 @@ class ArtifactActions:
 
         source_size = path.stat().st_size
         max_bytes = max(4096, min(int(payload.get("max_bytes", 262144)), 2 * 1024 * 1024))
+        if self.config.control_plane_protocol == "development-v2":
+            # The server caps the entire JSON result at 64 KiB; base64 adds 33%.
+            max_bytes = min(max_bytes, 32768)
         thumbnail = bool(payload.get("thumbnail", False))
         output_format = path.suffix.lower().lstrip(".")
         mime_type = {

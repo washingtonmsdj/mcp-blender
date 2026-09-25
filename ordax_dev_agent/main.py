@@ -385,22 +385,24 @@ def main() -> int:
                         result.ok = False
                         result.summary += "; artifact upload failed"
                     runtime["job_timings"]["upload_seconds"] = round(time.monotonic() - upload_started, 3)
+                    runtime["job_phase"] = "reporting"
+                    report_started = time.monotonic()
+                    result.data["agent_timings"] = dict(runtime["job_timings"])
+                    if verbose_lifecycle or not result.ok:
+                        try:
+                            control.append_event(
+                                job.id, "info" if result.ok else "error", result.summary,
+                            )
+                        except Exception as error:
+                            # An optional progress event must not block the terminal result.
+                            print(f"terminal progress event failed: {error}", file=sys.stderr)
+                    control.complete(job, result)
+                    runtime["job_timings"]["report_seconds"] = round(time.monotonic() - report_started, 3)
                 finally:
                     registry.on_observation = None
                     keepalive_stop.set()
                     keepalive_thread.join(timeout=2.0)
 
-                if verbose_lifecycle or not result.ok:
-                    control.append_event(
-                        job.id,
-                        "info" if result.ok else "error",
-                        result.summary,
-                    )
-                runtime["job_phase"] = "reporting"
-                report_started = time.monotonic()
-                result.data["agent_timings"] = dict(runtime["job_timings"])
-                control.complete(job, result)
-                runtime["job_timings"]["report_seconds"] = round(time.monotonic() - report_started, 3)
                 runtime["job_timings"]["total_seconds"] = round(time.monotonic() - job_started, 3)
                 runtime["job_phase"] = "completed" if result.ok else "failed"
                 runtime["jobs_completed"] += 1

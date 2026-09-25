@@ -54,3 +54,22 @@ Local status then reported Agent 1.20.5, `state=ready`, PID 11616, supervisor
 This was a service restart on an already running Windows system, not a cold OS
 boot benchmark; it must not be compared directly with the earlier reboot timing.
 No test suite or Blender modeling job was run during this deployment.
+
+## 1.20.6: terminal delivery reliability
+
+Inspection of the deployed `ordax_report_develop_job_v2` confirmed a 65,536-byte
+JSON result limit and replay support for an identical report id and payload.
+V2 artifact previews now cap binary data at 32 KiB, leaving room for base64 and
+metadata. Oversized previews return the existing size error; request smaller
+thumbnail dimensions in that case.
+
+Terminal reports retry transport failures and HTTP 408/429/500/502/503/504 up to
+three total attempts, with one- and two-second delays. Every attempt reuses the
+same report id and content. Authorization failures and permanent rejections are
+not retried. This is bounded in-process recovery, not a durable outbox across
+process restarts or an indefinite network outage.
+
+Lease renewal now remains active until report delivery finishes. A failed optional
+progress event no longer prevents sending the terminal result. No Blender action
+is repeated by this retry loop. No fault-injection or test suite was run for this
+change; deployment readiness is a separate operational observation.

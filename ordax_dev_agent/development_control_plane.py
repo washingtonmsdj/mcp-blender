@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,10 @@ from .models import ActionResult, AgentJob
 
 class DeviceAuthorizationError(RuntimeError):
     """The supervisor must reauthenticate this device before restarting."""
+
+
+class TransientDeliveryError(RuntimeError):
+    """Transport failure eligible for an identical terminal-report retry."""
 
 
 class DevelopmentControlPlane:
@@ -89,12 +94,14 @@ class DevelopmentControlPlane:
         try:
             response = self.http.post(self.endpoint, json=body)
         except httpx.HTTPError as error:
-            raise RuntimeError(
+            raise TransientDeliveryError(
                 f"development control-plane request failed: {type(error).__name__}: {error}"
             ) from error
         raw = response.text
         if response.status_code == 401:
             raise DeviceAuthorizationError("DEVICE_CREDENTIAL_REJECTED")
+        if response.status_code in {408, 429, 500, 502, 503, 504}:
+            raise TransientDeliveryError(f"development control-plane HTTP {response.status_code}")
         if response.status_code >= 400:
             raise RuntimeError(
                 f"development control-plane HTTP {response.status_code}: {raw[-4000:]}"
@@ -283,9 +290,7 @@ class DevelopmentControlPlane:
     def complete(self, job: AgentJob, result: ActionResult) -> None:
         body, digest = self._canonical_result(result)
         status = "succeeded" if result.ok else "failed"
-        self._call(
-            "report",
-            {
+        report = {
                 **self._execution_context(job),
                 "report_id": str(uuid.uuid4()),
                 "status": status,
@@ -293,8 +298,17 @@ class DevelopmentControlPlane:
                 "result": body,
                 "result_sha256": digest,
                 "error_code": None if result.ok else "device_agent_action_failed",
-            },
-        )
+            }
+        # Reuse both report id and payload when an accepted response was lost.
+        # Never retry the Blender action or a permanent rejection/auth failure.
+        for attempt in range(3):
+            try:
+                self._call("report", report)
+                break
+            except TransientDeliveryError:
+                if attempt == 2:
+                    raise
+                time.sleep(2 ** attempt)
         self._jobs.pop(job.id, None)
 
     def upload_artifact(
