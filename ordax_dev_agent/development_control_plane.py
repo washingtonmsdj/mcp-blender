@@ -309,11 +309,13 @@ class DevelopmentControlPlane:
         file_path = Path(path).expanduser().resolve()
         if not file_path.is_file():
             raise FileNotFoundError(file_path)
+        with file_path.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
         return {
             "delivery": "local-only-v2-artifact-gateway-pending",
             "kind": kind,
             "local_name": file_path.name,
-            "sha256": hashlib.sha256(file_path.read_bytes()).hexdigest(),
+            "sha256": digest,
             "size_bytes": file_path.stat().st_size,
             "metadata": metadata or {},
         }

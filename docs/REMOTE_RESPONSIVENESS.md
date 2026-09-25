@@ -29,3 +29,17 @@ work. Timing fields do not imply remote preview availability.
 
 Future priorities: acknowledged artifact delivery, durable result retry without
 repeating Blender actions, and profiling the action registry import cost.
+
+## 1.20.5: bounded artifact preparation
+
+Artifact checksums are now streamed instead of reading an entire model into RAM.
+`artifact.preview` rejects oversized inline files before reading them and bounds
+the actual read even if the file grows. JPEG thumbnails request decoder scaling
+before resizing and convert to RGB only after reducing dimensions.
+
+V2 results now put metadata-only artifacts in `data.local_artifacts`, with
+`artifact_delivery=local-only`, instead of claiming `uploaded_artifacts`.
+Consumers needing image bytes can call the existing project-scoped
+`artifact.preview` with `thumbnail=true`, `max_width=480`, `max_height=320`,
+and `max_bytes=262144`. Its `base64` field contains the actual preview bytes.
+This does not implement a large-file storage gateway.

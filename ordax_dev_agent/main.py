@@ -373,7 +373,13 @@ def main() -> int:
                     try:
                         uploaded = _upload_result_artifacts(control, job, result, artifact_cache)
                         if uploaded:
-                            result.data["uploaded_artifacts"] = uploaded
+                            local_only = [item for item in uploaded if str(item.get("delivery", "")).startswith("local-only")]
+                            delivered = [item for item in uploaded if item not in local_only]
+                            if local_only:
+                                result.data["local_artifacts"] = local_only
+                                result.data["artifact_delivery"] = "local-only"
+                            if delivered:
+                                result.data["uploaded_artifacts"] = delivered
                     except Exception as error:
                         result.data["upload_error"] = str(error)
                         result.ok = False
