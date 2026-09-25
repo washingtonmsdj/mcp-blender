@@ -49,7 +49,6 @@ def _input(node: Any, names: tuple[str, ...]):
 
 
 def _kelvin_rgb(kelvin: float) -> tuple[float, float, float]:
-    """Approximate black-body RGB for viewport/reference lighting."""
     temperature = max(1000.0, min(40000.0, kelvin)) / 100.0
     if temperature <= 66.0:
         red = 255.0
@@ -79,7 +78,7 @@ def _apply_color_management(scene: bpy.types.Scene, environment: dict[str, Any])
     exposure = float(environment["exposure"]["ev100"])
     tone_mapping = str(environment["exposure"]["tone_mapping"])
     result: dict[str, Any] = {"tone_mapping": tone_mapping, "ev100": exposure}
-    # Shared EV100 is a semantic exposure target, not Blender's direct exposure unit.
+    # EV100 is shared semantics; Blender's exposure slider uses a different scale.
     blender_exposure = max(-10.0, min(10.0, 14.0 - exposure))
     try:
         scene.view_settings.exposure = blender_exposure
@@ -112,7 +111,7 @@ def _apply_world(scene: bpy.types.Scene, environment: dict[str, Any]) -> dict[st
     links.new(sky.outputs["Color"], background.inputs["Color"])
     links.new(background.outputs["Background"], output.inputs["Surface"])
 
-    applied: dict[str, Any] = {"sky_type": "NISHITA"}
+    applied: dict[str, Any] = {"sky_type": "NISHITA", "cloud_mapping": "not_yet_implemented"}
     sun = environment["sun"]
     sky_values = environment["sky"]
     _set_if(sky, "sun_elevation", math.radians(float(sun["elevation_deg"])), applied)
@@ -234,13 +233,15 @@ def _apply_ocean(scene: bpy.types.Scene, environment: dict[str, Any]) -> dict[st
         modifier = obj.modifiers.new("OrdaX Ocean", "OCEAN")
 
     applied: dict[str, Any] = {"enabled": True, "object": obj.name, "modifier": modifier.name}
+    # Ocean resolution is exponential. Keep the reference bounded; cover city-scale
+    # area through spatial size/repeat instead of an unsafe high simulation grid.
     values = {
         "geometry_mode": "GENERATE",
-        "resolution": 10,
-        "render_resolution": 14,
-        "spatial_size": 750.0,
-        "repeat_x": 8,
-        "repeat_y": 8,
+        "resolution": 8,
+        "render_resolution": 9,
+        "spatial_size": 1500.0,
+        "repeat_x": 4,
+        "repeat_y": 4,
         "wave_scale": max(0.01, float(ocean["significant_wave_height_m"]) * 0.5),
         "choppiness": float(ocean["choppiness"]),
         "wind_velocity": float(environment["wind"]["speed_mps"]),
