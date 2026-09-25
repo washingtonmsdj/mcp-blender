@@ -16,6 +16,14 @@ THREE_VERSION = "0.186.0"
 VITE_VERSION = "8.3.0"
 THREEJS_VIEWER_SCHEMA = "ordax.threejs-viewer/1"
 
+OCEAN_RUNTIME = {
+    "model": "gerstner-tsl-4band",
+    "near_field_extent_m": 4096,
+    "segments": 256,
+    "foam": "crest-mask-overlay",
+    "micro_normals": "procedural-four-sample",
+}
+
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -52,7 +60,7 @@ def _package_json() -> str:
     payload = {
         "name": "ordax-threejs-visual-viewer",
         "private": True,
-        "version": "0.1.0",
+        "version": "0.2.0",
         "type": "module",
         "scripts": {
             "dev": "vite --host 127.0.0.1",
@@ -67,10 +75,10 @@ def _package_json() -> str:
 
 def _index_html() -> str:
     return """<!doctype html>
-<html lang=\"en\">
+<html lang="en">
   <head>
-    <meta charset=\"UTF-8\" />
-    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OrdaX Three.js Visual Viewer</title>
     <style>
       html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #07131b; }
@@ -79,15 +87,26 @@ def _index_html() -> str:
     </style>
   </head>
   <body>
-    <div id=\"app\"></div><div id=\"hud\">OrdaX visual runtime</div>
-    <script type=\"module\" src=\"/src/main.js\"></script>
+    <div id="app"></div><div id="hud">OrdaX visual runtime</div>
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
 """
 
 
 def _main_js() -> str:
-    return r'''import * as THREE from 'three/webgpu';
+    return r"""import * as THREE from 'three/webgpu';
+import {
+  clamp,
+  cos,
+  dot,
+  float,
+  positionLocal,
+  sin,
+  time,
+  vec2,
+  vec3,
+} from 'three/tsl';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
@@ -135,7 +154,6 @@ const renderer = new THREE.WebGPURenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = environment.exposure.tone_mapping === 'aces'
   ? THREE.ACESFilmicToneMapping
   : environment.exposure.tone_mapping === 'neutral'
@@ -172,8 +190,6 @@ if (sky.cloudCoverage) sky.cloudCoverage.value = environment.sky.cloud_coverage;
 if (sky.cloudDensity) sky.cloudDensity.value = environment.sky.cloud_density;
 scene.add(sky);
 
-// Keep illuminance in the shared physical contract, but map it to Three.js's
-// unitless DirectionalLight intensity instead of feeding lux directly.
 const sunIntensity = THREE.MathUtils.clamp(environment.sun.intensity_lux / 50000, 0, 5);
 const sun = new THREE.DirectionalLight(0xffffff, sunIntensity);
 sun.position.copy(sunDir).multiplyScalar(8000);
@@ -201,7 +217,7 @@ function makeWaterNormals(size = 256) {
   };
   for (let i = 0; i < size * size; i += 1) {
     const angle = random() * Math.PI * 2;
-    const strength = 0.28 + random() * 0.42;
+    const strength = 0.22 + random() * 0.48;
     data[i * 4] = Math.round((Math.cos(angle) * strength * 0.5 + 0.5) * 255);
     data[i * 4 + 1] = Math.round((Math.sin(angle) * strength * 0.5 + 0.5) * 255);
     data[i * 4 + 2] = 255;
@@ -213,22 +229,135 @@ function makeWaterNormals(size = 256) {
   return texture;
 }
 
-if (environment.ocean.enabled) {
-  const geometry = new THREE.PlaneGeometry(30000, 30000, 1, 1);
-  const deep = environment.ocean.deep_color;
-  const water = new WaterMesh(geometry, {
+function deepWaterWavelength(periodSeconds) {
+  const gravity = 9.80665;
+  return gravity * periodSeconds * periodSeconds / (2 * Math.PI);
+}
+
+function direction2(degrees) {
+  const radians = THREE.MathUtils.degToRad(degrees);
+  return [Math.sin(radians), Math.cos(radians)];
+}
+
+function gerstnerBand({ directionDeg, wavelength, amplitude, steepness, speedScale = 1 }) {
+  const direction = direction2(directionDeg);
+  const k = 2 * Math.PI / Math.max(0.05, wavelength);
+  const omega = Math.sqrt(9.80665 * k) * speedScale;
+  const phase = dot(positionLocal.xy, vec2(direction[0] * k, direction[1] * k)).sub(time.mul(omega));
+  const waveSin = sin(phase);
+  const waveCos = cos(phase);
+  const horizontal = amplitude * steepness;
+  return {
+    x: waveCos.mul(direction[0] * horizontal),
+    y: waveCos.mul(direction[1] * horizontal),
+    z: waveSin.mul(amplitude),
+    crest: waveSin.mul(0.5).add(0.5),
+  };
+}
+
+function buildGerstnerSpectrum(ocean) {
+  const spectrum = ocean.spectrum;
+  const primaryAmplitude = Math.max(0.01, ocean.significant_wave_height_m * 0.36);
+  const primaryWavelength = deepWaterWavelength(ocean.swell_period_s);
+  const windAmplitude = Math.max(0.005, spectrum.wind_wave_height_m * 0.42);
+  const windWavelength = deepWaterWavelength(spectrum.wind_wave_period_s);
+  const crossAmplitude = primaryAmplitude * 0.34;
+  const shortAmplitude = Math.max(
+    0.002,
+    spectrum.short_wave_scale_m * 0.018 * spectrum.short_wave_strength,
+  );
+
+  const bands = [
+    gerstnerBand({
+      directionDeg: ocean.swell_direction_deg,
+      wavelength: primaryWavelength,
+      amplitude: primaryAmplitude,
+      steepness: THREE.MathUtils.clamp(ocean.choppiness * 0.22, 0.02, 0.72),
+    }),
+    gerstnerBand({
+      directionDeg: ocean.swell_direction_deg + spectrum.swell_spread_deg,
+      wavelength: primaryWavelength * 0.58,
+      amplitude: crossAmplitude,
+      steepness: THREE.MathUtils.clamp(ocean.choppiness * 0.18, 0.02, 0.58),
+      speedScale: 1.06,
+    }),
+    gerstnerBand({
+      directionDeg: spectrum.wind_wave_direction_deg,
+      wavelength: windWavelength,
+      amplitude: windAmplitude,
+      steepness: THREE.MathUtils.clamp(ocean.choppiness * 0.26, 0.03, 0.78),
+      speedScale: 1.18,
+    }),
+    gerstnerBand({
+      directionDeg: spectrum.wind_wave_direction_deg - 37,
+      wavelength: spectrum.short_wave_scale_m,
+      amplitude: shortAmplitude,
+      steepness: THREE.MathUtils.clamp(0.16 + spectrum.short_wave_strength * 0.32, 0.05, 0.55),
+      speedScale: 1.45,
+    }),
+  ];
+
+  let dx = float(0);
+  let dy = float(0);
+  let dz = float(0);
+  let crest = float(0);
+  for (const band of bands) {
+    dx = dx.add(band.x);
+    dy = dy.add(band.y);
+    dz = dz.add(band.z);
+    crest = crest.add(band.crest);
+  }
+
+  return {
+    positionNode: positionLocal.add(vec3(dx, dy, dz)),
+    crestNode: crest.div(bands.length),
+  };
+}
+
+let water = null;
+let foam = null;
+
+function createOcean() {
+  if (!environment.ocean.enabled) return;
+  const ocean = environment.ocean;
+  const spectrum = buildGerstnerSpectrum(ocean);
+  const geometry = new THREE.PlaneGeometry(4096, 4096, 256, 256);
+  const deep = ocean.deep_color;
+
+  water = new WaterMesh(geometry, {
     waterNormals: makeWaterNormals(),
     sunDirection: sunDir,
     sunColor: 0xffffff,
     waterColor: new THREE.Color(deep[0], deep[1], deep[2]),
-    distortionScale: 8 + environment.ocean.choppiness * 12,
-    size: Math.max(0.5, environment.ocean.swell_period_s * 0.85),
+    distortionScale: 5 + ocean.choppiness * 9 + ocean.spectrum.short_wave_strength * 5,
+    size: Math.max(0.35, ocean.spectrum.short_wave_scale_m),
     resolutionScale: 0.5,
   });
-  water.rotation.x = -Math.PI / 2;
-  water.position.y = environment.ocean.sea_level_m;
+  water.material.positionNode = spectrum.positionNode;
+  water.position.y = ocean.sea_level_m;
   scene.add(water);
+
+  const foamMaterial = new THREE.MeshBasicNodeMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  foamMaterial.colorNode = vec3(0.92, 0.97, 1.0);
+  foamMaterial.positionNode = spectrum.positionNode.add(vec3(0, 0, 0.025));
+  const threshold = ocean.spectrum.crest_foam_threshold;
+  const denominator = Math.max(0.02, 1 - threshold);
+  foamMaterial.opacityNode = clamp(
+    spectrum.crestNode.sub(threshold).div(denominator),
+    0,
+    1,
+  ).mul(Math.min(1, ocean.foam_amount * 2.4));
+  foam = new THREE.Mesh(geometry.clone(), foamMaterial);
+  foam.position.y = ocean.sea_level_m;
+  foam.renderOrder = 2;
+  scene.add(foam);
 }
+
+createOcean();
 
 const loader = new GLTFLoader();
 const gltf = await loader.loadAsync('/ordax/model.glb');
@@ -250,6 +379,15 @@ if (!bounds.isEmpty()) {
   camera.far = Math.max(50000, distance * 30);
   camera.updateProjectionMatrix();
   controls.update();
+
+  if (water) {
+    water.position.x = sphere.center.x;
+    water.position.z = sphere.center.z;
+  }
+  if (foam) {
+    foam.position.x = sphere.center.x;
+    foam.position.z = sphere.center.z;
+  }
 }
 
 function resize() {
@@ -261,15 +399,15 @@ addEventListener('resize', resize);
 
 let lastHud = 0;
 let previousFrameTime = null;
-function updateFrameMetrics(time) {
+function updateFrameMetrics(timeMs) {
   if (previousFrameTime !== null) {
-    const delta = time - previousFrameTime;
+    const delta = timeMs - previousFrameTime;
     if (delta > 0 && delta < 1000) {
       diagnostics.frameTimes.push(delta);
       if (diagnostics.frameTimes.length > 240) diagnostics.frameTimes.shift();
     }
   }
-  previousFrameTime = time;
+  previousFrameTime = timeMs;
   if (diagnostics.frameTimes.length === 0) {
     return { samples: 0, averageMs: 0, p95Ms: 0, averageFps: 0 };
   }
@@ -285,18 +423,19 @@ function updateFrameMetrics(time) {
   };
 }
 
-renderer.setAnimationLoop((time) => {
-  const frame = updateFrameMetrics(time);
+renderer.setAnimationLoop((timeMs) => {
+  const frame = updateFrameMetrics(timeMs);
   controls.update();
   renderer.render(scene, camera);
-  if (time - lastHud > 500) {
-    lastHud = time;
+  if (timeMs - lastHud > 500) {
+    lastHud = timeMs;
     const backend = renderer.backend?.isWebGPUBackend ? 'WebGPU' : 'WebGL2 fallback';
     hud.textContent = [
       `OrdaX ${runtime.schema}`,
       `backend: ${backend}`,
       `environment: ${environment.name}`,
-      `model: ${runtime.asset.sha256.slice(0, 12)}…`,
+      `ocean: ${environment.ocean.spectrum.profile} / ${runtime.ocean_runtime.model}`,
+      `model: ${runtime.asset.sha256.slice(0, 12)}...`,
       `triangles: ${renderer.info.render.triangles}`,
       `calls: ${renderer.info.render.calls}`,
       `errors: ${diagnostics.errors}`,
@@ -309,7 +448,7 @@ renderer.setAnimationLoop((time) => {
     ].join('\n');
   }
 });
-'''
+"""
 
 
 def _target_files(viewer_root: Path) -> list[Path]:
@@ -373,6 +512,7 @@ class GameAssetThreeJsActions:
                 "three_version": THREE_VERSION,
                 "vite_version": VITE_VERSION,
                 "environment_schema": ENVIRONMENT_SCHEMA,
+                "ocean_runtime": dict(OCEAN_RUNTIME),
                 "asset": {
                     "path": "ordax/model.glb",
                     "sha256": verification["sha256"],
@@ -405,6 +545,7 @@ class GameAssetThreeJsActions:
                 "vite_version": VITE_VERSION,
                 "artifact_sha256": verification["sha256"],
                 "environment": environment,
+                "ocean_runtime": dict(OCEAN_RUNTIME),
                 "commands": ["npm install", "npm run dev"],
             },
         )
@@ -438,6 +579,9 @@ class GameAssetThreeJsActions:
                 raise ValueError("viewer package does not use the pinned Three.js version")
             if package.get("devDependencies", {}).get("vite") != VITE_VERSION:
                 raise ValueError("viewer package does not use the pinned Vite version")
+            ocean_runtime = runtime.get("ocean_runtime")
+            if not isinstance(ocean_runtime, dict) or ocean_runtime.get("model") != OCEAN_RUNTIME["model"]:
+                raise ValueError("viewer runtime does not use the expected ocean-v2 model")
             model = viewer_root / "public" / "ordax" / "model.glb"
             actual_hash = _sha256(model)
             expected_hash = runtime.get("asset", {}).get("sha256")
@@ -458,6 +602,8 @@ class GameAssetThreeJsActions:
                 "vite_version": VITE_VERSION,
                 "asset_sha256": actual_hash,
                 "environment_schema": environment["schema"],
+                "ocean_profile": environment["ocean"]["spectrum"]["profile"],
+                "ocean_runtime": ocean_runtime,
                 "glb": glb,
                 "runtime_build_not_executed": True,
                 "dependencies_must_be_installed_explicitly": True,

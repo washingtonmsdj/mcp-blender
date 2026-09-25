@@ -8,7 +8,12 @@ from pathlib import Path
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
 from ordax_dev_agent.game_asset_engine_export_actions import ENGINE_EXPORT_SCHEMA
-from ordax_dev_agent.game_asset_threejs_actions import THREEJS_VIEWER_SCHEMA, THREE_VERSION, VITE_VERSION
+from ordax_dev_agent.game_asset_threejs_actions import (
+    OCEAN_RUNTIME,
+    THREEJS_VIEWER_SCHEMA,
+    THREE_VERSION,
+    VITE_VERSION,
+)
 
 
 JSON_CHUNK = 0x4E4F534A
@@ -117,15 +122,32 @@ class GameAssetThreeJsActionTests(unittest.TestCase):
             )
             self.assertTrue(prepared.ok, prepared.summary)
             self.assertEqual(THREEJS_VIEWER_SCHEMA, prepared.data["schema"])
+            self.assertEqual(OCEAN_RUNTIME["model"], prepared.data["ocean_runtime"]["model"])
             viewer = root / "project" / "web" / "salvador-viewer"
             package = json.loads((viewer / "package.json").read_text(encoding="utf-8"))
             self.assertEqual(THREE_VERSION, package["dependencies"]["three"])
             self.assertEqual(VITE_VERSION, package["devDependencies"]["vite"])
+
+            environment = json.loads(
+                (viewer / "public" / "ordax" / "environment.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual("bay", environment["ocean"]["spectrum"]["profile"])
+            runtime = json.loads(
+                (viewer / "public" / "ordax" / "runtime.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual("gerstner-tsl-4band", runtime["ocean_runtime"]["model"])
+
             main_js = (viewer / "src" / "main.js").read_text(encoding="utf-8")
             self.assertIn("WebGPURenderer", main_js)
             self.assertIn("SkyMesh", main_js)
             self.assertIn("WaterMesh", main_js)
+            self.assertIn("from 'three/tsl'", main_js)
+            self.assertIn("buildGerstnerSpectrum", main_js)
+            self.assertIn("material.positionNode", main_js)
+            self.assertIn("crest_foam_threshold", main_js)
+            self.assertIn("PlaneGeometry(4096, 4096, 256, 256)", main_js)
             self.assertIn("intensity_lux / 50000", main_js)
+            self.assertNotIn("PCFSoftShadowMap", main_js)
 
             audited = registry.execute(
                 "game_assets.threejs_runtime_audit",
@@ -134,7 +156,36 @@ class GameAssetThreeJsActionTests(unittest.TestCase):
             self.assertTrue(audited.ok, audited.summary)
             self.assertEqual(THREEJS_VIEWER_SCHEMA, audited.data["schema"])
             self.assertEqual(THREE_VERSION, audited.data["three_version"])
+            self.assertEqual("bay", audited.data["ocean_profile"])
+            self.assertEqual("gerstner-tsl-4band", audited.data["ocean_runtime"]["model"])
             self.assertTrue(audited.data["glb"]["self_contained"])
+
+    def test_custom_ocean_spectrum_reaches_viewer_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.write_export(root)
+            registry = ActionRegistry(self.make_config(root))
+            prepared = registry.execute(
+                "game_assets.threejs_prepare_viewer",
+                {
+                    "project": "salvador",
+                    "artifact_path": "exports/salvador.glb",
+                    "environment": {
+                        "ocean": {
+                            "spectrum": {
+                                "profile": "coastal",
+                                "wind_wave_height_m": 0.48,
+                                "short_wave_strength": 0.77,
+                            }
+                        }
+                    },
+                },
+            )
+            self.assertTrue(prepared.ok, prepared.summary)
+            spectrum = prepared.data["environment"]["ocean"]["spectrum"]
+            self.assertEqual("coastal", spectrum["profile"])
+            self.assertEqual(0.48, spectrum["wind_wave_height_m"])
+            self.assertEqual(0.77, spectrum["short_wave_strength"])
 
     def test_non_web_provenance_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
