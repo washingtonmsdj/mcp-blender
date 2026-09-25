@@ -185,8 +185,8 @@ class GameAssetUnityActionsTests(unittest.TestCase):
     def test_model_audit_rejects_paths_outside_assets(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
-            (root / "project" / "outside.fbx").write_bytes(b"fbx")
             registry = ActionRegistry(self.make_config(root))
+            (root / "project" / "outside.fbx").write_bytes(b"fbx")
             result = registry.execute(
                 "game_assets.unity_model_audit",
                 {"project": "game", "asset_path": "outside.fbx"},
