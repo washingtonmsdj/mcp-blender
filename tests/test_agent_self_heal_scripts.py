@@ -98,6 +98,20 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertNotIn("diff-files --quiet", launcher)
         self.assertNotIn("diff-index --cached", launcher)
 
+    def test_emergency_recovery_updates_remote_tracking_ref_before_merge(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        recovery = (
+            root / "scripts" / "windows" / "ordax-emergency-recover.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('refs/heads/${Branch}:$remoteRef', recovery)
+        self.assertIn('refs/remotes/origin/$Branch', recovery)
+        self.assertIn('fetch origin $fetchRefspec', recovery)
+        self.assertIn('merge --ff-only $remoteRef', recovery)
+        self.assertNotIn('fetch origin $Branch', recovery)
+        self.assertIn('"ordax_device_agent"', recovery)
+        self.assertIn('Stop-ScheduledTask -TaskName $taskName', recovery)
+
     def test_watchdog_requests_restart_without_cim_dependency(self) -> None:
         root = Path(__file__).resolve().parents[1]
         watchdog = (
