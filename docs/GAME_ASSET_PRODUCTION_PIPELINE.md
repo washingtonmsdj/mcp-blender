@@ -35,7 +35,8 @@ game_assets.blender_ingest_generated
                   +--> provider/task/hash embedded in scene metadata
                   |
                   +--> structural / character preflight
-                  +--> runtime budget audit
+                  +--> game_assets.blender_runtime_audit
+                  +--> optional game_assets.blender_generate_static_lods
                   +--> visual multiview/reference review
                   |
                   +--> rig / Mixamo / animation / retarget
@@ -162,6 +163,42 @@ The report also identifies a `lod_safe_static_candidate` only when there are no
 armatures and no shape keys. This is intentional: automatic decimation should
 not silently damage skinned or morph-driven assets.
 
+## Static LOD generation
+
+`game_assets.blender_generate_static_lods` is implemented for static meshes.
+Default ratios are `0.5`, `0.25` and `0.1`; callers may request up to five
+strictly descending ratios between `0.05` and `0.95`.
+
+The action is deliberately conservative:
+
+- it refuses scenes containing armatures;
+- it refuses meshes with shape keys;
+- the source `.blend` is never used as the output;
+- existing output requires explicit `overwrite=true`;
+- current evaluated source geometry is copied first, so existing source
+  modifiers are baked into the derivative rather than destructively applied to
+  the source scene;
+- LOD0 and each reduced level are placed in separate `ORDAX_LOD<n>` collections;
+- reduced levels use Blender collapse decimation with triangulated output;
+- actual triangle counts are measured after each generated level;
+- the derivative stores `ordax.static-lod/1` metadata and a machine-readable
+  report.
+
+The default path is therefore:
+
+```text
+game_assets.blender_runtime_audit
+    -> verify lod_safe_static_candidate
+    -> game_assets.blender_generate_static_lods
+    -> audit the derivative
+    -> visual regression captures
+    -> engine import / LODGroup setup
+```
+
+Skinned characters and morph-driven assets are intentionally excluded. They need
+a deformation-aware LOD pipeline with skeleton/weight/morph validation before and
+after simplification.
+
 ## Rig and motion
 
 Humanoid choices currently include:
@@ -185,28 +222,6 @@ Current canonical exchange choices:
 Engine import validation remains a separate gate. Export success alone does not
 prove avatar mapping, root motion, morph targets, collision, materials or runtime
 budgets are correct in the target engine.
-
-## LOD policy
-
-Do not apply a generic Decimate modifier blindly to all generated assets.
-
-Automatic LOD generation is appropriate first for static assets that pass the
-runtime audit as `lod_safe_static_candidate`. Skinned meshes and assets with
-shape keys require a separate deformation-aware LOD path with before/after
-animation validation.
-
-The intended static sequence is:
-
-```text
-runtime audit
-    -> prove static/no shape keys
-    -> duplicate source mesh per LOD
-    -> bounded decimation ratios
-    -> preserve material/UV assignment
-    -> measure actual triangle counts
-    -> save to a new derivative .blend
-    -> visual regression captures
-```
 
 ## Component ownership
 
