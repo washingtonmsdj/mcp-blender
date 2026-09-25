@@ -288,3 +288,17 @@ class ControlPlane:
             "size_bytes": size,
             "signed_url": finalized.get("signed_url"),
         }
+
+
+
+def build_control_plane(config: AgentConfig):
+    """Select the configured remote transport without weakening either authority."""
+
+    protocol = str(config.control_plane_protocol or "legacy-v1").strip().lower()
+    if protocol == "legacy-v1":
+        return ControlPlane(config)
+    if protocol == "development-v2":
+        from .development_control_plane import DevelopmentControlPlane
+
+        return DevelopmentControlPlane(config)
+    raise ValueError(f"Unsupported control-plane protocol: {protocol}")
