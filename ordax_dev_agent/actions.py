@@ -31,6 +31,7 @@ from .game_asset_image_actions import GameAssetImageActions
 from .game_asset_lod_actions import GameAssetLodActions
 from .game_asset_runtime_actions import GameAssetRuntimeActions
 from .game_asset_unity_actions import GameAssetUnityActions
+from .game_asset_unreal_actions import GameAssetUnrealActions
 from .generated_asset_actions import GeneratedAssetActions
 from .mixamo_actions import MixamoActions
 from .rodin_actions import RodinActions
@@ -65,6 +66,7 @@ class ActionRegistry(
     GameAssetLodActions,
     GameAssetRuntimeActions,
     GameAssetUnityActions,
+    GameAssetUnrealActions,
     GeneratedAssetActions,
     MixamoActions,
     RodinActions,
@@ -164,6 +166,7 @@ class ActionRegistry(
             "game_assets.engine_handoff_audit": self.game_assets_engine_handoff_audit,
             "game_assets.web_glb_audit": self.game_assets_web_glb_audit,
             "game_assets.godot_import_validate": self.game_assets_godot_import_validate,
+            "game_assets.unreal_import_validate": self.game_assets_unreal_import_validate,
             "game_assets.unity_import_generated": self.game_assets_unity_import_generated,
             "game_assets.unity_import_engine_export": self.game_assets_unity_import_engine_export,
             "game_assets.unity_model_audit": self.game_assets_unity_model_audit,
