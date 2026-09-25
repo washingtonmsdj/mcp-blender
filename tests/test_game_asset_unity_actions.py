@@ -62,12 +62,13 @@ class GameAssetUnityActionsTests(unittest.TestCase):
         )
         return artifact, manifest, body
 
-    def test_registry_exposes_verified_unity_import(self) -> None:
+    def test_registry_exposes_verified_unity_import_and_model_audit(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             registry = ActionRegistry(self.make_config(Path(raw)))
             status = registry.execute("agent.status", {})
             self.assertTrue(status.ok)
             self.assertIn("game_assets.unity_import_generated", status.data["actions"])
+            self.assertIn("game_assets.unity_model_audit", status.data["actions"])
 
     def test_verified_asset_is_copied_then_refreshed_in_unity(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -133,6 +134,65 @@ class GameAssetUnityActionsTests(unittest.TestCase):
                 body,
                 (root / "project" / "Assets" / "OrdaX" / "Generated" / "scout.glb").read_bytes(),
             )
+
+    def test_model_audit_uses_editor_companion_on_existing_assets_model(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project = root / "project"
+            asset = project / "Assets" / "Models" / "scout.fbx"
+            asset.parent.mkdir(parents=True, exist_ok=True)
+            asset.write_bytes(b"fbx")
+            registry = ActionRegistry(self.make_config(root))
+
+            class FakeEditor:
+                def request(self, action, payload, *, timeout_seconds):
+                    self.action = action
+                    self.payload = payload
+                    self.timeout_seconds = timeout_seconds
+                    return ActionResult(
+                        True,
+                        "Unity model import audit passed",
+                        {
+                            "assetPath": payload["assetPath"],
+                            "assetImporterType": "UnityEditor.ModelImporter",
+                            "modelMeshCount": 2,
+                            "modelVertexCount": 1200,
+                            "modelTriangleCount": 800,
+                            "modelMaterialCount": 3,
+                            "modelAnimationClipCount": 1,
+                            "modelBoneCount": 24,
+                            "modelLodGroupCount": 0,
+                        },
+                    )
+
+            editor = FakeEditor()
+            with patch.object(registry, "_editor", return_value=editor):
+                result = registry.execute(
+                    "game_assets.unity_model_audit",
+                    {
+                        "project": "game",
+                        "asset_path": "Assets/Models/scout.fbx",
+                        "timeout_seconds": 90,
+                    },
+                )
+
+            self.assertTrue(result.ok, result.summary)
+            self.assertEqual("asset_model_audit", editor.action)
+            self.assertEqual({"assetPath": "Assets/Models/scout.fbx"}, editor.payload)
+            self.assertEqual(90.0, editor.timeout_seconds)
+            self.assertEqual(800, result.data["audit"]["modelTriangleCount"])
+
+    def test_model_audit_rejects_paths_outside_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "project" / "outside.fbx").write_bytes(b"fbx")
+            registry = ActionRegistry(self.make_config(root))
+            result = registry.execute(
+                "game_assets.unity_model_audit",
+                {"project": "game", "asset_path": "outside.fbx"},
+            )
+            self.assertFalse(result.ok)
+            self.assertIn("Assets", result.summary)
 
     def test_unity_must_be_enabled_for_project(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
