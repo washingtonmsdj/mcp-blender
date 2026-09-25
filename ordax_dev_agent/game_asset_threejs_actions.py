@@ -95,6 +95,33 @@ import { WaterMesh } from 'three/addons/objects/WaterMesh.js';
 
 const app = document.querySelector('#app');
 const hud = document.querySelector('#hud');
+const diagnostics = {
+  errors: 0,
+  consoleErrors: 0,
+  unhandledRejections: 0,
+  lastError: '',
+  frameTimes: [],
+};
+
+function rememberError(value) {
+  diagnostics.errors += 1;
+  diagnostics.lastError = String(value ?? 'unknown runtime error').slice(0, 240);
+}
+
+const originalConsoleError = console.error.bind(console);
+console.error = (...args) => {
+  diagnostics.consoleErrors += 1;
+  rememberError(args.map((value) => String(value)).join(' '));
+  originalConsoleError(...args);
+};
+addEventListener('error', (event) => {
+  rememberError(event.error?.stack || event.message || 'window error');
+});
+addEventListener('unhandledrejection', (event) => {
+  diagnostics.unhandledRejections += 1;
+  rememberError(event.reason?.stack || event.reason || 'unhandled rejection');
+});
+
 const environment = await fetch('/ordax/environment.json', { cache: 'no-store' }).then((response) => {
   if (!response.ok) throw new Error(`environment manifest HTTP ${response.status}`);
   return response.json();
@@ -233,7 +260,33 @@ function resize() {
 addEventListener('resize', resize);
 
 let lastHud = 0;
+let previousFrameTime = null;
+function updateFrameMetrics(time) {
+  if (previousFrameTime !== null) {
+    const delta = time - previousFrameTime;
+    if (delta > 0 && delta < 1000) {
+      diagnostics.frameTimes.push(delta);
+      if (diagnostics.frameTimes.length > 240) diagnostics.frameTimes.shift();
+    }
+  }
+  previousFrameTime = time;
+  if (diagnostics.frameTimes.length === 0) {
+    return { samples: 0, averageMs: 0, p95Ms: 0, averageFps: 0 };
+  }
+  const sorted = [...diagnostics.frameTimes].sort((a, b) => a - b);
+  const total = diagnostics.frameTimes.reduce((sum, value) => sum + value, 0);
+  const averageMs = total / diagnostics.frameTimes.length;
+  const p95Index = Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1);
+  return {
+    samples: diagnostics.frameTimes.length,
+    averageMs,
+    p95Ms: sorted[p95Index],
+    averageFps: averageMs > 0 ? 1000 / averageMs : 0,
+  };
+}
+
 renderer.setAnimationLoop((time) => {
+  const frame = updateFrameMetrics(time);
   controls.update();
   renderer.render(scene, camera);
   if (time - lastHud > 500) {
@@ -246,6 +299,13 @@ renderer.setAnimationLoop((time) => {
       `model: ${runtime.asset.sha256.slice(0, 12)}…`,
       `triangles: ${renderer.info.render.triangles}`,
       `calls: ${renderer.info.render.calls}`,
+      `errors: ${diagnostics.errors}`,
+      `console errors: ${diagnostics.consoleErrors}`,
+      `unhandled rejections: ${diagnostics.unhandledRejections}`,
+      `frames: ${frame.samples}`,
+      `frame avg ms: ${frame.averageMs.toFixed(2)}`,
+      `frame p95 ms: ${frame.p95Ms.toFixed(2)}`,
+      `fps avg: ${frame.averageFps.toFixed(1)}`,
     ].join('\n');
   }
 });
@@ -400,6 +460,7 @@ class GameAssetThreeJsActions:
                 "environment_schema": environment["schema"],
                 "glb": glb,
                 "runtime_build_not_executed": True,
-                "next_gate": "npm install && npm run build, then browser capture/performance validation",
+                "dependencies_must_be_installed_explicitly": True,
+                "next_gate": "game_assets.threejs_viewer_validate",
             },
         )
