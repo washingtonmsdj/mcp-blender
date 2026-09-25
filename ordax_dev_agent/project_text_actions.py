@@ -17,7 +17,7 @@ from .models import ActionResult
 
 _READABLE_SUFFIXES = {
     ".asmdef", ".asmref", ".cginc", ".compute", ".cs", ".css", ".glsl",
-    ".hlsl", ".html", ".json", ".md", ".shader", ".txt", ".uss", ".uxml",
+    ".hlsl", ".html", ".js", ".json", ".md", ".mjs", ".py", ".shader", ".ts", ".txt", ".uss", ".uxml",
     ".xml", ".yaml", ".yml",
     # Serialized Unity text may be inspected, but is intentionally not writable
     # through this generic action.
