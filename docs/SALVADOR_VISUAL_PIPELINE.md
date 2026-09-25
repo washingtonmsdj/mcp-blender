@@ -15,12 +15,14 @@ Salvador source/reference data
 Blender canonical scene
         |
         +--> geometry / UV / PBR / LOD
+        +--> environment derivative/reference render
         +--> verified Web GLB
         |
         v
 ordax.visual-environment/1
         |
-        +--> Three.js WebGPURenderer  <- current primary target
+        +--> Blender Nishita/Sun/Ocean reference
+        +--> Three.js WebGPURenderer  <- current primary realtime target
         +--> Godot WorldEnvironment  <- follow-up mapping
         +--> Unity HDRP               <- follow-up mapping
 ```
@@ -51,8 +53,31 @@ Typed actions:
 - `visual.environment_schema`
 - `visual.environment_preset`
 - `visual.environment_write`
+- `visual.blender_environment_build`
+- `visual.blender_environment_audit`
 
 The contract is closed-world and range checked. Unknown fields are rejected instead of silently ignored.
+
+## Blender environment derivative
+
+`visual.blender_environment_build` opens a registered source `.blend` in an isolated background Blender process and saves a **separate derivative**. The host hashes the source before and after the operation and fails the result if the canonical source changed.
+
+The first mapping currently applies:
+
+- metric scene units;
+- Nishita Sky Texture in the World node tree;
+- shared sun elevation/azimuth to both the Sky Texture and a deterministic `SUN` object;
+- color-temperature approximation for the sun light;
+- EV100-derived Blender exposure and AgX when requested;
+- a conservative Principled Volume atmosphere from the shared fog value;
+- an `Ocean` modifier reference surface at the shared sea level;
+- wave scale/choppiness/wind/direction/foam mapping;
+- a Principled water reference material with shared deep-water color and roughness;
+- full environment JSON embedded as scene metadata for later audit/provenance.
+
+`visual.blender_environment_audit` reopens a `.blend` read-only through the same isolated CLI path and verifies the embedded environment metadata, physical sky node, Sun object and Ocean modifier when ocean is enabled.
+
+This is deliberately a **reference rendering mapping**, not a claim that Blender's Ocean modifier/shader is portable to Three.js, Godot or Unity.
 
 ## Three.js visual viewer
 
@@ -91,13 +116,15 @@ npm install
 npm run dev
 ```
 
-`game_assets.threejs_runtime_audit` verifies the generated runtime structure, pinned versions, environment contract, GLB structure and copied GLB hash. It intentionally does **not** claim browser validation yet.
+`game_assets.threejs_runtime_audit` verifies the generated viewer structure, pinned versions, environment contract, GLB structure and copied GLB hash.
+
+A separate `game_assets.threejs_browser_validate` gate now loads the verified Web GLB in local Three.js through Chrome/Chromium, builds a real scene, renders it, reads pixels and returns geometry/material/texture/render evidence. That gate proves a browser can load and render the GLB; it does **not yet** prove the full WebGPU sky/ocean viewer matches the Blender environment reference.
 
 ## Why the ocean remains a separate runtime system
 
 A Blender Ocean Modifier or Blender shader cannot be treated as a portable realtime artifact. The portable source of truth is the semantic water state: sea level, wind, wave/swell parameters, choppiness, foam, absorption/color and roughness.
 
-Three.js currently maps those values to the first `WaterMesh` implementation. The next visual iterations should add:
+Blender maps those values into an Ocean-modifier reference surface. Three.js currently maps them to the first `WaterMesh` implementation. The next visual iterations should add:
 
 1. multi-band Gerstner displacement in TSL;
 2. camera-centered ocean LOD/rings;
@@ -111,31 +138,28 @@ The same environment manifest should later drive Godot and Unity implementations
 
 ## Immediate next gates
 
-### P0 — browser proof
+### P0 — real Blender environment smoke
 
-Add a bounded local browser validation path for a prepared viewer:
+Run the new builder through the real workstation Blender 5.x and prove:
 
-- install/build verification;
-- local loopback server;
-- deterministic viewport and camera;
-- screenshot artifact;
-- console-error collection;
-- WebGPU vs WebGL2-fallback evidence;
-- triangle/draw-call/frame-time telemetry.
+- the source `.blend` hash is unchanged;
+- the derivative opens successfully;
+- Nishita + Sun + Ocean survive save/reopen;
+- a deterministic camera render completes;
+- the audit passes on the saved derivative;
+- a negative/invalid environment control fails closed.
 
-Only after this gate should the existing web engine handoff advertise `engine_validation_available=true`.
+Only after that smoke should the Blender environment mapping be treated as production-promoted.
 
-### P0 — Blender environment application
+### P0 — visual cross-runtime comparison
 
-Add Blender-side application of `ordax.visual-environment/1`:
+Extend browser evidence from the generic GLB gate to the prepared WebGPU environment viewer:
 
-- Nishita/physical sky mapping;
-- Sun light mapping;
-- world exposure/color management;
-- ocean reference surface and Ocean Modifier parameters;
-- deterministic reference render/capture.
-
-This lets Blender and Three.js be compared from the same semantic environment.
+- deterministic camera shared with Blender reference framing;
+- WebGPU/backend evidence;
+- screenshot artifact and console errors;
+- sky/ocean/atmosphere visible in the capture;
+- pixel/structural comparison against the Blender reference without requiring identical shaders.
 
 ### P1 — PBR material contract v2
 
