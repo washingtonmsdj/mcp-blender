@@ -28,6 +28,7 @@ from .game_asset_artifact_actions import GameAssetArtifactActions
 from .game_asset_image_actions import GameAssetImageActions
 from .game_asset_lod_actions import GameAssetLodActions
 from .game_asset_runtime_actions import GameAssetRuntimeActions
+from .game_asset_unity_actions import GameAssetUnityActions
 from .generated_asset_actions import GeneratedAssetActions
 from .mixamo_actions import MixamoActions
 from .rodin_actions import RodinActions
@@ -59,6 +60,7 @@ class ActionRegistry(
     GameAssetImageActions,
     GameAssetLodActions,
     GameAssetRuntimeActions,
+    GameAssetUnityActions,
     GeneratedAssetActions,
     MixamoActions,
     RodinActions,
@@ -153,6 +155,7 @@ class ActionRegistry(
             "game_assets.blender_ingest_generated": self.game_assets_blender_ingest_generated,
             "game_assets.blender_runtime_audit": self.game_assets_blender_runtime_audit,
             "game_assets.blender_generate_static_lods": self.game_assets_blender_generate_static_lods,
+            "game_assets.unity_import_generated": self.game_assets_unity_import_generated,
             "game_assets.blender_character_preflight": self.game_assets_blender_character_preflight,
             "game_assets.blender_export": self.game_assets_blender_export,
             "game_assets.blender_import_fbx": self.game_assets_blender_import_fbx,
