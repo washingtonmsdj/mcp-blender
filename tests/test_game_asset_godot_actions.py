@@ -71,6 +71,29 @@ class GameAssetGodotActionsTests(unittest.TestCase):
         (godot / "project.godot").write_text("[application]\nconfig/name=\"test\"\n", encoding="utf-8")
         return artifact, manifest, godot
 
+    def semantic_stdout(self, *, mesh_instances=2, skeletons=1, bones=64, animations=3, collision_shapes=1):
+        semantic = {
+            "packed_scene": True,
+            "root_class": "Node3D",
+            "nodes": 8,
+            "mesh_instances": mesh_instances,
+            "mesh_surfaces": 4,
+            "materials": 3,
+            "blend_shapes": 2,
+            "skeletons": skeletons,
+            "bones": bones,
+            "animation_players": 1,
+            "animations": animations,
+            "collision_objects": 1 if collision_shapes else 0,
+            "collision_shapes": collision_shapes,
+        }
+        return (
+            "ORDAX_GODOT_RESOURCE_OK|res://ordax_generated/asset.glb|PackedScene\n"
+            + "ORDAX_GODOT_SEMANTIC_OK|"
+            + json.dumps(semantic, separators=(",", ":"))
+            + "\n"
+        )
+
     def test_registry_exposes_godot_import_validation(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             registry = ActionRegistry(self.make_config(Path(raw)))
@@ -100,13 +123,15 @@ class GameAssetGodotActionsTests(unittest.TestCase):
                 separator = command.index("--")
                 resource_path = command[separator + 1]
                 self.assertEqual("res://ordax_generated/asset.glb", resource_path)
+                script_path = Path(command[command.index("--script") + 1])
+                script = script_path.read_text(encoding="utf-8")
+                self.assertIn("MeshInstance3D", script)
+                self.assertIn("Skeleton3D", script)
+                self.assertIn("AnimationPlayer", script)
                 return ActionResult(
                     True,
                     "command completed",
-                    {
-                        "stdout": "ORDAX_GODOT_RESOURCE_OK|res://ordax_generated/asset.glb|PackedScene\n",
-                        "stderr": "",
-                    },
+                    {"stdout": self.semantic_stdout(), "stderr": ""},
                 )
 
             registry = ActionRegistry(self.make_config(root))
@@ -124,6 +149,11 @@ class GameAssetGodotActionsTests(unittest.TestCase):
                         "artifact_path": "exports/asset.glb",
                         "godot_project_dir": "godot_game",
                         "timeout_seconds": 444,
+                        "min_mesh_instances": 2,
+                        "min_skeletons": 1,
+                        "min_bones": 64,
+                        "min_animations": 3,
+                        "require_collision": True,
                     },
                 )
 
@@ -136,10 +166,56 @@ class GameAssetGodotActionsTests(unittest.TestCase):
             self.assertEqual(manifest.read_text(encoding="utf-8"), destination_manifest.read_text(encoding="utf-8"))
             self.assertTrue(artifact.is_file())
             self.assertTrue(result.data["engine_validated"])
+            self.assertTrue(result.data["semantic_requirements_passed"])
             self.assertEqual("PackedScene", result.data["resource_class"])
+            self.assertEqual(64, result.data["semantic"]["bones"])
+            self.assertEqual(3, result.data["semantic"]["animations"])
             self.assertEqual("res://ordax_generated/asset.glb", result.data["resource_path"])
             self.assertTrue(result.data["source_preserved"])
             self.assertTrue(result.data["recovery_mode"])
+
+    def test_loaded_scene_can_fail_semantic_requirements(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.make_export(root)
+            registry = ActionRegistry(self.make_config(root))
+            calls = 0
+
+            def fake_run(command, *, cwd=None, timeout=0, env=None):
+                nonlocal calls
+                calls += 1
+                if "--import" in command:
+                    return ActionResult(True, "command completed", {"stdout": "imported", "stderr": ""})
+                return ActionResult(
+                    True,
+                    "command completed",
+                    {"stdout": self.semantic_stdout(mesh_instances=1, skeletons=0, bones=0, animations=0, collision_shapes=0), "stderr": ""},
+                )
+
+            with patch(
+                "ordax_dev_agent.game_asset_godot_actions._find_godot",
+                return_value="godot",
+            ), patch(
+                "ordax_dev_agent.game_asset_godot_actions._run",
+                side_effect=fake_run,
+            ):
+                result = registry.execute(
+                    "game_assets.godot_import_validate",
+                    {
+                        "project": "game",
+                        "artifact_path": "exports/asset.glb",
+                        "godot_project_dir": "godot_game",
+                        "min_mesh_instances": 2,
+                        "min_skeletons": 1,
+                        "min_animations": 1,
+                        "require_collision": True,
+                    },
+                )
+            self.assertEqual(2, calls)
+            self.assertFalse(result.ok)
+            self.assertTrue(result.data["engine_loaded"])
+            self.assertFalse(result.data["semantic_requirements_passed"])
+            self.assertEqual(4, len(result.data["failures"]))
 
     def test_destination_must_stay_inside_godot_project(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
