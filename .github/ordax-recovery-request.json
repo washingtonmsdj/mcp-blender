@@ -1,5 +1,5 @@
 {
-  "job_id": "7c5b2d29-c5e4-45d4-b084-59d4cc7c64a4",
-  "reason": "activate canonical ordax-control-plane development-v2 transport, external bootstrap recovery and Blender adapter for cerco-no-interior-mvp",
+  "job_id": "f3c2f4b1-a88c-4eaf-9b45-4f04e4287d2d",
+  "reason": "activate current main through one-job GitHub OIDC recovery runner for DESKTOP-COHT67R and register cerco-no-interior-mvp",
   "requested_by": "ChatGPT OrdaX control loop"
 }
