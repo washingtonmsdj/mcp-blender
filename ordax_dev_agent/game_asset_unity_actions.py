@@ -1,8 +1,9 @@
-"""Verified generated-asset handoff into a registered Unity project."""
+"""Verified generated and derived asset handoff into a registered Unity project."""
 from __future__ import annotations
 
 from typing import Any
 
+from .game_asset_engine_export_actions import verify_engine_export
 from .generated_asset_actions import _verification
 from .models import ActionResult
 from .unity_assets import asset_inventory, import_project_asset
@@ -83,7 +84,91 @@ def _default_prefab_path(asset_path: str) -> str:
 
 
 class GameAssetUnityActions:
-    """Move immutable generated evidence into Unity with explicit engine gates."""
+    """Move immutable evidence into Unity with explicit engine gates."""
+
+    def _unity_copy_with_refresh(
+        self,
+        *,
+        project,
+        artifact,
+        destination_raw: str,
+        overwrite: bool,
+        refresh_requested: bool,
+        wait_seconds: float,
+        integrity: dict[str, Any],
+        source_kind: str,
+    ) -> ActionResult:
+        destination_asset_path = _unity_asset_path(destination_raw)
+        destination = project.path(destination_asset_path, must_exist=False)
+        copy_report = import_project_asset(
+            project.root,
+            source_path=artifact,
+            destination_path=destination,
+            overwrite=overwrite,
+        )
+
+        refresh_report: dict[str, Any] | None = None
+        if refresh_requested:
+            refresh_result = self.unity_refresh_editor(
+                {
+                    "project": project.slug,
+                    "force": True,
+                    "wait_seconds": wait_seconds,
+                }
+            )
+            refresh_report = {
+                "ok": refresh_result.ok,
+                "summary": refresh_result.summary,
+                "data": refresh_result.data,
+            }
+            if not refresh_result.ok:
+                return ActionResult(
+                    False,
+                    f"{source_kind} copied into Unity Assets but Editor import refresh was not confirmed",
+                    {
+                        "integrity": integrity,
+                        "copy": copy_report,
+                        "unity_refresh": refresh_report,
+                        "retryable": True,
+                        "source_preserved": True,
+                    },
+                )
+
+        inventory = asset_inventory(
+            project.root,
+            terms=[destination.name],
+            max_results=100,
+        )
+        asset_path = copy_report["asset_path"]
+        visible = any(
+            isinstance(item, dict) and item.get("path") == asset_path
+            for item in inventory.get("matches", [])
+        )
+        if not visible:
+            return ActionResult(
+                False,
+                "Unity asset copy completed but the destination was not visible in the project inventory",
+                {
+                    "integrity": integrity,
+                    "copy": copy_report,
+                    "unity_refresh": refresh_report,
+                    "inventory": inventory,
+                },
+            )
+
+        return ActionResult(
+            True,
+            f"{source_kind} imported into Unity project",
+            {
+                "integrity": integrity,
+                "copy": copy_report,
+                "unity_refresh": refresh_report,
+                "asset_path": asset_path,
+                "engine": "unity",
+                "source_preserved": True,
+                "import_confirmed": refresh_requested,
+            },
+        )
 
     def game_assets_unity_import_generated(self, payload: dict[str, Any]) -> ActionResult:
         supported = {
@@ -103,13 +188,11 @@ class GameAssetUnityActions:
         try:
             if "unity" not in project.apps:
                 raise ValueError(f"Unity is not enabled for project {project.slug}")
-
             artifact = project.path(str(payload.get("artifact_path") or ""))
             if not artifact.is_file():
                 raise ValueError("artifact_path must be a file")
             if artifact.suffix.lower() not in _SUPPORTED_ENGINE_MODELS:
                 raise ValueError("artifact_path must be FBX, OBJ, GLB, or glTF")
-
             manifest_raw = payload.get("manifest_path")
             manifest = (
                 project.path(str(manifest_raw))
@@ -117,86 +200,73 @@ class GameAssetUnityActions:
                 else artifact.with_name(artifact.name + ".ordax.json")
             )
             verification = _verification(project, artifact, manifest)
-
-            destination_raw = payload.get("destination_path")
-            if destination_raw is None:
-                destination_raw = f"{_DEFAULT_DESTINATION_ROOT}/{artifact.name}"
-            destination_asset_path = _unity_asset_path(str(destination_raw))
-            destination = project.path(destination_asset_path, must_exist=False)
-            overwrite = bool(payload.get("overwrite", False))
-            copy_report = import_project_asset(
-                project.root,
-                source_path=artifact,
-                destination_path=destination,
-                overwrite=overwrite,
+            destination_raw = str(
+                payload.get("destination_path")
+                or f"{_DEFAULT_DESTINATION_ROOT}/{artifact.name}"
             )
-
-            refresh_requested = bool(payload.get("refresh", True))
-            refresh_report: dict[str, Any] | None = None
-            if refresh_requested:
-                wait = _wait_seconds(payload.get("wait_seconds"))
-                refresh_result = self.unity_refresh_editor(
-                    {
-                        "project": project.slug,
-                        "force": True,
-                        "wait_seconds": wait,
-                    }
-                )
-                refresh_report = {
-                    "ok": refresh_result.ok,
-                    "summary": refresh_result.summary,
-                    "data": refresh_result.data,
-                }
-                if not refresh_result.ok:
-                    return ActionResult(
-                        False,
-                        "generated asset copied into Unity Assets but Editor import refresh was not confirmed",
-                        {
-                            "integrity": verification,
-                            "copy": copy_report,
-                            "unity_refresh": refresh_report,
-                            "retryable": True,
-                            "source_preserved": True,
-                        },
-                    )
-
-            inventory = asset_inventory(
-                project.root,
-                terms=[destination.name],
-                max_results=100,
+            result = self._unity_copy_with_refresh(
+                project=project,
+                artifact=artifact,
+                destination_raw=destination_raw,
+                overwrite=bool(payload.get("overwrite", False)),
+                refresh_requested=bool(payload.get("refresh", True)),
+                wait_seconds=_wait_seconds(payload.get("wait_seconds")),
+                integrity=verification,
+                source_kind="generated asset",
             )
-            asset_path = copy_report["asset_path"]
-            visible = any(
-                isinstance(item, dict) and item.get("path") == asset_path
-                for item in inventory.get("matches", [])
-            )
-            if not visible:
-                return ActionResult(
-                    False,
-                    "Unity asset copy completed but the destination was not visible in the project inventory",
-                    {
-                        "integrity": verification,
-                        "copy": copy_report,
-                        "unity_refresh": refresh_report,
-                        "inventory": inventory,
-                    },
-                )
         except (ValueError, OSError, FileNotFoundError) as error:
             return ActionResult(False, str(error))
+        return result
 
-        return ActionResult(
-            True,
-            "generated asset imported into Unity project",
-            {
-                "integrity": verification,
-                "copy": copy_report,
-                "unity_refresh": refresh_report,
-                "asset_path": asset_path,
-                "engine": "unity",
-                "source_preserved": True,
-                "import_confirmed": refresh_requested,
-            },
-        )
+    def game_assets_unity_import_engine_export(self, payload: dict[str, Any]) -> ActionResult:
+        supported = {
+            "project",
+            "artifact_path",
+            "manifest_path",
+            "destination_path",
+            "overwrite",
+            "refresh",
+            "wait_seconds",
+        }
+        unsupported = set(payload) - supported
+        if unsupported:
+            return ActionResult(False, f"unsupported fields: {', '.join(sorted(unsupported))}")
+
+        project = self._project(payload)
+        try:
+            if "unity" not in project.apps:
+                raise ValueError(f"Unity is not enabled for project {project.slug}")
+            artifact = project.path(str(payload.get("artifact_path") or ""))
+            if not artifact.is_file():
+                raise ValueError("artifact_path must be a file")
+            if artifact.suffix.lower() not in _SUPPORTED_ENGINE_MODELS:
+                raise ValueError("artifact_path must be FBX, OBJ, GLB, or glTF")
+            manifest_raw = payload.get("manifest_path")
+            manifest = (
+                project.path(str(manifest_raw))
+                if manifest_raw is not None
+                else artifact.with_name(artifact.name + ".ordax.json")
+            )
+            verification = verify_engine_export(project, artifact, manifest)
+            if verification.get("engine") != "unity":
+                raise ValueError("engine export provenance is not targeted to Unity")
+            destination_raw = str(
+                payload.get("destination_path")
+                or f"{_DEFAULT_DESTINATION_ROOT}/{artifact.name}"
+            )
+            result = self._unity_copy_with_refresh(
+                project=project,
+                artifact=artifact,
+                destination_raw=destination_raw,
+                overwrite=bool(payload.get("overwrite", False)),
+                refresh_requested=bool(payload.get("refresh", True)),
+                wait_seconds=_wait_seconds(payload.get("wait_seconds")),
+                integrity=verification,
+                source_kind="verified engine export",
+            )
+        except (ValueError, OSError, FileNotFoundError) as error:
+            return ActionResult(False, str(error))
+        return result
 
     def game_assets_unity_model_audit(self, payload: dict[str, Any]) -> ActionResult:
         supported = {"project", "asset_path", "timeout_seconds"}
