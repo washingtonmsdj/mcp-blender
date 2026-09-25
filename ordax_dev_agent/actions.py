@@ -13,6 +13,7 @@ from .projects import load_projects, Project
 from .observations import ObservationActions
 from .references import ReferenceActions
 from .blender_actions import BlenderActions
+from .blender_environment_actions import BlenderEnvironmentActions
 from .unity_status_actions import UnityStatusActions
 from .unity_actions import UnityActions
 from .agent_actions import AgentActions
@@ -53,6 +54,7 @@ class ActionRegistry(
     ObservationActions,
     ReferenceActions,
     BlenderActions,
+    BlenderEnvironmentActions,
     UnityStatusActions,
     UnityActions,
     AgentActions,
@@ -106,6 +108,7 @@ class ActionRegistry(
             "visual.environment_schema": self.visual_environment_schema,
             "visual.environment_preset": self.visual_environment_preset,
             "visual.environment_write": self.visual_environment_write,
+            "blender.environment_apply": self.blender_environment_apply,
             "blender.inspect": self.blender_inspect,
             "blender.benchmark": self.blender_benchmark,
             "blender.render_preview": self.blender_render_preview,
