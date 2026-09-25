@@ -326,14 +326,18 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             agent_installer,
         )
         self.assertIn(
-            'Execute = $taskPython',
+            'Execute = $powershellPath',
             agent_installer,
         )
         self.assertIn(
-            '$pythonw = Join-Path $repoRoot ".venv\\Scripts\\pythonw.exe"',
+            'Argument = $bootstrapArguments',
             agent_installer,
         )
         self.assertIn(
+            '-File `"$bootstrapPath`" -RepoRoot `"$repoRoot`"',
+            agent_installer,
+        )
+        self.assertNotIn(
             "Argument = '-m ordax_dev_agent.task_entry'",
             agent_installer,
         )
@@ -345,21 +349,29 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             'Execute = $env:ComSpec',
             agent_installer,
         )
-        self.assertNotIn(
-            'Execute = $powershellPath',
+        self.assertIn(
+            'Get-Command powershell.exe -ErrorAction Stop',
             agent_installer,
         )
 
         self.assertIn(
-            '$python = Join-Path $repoRootResolved ".venv\\Scripts\\python.exe"',
+            '$powershellPath = (Get-Command powershell.exe -ErrorAction Stop).Source',
             installer,
         )
         self.assertIn(
-            "-Argument '-m ordax_dev_agent.task_entry'",
+            '-Argument $bootstrapArguments',
+            installer,
+        )
+        self.assertIn(
+            '-File `"$bootstrapPath`" -RepoRoot `"$repoRootResolved`"',
             installer,
         )
         self.assertIn(
             "-WorkingDirectory $repoRootResolved",
+            installer,
+        )
+        self.assertNotIn(
+            "-Argument '-m ordax_dev_agent.task_entry'",
             installer,
         )
 
@@ -405,7 +417,7 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertLess(server_index, registry_import_index)
         self.assertIn("STATUS_SERVER_READY port=8765", main)
 
-    def test_recovery_retargets_task_to_direct_agent(self) -> None:
+    def test_recovery_retargets_task_to_external_bootstrap(self) -> None:
         root = Path(__file__).resolve().parents[1]
         recovery = (
             root / ".github" / "workflows" / "ordax-agent-recovery.yml"
