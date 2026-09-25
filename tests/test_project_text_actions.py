@@ -28,6 +28,27 @@ class ProjectTextActionTests(unittest.TestCase):
         )
         self.registry = ActionRegistry(self.config)
 
+    def test_project_inventory_is_bounded_and_skips_generated_dirs(self) -> None:
+        (self.project / "docs").mkdir()
+        (self.project / "automation" / "blender").mkdir(parents=True)
+        (self.project / "Build").mkdir()
+        (self.project / "scene.blend").write_bytes(b"BLENDER")
+        (self.project / "docs" / "README.md").write_text("prototype\n", encoding="utf-8")
+        (self.project / "automation" / "blender" / "build.py").write_text("print('ok')\n", encoding="utf-8")
+        (self.project / "Build" / "ignored.txt").write_text("ignore\n", encoding="utf-8")
+
+        result = self.registry.execute(
+            "project.inventory",
+            {"max_depth": 4, "max_entries": 100},
+        )
+
+        self.assertTrue(result.ok)
+        self.assertIn("scene.blend", result.data["blend_files"])
+        self.assertIn("docs/README.md", result.data["documents"])
+        self.assertIn("automation/blender/build.py", result.data["scripts"])
+        self.assertFalse(any(item["path"].startswith("Build") for item in result.data["entries"]))
+
+
     def test_read_and_sha_guarded_write(self) -> None:
         target = self.project / "Assets" / "Scripts" / "World.cs"
         target.write_bytes(b"class World {}\n")
