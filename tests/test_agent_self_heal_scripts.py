@@ -126,6 +126,23 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertIn("TOKEN_VALUE=REDACTED", recovery)
         self.assertNotIn("Write-Host $token", recovery)
 
+    def test_windows_v2_enrollment_binds_machine_and_redacts_token(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        enrollment = (
+            root / "scripts" / "windows" / "ordax-development-v2-enroll.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("ordax-device-enrollment", enrollment)
+        self.assertIn("ExpectedMachineBindingSha256", enrollment)
+        self.assertIn("device_binding_sha256", enrollment)
+        self.assertIn("device-token.txt.pending-enrollment", enrollment)
+        self.assertIn("control_plane_protocol", enrollment)
+        self.assertIn("development-v2", enrollment)
+        self.assertIn("development_device_id", enrollment)
+        self.assertIn("cerco-no-interior-mvp", enrollment)
+        self.assertIn("TOKEN_VALUE=REDACTED", enrollment)
+        self.assertNotIn("Write-Host $token", enrollment)
+
     def test_watchdog_requests_restart_without_cim_dependency(self) -> None:
         root = Path(__file__).resolve().parents[1]
         watchdog = (
