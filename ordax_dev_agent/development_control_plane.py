@@ -181,15 +181,24 @@ class DevelopmentControlPlane:
             action = payload.get("action")
             action_payload = payload.get("payload", {})
             project = payload.get("project")
-            if adapter != "blender":
-                raise RuntimeError("adapter invocation is not a Blender capability")
-            if not isinstance(action, str) or not action.startswith("blender."):
-                raise RuntimeError("adapter invocation action is not a Blender action")
             if not isinstance(action_payload, dict):
                 raise RuntimeError("adapter invocation payload must be an object")
             if project is not None and not isinstance(project, str):
                 raise RuntimeError("adapter invocation project must be a string")
-            return action, action_payload, project
+
+            if adapter == "blender":
+                if not isinstance(action, str) or not action.startswith("blender."):
+                    raise RuntimeError("adapter invocation action is not a Blender action")
+                return action, action_payload, project
+
+            if adapter == "workspace":
+                if action != "workspace.bind_project":
+                    raise RuntimeError("adapter invocation workspace action is not allowed")
+                if project is not None:
+                    raise RuntimeError("workspace binding must not target an existing project")
+                return action, action_payload, None
+
+            raise RuntimeError("adapter invocation is not an allowed capability")
 
         if capability.startswith(("blender.", "unity.", "git.", "project.", "projects.", "artifact.", "observation.", "game_assets.", "geo.", "visual.", "agent.")):
             return capability, payload, payload.get("project") if isinstance(payload.get("project"), str) else None
