@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from .config import AgentConfig
+from .device_credentials import resolve_token_path
 from .models import ActionResult, AgentJob
 
 
@@ -48,7 +49,7 @@ class DevelopmentControlPlane:
         except ValueError as error:
             raise RuntimeError("ORDAX_DEVICE_ID must be a UUID.") from error
 
-        token_path = config.state_dir / "device-token.txt"
+        token_path = resolve_token_path(config.state_dir, "development-v2")
         self.device_token = (
             os.environ.get("ORDAX_DEVICE_TOKEN")
             or self._read_secret(token_path)
