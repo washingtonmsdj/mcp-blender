@@ -22,6 +22,7 @@ class AgentConfig:
     adapters: tuple[str, ...] = ()
     control_plane_protocol: str = "legacy-v1"
     development_device_id: str | None = None
+    control_plane_url: str | None = None
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -71,6 +72,10 @@ class AgentConfig:
             development_device_id=os.environ.get(
                 "ORDAX_DEVICE_ID",
                 settings.get("development_device_id"),
+            ),
+            control_plane_url=os.environ.get(
+                "ORDAX_CONTROL_PLANE_URL",
+                settings.get("control_plane_url"),
             ),
             agent_name=os.environ.get(
                 "ORDAX_AGENT_NAME",
@@ -134,6 +139,7 @@ class AgentConfig:
             "hordax_path": str(self.hordax_path),
             "bridge_path": str(self.bridge_path),
             "supabase_configured": bool(self.supabase_url and self.publishable_key),
+            "control_plane_url_configured": bool(self.control_plane_url),
             "control_plane_protocol": self.control_plane_protocol,
             "development_device_id_configured": bool(self.development_device_id),
             "development_device_id": self.development_device_id,

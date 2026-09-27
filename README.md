@@ -13,10 +13,10 @@ GitHub Runner não é requisito. Veja [fluxo, requisitos e diagnóstico](docs/DE
 
 O Device Agent aceita projetos locais cadastrados, companion Unity genérico, auditoria
 espacial de cenas, inspeção/preview Blender e sequências de capturas com snapshots
-e imagens entregues ao modelo por MCP. A fila Supabase existente continua atendendo clientes remotos.
+e imagens entregues ao modelo por MCP. O Supabase continua ativo durante a migração, enquanto o novo transporte Cloudflare v3 é validado em paralelo.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.20.0`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.21.0`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -59,7 +59,7 @@ ChatGPT / cliente MCP
                 +--> Reference Contract + evidência visual
                 +--> Git / artifacts / observações
                 |
-                +--> Supabase control plane (fila remota opcional)
+                +--> remote control plane\n                     +--> Supabase development-v2 (atual)\n                     +--> Cloudflare cloudflare-v3 (migração)
 
 Blender Live companion <--> inbox/results/trajectory locais versionados por protocolo
 Unity CLI / companion   <--> HORDAX-game e outros projetos Unity cadastrados
@@ -97,7 +97,10 @@ ordax_dev_agent/
     blender_modeling_contracts.py
 
 control-plane/supabase/
-  migrations + Edge Function do Dev Agent
+  incubação histórica do backend v2
+
+control-plane/cloudflare/
+  Worker + Durable Object + D1 + R2 do protocolo v3
 
 scripts/
   blender_benchmark.py

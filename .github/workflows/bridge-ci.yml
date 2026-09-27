@@ -49,6 +49,15 @@ jobs:
       - name: Run Python unit tests
         run: python -m unittest discover -s tests -p "test_*.py"
 
+      - name: Compile Cloudflare v3 Worker
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          out="$RUNNER_TEMP/ordax-cloudflare-worker"
+          npx --yes wrangler@4.141.0 deploy --dry-run \
+            -c control-plane/cloudflare/wrangler.ci.toml \
+            --outdir "$out"
+
       - name: Validate branch hygiene shell
         if: runner.os == 'Linux'
         shell: bash
