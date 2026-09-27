@@ -176,6 +176,42 @@ async function enqueueJob(request: Request, env: Env): Promise<Response> {
   return json({ ok: true, job_id: jobId, effect_id: effectId, status: "queued" }, 201);
 }
 
+async function getJob(request: Request, env: Env, jobId: string): Promise<Response> {
+  if (!await operatorAuthorized(request, env)) {
+    return json({ ok: false, error: "operator_unauthorized" }, 401);
+  }
+  if (!UUID_RE.test(jobId)) return json({ ok: false, error: "job_id_invalid" }, 400);
+
+  const row = await env.DB.prepare(
+    `SELECT id, device_id, capability, status, effect_id, attempt_id, lease_id,
+            execution_epoch, agent_instance_id, boot_id, lease_expires_at,
+            result_json, result_sha256, error_code, created_at, started_at, finished_at
+     FROM ordax_jobs WHERE id = ?1`,
+  ).bind(jobId).first<Record<string, unknown>>();
+  if (!row) return json({ ok: false, error: "job_not_found" }, 404);
+
+  const events = await env.DB.prepare(
+    `SELECT stage, message, progress_percent, created_at
+     FROM ordax_job_events WHERE job_id = ?1 ORDER BY id ASC LIMIT 200`,
+  ).bind(jobId).all();
+  const artifacts = await env.DB.prepare(
+    `SELECT id, file_name, kind, content_type, sha256, size_bytes, created_at
+     FROM ordax_artifacts WHERE job_id = ?1 ORDER BY created_at ASC`,
+  ).bind(jobId).all();
+
+  let result: unknown = null;
+  if (typeof row.result_json === "string" && row.result_json) {
+    try { result = JSON.parse(row.result_json); } catch { result = null; }
+  }
+  const { result_json: _ignored, ...publicRow } = row;
+  return json({
+    ok: true,
+    job: { ...publicRow, result },
+    events: events.results ?? [],
+    artifacts: artifacts.results ?? [],
+  });
+}
+
 async function uploadArtifact(request: Request, env: Env, parts: string[]): Promise<Response> {
   const jobId = parts[2] ?? "";
   const artifactId = parts[3] ?? "";
@@ -302,6 +338,9 @@ export default {
     }
     if (request.method === "POST" && url.pathname === "/v3/jobs") {
       return enqueueJob(request, env);
+    }
+    if (request.method === "GET" && parts[0] === "v3" && parts[1] === "jobs" && parts.length === 3) {
+      return getJob(request, env, parts[2]);
     }
     if (request.method === "PUT" && parts[0] === "v3" && parts[1] === "artifacts" && parts.length === 4) {
       return uploadArtifact(request, env, parts);
