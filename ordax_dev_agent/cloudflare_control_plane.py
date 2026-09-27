@@ -292,7 +292,15 @@ class CloudflareControlPlane:
             boot_id=self.boot_id,
             payload_sha256=str(row.get("payload_sha256") or ""),
         )
-        self._rpc("start", self._execution_context(job))
+        start_payload = self._execution_context(job)
+        for attempt in range(3):
+            try:
+                self._rpc("start", start_payload)
+                break
+            except TransientDeliveryError:
+                if attempt == 2:
+                    raise
+                time.sleep(2 ** attempt)
         self._jobs[job.id] = job
         return job
 
