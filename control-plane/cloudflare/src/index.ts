@@ -1,7 +1,9 @@
+import { DurableObject } from "cloudflare:workers";
+
 interface Env {
   DB: D1Database;
   ARTIFACTS: R2Bucket;
-  DEVICE_SESSIONS: DurableObjectNamespace;
+  DEVICE_SESSIONS: DurableObjectNamespace<DeviceSession>;
   ORDAX_OPERATOR_TOKEN: string;
 }
 
@@ -359,8 +361,10 @@ type SocketAttachment = {
   bootId: string;
 };
 
-export class DeviceSession {
-  constructor(private ctx: DurableObjectState, private env: Env) {}
+export class DeviceSession extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+  }
 
   private ack(ws: WebSocket, requestId: unknown, ok: boolean, extra: JsonObject = {}): void {
     ws.send(JSON.stringify({
@@ -607,11 +611,16 @@ export class DeviceSession {
     this.ack(ws, requestId, false, { error: "operation_not_allowed" });
   }
 
-  async webSocketClose(): Promise<void> {
+  async webSocketClose(
+    _ws: WebSocket,
+    _code: number,
+    _reason: string,
+    _wasClean: boolean,
+  ): Promise<void> {
     // Presence is freshness-based in D1; disconnect doesn't revoke the device.
   }
 
-  async webSocketError(): Promise<void> {
+  async webSocketError(_ws: WebSocket, _error: unknown): Promise<void> {
     // The next device reconnect reuses the same Durable Object identity.
   }
 }
