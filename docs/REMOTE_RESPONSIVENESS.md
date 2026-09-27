@@ -87,3 +87,24 @@ The retry is bounded to three in-process delivery attempts. This closes the
 accepted-result/lost-ACK window; a separate durable local outbox is still the
 future mechanism for recovery across a full process or machine crash after an
 action finishes but before any terminal report is accepted.
+
+## 1.21.7: durable terminal outbox and running-job fence
+
+Cloudflare v3 now writes every terminal report to an atomic local outbox before
+the first network delivery attempt. On Agent startup, pending reports are sent
+through the device-authenticated HTTP recovery endpoint **before** pairing,
+heartbeat, WebSocket creation or new job intake. An accepted report is then
+removed from the local outbox; a conflict remains on disk and blocks new work.
+
+The server no longer automatically re-leases a job whose state is `running`.
+Only a queued job or an expired `leased` job can be delivered again. While any
+job for the device remains `running`, the device queue is fenced and subsequent
+jobs stay queued. This favors a visible stalled state over repeating an action
+that may already have mutated Blender, Unity or Git.
+
+Recovery is accepted only when the original effect, attempt, lease, execution
+epoch, agent instance and boot identity still match D1. Exact already-terminal
+replays remain idempotent; superseded or divergent contexts fail closed. A crash
+that occurs before the terminal outbox file is atomically promoted can still
+leave a `running` job requiring diagnosis, but it will not be automatically
+executed again.
