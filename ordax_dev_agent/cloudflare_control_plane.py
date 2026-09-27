@@ -382,6 +382,7 @@ class CloudflareControlPlane:
             "X-Ordax-Artifact-Name": file_path.name[:180],
             "X-Ordax-Artifact-Kind": str(kind)[:80],
             "X-Ordax-Artifact-Sha256": digest,
+            "X-Ordax-Artifact-Size": str(size),
             "X-Ordax-Artifact-Metadata": json.dumps(
                 metadata or {}, separators=(",", ":"), ensure_ascii=False
             )[:4000],
