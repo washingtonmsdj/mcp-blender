@@ -27,7 +27,11 @@ Cadastros legados sem binding precisam de migração administrativa auditada;
 nunca são associados por coincidência do nome do computador.
 
 O token aleatório nasce no PC, em arquivo pendente protegido, antes da chamada
-de rede. Somente o SHA-256 é enviado ao backend. A transação serializa por
+de rede. Cada provider possui sua própria credencial:
+`device-token.development-v2.txt` e `device-token.cloudflare-v3.txt`.
+Instalações v2 antigas com `device-token.txt` são migradas atomicamente para o
+arquivo v2, preservando a ACL. Assim a migração para Cloudflare não destrói a
+credencial de rollback do Supabase. Somente o SHA-256 é enviado ao backend. A transação serializa por
 máquina, revoga credenciais anteriores e concede apenas `develop_heartbeat`,
 `develop_poll`, `develop_report`. Repetir uma requisição confirmada reutiliza
 a credencial; token revogado nunca é reativado. O limite é dez rotações/hora.
@@ -47,6 +51,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\ordax-
 ```
 
 No v3, o token continua nascendo localmente; somente o SHA-256 chega ao Worker.
+`agent-settings.json` mantém `control_plane_identities` com o device ID e a
+URL de cada provider, enquanto `development_device_id` representa somente o
+provider ativo. Isso permite alternância/rollback sem misturar identidades.
 O Worker valida o usuário diretamente no GitHub e exige permissão `admin` no
 repositório oficial. O binding da máquina é único, o proprietário GitHub é
 preservado e rotações são limitadas a dez por hora. O bootstrap lê o provider
