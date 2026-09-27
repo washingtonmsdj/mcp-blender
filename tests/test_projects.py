@@ -22,7 +22,7 @@ class ProjectTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.project = self.root / 'project'
         self.project.mkdir()
-        self.config = AgentConfig('test', None,  5, self.root / 'state', self.root / 'agent',
+        self.config = AgentConfig('test',   5, self.root / 'state', self.root / 'agent',
                                   self.root / 'hordax', self.root / 'bridge',
                                   projects={'model': {'path': str(self.project), 'apps': ['blender', 'unity']}},
                                   default_project='model')
