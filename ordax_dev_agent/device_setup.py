@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .device_credentials import resolve_pending_token_path, resolve_token_path
 from .identity import machine_id
 
 CONTROL_PLANE = "https://eobcxuyvhkvdmkbaihwh.supabase.co"
@@ -84,7 +85,11 @@ def load_settings(path: Path) -> dict:
         return {}
     try:
         value = json.loads(path.read_text(encoding="utf-8-sig"))
-        if not isinstance(value, dict) or not isinstance(value.get("projects", {}), dict):
+        if (
+            not isinstance(value, dict)
+            or not isinstance(value.get("projects", {}), dict)
+            or not isinstance(value.get("control_plane_identities", {}), dict)
+        ):
             raise ValueError()
         return value
     except (ValueError, OSError):
@@ -183,7 +188,8 @@ def _configure(
     protocol = str(protocol or "").strip().lower()
     control_plane, endpoint = _resolve_control_plane(protocol, control_plane_url)
     binding = binding or machine_id()
-    token_path, pending = state / "device-token.txt", state / "device-token.txt.pending-setup"
+    token_path = resolve_token_path(state, protocol)
+    pending = resolve_pending_token_path(state, protocol)
     own_client = client is None
     client = client or httpx.Client(timeout=20, follow_redirects=False)
     try:
@@ -234,6 +240,11 @@ def _configure(
         device_id = str(uuid.UUID(identity["device_id"]))
         if identity.get("protocol") != protocol:
             raise SetupError("PROTOCOL_MISMATCH")
+        identities = settings.setdefault("control_plane_identities", {})
+        identities[protocol] = {
+            "device_id": device_id,
+            "control_plane_url": control_plane,
+        }
         if protocol == "development-v2":
             settings.update(
                 supabase_url=control_plane,

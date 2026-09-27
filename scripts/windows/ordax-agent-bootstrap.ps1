@@ -62,7 +62,12 @@ function Ensure-ConfiguredDeviceIdentity {
         & $python @setupArgs | ForEach-Object { Write-BootstrapLog "SETUP $_" }
         return $LASTEXITCODE -eq 0
     }
-    $tokenPath = Join-Path $stateDir "device-token.txt"
+    $tokenPath = Join-Path $stateDir "device-token.development-v2.txt"
+    $legacyTokenPath = Join-Path $stateDir "device-token.txt"
+    if (-not (Test-Path $tokenPath -PathType Leaf) -and (Test-Path $legacyTokenPath -PathType Leaf)) {
+        Move-Item -Force $legacyTokenPath $tokenPath
+        Write-BootstrapLog "V2_LEGACY_TOKEN_MIGRATED"
+    }
     $settingsPath = Join-Path $stateDir "agent-settings.json"
     $controlPlaneUrl = "https://eobcxuyvhkvdmkbaihwh.supabase.co"
     $identifyUrl = "$controlPlaneUrl/functions/v1/ordax-development-device-identify"
@@ -120,6 +125,14 @@ function Ensure-ConfiguredDeviceIdentity {
         $settings | Add-Member -NotePropertyName supabase_url -NotePropertyValue $controlPlaneUrl -Force
         $settings | Add-Member -NotePropertyName control_plane_protocol -NotePropertyValue "development-v2" -Force
         $settings | Add-Member -NotePropertyName development_device_id -NotePropertyValue $resolvedId -Force
+        if (-not $settings.PSObject.Properties["control_plane_identities"] -or -not $settings.control_plane_identities) {
+            $settings | Add-Member -NotePropertyName control_plane_identities -NotePropertyValue ([pscustomobject]@{}) -Force
+        }
+        $v2Identity = [pscustomobject]@{
+            device_id = $resolvedId
+            control_plane_url = $controlPlaneUrl
+        }
+        $settings.control_plane_identities | Add-Member -NotePropertyName "development-v2" -NotePropertyValue $v2Identity -Force
         $deviceId = $resolvedId
     }
 
@@ -331,13 +344,26 @@ while ($true) {
     }
     try {
         $settingsFile = [System.IO.Path]::Combine($stateDir, 'agent-settings.json')
-        $tokenFile = [System.IO.Path]::Combine($stateDir, 'device-token.txt')
         $configured = $false
-        if ([System.IO.File]::Exists($settingsFile) -and [System.IO.File]::Exists($tokenFile)) {
+        if ([System.IO.File]::Exists($settingsFile)) {
             # This is only a launch hint; AgentConfig performs JSON validation.
             # Avoid loading PowerShell.Utility on the cold startup path.
             $savedSettings = [System.IO.File]::ReadAllText($settingsFile)
-            $configured = $savedSettings -match '"control_plane_protocol"\s*:\s*"(development-v2|cloudflare-v3)"' -and
+            $savedProtocol = if ($savedSettings -match '"control_plane_protocol"\s*:\s*"cloudflare-v3"') {
+                "cloudflare-v3"
+            } elseif ($savedSettings -match '"control_plane_protocol"\s*:\s*"development-v2"') {
+                "development-v2"
+            } else {
+                ""
+            }
+            $tokenName = if ($savedProtocol -eq "cloudflare-v3") {
+                "device-token.cloudflare-v3.txt"
+            } else {
+                "device-token.development-v2.txt"
+            }
+            $tokenFile = [System.IO.Path]::Combine($stateDir, $tokenName)
+            $configured = $savedProtocol -ne "" -and
+                [System.IO.File]::Exists($tokenFile) -and
                 $savedSettings -match '"development_device_id"\s*:\s*"[0-9a-fA-F-]{36}"'
         }
         if ($credentialRecovery -or -not $configured) {

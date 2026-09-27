@@ -50,6 +50,11 @@ class DevelopmentControlPlaneTests(unittest.TestCase):
 
             control = build_control_plane(make_config(root))
 
+            self.assertFalse((state / "device-token.txt").exists())
+            self.assertEqual(
+                "a" * 64,
+                (state / "device-token.development-v2.txt").read_text().strip(),
+            )
             self.assertIsInstance(control, DevelopmentControlPlane)
             self.assertEqual(control.device_id, DEVICE_ID)
             self.assertEqual(control.device_token, "a" * 64)
