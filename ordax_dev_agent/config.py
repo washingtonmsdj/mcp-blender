@@ -7,10 +7,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+DEFAULT_CONTROL_PLANE_URL = (
+    "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev"
+)
+
+
 @dataclass(frozen=True, slots=True)
 class AgentConfig:
     agent_name: str
-    supabase_url: str | None
     poll_seconds: float
     state_dir: Path
     agent_repo_path: Path
@@ -19,9 +23,9 @@ class AgentConfig:
     projects: dict | None = None
     default_project: str = "hordax"
     adapters: tuple[str, ...] = ()
-    control_plane_protocol: str = "development-v2"
-    development_device_id: str | None = None
-    control_plane_url: str | None = None
+    control_plane_protocol: str = "cloudflare-v3"
+    device_id: str | None = None
+    control_plane_url: str | None = DEFAULT_CONTROL_PLANE_URL
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -42,7 +46,9 @@ class AgentConfig:
             try:
                 settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
             except Exception as error:
-                raise ValueError(f"Cannot read agent settings: {settings_path}: {error}") from error
+                raise ValueError(
+                    f"Cannot read agent settings: {settings_path}: {error}"
+                ) from error
         if not isinstance(settings, dict):
             raise ValueError("Agent settings must be a JSON object")
         if not isinstance(settings.get("adapters", []), list):
@@ -50,9 +56,6 @@ class AgentConfig:
 
         projects = settings.get("projects")
         default_project = settings.get("default_project", "hordax")
-        # When an explicit registry contains exactly one project, an obsolete
-        # legacy default must not make otherwise-safe unscoped local status
-        # operations point at a nonexistent HORDAX project.
         if (
             isinstance(projects, dict)
             and len(projects) == 1
@@ -60,29 +63,29 @@ class AgentConfig:
         ):
             default_project = next(iter(projects))
 
-        config = cls(
+        protocol = os.environ.get(
+            "ORDAX_CONTROL_PLANE_PROTOCOL",
+            settings.get("control_plane_protocol", "cloudflare-v3"),
+        )
+        if str(protocol).strip().lower() != "cloudflare-v3":
+            raise ValueError(f"Unsupported control-plane protocol: {protocol}")
+
+        return cls(
             projects=projects,
             default_project=default_project,
             adapters=tuple(settings.get("adapters", [])),
-            control_plane_protocol=os.environ.get(
-                "ORDAX_CONTROL_PLANE_PROTOCOL",
-                settings.get("control_plane_protocol", "development-v2"),
-            ),
-            development_device_id=os.environ.get(
+            control_plane_protocol="cloudflare-v3",
+            device_id=os.environ.get(
                 "ORDAX_DEVICE_ID",
-                settings.get("development_device_id"),
+                settings.get("device_id"),
             ),
             control_plane_url=os.environ.get(
                 "ORDAX_CONTROL_PLANE_URL",
-                settings.get("control_plane_url"),
+                settings.get("control_plane_url") or DEFAULT_CONTROL_PLANE_URL,
             ),
             agent_name=os.environ.get(
                 "ORDAX_AGENT_NAME",
                 settings.get("agent_name") or socket.gethostname(),
-            ),
-            supabase_url=os.environ.get(
-                "ORDAX_SUPABASE_URL",
-                settings.get("supabase_url"),
             ),
             poll_seconds=min(
                 1.0,
@@ -123,8 +126,6 @@ class AgentConfig:
             ),
         )
 
-        return config
-
     def public_status(self) -> dict:
         return {
             "agent_name": self.agent_name,
@@ -133,12 +134,11 @@ class AgentConfig:
             "agent_repo_path": str(self.agent_repo_path),
             "hordax_path": str(self.hordax_path),
             "bridge_path": str(self.bridge_path),
-            "development_v2_url_configured": bool(self.supabase_url),
             "control_plane_url_configured": bool(self.control_plane_url),
             "control_plane_url": self.control_plane_url,
             "control_plane_protocol": self.control_plane_protocol,
-            "development_device_id_configured": bool(self.development_device_id),
-            "development_device_id": self.development_device_id,
+            "device_id_configured": bool(self.device_id),
+            "device_id": self.device_id,
         }
 
     def write_public_status(self) -> None:

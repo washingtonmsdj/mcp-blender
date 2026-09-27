@@ -20,7 +20,6 @@ class ComponentVersioningTests(unittest.TestCase):
     def make_config(self, root: Path) -> AgentConfig:
         return AgentConfig(
             agent_name="version-test",
-            supabase_url=None,
             poll_seconds=5.0,
             state_dir=root / "state",
             agent_repo_path=root / "agent",

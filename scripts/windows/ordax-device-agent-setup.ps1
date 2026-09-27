@@ -1,16 +1,14 @@
 param(
     [switch]$NonInteractive,
     [int]$ReadyTimeoutSeconds = 120,
-    [ValidateSet('development-v2', 'cloudflare-v3')]
-    [string]$ControlPlaneProtocol = 'development-v2',
-    [string]$ControlPlaneUrl
+    [string]$ControlPlaneUrl = 'https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev'
 )
 
 $ErrorActionPreference = 'Stop'
-if ($ControlPlaneProtocol -eq 'cloudflare-v3' -and [string]::IsNullOrWhiteSpace($ControlPlaneUrl)) {
+if ([string]::IsNullOrWhiteSpace($ControlPlaneUrl)) {
     throw 'CLOUDFLARE_CONTROL_PLANE_URL_REQUIRED'
 }
-if ($ControlPlaneUrl) { $ControlPlaneUrl = $ControlPlaneUrl.TrimEnd('/') }
+$ControlPlaneUrl = $ControlPlaneUrl.TrimEnd('/')
 $stateDir = Join-Path $env:LOCALAPPDATA 'OrdaX\DevAgent'
 $repo = Join-Path $stateDir 'src'
 $remote = 'https://github.com/washingtonmsdj/mcp-blender.git'
@@ -100,11 +98,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'TASK_INSTALL_FAILED' }
     $setupArgs = @(
         '-m', 'ordax_dev_agent.device_setup',
-        '--protocol', $ControlPlaneProtocol
+        '--control-plane-url', $ControlPlaneUrl
     )
-    if ($ControlPlaneProtocol -eq 'cloudflare-v3') {
-        $setupArgs += @('--control-plane-url', $ControlPlaneUrl)
-    }
     if (-not $NonInteractive) { $setupArgs += '--interactive' }
     & $python @setupArgs
     $pairingCode = $LASTEXITCODE
@@ -122,14 +117,11 @@ try {
             $task = Get-ScheduledTask -TaskName $taskName
             $registered = @($health.projects | ForEach-Object { $_.slug })
             $cercoExists = Test-Path (Join-Path $env:USERPROFILE 'Documents\github\cerco-no-interior-mvp')
-            $controlPlaneMatches = $true
-            if ($ControlPlaneProtocol -eq 'cloudflare-v3') {
-                $configuredUrl = if ($config.control_plane_url) { ([string]$config.control_plane_url).TrimEnd('/') } else { '' }
-                $controlPlaneMatches = $configuredUrl -eq $ControlPlaneUrl
-            }
-            if ($health.control_plane_protocol -eq $ControlPlaneProtocol -and
+            $configuredUrl = if ($config.control_plane_url) { ([string]$config.control_plane_url).TrimEnd('/') } else { '' }
+            $controlPlaneMatches = $configuredUrl -eq $ControlPlaneUrl
+            if ($health.control_plane_protocol -eq 'cloudflare-v3' -and
                 $controlPlaneMatches -and
-                $health.development_device_id -eq $config.development_device_id -and
+                $health.device_id -eq $config.device_id -and
                 $health.runtime.last_heartbeat_at -and
                 $health.runtime.supervisor_pid -gt 0 -and
                 ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $health.runtime.last_heartbeat_at) -lt 60 -and

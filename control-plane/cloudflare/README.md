@@ -1,65 +1,60 @@
 # OrdaX Control Plane v3 — Cloudflare
 
-This directory is the provider-neutral replacement path for the Device Agent's
-high-frequency Supabase development transport.
+Este diretório contém o Control Plane remoto de produção do OrdaX Device Agent.
 
-## Runtime split
+## Runtime
 
-- **Worker**: device authentication, operator API and artifact HTTP gateway.
-- **Durable Object per device**: one persistent WebSocket, serialized job delivery,
-  leases, progress and terminal reports.
-- **D1**: devices, jobs, events and artifact metadata.
-- **R2**: screenshots, snapshots, GLB/FBX/Blend artifacts under the existing
-  project-scoped artifact contract.
+- **Worker**: autenticação de dispositivo, API administrativa e gateway HTTP de artifacts.
+- **Durable Object por dispositivo**: WebSocket persistente, entrega serializada de jobs,
+  leases, progresso e terminal reports.
+- **D1**: dispositivos, jobs, eventos e metadados de artifacts.
+- **R2**: bytes de screenshots, snapshots e exports.
 
-The local `ActionRegistry` remains the final authority. This backend never adds a
-generic shell capability.
+O `ActionRegistry` local continua sendo a autoridade final. O backend não
+adiciona shell remoto genérico.
 
-## Why v3
+## Provisionamento
 
-`development-v2` keeps a remote wait request open and refreshes presence on a
-fixed cadence. v3 keeps one authenticated WebSocket open instead. Idle stations
-therefore stop consuming a new Edge Function invocation every wait/heartbeat cycle.
+O setup oficial do Windows usa:
 
-## Provisioning
+`scripts/windows/ordax-device-agent-setup.ps1`
 
-Normal Windows provisioning uses `ordax_dev_agent.device_setup` (or
-`ordax-device-agent-setup.ps1`) with `cloudflare-v3`. The credential is
-generated locally and stored at:
+A credencial é gerada localmente em:
 
-`%LOCALAPPDATA%\\OrdaX\\DevAgent\\device-token.cloudflare-v3.txt`
+`%LOCALAPPDATA%\OrdaX\DevAgent\device-token.cloudflare-v3.txt`
 
-Only its SHA-256 is sent to the Worker. The existing Supabase v2 credential is
-kept separately at `device-token.development-v2.txt` during migration.
+Somente o SHA-256 é enviado ao Worker.
 
-`agent-settings.json` keeps `control_plane_identities` for each provider and
-the active `control_plane_protocol` / `development_device_id`. No Supabase key
-is required by v3.
+`agent-settings.json` mantém `control_plane_protocol`, `control_plane_url`
+e `device_id`.
 
-## Deployment order
+## Deploy
 
-1. Create D1 database `ordax-control-plane-v3`.
-2. Replace the D1 id in `wrangler.toml`.
-3. Create R2 bucket `ordax-device-artifacts`.
-4. Apply `migrations/0001_initial.sql`.
-5. Set `ORDAX_OPERATOR_TOKEN` as a Worker secret.
-6. Deploy the Worker.
-7. Provision a device and test it before changing the active Windows transport.
+O workflow **Deploy Cloudflare v3 Control Plane** cria/localiza os recursos,
+aplica migrations, publica o Worker, valida `/health` e executa o E2E remoto.
 
-Supabase remains active during migration. Remove it only after v3 has passed a
-real Device Agent job, artifact upload/download, reconnect and Windows restart.
+Configuração:
 
-### Artifact integrity
+- `wrangler.toml`: configuração de produção.
+- `wrangler.ci.toml`: configuração isolada para CI/local.
+- `migrations/`: schema D1.
+- `src/index.ts`: Worker e Durable Objects.
 
-Artifact uploads are streamed directly to R2 with the agent-provided SHA-256
-passed to R2 as a native checksum. R2 rejects a body whose bytes do not match the
-declared digest. The Worker also verifies the returned object size and checksum
-before writing artifact metadata to D1; a mismatch is deleted and never exposed
-through a signed read URL.
+## Artifact integrity
 
-### Terminal report replay
+Uploads são enviados diretamente ao R2 com SHA-256 fornecido pelo Agent como
+checksum nativo. O backend também registra tamanho e digest em D1 e valida a
+integridade antes de publicar o artifact.
 
-Terminal job results carry a unique `report_id` stored in D1. An identical replay
-with the same lease, execution epoch, runtime identity, status, result digest,
-result JSON and error code is acknowledged as already committed. Any divergent
-replay is rejected as `terminal_report_conflict`.
+Artifacts pequenos usam PUT direto. Arquivos acima do limite de upload direto
+continuam sujeitos ao contrato de tamanho documentado pelo Agent até existir
+suporte multipart explícito.
+
+## Segurança
+
+- token administrativo separado do token do dispositivo;
+- token do dispositivo armazenado somente como SHA-256 no D1;
+- binding máquina/dispositivo;
+- API tipada e allow-list local;
+- URLs temporárias de leitura para artifacts;
+- sem shell remoto genérico.

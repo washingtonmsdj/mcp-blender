@@ -205,18 +205,11 @@ def main() -> int:
 
     watchdog_process = _start_local_watchdog(config)
     runtime["watchdog_pid"] = watchdog_process.pid if watchdog_process else None
-    protocol = str(config.control_plane_protocol or "development-v2").strip().lower()
+    protocol = str(config.control_plane_protocol or "").strip().lower()
     remote_control_configured = bool(
-        (
-            protocol == "development-v2"
-            and config.supabase_url
-            and config.development_device_id
-        )
-        or (
-            protocol == "cloudflare-v3"
-            and config.control_plane_url
-            and config.development_device_id
-        )
+        protocol == "cloudflare-v3"
+        and config.control_plane_url
+        and config.device_id
     )
     runtime["state"] = "pairing" if remote_control_configured else "local-ready"
     print(json.dumps(status_payload(), indent=2))
@@ -303,7 +296,7 @@ def main() -> int:
                         config.poll_seconds,
                         0.20 * (1.55 ** min(idle_claim_misses - 1, 5)),
                     )
-                    # v2 already waits on the server; avoid an additional idle gap.
+                    # The WebSocket transport already waits for work; avoid an extra idle gap.
                     time.sleep(0.10 if getattr(control, "uses_long_poll", False) and claim_seconds >= 1.0
                                else max(0.10, idle_delay))
                     continue

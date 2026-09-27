@@ -330,7 +330,6 @@ def _run_companion_smoke(
 def _registry(root: Path) -> ActionRegistry:
     config = AgentConfig(
         agent_name="blenderbench",
-        supabase_url=None,
         poll_seconds=5.0,
         state_dir=root / "state",
         agent_repo_path=root,

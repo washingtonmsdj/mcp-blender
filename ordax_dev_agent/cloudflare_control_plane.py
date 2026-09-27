@@ -30,10 +30,9 @@ from .remote_protocol import (
 class CloudflareControlPlane:
     """Event-driven development control plane over one authenticated WebSocket.
 
-    The transport keeps the Device Agent's existing execution contract and local
-    allow-list, but removes the permanent Edge Function polling loop used by
-    development-v2. HTTP is reserved for artifact transfer; command delivery,
-    presence, leases, progress and terminal reports use the persistent socket.
+    The transport keeps the Device Agent's execution contract and local allow-list.
+    HTTP is reserved for artifact transfer; command delivery, presence, leases,
+    progress and terminal reports use the persistent socket.
     """
 
     uses_long_poll = True
@@ -41,17 +40,17 @@ class CloudflareControlPlane:
     def __init__(self, config: AgentConfig):
         if not config.control_plane_url:
             raise RuntimeError("ORDAX_CONTROL_PLANE_URL is required for cloudflare-v3.")
-        if not config.development_device_id:
+        if not config.device_id:
             raise RuntimeError("ORDAX_DEVICE_ID is required for cloudflare-v3.")
 
         self.config = config
-        self.device_id = str(config.development_device_id)
+        self.device_id = str(config.device_id)
         try:
             uuid.UUID(self.device_id)
         except ValueError as error:
             raise RuntimeError("ORDAX_DEVICE_ID must be a UUID.") from error
 
-        token_path = resolve_token_path(config.state_dir, "cloudflare-v3")
+        token_path = resolve_token_path(config.state_dir)
         self.device_token = (
             os.environ.get("ORDAX_DEVICE_TOKEN")
             or read_secret(token_path)
@@ -82,7 +81,7 @@ class CloudflareControlPlane:
             headers={
                 "X-Ordax-Device-Id": self.device_id,
                 "X-Ordax-Device-Token": self.device_token,
-                "user-agent": "OrdaX-Device-Agent/1.21",
+                "user-agent": "OrdaX-Device-Agent/1.22",
             },
         )
 

@@ -51,14 +51,13 @@ def run(base_url: str, operator_token: str) -> None:
 
             config = AgentConfig(
                 agent_name="cloudflare-v3-ci",
-                supabase_url=None,
                 poll_seconds=1.0,
                 state_dir=state,
                 agent_repo_path=root / "agent",
                 hordax_path=root / "hordax",
                 bridge_path=root / "bridge",
                 control_plane_protocol="cloudflare-v3",
-                development_device_id=device_id,
+                device_id=device_id,
                 control_plane_url=base_url,
             )
             control = CloudflareControlPlane(config)

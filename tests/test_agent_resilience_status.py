@@ -18,7 +18,6 @@ class AgentResilienceStatusTests(unittest.TestCase):
         return ActionRegistry(
             AgentConfig(
                 agent_name="resilience-test",
-                supabase_url=None,
                 poll_seconds=5.0,
                 state_dir=root / "state",
                 agent_repo_path=agent_repo,

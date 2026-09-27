@@ -22,12 +22,12 @@ do {
         $runnerProcesses = @(Get-Process -Name 'Runner.Listener','Runner.Worker' -ErrorAction SilentlyContinue)
         $runnerServices = @(Get-Service -Name 'actions.runner*' -ErrorAction SilentlyContinue | Where-Object Status -eq Running)
         $fresh = $s.runtime.last_heartbeat_at -and ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $s.runtime.last_heartbeat_at) -lt 60
-        if ($s.control_plane_protocol -eq 'development-v2' -and $s.runtime.supervisor_pid -gt 0 -and
+        if ($s.control_plane_protocol -eq 'cloudflare-v3' -and $s.runtime.supervisor_pid -gt 0 -and
             (Get-Process -Id $s.runtime.supervisor_pid -ErrorAction SilentlyContinue) -and $fresh -and
             $task.State -eq 'Running' -and $task.Actions.Arguments -match 'bootstrap\\ordax-agent-bootstrap.ps1') {
             $report = [ordered]@{
                 verified_at=[DateTime]::UtcNow.ToString('o'); agent_version=$s.agent_version
-                device_id=$s.development_device_id; protocol=$s.control_plane_protocol
+                device_id=$s.device_id; protocol=$s.control_plane_protocol
                 os_boot=$osBoot; real_reboot_observed=[bool]$AfterReboot
                 supervisor_pid=$s.runtime.supervisor_pid; last_heartbeat_at=$s.runtime.last_heartbeat_at
                 projects=@($s.projects.slug); runner_processes=$runnerProcesses.Count; runner_services=$runnerServices.Count

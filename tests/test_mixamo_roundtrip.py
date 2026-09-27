@@ -17,7 +17,6 @@ class MixamoRoundTripTests(unittest.TestCase):
         state = root / "state"
         return AgentConfig(
             agent_name="test-agent",
-            supabase_url=None,
             poll_seconds=1.0,
             state_dir=state,
             agent_repo_path=root / "agent",

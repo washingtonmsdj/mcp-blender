@@ -20,7 +20,6 @@ class GameAssetThreeJsViewerRuntimeTests(unittest.TestCase):
         project.mkdir(parents=True, exist_ok=True)
         return AgentConfig(
             agent_name="test-agent",
-            supabase_url=None,
             poll_seconds=1.0,
             state_dir=root / "state",
             agent_repo_path=root / "agent",

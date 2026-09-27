@@ -1,18 +1,13 @@
 from __future__ import annotations
 
+from .cloudflare_control_plane import CloudflareControlPlane
 from .config import AgentConfig
 
 
-def build_control_plane(config: AgentConfig):
-    """Select one supported device-scoped remote transport."""
+def build_control_plane(config: AgentConfig) -> CloudflareControlPlane:
+    """Build the only supported remote transport: Cloudflare v3."""
 
-    protocol = str(config.control_plane_protocol or "development-v2").strip().lower()
-    if protocol == "development-v2":
-        from .development_control_plane import DevelopmentControlPlane
-
-        return DevelopmentControlPlane(config)
-    if protocol == "cloudflare-v3":
-        from .cloudflare_control_plane import CloudflareControlPlane
-
-        return CloudflareControlPlane(config)
-    raise ValueError(f"Unsupported control-plane protocol: {protocol}")
+    protocol = str(config.control_plane_protocol or "").strip().lower()
+    if protocol != "cloudflare-v3":
+        raise ValueError(f"Unsupported control-plane protocol: {protocol}")
+    return CloudflareControlPlane(config)

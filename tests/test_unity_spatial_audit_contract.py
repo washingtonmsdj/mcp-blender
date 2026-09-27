@@ -55,7 +55,7 @@ class UnitySpatialAuditContractTests(unittest.TestCase):
             project.mkdir()
             config = AgentConfig(
                 "test",
-                None,
+                
                 
                 5,
                 root / "state",
