@@ -250,6 +250,31 @@ def main() -> int:
     control = build_control_plane(config)
     _startup_log(config, "CONTROL_PLANE_READY")
 
+    recover_pending_reports = getattr(control, "recover_pending_reports", None)
+    if callable(recover_pending_reports):
+        from .remote_protocol import DeviceAuthorizationError
+
+        while not stop:
+            try:
+                runtime["state"] = "recovering-terminal-reports"
+                recovered = int(recover_pending_reports())
+                runtime["terminal_reports_recovered"] = recovered
+                if recovered:
+                    _startup_log(
+                        config,
+                        f"TERMINAL_REPORTS_RECOVERED count={recovered}",
+                    )
+                break
+            except DeviceAuthorizationError:
+                runtime["state"] = "credential-recovery-required"
+                status_server.shutdown()
+                return 43
+            except Exception as error:
+                runtime["state"] = "terminal-recovery-error"
+                runtime["last_result"] = {"ok": False, "summary": str(error)}
+                print(f"terminal report recovery error: {error}", file=sys.stderr)
+                time.sleep(max(5.0, config.poll_seconds))
+
     while not stop and not runtime["paired"]:
         try:
             paired_now = control.pair_if_needed(
@@ -282,6 +307,17 @@ def main() -> int:
         while not stop:
             now = time.monotonic()
             try:
+                if callable(recover_pending_reports):
+                    recovered = int(recover_pending_reports())
+                    if recovered:
+                        runtime["terminal_reports_recovered"] = (
+                            int(runtime.get("terminal_reports_recovered", 0)) + recovered
+                        )
+                        runtime["last_result"] = {
+                            "ok": True,
+                            "summary": f"recovered {recovered} pending terminal report(s)",
+                        }
+
                 if now >= next_heartbeat:
                     control.heartbeat(
                         registry.names,
