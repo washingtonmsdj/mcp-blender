@@ -140,6 +140,7 @@ class AgentConfig:
             "bridge_path": str(self.bridge_path),
             "supabase_configured": bool(self.supabase_url and self.publishable_key),
             "control_plane_url_configured": bool(self.control_plane_url),
+            "control_plane_url": self.control_plane_url,
             "control_plane_protocol": self.control_plane_protocol,
             "development_device_id_configured": bool(self.development_device_id),
             "development_device_id": self.development_device_id,
