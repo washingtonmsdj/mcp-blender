@@ -256,7 +256,12 @@ try {
         throw 'CLOUDFLARE_V3_IDENTITY_NOT_PERSISTED_V2_RESTORED'
     }
     $v3DeviceId = [string]$v3Identity.device_id
-    if ($v3DeviceId -notmatch '^[0-9a-fA-F-]{36}
+    if ($v3DeviceId -notmatch '^[0-9a-fA-F-]{36}$') {
+        Copy-Item -LiteralPath $backupPath -Destination "$settingsPath.next" -Force
+        Move-Item -LiteralPath "$settingsPath.next" -Destination $settingsPath -Force
+        throw 'CLOUDFLARE_V3_DEVICE_ID_INVALID_V2_RESTORED'
+    }
+
     $cutoverState = [ordered]@{
         status = 'switching'
         started_at = [DateTime]::UtcNow.ToString('o')
