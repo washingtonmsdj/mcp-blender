@@ -16,7 +16,7 @@ class ProjectTextActionTests(unittest.TestCase):
         (self.project / "Assets" / "Scripts").mkdir(parents=True)
         self.config = AgentConfig(
             "test",
-            None,
+            
             
             5,
             self.root / "state",
