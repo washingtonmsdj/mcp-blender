@@ -244,6 +244,39 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         )
         self.assertLess(identify_index, launch_index)
 
+
+    def test_external_bootstrap_never_downgrades_cloudflare_identity_to_v2(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        bootstrap = (
+            root / "scripts" / "windows" / "ordax-agent-bootstrap.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "IDENTITY_RECOVERY_SKIP existing settings invalid; refusing provider downgrade",
+            bootstrap,
+        )
+        self.assertIn(
+            "IDENTITY_RECOVERY_SKIP cloudflare credential present but protocol missing",
+            bootstrap,
+        )
+        self.assertIn(
+            "IDENTITY_RECOVERY_SKIP cloudflare-v3 active; refusing development-v2 fallback",
+            bootstrap,
+        )
+        self.assertIn(
+            '$fallbackCloudflareTokenPath = Join-Path $stateDir "device-token.cloudflare-v3.txt"',
+            bootstrap,
+        )
+
+        guard_index = bootstrap.index(
+            "IDENTITY_RECOVERY_SKIP cloudflare-v3 active; refusing development-v2 fallback"
+        )
+        fallback_token_index = bootstrap.index(
+            '$tokenPath = Join-Path $stateDir "device-token.development-v2.txt"',
+            guard_index,
+        )
+        self.assertLess(guard_index, fallback_token_index)
+
     def test_all_managed_main_fetches_write_remote_tracking_ref(self) -> None:
         root = Path(__file__).resolve().parents[1]
         launcher = (
