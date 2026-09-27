@@ -373,6 +373,7 @@ class CloudflareControlPlane:
         for path, report in self._terminal_outbox.pending():
             self._recover_terminal_report(report)
             self._terminal_outbox.acknowledge(path)
+            self._jobs.pop(str(report.get("job_id") or ""), None)
             recovered += 1
         return recovered
 
