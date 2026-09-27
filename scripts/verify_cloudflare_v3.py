@@ -51,7 +51,6 @@ def run(base_url: str, operator_token: str) -> None:
             config = AgentConfig(
                 agent_name="cloudflare-v3-ci",
                 supabase_url=None,
-                publishable_key=None,
                 poll_seconds=1.0,
                 state_dir=state,
                 agent_repo_path=root / "agent",
