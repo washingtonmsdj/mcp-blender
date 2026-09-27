@@ -33,9 +33,49 @@ jobs:
           test -n "$ORDAX_OPERATOR_TOKEN" || { echo "Missing ORDAX_OPERATOR_TOKEN"; exit 1; }
 
       - name: Provision and deploy
+        id: deploy
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
         run: bash scripts/cloudflare/deploy-v3.sh
+
+      - name: Wait for public health
+        shell: bash
+        env:
+          CONTROL_PLANE_URL: ${{ steps.deploy.outputs.control_plane_url }}
+        run: |
+          test -n "$CONTROL_PLANE_URL" || { echo "Deploy did not expose control-plane URL"; exit 1; }
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error "$CONTROL_PLANE_URL/health" | grep -q 'ordax-control-plane-v3'; then
+              echo "Remote health OK: $CONTROL_PLANE_URL"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Remote health did not become ready: $CONTROL_PLANE_URL"
+          exit 1
+
+      - name: Verify remote Cloudflare v3 end to end
+        shell: bash
+        env:
+          CONTROL_PLANE_URL: ${{ steps.deploy.outputs.control_plane_url }}
+          ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+        run: |
+          python scripts/verify_cloudflare_v3.py \
+            --base-url "$CONTROL_PLANE_URL" \
+            --operator-token "$ORDAX_OPERATOR_TOKEN"
+
+      - name: Record verified endpoint
+        shell: bash
+        env:
+          CONTROL_PLANE_URL: ${{ steps.deploy.outputs.control_plane_url }}
+        run: |
+          {
+            echo "## Cloudflare v3 verified"
+            echo
+            echo "Control plane: `$CONTROL_PLANE_URL`"
+            echo
+            echo "Health, WebSocket job delivery, lease, D1 persistence and R2 round-trip passed."
+          } >> "$GITHUB_STEP_SUMMARY"
