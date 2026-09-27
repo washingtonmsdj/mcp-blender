@@ -205,14 +205,9 @@ def main() -> int:
 
     watchdog_process = _start_local_watchdog(config)
     runtime["watchdog_pid"] = watchdog_process.pid if watchdog_process else None
-    protocol = str(config.control_plane_protocol or "legacy-v1").strip().lower()
+    protocol = str(config.control_plane_protocol or "development-v2").strip().lower()
     remote_control_configured = bool(
         (
-            protocol == "legacy-v1"
-            and config.supabase_url
-            and config.publishable_key
-        )
-        or (
             protocol == "development-v2"
             and config.supabase_url
             and config.development_device_id
@@ -425,7 +420,7 @@ def main() -> int:
 
                 runtime["state"] = "ready"
             except Exception as error:
-                from .development_control_plane import DeviceAuthorizationError
+                from .remote_protocol import DeviceAuthorizationError
                 if isinstance(error, DeviceAuthorizationError):
                     runtime["state"] = "credential-recovery-required"
                     return 43
