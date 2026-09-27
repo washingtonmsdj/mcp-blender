@@ -58,6 +58,36 @@ jobs:
             -c control-plane/cloudflare/wrangler.ci.toml \
             --outdir "$out"
 
+      - name: Verify Cloudflare v3 end to end
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          state="$RUNNER_TEMP/ordax-cloudflare-state"
+          log="$RUNNER_TEMP/ordax-cloudflare-dev.log"
+          npx --yes wrangler@4.141.0 d1 migrations apply DB --local \
+            --persist-to "$state" \
+            -c control-plane/cloudflare/wrangler.ci.toml
+          npx --yes wrangler@4.141.0 dev \
+            -c control-plane/cloudflare/wrangler.ci.toml \
+            --persist-to "$state" \
+            --port 8787 \
+            --var ORDAX_OPERATOR_TOKEN:e2e-secret >"$log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8787/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if ! curl --fail --silent http://127.0.0.1:8787/health >/dev/null; then
+            cat "$log"
+            exit 1
+          fi
+          python scripts/verify_cloudflare_v3.py \
+            --base-url http://127.0.0.1:8787 \
+            --operator-token e2e-secret
+
       - name: Validate branch hygiene shell
         if: runner.os == 'Linux'
         shell: bash
