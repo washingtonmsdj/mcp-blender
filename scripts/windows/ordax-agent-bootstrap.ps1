@@ -32,175 +32,36 @@ function Write-BootstrapLog([string]$Message) {
 }
 
 function Ensure-ConfiguredDeviceIdentity {
-    # The shared setup client validates binding and can recover missing/revoked
-    # credentials using the user's existing login. It never opens UI at boot.
-    if (Test-Path (Join-Path $repoRootResolved 'ordax_dev_agent\device_setup.py')) {
-        $setupProtocol = "development-v2"
-        $setupControlPlaneUrl = $null
-        $setupSettingsPath = Join-Path $stateDir "agent-settings.json"
-        $cloudflareTokenPath = Join-Path $stateDir "device-token.cloudflare-v3.txt"
-        if (Test-Path $setupSettingsPath -PathType Leaf) {
-            try {
-                $setupSettings = Get-Content $setupSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-            } catch {
-                Write-BootstrapLog "IDENTITY_RECOVERY_SKIP existing settings invalid; refusing provider downgrade"
-                return $false
-            }
-            if (-not $setupSettings) {
-                Write-BootstrapLog "IDENTITY_RECOVERY_SKIP existing settings empty; refusing provider downgrade"
-                return $false
-            }
-            $storedProtocol = if ($setupSettings.PSObject.Properties["control_plane_protocol"]) {
-                [string]$setupSettings.control_plane_protocol
-            } else {
-                ""
-            }
-            if ($storedProtocol -in @("development-v2", "cloudflare-v3")) {
-                $setupProtocol = $storedProtocol
-            } elseif ($storedProtocol) {
-                Write-BootstrapLog "IDENTITY_RECOVERY_SKIP unsupported stored protocol=$storedProtocol"
-                return $false
-            } elseif (Test-Path $cloudflareTokenPath -PathType Leaf) {
-                Write-BootstrapLog "IDENTITY_RECOVERY_SKIP cloudflare credential present but protocol missing"
-                return $false
-            }
-            if ($setupProtocol -eq "cloudflare-v3" -and $setupSettings.control_plane_url) {
-                $setupControlPlaneUrl = [string]$setupSettings.control_plane_url
-            }
-        }
-        $setupArgs = @("-m", "ordax_dev_agent.device_setup", "--protocol", $setupProtocol)
-        if ($setupProtocol -eq "cloudflare-v3") {
-            if (-not $setupControlPlaneUrl) {
-                Write-BootstrapLog "IDENTITY_RECOVERY_SKIP cloudflare control_plane_url missing"
-                return $false
-            }
-            $setupArgs += @("--control-plane-url", $setupControlPlaneUrl)
-        }
-        & $python @setupArgs | ForEach-Object { Write-BootstrapLog "SETUP $_" }
-        return $LASTEXITCODE -eq 0
+    # Cloudflare v3 is the only supported remote provider. The shared setup
+    # client validates machine binding, credential ownership and GitHub admin
+    # authorization without opening UI during boot.
+    $setupPath = Join-Path $repoRootResolved 'ordax_dev_agent\device_setup.py'
+    if (-not (Test-Path $setupPath -PathType Leaf)) {
+        Write-BootstrapLog "IDENTITY_RECOVERY_SKIP device_setup missing"
+        return $false
     }
-    $fallbackSettingsPath = Join-Path $stateDir "agent-settings.json"
-    $fallbackCloudflareTokenPath = Join-Path $stateDir "device-token.cloudflare-v3.txt"
-    $fallbackProtocol = ""
-    if (Test-Path $fallbackSettingsPath -PathType Leaf) {
+
+    $setupSettingsPath = Join-Path $stateDir "agent-settings.json"
+    $setupControlPlaneUrl = "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev"
+    if (Test-Path $setupSettingsPath -PathType Leaf) {
         try {
-            $fallbackSettings = Get-Content $fallbackSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $setupSettings = Get-Content $setupSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
         } catch {
-            Write-BootstrapLog "IDENTITY_RECOVERY_SKIP shared setup missing and settings invalid"
+            Write-BootstrapLog "IDENTITY_RECOVERY_SKIP existing settings invalid"
             return $false
         }
-        if (-not $fallbackSettings) {
-            Write-BootstrapLog "IDENTITY_RECOVERY_SKIP shared setup missing and settings empty"
+        if (-not $setupSettings) {
+            Write-BootstrapLog "IDENTITY_RECOVERY_SKIP existing settings empty"
             return $false
         }
-        if ($fallbackSettings.PSObject.Properties["control_plane_protocol"]) {
-            $fallbackProtocol = [string]$fallbackSettings.control_plane_protocol
+        if ($setupSettings.control_plane_url) {
+            $setupControlPlaneUrl = ([string]$setupSettings.control_plane_url).TrimEnd('/')
         }
     }
-    if ($fallbackProtocol -eq "cloudflare-v3" -or (Test-Path $fallbackCloudflareTokenPath -PathType Leaf)) {
-        Write-BootstrapLog "IDENTITY_RECOVERY_SKIP cloudflare-v3 active; refusing development-v2 fallback"
-        return $false
-    }
-    if ($fallbackProtocol -and $fallbackProtocol -ne "development-v2") {
-        Write-BootstrapLog "IDENTITY_RECOVERY_SKIP unsupported fallback protocol=$fallbackProtocol"
-        return $false
-    }
 
-    $tokenPath = Join-Path $stateDir "device-token.development-v2.txt"
-    $legacyTokenPath = Join-Path $stateDir "device-token.txt"
-    if (-not (Test-Path $tokenPath -PathType Leaf) -and (Test-Path $legacyTokenPath -PathType Leaf)) {
-        Move-Item -Force $legacyTokenPath $tokenPath
-        Write-BootstrapLog "V2_LEGACY_TOKEN_MIGRATED"
-    }
-    $settingsPath = Join-Path $stateDir "agent-settings.json"
-    $controlPlaneUrl = "https://eobcxuyvhkvdmkbaihwh.supabase.co"
-    $identifyUrl = "$controlPlaneUrl/functions/v1/ordax-development-device-identify"
-
-    if (-not (Test-Path $tokenPath -PathType Leaf)) {
-        Write-BootstrapLog "V2_IDENTITY_SKIP device token missing"
-        return $false
-    }
-
-    try {
-        $token = (Get-Content $tokenPath -Raw -Encoding UTF8).Trim()
-    } catch {
-        Write-BootstrapLog "V2_IDENTITY_SKIP device token unreadable"
-        return $false
-    }
-    if ($token.Length -lt 32 -or $token.Length -gt 512) {
-        Write-BootstrapLog "V2_IDENTITY_SKIP device token length invalid"
-        return $false
-    }
-
-    $settings = [pscustomobject]@{}
-    if (Test-Path $settingsPath -PathType Leaf) {
-        try {
-            $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        } catch {
-            Write-BootstrapLog "V2_IDENTITY_SKIP existing settings invalid"
-            return $false
-        }
-        if (-not $settings) { $settings = [pscustomobject]@{} }
-    }
-
-    $protocol = if ($settings.PSObject.Properties["control_plane_protocol"]) { [string]$settings.control_plane_protocol } else { "" }
-    $deviceId = if ($settings.PSObject.Properties["development_device_id"]) { [string]$settings.development_device_id } else { "" }
-    $supabaseUrl = if ($settings.PSObject.Properties["supabase_url"]) { [string]$settings.supabase_url } else { "" }
-    $deviceIdValid = $deviceId -match "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-    $needsIdentity = ($protocol -ne "development-v2") -or (-not $deviceIdValid) -or ($supabaseUrl.TrimEnd("/") -ne $controlPlaneUrl)
-
-    if ($needsIdentity) {
-        try {
-            $identity = Invoke-RestMethod -Method Post -Uri $identifyUrl -Headers @{
-                "X-Ordax-Device-Token" = $token
-            } -ContentType "application/json" -Body "{}" -TimeoutSec 15
-        } catch {
-            Write-BootstrapLog "V2_IDENTITY_RETRY identify request failed"
-            return $false
-        }
-
-        $resolvedId = if ($identity -and $identity.device_id) { [string]$identity.device_id } else { "" }
-        $resolvedIdValid = $resolvedId -match "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        if (-not $identity.ok -or $identity.protocol -ne "development-v2" -or -not $resolvedIdValid) {
-            Write-BootstrapLog "V2_IDENTITY_RETRY identify response invalid"
-            return $false
-        }
-
-        $settings | Add-Member -NotePropertyName supabase_url -NotePropertyValue $controlPlaneUrl -Force
-        $settings | Add-Member -NotePropertyName control_plane_protocol -NotePropertyValue "development-v2" -Force
-        $settings | Add-Member -NotePropertyName development_device_id -NotePropertyValue $resolvedId -Force
-        if (-not $settings.PSObject.Properties["control_plane_identities"] -or -not $settings.control_plane_identities) {
-            $settings | Add-Member -NotePropertyName control_plane_identities -NotePropertyValue ([pscustomobject]@{}) -Force
-        }
-        $v2Identity = [pscustomobject]@{
-            device_id = $resolvedId
-            control_plane_url = $controlPlaneUrl
-        }
-        $settings.control_plane_identities | Add-Member -NotePropertyName "development-v2" -NotePropertyValue $v2Identity -Force
-        $deviceId = $resolvedId
-    }
-
-    $projectRoot = Join-Path $env:USERPROFILE "Documents\github\cerco-no-interior-mvp"
-    if (Test-Path $projectRoot -PathType Container) {
-        if (-not $settings.PSObject.Properties["projects"] -or -not $settings.projects) {
-            $settings | Add-Member -NotePropertyName projects -NotePropertyValue ([pscustomobject]@{}) -Force
-        }
-        $projectConfig = [pscustomobject]@{
-            path = $projectRoot
-            apps = @("blender")
-            blender = [pscustomobject]@{ scripts_dir = "automation/blender" }
-        }
-        $settings.projects | Add-Member -NotePropertyName "cerco-no-interior-mvp" -NotePropertyValue $projectConfig -Force
-    }
-
-    $tempSettings = "$settingsPath.next"
-    $settingsJson = $settings | ConvertTo-Json -Depth 12
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($tempSettings, $settingsJson, $utf8NoBom)
-    Move-Item -Force $tempSettings $settingsPath
-
-    Write-BootstrapLog "V2_IDENTITY_READY device=$deviceId"
-    return $true
+    & $python -m ordax_dev_agent.device_setup --control-plane-url $setupControlPlaneUrl |
+        ForEach-Object { Write-BootstrapLog "SETUP $_" }
+    return $LASTEXITCODE -eq 0
 }
 
 function Sync-ExternalBootstrapFromRepo {
@@ -395,20 +256,13 @@ while ($true) {
             $savedSettings = [System.IO.File]::ReadAllText($settingsFile)
             $savedProtocol = if ($savedSettings -match '"control_plane_protocol"\s*:\s*"cloudflare-v3"') {
                 "cloudflare-v3"
-            } elseif ($savedSettings -match '"control_plane_protocol"\s*:\s*"development-v2"') {
-                "development-v2"
             } else {
                 ""
             }
-            $tokenName = if ($savedProtocol -eq "cloudflare-v3") {
-                "device-token.cloudflare-v3.txt"
-            } else {
-                "device-token.development-v2.txt"
-            }
-            $tokenFile = [System.IO.Path]::Combine($stateDir, $tokenName)
-            $configured = $savedProtocol -ne "" -and
+            $tokenFile = [System.IO.Path]::Combine($stateDir, "device-token.cloudflare-v3.txt")
+            $configured = $savedProtocol -eq "cloudflare-v3" -and
                 [System.IO.File]::Exists($tokenFile) -and
-                $savedSettings -match '"development_device_id"\s*:\s*"[0-9a-fA-F-]{36}"'
+                $savedSettings -match '"device_id"\s*:\s*"[0-9a-fA-F-]{36}"'
         }
         if ($credentialRecovery -or -not $configured) {
             Write-BootstrapLog 'IDENTITY_RECOVERY_START'
