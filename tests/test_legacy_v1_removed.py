@@ -18,6 +18,9 @@ class LegacyV1RemovalTests(unittest.TestCase):
         installer = (
             root / "scripts" / "windows" / "ordax-agent-install.ps1"
         ).read_text(encoding="utf-8")
+        setup = (
+            root / "scripts" / "windows" / "ordax-device-agent-setup.ps1"
+        ).read_text(encoding="utf-8")
 
         for text in (control, config, main):
             self.assertNotIn("legacy-v1", text)
@@ -29,6 +32,8 @@ class LegacyV1RemovalTests(unittest.TestCase):
         self.assertNotIn("PairingCode", installer)
         self.assertNotIn("pairing-code.txt", installer)
         self.assertNotIn("import httpx, mcp, supabase", installer)
+        self.assertNotIn("import httpx, mcp, supabase", setup)
+        self.assertIn("import httpx, mcp, websockets", setup)
 
         self.assertIn('protocol == "development-v2"', control)
         self.assertIn('protocol == "cloudflare-v3"', control)

@@ -37,7 +37,7 @@ caminho novo. Cada aplicativo precisa estar em `apps`; branches e métodos Unity
 permitidos também são definidos localmente. Caminhos de arquivos são resolvidos
 dentro da raiz cadastrada, incluindo resolução de links simbólicos.
 
-## Cliente remoto via Supabase
+## Cliente remoto via control plane
 
 Nenhuma migração de banco é necessária. Use as operações existentes de criação e
 consulta de jobs do seu cliente autorizado. Um job de captura tem este formato:
@@ -82,8 +82,9 @@ python -m ordax_dev_agent.mcp_server
 Configure esse comando no cliente MCP instalado na estação. Ferramentas:
 `projects_list`, `agent_capabilities`, `action_execute`, `artifact_image`.
 `artifact_image(project, artifact_path)` devolve conteúdo MCP de imagem, permitindo
-ao modelo ver os pixels. Um cliente exclusivamente na nuvem deve continuar usando
-a fila Supabase; stdio não é uma URL pública.
+ao modelo ver os pixels. Um cliente exclusivamente na nuvem usa o control plane
+remoto selecionado (`cloudflare-v3` após o cutover; `development-v2` somente
+como rollback temporário). Stdio não é uma URL pública.
 
 ## Texto de projeto
 

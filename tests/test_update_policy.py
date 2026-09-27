@@ -35,7 +35,7 @@ version = "0.3.0"
 requires-python = ">=3.11"
 dependencies = [
   "mcp>=1.0.0,<2.0.0",
-  "supabase>=2.18.0,<3.0.0",
+  "httpx>=0.26.0,<1.0.0",
 ]
 
 [project.scripts]
@@ -62,8 +62,8 @@ class InstallContractTests(unittest.TestCase):
 
     def test_dependency_change_requires_reinstall(self) -> None:
         changed = BASE_PYPROJECT.replace(
-            '"supabase>=2.18.0,<3.0.0",',
-            '"supabase>=2.18.0,<3.0.0",\n  "Pillow>=10,<12",',
+            '"httpx>=0.26.0,<1.0.0",',
+            '"httpx>=0.26.0,<1.0.0",\n  "Pillow>=10,<12",',
         )
         self.assertTrue(install_contract_changed(BASE_PYPROJECT, changed))
 

@@ -75,7 +75,7 @@ try {
     $python = Join-Path $repo '.venv\Scripts\python.exe'
     $healthy = $false
     if (Test-Path $python) {
-        & $python -c "import sys; assert sys.version_info >= (3,11); import httpx, mcp, supabase, ordax_dev_agent.device_setup" 2>$null
+        & $python -c "import sys; assert sys.version_info >= (3,11); import httpx, mcp, websockets, ordax_dev_agent.device_setup" 2>$null
         $healthy = $LASTEXITCODE -eq 0
     }
     if (-not $healthy) {
