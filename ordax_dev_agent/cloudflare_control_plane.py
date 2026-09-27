@@ -5,6 +5,7 @@ import json
 import mimetypes
 import os
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -345,7 +346,18 @@ class CloudflareControlPlane:
             "result_sha256": digest,
             "error_code": None if result.ok else "device_agent_action_failed",
         }
-        self._rpc("report", report, timeout=30.0)
+
+        # A lost ACK must only repeat delivery of the identical terminal report.
+        # It must never cause the Blender/Unity/Git action to run again.
+        for attempt in range(3):
+            try:
+                self._rpc("report", report, timeout=30.0)
+                break
+            except TransientDeliveryError:
+                if attempt == 2:
+                    raise
+                time.sleep(2 ** attempt)
+
         self._jobs.pop(job.id, None)
 
     def upload_artifact(

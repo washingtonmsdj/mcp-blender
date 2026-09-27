@@ -5,11 +5,14 @@ import hashlib
 import json
 import tempfile
 import unittest
+from unittest.mock import call, patch
 from pathlib import Path
 
 from ordax_dev_agent.cloudflare_control_plane import CloudflareControlPlane
 from ordax_dev_agent.config import AgentConfig
 from ordax_dev_agent.control_plane import build_control_plane
+from ordax_dev_agent.models import ActionResult, AgentJob
+from ordax_dev_agent.remote_protocol import TransientDeliveryError
 
 
 DEVICE_ID = "22222222-2222-4222-8222-222222222222"
@@ -69,6 +72,50 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             write_token(root)
             with self.assertRaisesRegex(RuntimeError, "absolute HTTP"):
                 CloudflareControlPlane(make_config(root, url="file:///tmp/control"))
+
+    def test_complete_retries_identical_terminal_report_only(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            write_token(root)
+            control = CloudflareControlPlane(make_config(root))
+            job = AgentJob(
+                id="33333333-3333-4333-8333-333333333333",
+                action="agent.status",
+                payload={},
+                lease_token="66666666-6666-4666-8666-666666666666",
+                effect_id="44444444-4444-4444-8444-444444444444",
+                attempt_id="55555555-5555-4555-8555-555555555555",
+                execution_epoch=1,
+                agent_instance_id=control.agent_instance_id,
+                boot_id=control.boot_id,
+            )
+            control._jobs[job.id] = job
+            reports: list[dict] = []
+
+            def flaky_rpc(operation, payload=None, **_kwargs):
+                self.assertEqual(operation, "report")
+                reports.append(json.loads(json.dumps(payload)))
+                if len(reports) < 3:
+                    raise TransientDeliveryError("simulated lost ACK")
+                return {"type": "ack", "ok": True}
+
+            control._rpc = flaky_rpc  # type: ignore[method-assign]
+
+            with patch("ordax_dev_agent.cloudflare_control_plane.time.sleep") as sleep:
+                control.complete(
+                    job,
+                    ActionResult(True, "ok", {"transport": "cloudflare-v3"}),
+                )
+
+            self.assertEqual(len(reports), 3)
+            self.assertEqual(reports[0], reports[1])
+            self.assertEqual(reports[1], reports[2])
+            self.assertEqual(
+                {report["report_id"] for report in reports},
+                {reports[0]["report_id"]},
+            )
+            sleep.assert_has_calls([call(1), call(2)])
+            self.assertNotIn(job.id, control._jobs)
 
     def test_job_envelope_reuses_v2_digest_and_action_contract(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

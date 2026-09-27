@@ -370,7 +370,8 @@ async function getJob(request: Request, env: Env, jobId: string): Promise<Respon
   const row = await env.DB.prepare(
     `SELECT id, device_id, capability, status, effect_id, attempt_id, lease_id,
             execution_epoch, agent_instance_id, boot_id, lease_expires_at,
-            result_json, result_sha256, error_code, created_at, started_at, finished_at
+            report_id, result_json, result_sha256, error_code,
+            created_at, started_at, finished_at
      FROM ordax_jobs WHERE id = ?1`,
   ).bind(jobId).first<Record<string, unknown>>();
   if (!row) return json({ ok: false, error: "job_not_found" }, 404);
@@ -849,6 +850,71 @@ export class DeviceSession extends DurableObject<Env> {
       return;
     }
 
+    if (type === "report") {
+      const reportId = typeof message.report_id === "string" ? message.report_id : "";
+      const status = typeof message.status === "string" ? message.status : "";
+      const resultSha256 = typeof message.result_sha256 === "string"
+        ? message.result_sha256.toLowerCase()
+        : "";
+      const resultValue = isRecord(message.result) ? message.result : {};
+      const resultJson = JSON.stringify(resultValue);
+      const errorCode = typeof message.error_code === "string" ? message.error_code : null;
+
+      if (
+        !UUID_RE.test(reportId)
+        || !["succeeded", "failed", "cancelled"].includes(status)
+        || !HEX64_RE.test(resultSha256)
+      ) {
+        this.ack(ws, requestId, false, { error: "report_invalid" });
+        return;
+      }
+      if (new TextEncoder().encode(resultJson).byteLength > 512 * 1024) {
+        this.ack(ws, requestId, false, { error: "result_too_large" });
+        return;
+      }
+
+      const terminal = await this.env.DB.prepare(
+        `SELECT status, report_id, result_json, result_sha256, error_code,
+                lease_id, execution_epoch, agent_instance_id, boot_id
+         FROM ordax_jobs
+         WHERE id = ?1 AND device_id = ?2
+           AND status IN ('succeeded','failed','cancelled')`,
+      ).bind(jobId, deviceId).first<{
+        status: string;
+        report_id: string | null;
+        result_json: string | null;
+        result_sha256: string | null;
+        error_code: string | null;
+        lease_id: string | null;
+        execution_epoch: number;
+        agent_instance_id: string | null;
+        boot_id: string | null;
+      }>();
+
+      if (terminal) {
+        const replayMatches = (
+          terminal.report_id === reportId
+          && terminal.status === status
+          && terminal.result_json === resultJson
+          && (terminal.result_sha256 ?? "").toLowerCase() === resultSha256
+          && terminal.error_code === errorCode
+          && terminal.lease_id === leaseId
+          && Number(terminal.execution_epoch) === executionEpoch
+          && terminal.agent_instance_id === attachment.agentInstanceId
+          && terminal.boot_id === attachment.bootId
+        );
+        this.ack(
+          ws,
+          requestId,
+          replayMatches,
+          replayMatches
+            ? { status, replayed: true }
+            : { error: "terminal_report_conflict" },
+        );
+        return;
+      }
+    }
+
     const active = await this.env.DB.prepare(
       `SELECT id FROM ordax_jobs
        WHERE id = ?1 AND device_id = ?2 AND lease_id = ?3 AND execution_epoch = ?4
@@ -899,32 +965,26 @@ export class DeviceSession extends DurableObject<Env> {
     }
 
     if (type === "report") {
-      const status = typeof message.status === "string" ? message.status : "";
-      const resultSha256 = typeof message.result_sha256 === "string" ? message.result_sha256 : "";
-      if (!["succeeded", "failed", "cancelled"].includes(status) || !HEX64_RE.test(resultSha256)) {
-        this.ack(ws, requestId, false, { error: "report_invalid" });
-        return;
-      }
+      const reportId = String(message.report_id);
+      const status = String(message.status);
+      const resultSha256 = String(message.result_sha256).toLowerCase();
       const resultValue = isRecord(message.result) ? message.result : {};
       const resultJson = JSON.stringify(resultValue);
-      if (new TextEncoder().encode(resultJson).byteLength > 512 * 1024) {
-        this.ack(ws, requestId, false, { error: "result_too_large" });
-        return;
-      }
-
+      const errorCode = typeof message.error_code === "string" ? message.error_code : null;
       const finishedAt = nowIso();
+
       const update = await this.env.DB.prepare(
         `UPDATE ordax_jobs SET
-           status = ?1, result_json = ?2, result_sha256 = ?3,
-           error_code = ?4, finished_at = ?5, lease_expires_at = NULL
-         WHERE id = ?6 AND device_id = ?7 AND lease_id = ?8 AND execution_epoch = ?9`,
+           status = ?1, report_id = ?2, result_json = ?3, result_sha256 = ?4,
+           error_code = ?5, finished_at = ?6, lease_expires_at = NULL
+         WHERE id = ?7 AND device_id = ?8 AND lease_id = ?9 AND execution_epoch = ?10
+           AND status IN ('leased','running') AND report_id IS NULL`,
       ).bind(
-        status, resultJson, resultSha256,
-        typeof message.error_code === "string" ? message.error_code : null,
+        status, reportId, resultJson, resultSha256, errorCode,
         finishedAt, jobId, deviceId, leaseId, executionEpoch,
       ).run();
       const ok = (update.meta.changes ?? 0) === 1;
-      this.ack(ws, requestId, ok, ok ? { status } : { error: "report_rejected" });
+      this.ack(ws, requestId, ok, ok ? { status, replayed: false } : { error: "report_rejected" });
       if (ok) await this.deliverNextJob(ws, deviceId);
       return;
     }

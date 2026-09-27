@@ -56,3 +56,10 @@ passed to R2 as a native checksum. R2 rejects a body whose bytes do not match th
 declared digest. The Worker also verifies the returned object size and checksum
 before writing artifact metadata to D1; a mismatch is deleted and never exposed
 through a signed read URL.
+
+### Terminal report replay
+
+Terminal job results carry a unique `report_id` stored in D1. An identical replay
+with the same lease, execution epoch, runtime identity, status, result digest,
+result JSON and error code is acknowledged as already committed. Any divergent
+replay is rejected as `terminal_report_conflict`.
