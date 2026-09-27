@@ -21,6 +21,16 @@ jobs:
         with:
           ref: main
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "pyproject.toml"
+
+      - name: Install Device Agent package
+        run: python -m pip install --disable-pip-version-check -e .
+
       - name: Validate required secrets
         shell: bash
         env:
