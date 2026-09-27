@@ -398,6 +398,121 @@ async function getJob(request: Request, env: Env, jobId: string): Promise<Respon
   });
 }
 
+async function recoverTerminalReport(request: Request, env: Env): Promise<Response> {
+  const deviceId = request.headers.get("X-Ordax-Device-Id") ?? "";
+  const token = request.headers.get("X-Ordax-Device-Token") ?? "";
+  const auth = await authenticateDevice(env, deviceId, token);
+  if (!auth.ok) return json({ ok: false, error: auth.error }, 401);
+
+  const body = await parseSmallJson(request, 640 * 1024);
+  if (!body) return json({ ok: false, error: "report_invalid" }, 400);
+
+  const jobId = typeof body.job_id === "string" ? body.job_id : "";
+  const effectId = typeof body.effect_id === "string" ? body.effect_id : "";
+  const attemptId = typeof body.attempt_id === "string" ? body.attempt_id : "";
+  const leaseId = typeof body.lease_id === "string" ? body.lease_id : "";
+  const agentInstanceId = typeof body.agent_instance_id === "string"
+    ? body.agent_instance_id
+    : "";
+  const bootId = typeof body.boot_id === "string" ? body.boot_id : "";
+  const reportId = typeof body.report_id === "string" ? body.report_id : "";
+  const executionEpoch = Number.isSafeInteger(body.execution_epoch)
+    ? Number(body.execution_epoch)
+    : 0;
+  const status = typeof body.status === "string" ? body.status : "";
+  const resultSha256 = typeof body.result_sha256 === "string"
+    ? body.result_sha256.toLowerCase()
+    : "";
+  const errorCode = typeof body.error_code === "string" ? body.error_code : null;
+  const resultValue = isRecord(body.result) ? body.result : {};
+  const resultJson = JSON.stringify(resultValue);
+
+  if (
+    !UUID_RE.test(jobId)
+    || !UUID_RE.test(effectId)
+    || !UUID_RE.test(attemptId)
+    || !UUID_RE.test(leaseId)
+    || !UUID_RE.test(agentInstanceId)
+    || !UUID_RE.test(bootId)
+    || !UUID_RE.test(reportId)
+    || executionEpoch < 1
+    || !["succeeded", "failed", "cancelled"].includes(status)
+    || !HEX64_RE.test(resultSha256)
+    || new TextEncoder().encode(resultJson).byteLength > 512 * 1024
+  ) {
+    return json({ ok: false, error: "report_invalid" }, 400);
+  }
+
+  const row = await env.DB.prepare(
+    `SELECT status, effect_id, attempt_id, lease_id, execution_epoch,
+            agent_instance_id, boot_id, report_id, result_json,
+            result_sha256, error_code
+     FROM ordax_jobs WHERE id = ?1 AND device_id = ?2`,
+  ).bind(jobId, deviceId).first<{
+    status: string;
+    effect_id: string;
+    attempt_id: string | null;
+    lease_id: string | null;
+    execution_epoch: number;
+    agent_instance_id: string | null;
+    boot_id: string | null;
+    report_id: string | null;
+    result_json: string | null;
+    result_sha256: string | null;
+    error_code: string | null;
+  }>();
+  if (!row) return json({ ok: false, error: "job_not_found" }, 404);
+
+  const contextMatches = (
+    row.effect_id === effectId
+    && row.attempt_id === attemptId
+    && row.lease_id === leaseId
+    && Number(row.execution_epoch) === executionEpoch
+    && row.agent_instance_id === agentInstanceId
+    && row.boot_id === bootId
+  );
+
+  if (["succeeded", "failed", "cancelled"].includes(row.status)) {
+    const replayMatches = (
+      contextMatches
+      && row.report_id === reportId
+      && row.status === status
+      && row.result_json === resultJson
+      && (row.result_sha256 ?? "").toLowerCase() === resultSha256
+      && row.error_code === errorCode
+    );
+    return replayMatches
+      ? json({ ok: true, status, replayed: true })
+      : json({ ok: false, error: "terminal_report_conflict" }, 409);
+  }
+
+  if (!contextMatches) {
+    return json({ ok: false, error: "execution_context_superseded" }, 409);
+  }
+  if (!["leased", "running"].includes(row.status)) {
+    return json({ ok: false, error: "job_not_recoverable" }, 409);
+  }
+
+  const finishedAt = nowIso();
+  const update = await env.DB.prepare(
+    `UPDATE ordax_jobs SET
+       status = ?1, report_id = ?2, result_json = ?3, result_sha256 = ?4,
+       error_code = ?5, finished_at = ?6, lease_expires_at = NULL
+     WHERE id = ?7 AND device_id = ?8
+       AND effect_id = ?9 AND attempt_id = ?10 AND lease_id = ?11
+       AND execution_epoch = ?12 AND agent_instance_id = ?13 AND boot_id = ?14
+       AND status IN ('leased','running') AND report_id IS NULL`,
+  ).bind(
+    status, reportId, resultJson, resultSha256, errorCode, finishedAt,
+    jobId, deviceId, effectId, attemptId, leaseId, executionEpoch,
+    agentInstanceId, bootId,
+  ).run();
+  if ((update.meta.changes ?? 0) !== 1) {
+    return json({ ok: false, error: "terminal_recovery_race" }, 409);
+  }
+  return json({ ok: true, status, recovered: true, replayed: false });
+}
+
 async function uploadArtifact(request: Request, env: Env, parts: string[]): Promise<Response> {
   const jobId = parts[2] ?? "";
   const artifactId = parts[3] ?? "";
@@ -544,6 +659,9 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/v3/device/setup") {
       return deviceSetup(request, env);
+    }
+    if (request.method === "POST" && url.pathname === "/v3/device/recover-report") {
+      return recoverTerminalReport(request, env);
     }
     if (request.method === "POST" && url.pathname === "/v3/devices") {
       return provisionDevice(request, env);
@@ -713,7 +831,7 @@ export class DeviceSession extends DurableObject<Env> {
       `SELECT id, capability, payload_canonical_b64, payload_sha256, effect_id, execution_epoch
        FROM ordax_jobs
        WHERE device_id = ?1
-         AND (status = 'queued' OR (status IN ('leased','running') AND lease_expires_at < ?2))
+         AND (status = 'queued' OR (status = 'leased' AND lease_expires_at < ?2))
        ORDER BY created_at ASC
        LIMIT 1`,
     ).bind(deviceId, now).first<{
@@ -743,7 +861,7 @@ export class DeviceSession extends DurableObject<Env> {
          boot_id = ?5,
          lease_expires_at = ?6
        WHERE id = ?7 AND device_id = ?8
-         AND (status = 'queued' OR lease_expires_at < ?9)`,
+         AND (status = 'queued' OR (status = 'leased' AND lease_expires_at < ?9))`,
     ).bind(
       attemptId, leaseId, nextEpoch, attachment.agentInstanceId,
       attachment.bootId, leaseExpiresAt, candidate.id, deviceId, now,
