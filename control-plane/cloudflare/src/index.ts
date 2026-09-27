@@ -52,6 +52,20 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+function hexToArrayBuffer(value: string): ArrayBuffer {
+  const bytes = new Uint8Array(value.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes.buffer;
+}
+
+function arrayBufferToHex(value: ArrayBuffer): string {
+  return [...new Uint8Array(value)]
+    .map((item) => item.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -416,11 +430,34 @@ async function uploadArtifact(request: Request, env: Env, parts: string[]): Prom
   }
 
   const storagePath = `${deviceId}/${jobId}/${artifactId}-${fileName}`;
-  await env.ARTIFACTS.put(storagePath, request.body, {
-    httpMetadata: {
-      contentType: request.headers.get("content-type") ?? "application/octet-stream",
-    },
-  });
+  let stored: R2Object | null;
+  try {
+    stored = await env.ARTIFACTS.put(storagePath, request.body, {
+      sha256: hexToArrayBuffer(sha256),
+      httpMetadata: {
+        contentType: request.headers.get("content-type") ?? "application/octet-stream",
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/\((10014|10037)\)\s*$/.test(message)) {
+      return json({ ok: false, error: "artifact_checksum_rejected" }, 422);
+    }
+    throw error;
+  }
+
+  if (!stored) {
+    return json({ ok: false, error: "artifact_storage_write_failed" }, 503);
+  }
+  const storedSha256 = stored.checksums.sha256;
+  if (
+    stored.size !== sizeBytes
+    || !storedSha256
+    || arrayBufferToHex(storedSha256).toLowerCase() !== sha256
+  ) {
+    await env.ARTIFACTS.delete(storagePath);
+    return json({ ok: false, error: "artifact_integrity_mismatch" }, 422);
+  }
 
   const readToken = randomHex(32);
   const readTokenSha256 = await sha256Text(readToken);
