@@ -4,9 +4,9 @@
 
 Execute `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\ordax-device-agent-setup.ps1`.
 O setup atualiza a instalação gerenciada, autentica o usuário quando necessário,
-recupera a credencial da própria máquina e instala o supervisor externo. O padrão
-continua `development-v2`; a migração para `cloudflare-v3` é explícita e usa o
-mesmo login GitHub/binding seguro, sem copiar credenciais manualmente.
+recupera a credencial Cloudflare da própria máquina e instala o supervisor externo.
+Cloudflare v3 é o único provider remoto suportado e usa login GitHub/binding seguro,
+sem copiar credenciais manualmente.
 GitHub Runner não é requisito. Veja [fluxo, requisitos e diagnóstico](docs/DEVICE_AGENT_SETUP.md).
 
 > Nome histórico do repositório: `mcp-blender`. O produto evolui agora para **OrdaX Device Agent**. Os comandos e pacotes antigos permanecem como aliases de compatibilidade durante a migração.
@@ -15,10 +15,10 @@ GitHub Runner não é requisito. Veja [fluxo, requisitos e diagnóstico](docs/DE
 
 O Device Agent aceita projetos locais cadastrados, companion Unity genérico, auditoria
 espacial de cenas, inspeção/preview Blender e sequências de capturas com snapshots
-e imagens entregues ao modelo por MCP. O Supabase continua ativo durante a migração, enquanto o novo transporte Cloudflare v3 é validado em paralelo.
+e imagens entregues ao modelo por MCP. Cloudflare v3 é o Control Plane remoto de produção do Device Agent, com WebSocket persistente, D1 e R2.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.21.0`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.22.0`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -61,7 +61,7 @@ ChatGPT / cliente MCP
                 +--> Reference Contract + evidência visual
                 +--> Git / artifacts / observações
                 |
-                +--> remote control plane\n                     +--> Supabase development-v2 (atual)\n                     +--> Cloudflare cloudflare-v3 (migração)
+                +--> remote control plane\n                     +--> Cloudflare v3 (produção)
 
 Blender Live companion <--> inbox/results/trajectory locais versionados por protocolo
 Unity CLI / companion   <--> HORDAX-game e outros projetos Unity cadastrados
@@ -97,9 +97,6 @@ ordax_dev_agent/
     blender_spatial_math.py
     blender_quality_rules.py
     blender_modeling_contracts.py
-
-control-plane/supabase/
-  apenas setup/recovery temporários do development-v2 durante o cutover
 
 control-plane/cloudflare/
   Worker + Durable Object + D1 + R2 do protocolo v3
@@ -345,7 +342,7 @@ sessions may restart automatically; unsaved Blender work is preserved.
 
 On Windows, the Dev Agent also launches an independent local watchdog process. The watchdog probes the local status endpoint, tracks the active job independently of the Python worker, and terminates only the Dev Agent process after repeated health failures or a single unchanged busy job exceeding the bounded 15-minute safety window. It deliberately keeps the watchdog process alive long enough to request a restart of the dedicated Scheduled Task; it does not kill the Agent process tree. The existing launcher/Scheduled Task then restarts the agent and performs the normal safe fast-forward update.
 
-The Windows Scheduled Task also carries two non-overlapping triggers: an interactive logon trigger and a one-minute maintenance trigger. Because the task uses `MultipleInstances=IgnoreNew`, the maintenance trigger is a no-op while the Agent is already running; if both the Agent and its child watchdog have disappeared, Task Scheduler can re-enter the normal Agent entrypoint without depending on GitHub Actions or Supabase job consumption.
+The Windows Scheduled Task also carries two non-overlapping triggers: an interactive logon trigger and a one-minute maintenance trigger. Because the task uses `MultipleInstances=IgnoreNew`, the maintenance trigger is a no-op while the Agent is already running; if both the Agent and its child watchdog have disappeared, Task Scheduler can re-enter the normal Agent entrypoint without depending on GitHub Actions.
 
 The typed `agent.resilience_repair` action reapplies the external bootstrap/task contract and verifies both recovery triggers before returning success. Its diagnostics intentionally avoid Win32 CIM/WMI process enumeration, which has been unreliable on the Salvador workstation.
 
