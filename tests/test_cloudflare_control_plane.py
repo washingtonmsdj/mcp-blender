@@ -201,6 +201,8 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertIn("if (unresolvedRunning) return;", worker)
         self.assertIn("/v3/device/recover-report", worker)
         self.assertIn("execution_context_superseded", worker)
+        self.assertIn("AND status IN ('leased','running') AND report_id IS NULL", worker)
+        self.assertIn('error: "start_rejected"', worker)
 
     def test_main_recovers_outbox_before_pairing_or_heartbeat(self) -> None:
         root = Path(__file__).resolve().parents[1]
@@ -219,6 +221,44 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertLess(pairing_index, heartbeat_index)
         self.assertIn('runtime["state"] = "recovering-terminal-reports"', main)
         self.assertIn('runtime["state"] = "terminal-recovery-error"', main)
+
+    def test_job_start_retries_identical_context_before_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            write_token(root)
+            control = CloudflareControlPlane(make_config(root))
+            payload = {"project": "scene"}
+            encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+            message = {
+                "type": "job",
+                "job": {
+                    "job_id": "33333333-3333-4333-8333-333333333333",
+                    "capability": "agent.status",
+                    "payload_canonical_b64": base64.b64encode(encoded).decode("ascii"),
+                    "payload_sha256": hashlib.sha256(encoded).hexdigest(),
+                    "effect_id": "44444444-4444-4444-8444-444444444444",
+                    "attempt_id": "55555555-5555-4555-8555-555555555555",
+                    "lease_id": "66666666-6666-4666-8666-666666666666",
+                    "execution_epoch": 1,
+                },
+            }
+            calls: list[tuple[str, dict]] = []
+
+            def flaky_start(operation, body=None, **_kwargs):
+                calls.append((operation, json.loads(json.dumps(body))))
+                if len(calls) < 3:
+                    raise TransientDeliveryError("lost start ACK")
+                return {"type": "ack", "ok": True}
+
+            control._rpc = flaky_start  # type: ignore[method-assign]
+            with patch("ordax_dev_agent.cloudflare_control_plane.time.sleep") as sleep:
+                job = control._job_from_message(message)
+
+            self.assertEqual(job.id, "33333333-3333-4333-8333-333333333333")
+            self.assertEqual([item[0] for item in calls], ["start", "start", "start"])
+            self.assertEqual(calls[0][1], calls[1][1])
+            self.assertEqual(calls[1][1], calls[2][1])
+            sleep.assert_has_calls([call(1), call(2)])
 
     def test_job_envelope_reuses_v2_digest_and_action_contract(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
