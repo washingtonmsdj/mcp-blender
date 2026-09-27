@@ -15,12 +15,15 @@ from websockets.sync.client import connect
 
 from .config import AgentConfig
 from .device_credentials import resolve_token_path
-from .development_control_plane import (
-    DevelopmentControlPlane,
+from .models import ActionResult, AgentJob
+from .remote_protocol import (
     DeviceAuthorizationError,
     TransientDeliveryError,
+    canonical_result,
+    decode_job_payload,
+    dispatch_job,
+    read_secret,
 )
-from .models import ActionResult, AgentJob
 
 
 class CloudflareControlPlane:
@@ -50,7 +53,7 @@ class CloudflareControlPlane:
         token_path = resolve_token_path(config.state_dir, "cloudflare-v3")
         self.device_token = (
             os.environ.get("ORDAX_DEVICE_TOKEN")
-            or DevelopmentControlPlane._read_secret(token_path)
+            or read_secret(token_path)
         )
         if not self.device_token:
             raise RuntimeError(
@@ -267,8 +270,8 @@ class CloudflareControlPlane:
         if not isinstance(row, dict):
             raise RuntimeError("cloudflare-v3 job envelope is missing")
 
-        payload = DevelopmentControlPlane._decode_payload(row)
-        action, action_payload, project = DevelopmentControlPlane._dispatch(row, payload)
+        payload = decode_job_payload(row)
+        action, action_payload, project = dispatch_job(row, payload)
         job = AgentJob(
             id=str(row["job_id"]),
             action=action,
@@ -328,9 +331,7 @@ class CloudflareControlPlane:
     def renew(self, job: AgentJob) -> dict[str, Any]:
         return self._rpc("lease_heartbeat", self._execution_context(job))
 
-    @staticmethod
-    def _canonical_result(result: ActionResult) -> tuple[dict[str, Any], str]:
-        return DevelopmentControlPlane._canonical_result(result)
+    _canonical_result = staticmethod(canonical_result)
 
     def complete(self, job: AgentJob, result: ActionResult) -> None:
         body, digest = self._canonical_result(result)
