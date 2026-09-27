@@ -195,14 +195,16 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             worker,
         )
         self.assertIn(
-            "SELECT id FROM ordax_jobs WHERE device_id = ?1 AND status = 'running' LIMIT 1",
+            "status = 'running' OR (status = 'leased' AND lease_expires_at >= ?2)",
             worker,
         )
-        self.assertIn("if (unresolvedRunning) return;", worker)
+        self.assertIn("if (activeExecution) return;", worker)
         self.assertIn("/v3/device/recover-report", worker)
         self.assertIn("execution_context_superseded", worker)
         self.assertIn("AND status IN ('leased','running') AND report_id IS NULL", worker)
         self.assertIn('error: "start_rejected"', worker)
+        self.assertIn("X-Ordax-Target-Agent-Instance", worker)
+        self.assertIn("X-Ordax-Target-Boot-Id", worker)
 
     def test_main_recovers_outbox_before_pairing_or_heartbeat(self) -> None:
         root = Path(__file__).resolve().parents[1]
