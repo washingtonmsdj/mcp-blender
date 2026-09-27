@@ -41,14 +41,17 @@ ao usuário e SYSTEM. Falha de ACL impede enrollment.
 
 `agent-settings.json` conserva projetos e opções existentes. Por padrão o setup
 continua configurando o Control Plane oficial `development-v2`. Depois que o
-backend Cloudflare estiver publicado e validado, o mesmo setup pode migrar
-explicitamente para `cloudflare-v3`, sem copiar token manualmente:
+backend Cloudflare estiver publicado e validado, a migração normal deve usar o
+cutover transacional, que mantém rollback automático:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\ordax-device-agent-setup.ps1 `
-  -ControlPlaneProtocol cloudflare-v3 `
-  -ControlPlaneUrl "https://<worker>.workers.dev"
+.\scripts\windows\ordax-cloudflare-v3-cutover.ps1 `
+  -ControlPlaneUrl "https://<worker>.<subdomain>.workers.dev"
 ```
+
+O parâmetro `cloudflare-v3` do setup continua existindo como primitiva de
+enrollment/manutenção, mas não é o procedimento recomendado para o primeiro
+corte de uma estação ativa.
 
 No v3, o token continua nascendo localmente; somente o SHA-256 chega ao Worker.
 `agent-settings.json` mantém `control_plane_identities` com o device ID e a
@@ -100,9 +103,12 @@ O RPC tem testes transacionais de proprietário, replay e permissões de execuç
 O teste de integração deve registrar device ID, heartbeat, job Blender e a
 configuração da Scheduled Task, sem registrar tokens.
 
-Reiniciar a tarefa comprova relançamento. Reboot real é uma verificação distinta:
-salve o trabalho, reinicie o Windows e faça login; confirme novo boot ID e
-heartbeat no backend. Não tratar simulação de restart como prova de reboot.
+Reiniciar a tarefa comprova apenas relançamento. Reboot real é uma verificação
+distinta. Depois do corte para v3, reinicie o Windows, faça login, execute um job
+remoto `blender.*` com sucesso e rode
+`ordax-cloudflare-v3-finalize.ps1`. O finalizador compara a época de boot do
+Windows, valida heartbeat v3 e só então libera o snapshot de rollback. Não tratar
+simulação de restart como prova de reboot.
 
 Referências: [autenticação Edge Functions](https://supabase.com/docs/guides/functions/auth),
 [identidade GitHub](https://docs.github.com/en/rest/users/users#get-the-authenticated-user),
