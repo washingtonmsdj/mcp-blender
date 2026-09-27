@@ -41,7 +41,7 @@ def write_token(root: Path) -> None:
 
 
 class CloudflareControlPlaneTests(unittest.TestCase):
-    def test_builder_requires_no_supabase_credentials(self) -> None:
+    def test_builder_constructs_cloudflare_transport(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             write_token(root)
@@ -116,7 +116,7 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             sleep.assert_has_calls([call(1), call(2)])
             self.assertNotIn(job.id, control._jobs)
 
-    def test_job_envelope_reuses_v2_digest_and_action_contract(self) -> None:
+    def test_job_envelope_uses_provider_neutral_digest_and_action_contract(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             write_token(root)
