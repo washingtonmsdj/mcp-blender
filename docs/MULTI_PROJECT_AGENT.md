@@ -1,10 +1,8 @@
 # OrdaX: projetos conectados e feedback visual
 
-O agente agora seleciona projetos cadastrados localmente. Jobs remotos usam o
-control plane selecionado: Cloudflare v3 é o destino da migração e
-development-v2 permanece apenas como rollback temporário. Não há chave OpenAI no
-agente e ele não escolhe o modelo: a inteligência fica no cliente que envia os
-jobs e examina os resultados.
+O agente seleciona projetos cadastrados localmente. Jobs remotos usam o Control
+Plane Cloudflare v3 de produção. Não há chave OpenAI no agente e ele não escolhe
+o modelo: a inteligência fica no cliente que envia os jobs e examina os resultados.
 
 ## Ativar
 
@@ -82,9 +80,7 @@ python -m ordax_dev_agent.mcp_server
 Configure esse comando no cliente MCP instalado na estação. Ferramentas:
 `projects_list`, `agent_capabilities`, `action_execute`, `artifact_image`.
 `artifact_image(project, artifact_path)` devolve conteúdo MCP de imagem, permitindo
-ao modelo ver os pixels. Um cliente exclusivamente na nuvem usa o control plane
-remoto selecionado (`cloudflare-v3` após o cutover; `development-v2` somente
-como rollback temporário). Stdio não é uma URL pública.
+ao modelo ver os pixels. Um cliente exclusivamente na nuvem usa o Control Plane Cloudflare v3. Stdio não é uma URL pública.
 
 ## Texto de projeto
 
