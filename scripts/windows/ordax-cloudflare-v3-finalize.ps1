@@ -189,12 +189,14 @@ try {
         throw 'REMOTE_BLENDER_JOB_MUST_SUCCEED_AFTER_REBOOT'
     }
 
-    Retire-DevelopmentV2LocalState \
-        -ExpectedDeviceId ([string]$cutover.target_device_id) \
-        -ExpectedControlPlaneUrl $expectedUrl \
-        -LastBlenderAction $lastAction \
-        -HeartbeatAgeSeconds $heartbeatAge \
-        -CurrentBootEpochMs $currentBoot
+    $retirementArgs = @{
+        ExpectedDeviceId = [string]$cutover.target_device_id
+        ExpectedControlPlaneUrl = $expectedUrl
+        LastBlenderAction = $lastAction
+        HeartbeatAgeSeconds = $heartbeatAge
+        CurrentBootEpochMs = $currentBoot
+    }
+    Retire-DevelopmentV2LocalState @retirementArgs
 
     $backupPath = [string]$cutover.backup_path
     if ($backupPath) {
