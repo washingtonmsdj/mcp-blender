@@ -73,7 +73,7 @@ footer { margin-top:22px; color:#658196; font-size:12px; }
 <header>
   <div>
     <h1>OrdaX Dev Agent</h1>
-    <div class="subtitle">Unity · Blender · Git · Supabase Control Plane</div>
+    <div class="subtitle">Unity · Blender · Git · OrdaX Control Plane</div>
   </div>
   <div class="pill"><span id="state-dot" class="dot"></span><span id="state">carregando…</span></div>
 </header>
@@ -86,8 +86,8 @@ footer { margin-top:22px; color:#658196; font-size:12px; }
   </article>
 
   <article class="card">
-    <div class="label">Supabase</div>
-    <div id="supabase" class="value">—</div>
+    <div class="label">Control Plane</div>
+    <div id="control-plane" class="value">—</div>
     <div id="pairing" class="meta">—</div>
   </article>
 
@@ -148,8 +148,8 @@ async function refresh() {
     document.getElementById('agent').textContent = s.agent_name || '—';
     document.getElementById('agent-meta').textContent =
       'v' + (s.agent_version || '?') + ' · poll ' + (s.poll_seconds || '?') + 's';
-    document.getElementById('supabase').textContent =
-      s.supabase_configured ? 'Configurado' : 'Não configurado';
+    document.getElementById('control-plane').textContent =
+      s.control_plane_protocol || 'não configurado';
     document.getElementById('pairing').textContent =
       r.last_heartbeat_at
         ? 'Último heartbeat há ' + Math.max(0, Math.floor(Date.now()/1000-r.last_heartbeat_at)) + 's'
