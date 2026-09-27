@@ -354,7 +354,14 @@ class CloudflareControlPlane:
     def _recover_terminal_report(self, report: dict[str, Any]) -> dict[str, Any]:
         url = f"{self.base_http_url}/v3/device/recover-report"
         try:
-            response = self.http.post(url, json=report)
+            response = self.http.post(
+                url,
+                json=report,
+                headers={
+                    "X-Ordax-Recovery-Agent-Instance": self.agent_instance_id,
+                    "X-Ordax-Recovery-Boot-Id": self.boot_id,
+                },
+            )
         except httpx.HTTPError as error:
             raise TransientDeliveryError(
                 f"cloudflare-v3 terminal recovery failed: {type(error).__name__}: {error}"
