@@ -272,14 +272,27 @@ async function deleteDevice(request: Request, env: Env, deviceId: string): Promi
     if (row.storage_path) await env.ARTIFACTS.delete(row.storage_path);
   }
 
-  const deleted = await env.DB.prepare(
-    "DELETE FROM ordax_devices WHERE id = ?1",
-  ).bind(deviceId).run();
+  const statements = [
+    env.DB.prepare(
+      "DELETE FROM ordax_job_events WHERE job_id IN (SELECT id FROM ordax_jobs WHERE device_id = ?1)",
+    ).bind(deviceId),
+    env.DB.prepare(
+      "DELETE FROM ordax_artifacts WHERE device_id = ?1",
+    ).bind(deviceId),
+    env.DB.prepare(
+      "DELETE FROM ordax_jobs WHERE device_id = ?1",
+    ).bind(deviceId),
+    env.DB.prepare(
+      "DELETE FROM ordax_devices WHERE id = ?1",
+    ).bind(deviceId),
+  ];
+  const results = await env.DB.batch(statements);
+  const deleted = results[3];
 
   return json({
     ok: true,
     device_id: deviceId,
-    deleted: (deleted.meta.changes ?? 0) === 1,
+    deleted: (deleted?.meta.changes ?? 0) === 1,
     artifacts_deleted: artifactRows.results?.length ?? 0,
   });
 }
