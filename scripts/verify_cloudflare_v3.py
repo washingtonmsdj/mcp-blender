@@ -27,6 +27,7 @@ def run(base_url: str, operator_token: str) -> None:
         headers=_operator_headers(operator_token),
     )
     control: CloudflareControlPlane | None = None
+    restarted_control: CloudflareControlPlane | None = None
     device_id: str | None = None
     try:
         health = operator.get("/health")
@@ -152,23 +153,40 @@ def run(base_url: str, operator_token: str) -> None:
                 "error_code": None,
             }
 
-            first_report = control._rpc("report", report, timeout=30.0)
-            if first_report.get("replayed") is not False:
-                raise RuntimeError("first terminal report was not committed normally")
+            outbox_path = control._terminal_outbox.persist(report)
+            if not outbox_path.is_file():
+                raise RuntimeError("terminal report was not persisted locally")
 
-            replay_report = control._rpc("report", report, timeout=30.0)
+            # Simulate the Agent process disappearing after local execution but
+            # before a terminal WebSocket report is accepted.
+            control._drop_socket()
+            restarted_control = CloudflareControlPlane(config)
+            if restarted_control._socket is not None:
+                raise RuntimeError("restart recovery unexpectedly opened a websocket")
+
+            recovered_count = restarted_control.recover_pending_reports()
+            if recovered_count != 1:
+                raise RuntimeError(
+                    f"expected one recovered terminal report, got {recovered_count}"
+                )
+            if restarted_control._terminal_outbox.pending():
+                raise RuntimeError("terminal outbox was not cleared after recovery")
+            if restarted_control._socket is not None:
+                raise RuntimeError("terminal recovery must happen before websocket intake")
+
+            replay_report = restarted_control._recover_terminal_report(report)
             if replay_report.get("replayed") is not True:
-                raise RuntimeError("identical terminal report replay was not acknowledged")
+                raise RuntimeError("identical recovered report replay was not acknowledged")
 
             conflict = dict(report)
             conflict["result_sha256"] = "0" * 64
             try:
-                control._rpc("report", conflict, timeout=30.0)
+                restarted_control._recover_terminal_report(conflict)
             except RuntimeError as error:
                 if "terminal_report_conflict" not in str(error):
                     raise
             else:
-                raise RuntimeError("conflicting terminal report replay was accepted")
+                raise RuntimeError("conflicting recovered terminal report was accepted")
 
             control._jobs.pop(job.id, None)
 
@@ -196,6 +214,9 @@ def run(base_url: str, operator_token: str) -> None:
         if control is not None:
             control._drop_socket()
             control.http.close()
+        if restarted_control is not None:
+            restarted_control._drop_socket()
+            restarted_control.http.close()
 
         cleanup_error: Exception | None = None
         if device_id:
