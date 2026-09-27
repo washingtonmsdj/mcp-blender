@@ -17,6 +17,7 @@ from websockets.sync.client import connect
 from .config import AgentConfig
 from .device_credentials import resolve_token_path
 from .models import ActionResult, AgentJob
+from .terminal_outbox import TerminalOutbox
 from .remote_protocol import (
     DeviceAuthorizationError,
     TransientDeliveryError,
@@ -71,6 +72,11 @@ class CloudflareControlPlane:
         self._queued_messages: list[dict[str, Any]] = []
         self._socket = None
         self._lock = threading.RLock()
+        self._terminal_outbox = TerminalOutbox(
+            config.state_dir,
+            "cloudflare-v3",
+            self.device_id,
+        )
 
         self.http = httpx.Client(
             timeout=httpx.Timeout(60.0),
@@ -291,6 +297,9 @@ class CloudflareControlPlane:
         return job
 
     def claim_next_job(self) -> AgentJob | None:
+        # Never accept a new action while a prior executed action still has a
+        # durable terminal report awaiting cloud acceptance.
+        self.recover_pending_reports()
         with self._lock:
             if self._queued_messages:
                 return self._job_from_message(self._queued_messages.pop(0))
@@ -334,6 +343,39 @@ class CloudflareControlPlane:
 
     _canonical_result = staticmethod(canonical_result)
 
+    def _recover_terminal_report(self, report: dict[str, Any]) -> dict[str, Any]:
+        url = f"{self.base_http_url}/v3/device/recover-report"
+        try:
+            response = self.http.post(url, json=report)
+        except httpx.HTTPError as error:
+            raise TransientDeliveryError(
+                f"cloudflare-v3 terminal recovery failed: {type(error).__name__}: {error}"
+            ) from error
+
+        if response.status_code in {401, 403}:
+            raise DeviceAuthorizationError("DEVICE_CREDENTIAL_REJECTED")
+        if response.status_code in {408, 429, 500, 502, 503, 504}:
+            raise TransientDeliveryError(
+                f"cloudflare-v3 terminal recovery HTTP {response.status_code}"
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"cloudflare-v3 terminal recovery HTTP {response.status_code}: "
+                f"{response.text[-2000:]}"
+            )
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            raise RuntimeError("cloudflare-v3 terminal recovery returned invalid response")
+        return payload
+
+    def recover_pending_reports(self) -> int:
+        recovered = 0
+        for path, report in self._terminal_outbox.pending():
+            self._recover_terminal_report(report)
+            self._terminal_outbox.acknowledge(path)
+            recovered += 1
+        return recovered
+
     def complete(self, job: AgentJob, result: ActionResult) -> None:
         body, digest = self._canonical_result(result)
         status = "succeeded" if result.ok else "failed"
@@ -347,6 +389,11 @@ class CloudflareControlPlane:
             "error_code": None if result.ok else "device_agent_action_failed",
         }
 
+        # Persist before the first network attempt. If the process dies after the
+        # local action completed, startup recovery can deliver this exact report
+        # before any new WebSocket/job claim is allowed.
+        outbox_path = self._terminal_outbox.persist(report)
+
         # A lost ACK must only repeat delivery of the identical terminal report.
         # It must never cause the Blender/Unity/Git action to run again.
         for attempt in range(3):
@@ -358,6 +405,7 @@ class CloudflareControlPlane:
                     raise
                 time.sleep(2 ** attempt)
 
+        self._terminal_outbox.acknowledge(outbox_path)
         self._jobs.pop(job.id, None)
 
     def upload_artifact(
