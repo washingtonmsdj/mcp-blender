@@ -31,11 +31,35 @@ function Write-BootstrapLog([string]$Message) {
     [System.IO.File]::AppendAllText($logPath, "$stamp $Message" + [Environment]::NewLine)
 }
 
-function Ensure-DevelopmentV2Settings {
+function Ensure-ConfiguredDeviceIdentity {
     # The shared setup client validates binding and can recover missing/revoked
     # credentials using the user's existing login. It never opens UI at boot.
     if (Test-Path (Join-Path $repoRootResolved 'ordax_dev_agent\device_setup.py')) {
-        & $python -m ordax_dev_agent.device_setup | ForEach-Object { Write-BootstrapLog "SETUP $_" }
+        $setupProtocol = "development-v2"
+        $setupControlPlaneUrl = $null
+        $setupSettingsPath = Join-Path $stateDir "agent-settings.json"
+        if (Test-Path $setupSettingsPath -PathType Leaf) {
+            try {
+                $setupSettings = Get-Content $setupSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($setupSettings.control_plane_protocol -in @("development-v2", "cloudflare-v3")) {
+                    $setupProtocol = [string]$setupSettings.control_plane_protocol
+                }
+                if ($setupProtocol -eq "cloudflare-v3" -and $setupSettings.control_plane_url) {
+                    $setupControlPlaneUrl = [string]$setupSettings.control_plane_url
+                }
+            } catch {
+                Write-BootstrapLog "IDENTITY_SETTINGS_INVALID fallback=development-v2"
+            }
+        }
+        $setupArgs = @("-m", "ordax_dev_agent.device_setup", "--protocol", $setupProtocol)
+        if ($setupProtocol -eq "cloudflare-v3") {
+            if (-not $setupControlPlaneUrl) {
+                Write-BootstrapLog "IDENTITY_RECOVERY_SKIP cloudflare control_plane_url missing"
+                return $false
+            }
+            $setupArgs += @("--control-plane-url", $setupControlPlaneUrl)
+        }
+        & $python @setupArgs | ForEach-Object { Write-BootstrapLog "SETUP $_" }
         return $LASTEXITCODE -eq 0
     }
     $tokenPath = Join-Path $stateDir "device-token.txt"
@@ -295,8 +319,8 @@ $env:ORDAX_SUPERVISOR_PID = [string]$PID
 $credentialRecovery = $false
 
 while ($true) {
-    # Never import optional MCP/Supabase SDKs before bringing local health up.
-    # The configured development-v2 Agent only needs its own runtime imports.
+    # Never import optional MCP/provider SDKs before bringing local health up.
+    # The configured Agent transport only needs its own runtime imports.
     Write-BootstrapLog 'LAUNCH_PREFLIGHT'
     if (-not [System.IO.File]::Exists($python)) {
         try {
@@ -313,17 +337,17 @@ while ($true) {
             # This is only a launch hint; AgentConfig performs JSON validation.
             # Avoid loading PowerShell.Utility on the cold startup path.
             $savedSettings = [System.IO.File]::ReadAllText($settingsFile)
-            $configured = $savedSettings -match '"control_plane_protocol"\s*:\s*"development-v2"' -and
+            $configured = $savedSettings -match '"control_plane_protocol"\s*:\s*"(development-v2|cloudflare-v3)"' -and
                 $savedSettings -match '"development_device_id"\s*:\s*"[0-9a-fA-F-]{36}"'
         }
         if ($credentialRecovery -or -not $configured) {
             Write-BootstrapLog 'IDENTITY_RECOVERY_START'
-            [void](Ensure-DevelopmentV2Settings)
+            [void](Ensure-ConfiguredDeviceIdentity)
         } else {
             Write-BootstrapLog 'IDENTITY_LOCAL_READY'
         }
     } catch {
-        Write-BootstrapLog "V2_IDENTITY_ERROR $($_.Exception.GetType().Name)"
+        Write-BootstrapLog "IDENTITY_ERROR $($_.Exception.GetType().Name)"
     }
     if (-not (Test-Path $python)) {
         Write-BootstrapLog "LAUNCH_WAIT venv missing path=$python retry=$retrySeconds"
