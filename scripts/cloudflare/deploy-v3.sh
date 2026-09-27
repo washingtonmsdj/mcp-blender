@@ -5,6 +5,7 @@ WRANGLER_VERSION="${WRANGLER_VERSION:-4.141.0}"
 DB_NAME="${ORDAX_CLOUDFLARE_D1_NAME:-ordax-control-plane-v3}"
 BUCKET_NAME="${ORDAX_CLOUDFLARE_R2_BUCKET:-ordax-device-artifacts}"
 WORKER_NAME="${ORDAX_CLOUDFLARE_WORKER_NAME:-ordax-control-plane-v3}"
+WORKERS_SUBDOMAIN="${ORDAX_CLOUDFLARE_SUBDOMAIN:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CLOUDFLARE_DIR="$ROOT/control-plane/cloudflare"
 TEMP_ROOT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
@@ -23,6 +24,41 @@ trap cleanup EXIT
 wrangler() {
   npx --yes "wrangler@${WRANGLER_VERSION}" "$@"
 }
+
+cloudflare_api() {
+  curl --fail-with-body --silent --show-error \
+    -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$@"
+}
+
+echo "Resolving workers.dev account subdomain"
+subdomain_response=""
+if subdomain_response="$(cloudflare_api "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" 2>/dev/null)"; then
+  WORKERS_SUBDOMAIN="$(printf '%s' "$subdomain_response" | python -c '
+import json,sys
+data=json.load(sys.stdin)
+print((data.get("result") or {}).get("subdomain") or "")
+')"
+fi
+
+if [[ -z "$WORKERS_SUBDOMAIN" ]]; then
+  WORKERS_SUBDOMAIN="ordax-${CLOUDFLARE_ACCOUNT_ID:0:12}"
+  echo "Creating workers.dev subdomain: ${WORKERS_SUBDOMAIN}"
+  payload="$(python -c 'import json,sys; print(json.dumps({"subdomain": sys.argv[1]}))' "$WORKERS_SUBDOMAIN")"
+  created="$(cloudflare_api -X PUT \
+    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+    --data "$payload")"
+  resolved="$(printf '%s' "$created" | python -c '
+import json,sys
+data=json.load(sys.stdin)
+print((data.get("result") or {}).get("subdomain") or "")
+')"
+  if [[ "$resolved" != "$WORKERS_SUBDOMAIN" ]]; then
+    echo "Cloudflare workers.dev subdomain creation was not confirmed" >&2
+    exit 2
+  fi
+fi
 
 echo "Resolving D1 database: ${DB_NAME}"
 d1_json="$(wrangler d1 list --json)"
@@ -74,6 +110,7 @@ config = {
     "name": worker_name,
     "main": str(Path(cloudflare_dir) / "src" / "index.ts"),
     "compatibility_date": "2026-09-27",
+    "workers_dev": True,
     "observability": {"enabled": True},
     "d1_databases": [{
         "binding": "DB",
@@ -133,7 +170,25 @@ PY
 echo "Deploying ${WORKER_NAME} with required secrets"
 wrangler deploy --config "$GENERATED_CONFIG" --secrets-file "$SECRETS_FILE"
 
+script_subdomain="$(cloudflare_api \
+  "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/subdomain")"
+script_enabled="$(printf '%s' "$script_subdomain" | python -c '
+import json,sys
+data=json.load(sys.stdin)
+print("true" if (data.get("result") or {}).get("enabled") is True else "false")
+')"
+if [[ "$script_enabled" != "true" ]]; then
+  echo "workers.dev route is not enabled for ${WORKER_NAME}" >&2
+  exit 2
+fi
+
+CONTROL_PLANE_URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  echo "control_plane_url=${CONTROL_PLANE_URL}" >> "$GITHUB_OUTPUT"
+fi
+
 echo "Cloudflare v3 deployment complete."
 echo "D1=${DB_NAME}"
 echo "R2=${BUCKET_NAME}"
 echo "WORKER=${WORKER_NAME}"
+echo "CONTROL_PLANE_URL=${CONTROL_PLANE_URL}"

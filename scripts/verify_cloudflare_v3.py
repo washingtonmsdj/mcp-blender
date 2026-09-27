@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -25,6 +26,7 @@ def run(base_url: str, operator_token: str) -> None:
         headers=_operator_headers(operator_token),
     )
     control: CloudflareControlPlane | None = None
+    device_id: str | None = None
     try:
         health = operator.get("/health")
         health.raise_for_status()
@@ -137,10 +139,32 @@ def run(base_url: str, operator_token: str) -> None:
             if not any(item.get("id") == artifact.get("artifact_id") for item in artifacts):
                 raise RuntimeError("artifact metadata was not persisted")
     finally:
+        active_error = sys.exc_info()[0] is not None
         if control is not None:
             control._drop_socket()
             control.http.close()
+
+        cleanup_error: Exception | None = None
+        if device_id:
+            try:
+                cleanup = operator.delete(f"/v3/devices/{device_id}")
+                cleanup.raise_for_status()
+                payload = cleanup.json()
+                if payload.get("ok") is not True or payload.get("deleted") is not True:
+                    raise RuntimeError("remote e2e cleanup was not confirmed")
+            except Exception as error:
+                cleanup_error = error
         operator.close()
+
+        if cleanup_error is not None:
+            message = (
+                f"cloudflare-v3 e2e cleanup failed for device {device_id}: "
+                f"{cleanup_error}"
+            )
+            if active_error:
+                print(message, file=sys.stderr)
+            else:
+                raise RuntimeError(message) from cleanup_error
 
 
 def main() -> int:
