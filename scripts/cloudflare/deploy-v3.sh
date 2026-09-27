@@ -79,15 +79,27 @@ config = {
         "bucket_name": bucket_name,
     }],
     "durable_objects": {
-        "bindings": [{
-            "name": "DEVICE_SESSIONS",
-            "class_name": "DeviceSession",
-        }],
+        "bindings": [
+            {
+                "name": "DEVICE_SESSIONS",
+                "class_name": "DeviceSession",
+            },
+            {
+                "name": "ENROLLMENT_SESSIONS",
+                "class_name": "EnrollmentSession",
+            },
+        ],
     },
-    "migrations": [{
-        "tag": "v1",
-        "new_sqlite_classes": ["DeviceSession"],
-    }],
+    "migrations": [
+        {
+            "tag": "v1",
+            "new_sqlite_classes": ["DeviceSession"],
+        },
+        {
+            "tag": "v2",
+            "new_sqlite_classes": ["EnrollmentSession"],
+        },
+    ],
 }
 target.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 print(target)
