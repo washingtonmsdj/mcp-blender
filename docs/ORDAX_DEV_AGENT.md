@@ -92,7 +92,7 @@ product/account credentials never authenticate development jobs, and the
 Device Agent uses a dedicated device-scoped development credential.
 
 The active Windows station still uses `development-v2` through
-`ordax-development-device`. Agent 1.21.0 also implements `cloudflare-v3`,
+`ordax-development-device`. The current Device Agent line also implements `cloudflare-v3`,
 which keeps one authenticated Durable Object WebSocket open and moves durable
 device/job/event state to D1 plus artifact bytes to R2. Mutable Blender work remains routed through the
 closed-world capability `ordax.dev.adapter.invoke`, which carries only a
@@ -242,6 +242,7 @@ dependency where an old/broken agent could not update the very checkout needed
 to fix itself.
 
 - The bootstrap retries non-zero agent exits with bounded exponential backoff.
+- Identity recovery is provider-preserving: an existing Cloudflare v3 identity or credential is never silently downgraded to development-v2, including when settings are invalid or the shared setup client is unavailable.
 - Before every start it runs the external copy of the same non-refreshing
   tracked-file/index-tree preflight used by `agent.update`.
 - It fetches `main` with an explicit
