@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
+import os
 import threading
 import uuid
 from pathlib import Path
@@ -48,7 +49,7 @@ class CloudflareControlPlane:
 
         token_path = resolve_token_path(config.state_dir, "cloudflare-v3")
         self.device_token = (
-            __import__("os").environ.get("ORDAX_DEVICE_TOKEN")
+            os.environ.get("ORDAX_DEVICE_TOKEN")
             or DevelopmentControlPlane._read_secret(token_path)
         )
         if not self.device_token:
