@@ -23,6 +23,7 @@ class SetupTests(unittest.TestCase):
         self.binding = 'a' * 64
         self.credential_hash = None
         self.enrollments = 0
+        self.protocol = 'development-v2'
         self.calls = []
         self.offline = False
         self.lost_ack = False
@@ -41,6 +42,7 @@ class SetupTests(unittest.TestCase):
             raise httpx.ConnectError('offline')
         body = json.loads(req.content)
         self.calls.append(body)
+        self.last_request_path = req.url.path
         if body['operation'] == 'enroll':
             self.assertEqual('Bearer github-private', req.headers['Authorization'])
             self.assertNotIn('token', body)
@@ -53,10 +55,16 @@ class SetupTests(unittest.TestCase):
             return httpx.Response(403, json={'ok': False})
         elif hashlib.sha256(req.headers['X-Ordax-Device-Token'].encode()).hexdigest() != self.credential_hash:
             return httpx.Response(401, json={'ok': False})
-        return httpx.Response(200, json={'ok': True, 'protocol': 'development-v2', 'device_id': self.device})
+        return httpx.Response(200, json={'ok': True, 'protocol': self.protocol, 'device_id': self.device})
 
-    def run_setup(self):
-        return configure(self.state, client=self.client, binding=self.binding, home=self.home)
+    def run_setup(self, **kwargs):
+        return configure(
+            self.state,
+            client=self.client,
+            binding=self.binding,
+            home=self.home,
+            **kwargs,
+        )
 
     def test_new_machine_and_ten_idempotent_runs(self):
         self.run_setup()
@@ -118,6 +126,37 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(custom, settings['projects']['cerco-no-interior-mvp'])
         self.assertEqual(123, settings['custom'])
         self.assertEqual('development-v2', settings['control_plane_protocol'])
+
+
+    def test_cloudflare_v3_enrollment_preserves_projects_and_uses_provider_url(self):
+        self.protocol = 'cloudflare-v3'
+        result = self.run_setup(
+            protocol='cloudflare-v3',
+            control_plane_url='https://control.example',
+        )
+        self.assertEqual('cloudflare-v3', result['protocol'])
+        settings = json.loads((self.state / 'agent-settings.json').read_text())
+        self.assertEqual('cloudflare-v3', settings['control_plane_protocol'])
+        self.assertEqual('https://control.example', settings['control_plane_url'])
+        self.assertEqual(self.device, settings['development_device_id'])
+        self.assertIn('cerco-no-interior-mvp', settings['projects'])
+        self.assertEqual('/v3/device/setup', self.last_request_path)
+
+    def test_cloudflare_v3_requires_https_outside_loopback(self):
+        with self.assertRaisesRegex(SetupError, 'CONTROL_PLANE_URL_INVALID'):
+            self.run_setup(
+                protocol='cloudflare-v3',
+                control_plane_url='http://control.example',
+            )
+        self.assertEqual([], self.calls)
+
+    def test_cloudflare_v3_allows_loopback_http_for_local_verification(self):
+        self.protocol = 'cloudflare-v3'
+        result = self.run_setup(
+            protocol='cloudflare-v3',
+            control_plane_url='http://127.0.0.1:8787',
+        )
+        self.assertEqual('cloudflare-v3', result['protocol'])
 
     def test_corrupt_settings_are_not_overwritten(self):
         (self.state / 'agent-settings.json').write_text('{broken')
