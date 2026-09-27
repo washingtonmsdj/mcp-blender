@@ -21,7 +21,7 @@ class UnityEditorRecoveryActionTests(unittest.TestCase):
         )
         config = AgentConfig(
             "test",
-            None,
+            
             
             5,
             root / "state",
