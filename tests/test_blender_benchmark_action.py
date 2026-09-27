@@ -15,7 +15,6 @@ class BlenderBenchmarkActionTests(unittest.TestCase):
         project_root.mkdir(parents=True, exist_ok=True)
         return AgentConfig(
             agent_name="benchmark-test",
-            supabase_url=None,
             poll_seconds=5.0,
             state_dir=root / "state",
             agent_repo_path=root / "managed",
