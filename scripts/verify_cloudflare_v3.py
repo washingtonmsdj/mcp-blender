@@ -43,7 +43,7 @@ def run(base_url: str, operator_token: str) -> None:
             root = Path(raw)
             state = root / "state"
             state.mkdir(parents=True)
-            (state / "device-token.txt").write_text(
+            (state / "device-token.cloudflare-v3.txt").write_text(
                 device_token + "\n",
                 encoding="utf-8",
             )
