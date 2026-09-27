@@ -41,6 +41,10 @@ function Retire-DevelopmentV2LocalState(
     if (-not (Test-Path $settingsPath -PathType Leaf)) {
         throw 'AGENT_SETTINGS_MISSING_DURING_V2_RETIREMENT'
     }
+    $cloudflareTokenPath = Join-Path $stateDir 'device-token.cloudflare-v3.txt'
+    if (-not (Test-Path $cloudflareTokenPath -PathType Leaf)) {
+        throw 'CLOUDFLARE_V3_CREDENTIAL_MISSING_DURING_V2_RETIREMENT'
+    }
 
     $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $settings) {
@@ -85,6 +89,29 @@ function Retire-DevelopmentV2LocalState(
     Write-AtomicJson -Path $finalizedProofPath -Value $proof
     Write-AtomicJson -Path $settingsPath -Value $settings
 
+    $sanitized = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (
+        -not $sanitized -or
+        [string]$sanitized.control_plane_protocol -ne 'cloudflare-v3' -or
+        [string]$sanitized.development_device_id -ne $ExpectedDeviceId -or
+        (([string]$sanitized.control_plane_url).TrimEnd('/')) -ne $ExpectedControlPlaneUrl
+    ) {
+        throw 'SANITIZED_CLOUDFLARE_V3_SETTINGS_INVALID'
+    }
+    if (
+        $sanitized.PSObject.Properties['supabase_url'] -or
+        $sanitized.PSObject.Properties['publishable_key']
+    ) {
+        throw 'SANITIZED_SETTINGS_STILL_CONTAIN_SUPABASE_KEYS'
+    }
+    if (
+        $sanitized.PSObject.Properties['control_plane_identities'] -and
+        $sanitized.control_plane_identities -and
+        $sanitized.control_plane_identities.PSObject.Properties['development-v2']
+    ) {
+        throw 'SANITIZED_SETTINGS_STILL_CONTAIN_DEVELOPMENT_V2_IDENTITY'
+    }
+
     $legacyCredentialFiles = @(
         'device-token.development-v2.txt',
         'device-token.development-v2.txt.pending-setup',
@@ -101,6 +128,10 @@ function Retire-DevelopmentV2LocalState(
         if (Test-Path $path) {
             throw "V2_RETIREMENT_CREDENTIAL_DELETE_FAILED=$name"
         }
+    }
+
+    if (-not (Test-Path $cloudflareTokenPath -PathType Leaf)) {
+        throw 'CLOUDFLARE_V3_CREDENTIAL_LOST_DURING_V2_RETIREMENT'
     }
 
     [Environment]::SetEnvironmentVariable('ORDAX_SUPABASE_URL', $null, 'User')
