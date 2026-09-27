@@ -48,26 +48,45 @@ depende de um Worker pré-existente: o secret é enviado junto com o código via
 ## Primeiro corte
 
 O workflow de deploy já comprova automaticamente `/health` e o E2E remoto.
-Se ele terminar verde, ficam pendentes somente a prova de enrollment GitHub da
-máquina real e o corte do Device Agent:
+Depois disso, use o cutover transacional na estação Windows:
 
-1. validar `POST /v3/device/setup` através do setup oficial com o login GitHub
-   de um administrador do repositório;
-2. atualizar o Device Agent usando a URL verificada mostrada no Summary do workflow:
+```powershell
+.\scripts\windows\ordax-cloudflare-v3-cutover.ps1 \
+  -ControlPlaneUrl "https://<worker>.<subdomain>.workers.dev"
+```
 
-   ```powershell
-   .\scripts\windows\ordax-device-agent-setup.ps1 `
-     -ControlPlaneProtocol cloudflare-v3 `
-     -ControlPlaneUrl "https://<worker>.workers.dev"
-   ```
+O cutover:
 
-   O PC gera a nova credencial localmente; não copie token do dashboard.
+1. recusa interromper um job em andamento;
+2. preserva a identidade/credencial `development-v2`;
+3. faz o enrollment `cloudflare-v3` enquanto o agente v2 ainda está rodando;
+4. salva snapshot da configuração;
+5. reinicia somente o Device Agent;
+6. exige novo processo, provider/URL/device corretos e heartbeat v3 recente;
+7. se qualquer etapa v3 falhar, restaura `development-v2` e reinicia;
+8. se v3 passar, mantém o snapshot v2 até a prova pós-reboot.
 
-3. confirmar que o Agent ficou em:
-   - `control_plane_protocol = cloudflare-v3`
-   - `control_plane_url = https://<worker>.workers.dev`
-   - o `development_device_id` provisionado;
-4. reiniciar a Scheduled Task e confirmar reconnect;
-5. fazer um reboot real do Windows e confirmar novo `boot_id` + job Blender;
-6. manter Supabase v2 disponível até essa prova pós-reboot;
-7. remover v2 apenas em uma mudança posterior e explícita.
+O limite do Supabase já pode estar esgotado. Por isso um heartbeat v2 remoto
+desatualizado não impede o corte se o agente local estiver respondendo e ocioso.
+Já o novo v3 **não é aceito** sem heartbeat Cloudflare recente.
+
+## Prova final antes de retirar Supabase
+
+Depois do cutover bem-sucedido:
+
+1. salve o trabalho e faça um **reboot real do Windows**;
+2. faça login e aguarde o Device Agent reconectar;
+3. envie pelo novo Control Plane pelo menos um job remoto `blender.*` e confirme
+   sucesso;
+4. execute:
+
+```powershell
+.\scripts\windows\ordax-cloudflare-v3-finalize.ps1
+```
+
+O finalizador usa o relógio monotônico do Windows (`TickCount64`) para provar
+que houve um novo boot, exige heartbeat v3 recente e exige que o último job remoto
+bem-sucedido seja `blender.*`. Só então remove o snapshot local de rollback.
+
+A infraestrutura Supabase v2 só deve ser removida em uma mudança posterior,
+depois dessa prova final.
