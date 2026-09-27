@@ -19,6 +19,7 @@ class CloudflareCutoverTests(unittest.TestCase):
         self.assertIn("Restore-V2ActiveSettings", script)
         self.assertIn("RequireRemoteHeartbeat", script)
         self.assertIn("awaiting-reboot-proof", script)
+        self.assertIn("source_windows_boot_epoch_ms", script)
         self.assertIn("Emergency v2 rollback completed", script)
         self.assertIn("CLOUDFLARE_V3_CUTOVER_AND_V2_ROLLBACK_FAILED", script)
         self.assertNotIn("Get-CimInstance", script)
@@ -38,6 +39,28 @@ class CloudflareCutoverTests(unittest.TestCase):
             "Restart-ManagedAgent -OldPid $rollbackOldPid"
         )
         self.assertLess(restore_index, rollback_restart_index)
+
+    def test_finalize_requires_real_reboot_and_successful_remote_blender_job(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        script = (
+            root / "scripts" / "windows" / "ordax-cloudflare-v3-finalize.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("[Environment]::TickCount64", script)
+        self.assertIn("REAL_WINDOWS_REBOOT_REQUIRED", script)
+        self.assertIn("CLOUDFLARE_V3_HEARTBEAT_STALE_AFTER_REBOOT", script)
+        self.assertIn("REMOTE_JOB_REQUIRED_AFTER_REBOOT", script)
+        self.assertIn("REMOTE_BLENDER_JOB_REQUIRED_AFTER_REBOOT", script)
+        self.assertIn("REMOTE_BLENDER_JOB_MUST_SUCCEED_AFTER_REBOOT", script)
+        self.assertIn("SUPABASE_ROLLBACK_SNAPSHOT=RELEASED", script)
+
+        reboot_index = script.index("REAL_WINDOWS_REBOOT_REQUIRED")
+        blender_index = script.index("REMOTE_BLENDER_JOB_REQUIRED_AFTER_REBOOT")
+        delete_index = script.index(
+            "Remove-Item -LiteralPath $cutoverStatePath -Force"
+        )
+        self.assertLess(reboot_index, delete_index)
+        self.assertLess(blender_index, delete_index)
 
     def test_public_status_exposes_non_secret_control_plane_url(self) -> None:
         root = Path("/tmp/ordax-cutover-test")
