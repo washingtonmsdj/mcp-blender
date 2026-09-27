@@ -238,6 +238,7 @@ class ActionRegistry(
             "agent.status": self.agent_status,
             "agent.component_catalog": self.agent_component_catalog,
             "agent.component_update_plan": self.agent_component_update_plan,
+            "agent.control_plane_retirement_status": self.agent_control_plane_retirement_status,
             "agent.resilience_status": self.agent_resilience_status,
             "agent.resilience_repair": self.agent_resilience_repair,
             "agent.update": self.agent_update,
