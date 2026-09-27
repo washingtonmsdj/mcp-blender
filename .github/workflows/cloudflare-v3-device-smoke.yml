@@ -1,0 +1,83 @@
+name: Cloudflare v3 Device Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      device_id:
+        description: Cloudflare v3 device UUID to exercise
+        required: true
+        type: string
+      action:
+        description: Closed-world device action
+        required: false
+        default: blender.version
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-v3-device-smoke-${{ inputs.device_id }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      DEVICE_ID: ${{ inputs.device_id }}
+      ACTION: ${{ inputs.action }}
+    steps:
+      - name: Queue device smoke job
+        id: queue
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action "$ACTION" \
+            '{device_id:$device_id,action:$action,payload:{}}')"
+          response="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
+          job_id="$(jq -er '.job_id' <<<"$response")"
+          echo "job_id=$job_id" >> "$GITHUB_OUTPUT"
+          echo "Queued $ACTION for device $DEVICE_ID as job $job_id"
+
+      - name: Wait for device result
+        shell: bash
+        env:
+          JOB_ID: ${{ steps.queue.outputs.job_id }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 120); do
+            response="$(curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
+              "$CONTROL_PLANE_URL/v3/jobs/$JOB_ID")"
+            status="$(jq -r '.job.status // "unknown"' <<<"$response")"
+            case "$status" in
+              succeeded)
+                action="$(jq -r '.job.capability // "unknown"' <<<"$response")"
+                echo "Device smoke succeeded: $action"
+                {
+                  echo "## Cloudflare v3 device smoke"
+                  echo
+                  echo "- Device: `$DEVICE_ID`"
+                  echo "- Job: `$JOB_ID`"
+                  echo "- Action: `$action`"
+                  echo "- Status: `succeeded`"
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+                ;;
+              failed|cancelled)
+                echo "Device smoke finished with status $status" >&2
+                jq '{status:.job.status,error_code:.job.error_code}' <<<"$response" >&2
+                exit 1
+                ;;
+            esac
+            sleep 2
+          done
+          echo "Timed out waiting for device job $JOB_ID" >&2
+          exit 1
