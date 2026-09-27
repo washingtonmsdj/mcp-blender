@@ -215,23 +215,25 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         )
 
 
-    def test_external_bootstrap_recovers_development_v2_identity_without_runner(self) -> None:
+    def test_external_bootstrap_recovers_selected_provider_identity_without_runner(self) -> None:
         root = Path(__file__).resolve().parents[1]
         bootstrap = (
             root / "scripts" / "windows" / "ordax-agent-bootstrap.ps1"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("function Ensure-DevelopmentV2Settings", bootstrap)
+        self.assertIn("function Ensure-ConfiguredDeviceIdentity", bootstrap)
         self.assertIn("ordax-development-device-identify", bootstrap)
         self.assertIn('"X-Ordax-Device-Token" = $token', bootstrap)
         self.assertIn("control_plane_protocol", bootstrap)
         self.assertIn('"development-v2"', bootstrap)
+        self.assertIn('"cloudflare-v3"', bootstrap)
+        self.assertIn('"--control-plane-url"', bootstrap)
         self.assertIn("development_device_id", bootstrap)
         self.assertIn("cerco-no-interior-mvp", bootstrap)
 
         loop_index = bootstrap.index("while ($true)")
         identify_index = bootstrap.index(
-            "[void](Ensure-DevelopmentV2Settings)",
+            "[void](Ensure-ConfiguredDeviceIdentity)",
             loop_index,
         )
         launch_index = bootstrap.index(
