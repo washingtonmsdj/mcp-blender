@@ -514,6 +514,37 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         )
         self.assertLess(retarget_index, start_index)
 
+    def test_cloudflare_finalizer_retires_only_legacy_provider_state(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        finalizer = (
+            root / "scripts" / "windows" / "ordax-cloudflare-v3-finalize.ps1"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("cloudflare-v3-finalized.json", finalizer)
+        self.assertIn("Retire-DevelopmentV2LocalState", finalizer)
+        self.assertIn("Remove-JsonProperty -Object $settings -Name 'supabase_url'", finalizer)
+        self.assertIn("Remove-JsonProperty -Object $settings -Name 'publishable_key'", finalizer)
+        self.assertIn("Remove-JsonProperty -Object $settings.control_plane_identities -Name 'development-v2'", finalizer)
+        self.assertIn("'device-token.development-v2.txt'", finalizer)
+        self.assertIn("'device-token.development-v2.txt.pending-setup'", finalizer)
+        self.assertIn("'device-token.development-v2.txt.pending-recovery'", finalizer)
+        self.assertIn("'device-token.development-v2.txt.pending-enrollment'", finalizer)
+        self.assertIn("'device-token.txt'", finalizer)
+        self.assertIn("$cloudflareTokenPath = Join-Path $stateDir 'device-token.cloudflare-v3.txt'", finalizer)
+        self.assertIn("CLOUDFLARE_V3_CREDENTIAL_MISSING_DURING_V2_RETIREMENT", finalizer)
+        self.assertIn("CLOUDFLARE_V3_CREDENTIAL_LOST_DURING_V2_RETIREMENT", finalizer)
+        self.assertIn("SANITIZED_SETTINGS_STILL_CONTAIN_SUPABASE_KEYS", finalizer)
+        self.assertIn("SANITIZED_SETTINGS_STILL_CONTAIN_DEVELOPMENT_V2_IDENTITY", finalizer)
+        self.assertNotIn("'device-token.cloudflare-v3.txt',", finalizer)
+        self.assertIn("development_v2_local_state_retired = $true", finalizer)
+        self.assertIn("DEVELOPMENT_V2_LOCAL_STATE=RETIRED", finalizer)
+
+        retire_index = finalizer.index("Retire-DevelopmentV2LocalState @retirementArgs")
+        snapshot_index = finalizer.index("Remove-Item -LiteralPath $backupPath", retire_index)
+        cutover_index = finalizer.index("Remove-Item -LiteralPath $cutoverStatePath", retire_index)
+        self.assertLess(retire_index, snapshot_index)
+        self.assertLess(retire_index, cutover_index)
+
     def test_unity_refresh_recovery_has_no_cim_dependency(self) -> None:
         root = Path(__file__).resolve().parents[1]
         refresh = (
