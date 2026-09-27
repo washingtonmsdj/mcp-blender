@@ -25,6 +25,7 @@ def run(base_url: str, operator_token: str) -> None:
         headers=_operator_headers(operator_token),
     )
     control: CloudflareControlPlane | None = None
+    device_id: str | None = None
     try:
         health = operator.get("/health")
         health.raise_for_status()
@@ -140,6 +141,17 @@ def run(base_url: str, operator_token: str) -> None:
         if control is not None:
             control._drop_socket()
             control.http.close()
+        if device_id:
+            try:
+                cleanup = operator.delete(f"/v3/devices/{device_id}")
+                cleanup.raise_for_status()
+                payload = cleanup.json()
+                if payload.get("ok") is not True or payload.get("deleted") is not True:
+                    raise RuntimeError("remote e2e cleanup was not confirmed")
+            except Exception as error:
+                raise RuntimeError(
+                    f"cloudflare-v3 e2e cleanup failed for device {device_id}: {error}"
+                ) from error
         operator.close()
 
 
