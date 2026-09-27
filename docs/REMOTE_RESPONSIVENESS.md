@@ -108,3 +108,9 @@ replays remain idempotent; superseded or divergent contexts fail closed. A crash
 that occurs before the terminal outbox file is atomically promoted can still
 leave a `running` job requiring diagnosis, but it will not be automatically
 executed again.
+
+The pre-execution `start` acknowledgement is also retried only with the
+identical execution context. Server-side start/lease updates require the same
+effect, attempt, lease, epoch, agent instance and boot identity and refuse to
+touch a terminal row. This prevents a delayed start/lease message racing with
+terminal recovery and restoring a completed job to `running`.
