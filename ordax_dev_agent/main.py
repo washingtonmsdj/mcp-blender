@@ -205,14 +205,22 @@ def main() -> int:
 
     watchdog_process = _start_local_watchdog(config)
     runtime["watchdog_pid"] = watchdog_process.pid if watchdog_process else None
+    protocol = str(config.control_plane_protocol or "legacy-v1").strip().lower()
     remote_control_configured = bool(
-        config.supabase_url
-        and (
-            (config.control_plane_protocol == "legacy-v1" and config.publishable_key)
-            or (
-                config.control_plane_protocol == "development-v2"
-                and config.development_device_id
-            )
+        (
+            protocol == "legacy-v1"
+            and config.supabase_url
+            and config.publishable_key
+        )
+        or (
+            protocol == "development-v2"
+            and config.supabase_url
+            and config.development_device_id
+        )
+        or (
+            protocol == "cloudflare-v3"
+            and config.control_plane_url
+            and config.development_device_id
         )
     )
     runtime["state"] = "pairing" if remote_control_configured else "local-ready"
@@ -261,7 +269,7 @@ def main() -> int:
                 "summary": "agent paired" if paired_now else "agent token loaded",
             }
             if paired_now:
-                print("OrdaX Dev Agent paired with Supabase control plane.")
+                print("OrdaX Dev Agent paired with remote control plane.")
         except Exception as error:
             runtime["state"] = "pairing-error"
             runtime["last_result"] = {"ok": False, "summary": str(error)}
