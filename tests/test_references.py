@@ -52,7 +52,7 @@ class ReferenceContractTests(unittest.TestCase):
 
         self.config = AgentConfig(
             "test",
-            None,
+            
             
             5,
             self.root / "state",
