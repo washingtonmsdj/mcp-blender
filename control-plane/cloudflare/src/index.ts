@@ -960,10 +960,18 @@ export class DeviceSession extends DurableObject<Env> {
     }
 
     const jobId = typeof message.job_id === "string" ? message.job_id : "";
+    const effectId = typeof message.effect_id === "string" ? message.effect_id : "";
+    const attemptId = typeof message.attempt_id === "string" ? message.attempt_id : "";
     const leaseId = typeof message.lease_id === "string" ? message.lease_id : "";
     const executionEpoch = Number.isSafeInteger(message.execution_epoch)
       ? Number(message.execution_epoch) : 0;
-    if (!UUID_RE.test(jobId) || !UUID_RE.test(leaseId) || executionEpoch < 1) {
+    if (
+      !UUID_RE.test(jobId)
+      || !UUID_RE.test(effectId)
+      || !UUID_RE.test(attemptId)
+      || !UUID_RE.test(leaseId)
+      || executionEpoch < 1
+    ) {
       this.ack(ws, requestId, false, { error: "execution_context_invalid" });
       return;
     }
@@ -992,13 +1000,16 @@ export class DeviceSession extends DurableObject<Env> {
       }
 
       const terminal = await this.env.DB.prepare(
-        `SELECT status, report_id, result_json, result_sha256, error_code,
-                lease_id, execution_epoch, agent_instance_id, boot_id
+        `SELECT status, effect_id, attempt_id, report_id, result_json,
+                result_sha256, error_code, lease_id, execution_epoch,
+                agent_instance_id, boot_id
          FROM ordax_jobs
          WHERE id = ?1 AND device_id = ?2
            AND status IN ('succeeded','failed','cancelled')`,
       ).bind(jobId, deviceId).first<{
         status: string;
+        effect_id: string;
+        attempt_id: string | null;
         report_id: string | null;
         result_json: string | null;
         result_sha256: string | null;
@@ -1011,7 +1022,9 @@ export class DeviceSession extends DurableObject<Env> {
 
       if (terminal) {
         const replayMatches = (
-          terminal.report_id === reportId
+          terminal.effect_id === effectId
+          && terminal.attempt_id === attemptId
+          && terminal.report_id === reportId
           && terminal.status === status
           && terminal.result_json === resultJson
           && (terminal.result_sha256 ?? "").toLowerCase() === resultSha256
@@ -1035,11 +1048,12 @@ export class DeviceSession extends DurableObject<Env> {
 
     const active = await this.env.DB.prepare(
       `SELECT id FROM ordax_jobs
-       WHERE id = ?1 AND device_id = ?2 AND lease_id = ?3 AND execution_epoch = ?4
-         AND agent_instance_id = ?5 AND boot_id = ?6
+       WHERE id = ?1 AND device_id = ?2 AND effect_id = ?3 AND attempt_id = ?4
+         AND lease_id = ?5 AND execution_epoch = ?6
+         AND agent_instance_id = ?7 AND boot_id = ?8
          AND status IN ('leased','running')`,
     ).bind(
-      jobId, deviceId, leaseId, executionEpoch,
+      jobId, deviceId, effectId, attemptId, leaseId, executionEpoch,
       attachment.agentInstanceId, attachment.bootId,
     ).first();
     if (!active) {
@@ -1095,11 +1109,14 @@ export class DeviceSession extends DurableObject<Env> {
         `UPDATE ordax_jobs SET
            status = ?1, report_id = ?2, result_json = ?3, result_sha256 = ?4,
            error_code = ?5, finished_at = ?6, lease_expires_at = NULL
-         WHERE id = ?7 AND device_id = ?8 AND lease_id = ?9 AND execution_epoch = ?10
+         WHERE id = ?7 AND device_id = ?8 AND effect_id = ?9 AND attempt_id = ?10
+           AND lease_id = ?11 AND execution_epoch = ?12
+           AND agent_instance_id = ?13 AND boot_id = ?14
            AND status IN ('leased','running') AND report_id IS NULL`,
       ).bind(
         status, reportId, resultJson, resultSha256, errorCode,
-        finishedAt, jobId, deviceId, leaseId, executionEpoch,
+        finishedAt, jobId, deviceId, effectId, attemptId, leaseId,
+        executionEpoch, attachment.agentInstanceId, attachment.bootId,
       ).run();
       const ok = (update.meta.changes ?? 0) === 1;
       this.ack(ws, requestId, ok, ok ? { status, replayed: false } : { error: "report_rejected" });
