@@ -13,6 +13,7 @@ import httpx
 from websockets.sync.client import connect
 
 from .config import AgentConfig
+from .device_credentials import resolve_token_path
 from .development_control_plane import (
     DevelopmentControlPlane,
     DeviceAuthorizationError,
@@ -45,8 +46,11 @@ class CloudflareControlPlane:
         except ValueError as error:
             raise RuntimeError("ORDAX_DEVICE_ID must be a UUID.") from error
 
-        token_path = config.state_dir / "device-token.txt"
-        self.device_token = DevelopmentControlPlane._read_secret(token_path)
+        token_path = resolve_token_path(config.state_dir, "cloudflare-v3")
+        self.device_token = (
+            __import__("os").environ.get("ORDAX_DEVICE_TOKEN")
+            or DevelopmentControlPlane._read_secret(token_path)
+        )
         if not self.device_token:
             raise RuntimeError(
                 f"Cloudflare v3 device token is missing: {token_path}"
