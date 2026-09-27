@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 
 
-class LegacyV1RemovalTests(unittest.TestCase):
-    def test_legacy_v1_runtime_and_sdk_are_gone(self) -> None:
+class RetiredProviderRemovalTests(unittest.TestCase):
+    def test_runtime_supports_only_cloudflare_v3(self) -> None:
         root = Path(__file__).resolve().parents[1]
         control = (root / "ordax_dev_agent" / "control_plane.py").read_text(
             encoding="utf-8"
@@ -14,64 +14,56 @@ class LegacyV1RemovalTests(unittest.TestCase):
             encoding="utf-8"
         )
         main = (root / "ordax_dev_agent" / "main.py").read_text(encoding="utf-8")
+        setup = (root / "ordax_dev_agent" / "device_setup.py").read_text(
+            encoding="utf-8"
+        )
+        bootstrap = (
+            root / "scripts" / "windows" / "ordax-agent-bootstrap.ps1"
+        ).read_text(encoding="utf-8")
         pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
-        installer = (
-            root / "scripts" / "windows" / "ordax-agent-install.ps1"
-        ).read_text(encoding="utf-8")
-        setup = (
-            root / "scripts" / "windows" / "ordax-device-agent-setup.ps1"
-        ).read_text(encoding="utf-8")
 
-        for text in (control, config, main):
-            self.assertNotIn("legacy-v1", text)
+        for text in (control, config, main, bootstrap):
+            self.assertNotIn("development-v2", text)
+            self.assertNotIn("supabase", text.lower())
 
-        self.assertNotIn("from supabase import", control)
         self.assertNotIn('"supabase>=', pyproject)
-        self.assertNotIn("publishable_key", config)
-        self.assertNotIn("PublishableKey", installer)
-        self.assertNotIn("PairingCode", installer)
-        self.assertNotIn("pairing-code.txt", installer)
-        self.assertNotIn("import httpx, mcp, supabase", installer)
-        self.assertNotIn("import httpx, mcp, supabase", setup)
-        self.assertIn("import httpx, mcp, websockets", setup)
+        self.assertNotIn("supabase_url", config)
+        self.assertNotIn("development_device_id", config)
+        self.assertNotIn("control_plane_identities", setup)
 
-        self.assertIn('protocol == "development-v2"', control)
-        self.assertIn('protocol == "cloudflare-v3"', control)
-        self.assertIn('control_plane_protocol: str = "development-v2"', config)
-
-    def test_only_v2_migration_supabase_pieces_remain(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-
-        self.assertFalse(
-            (root / "control-plane" / "supabase" / "001_dev_agent_control_plane.sql").exists()
-        )
-        self.assertFalse(
-            (
-                root
-                / "control-plane"
-                / "supabase"
-                / "functions"
-                / "ordax-dev-agent"
-                / "index.ts"
-            ).exists()
-        )
-
-        self.assertTrue(
-            (
-                root
-                / "control-plane"
-                / "supabase"
-                / "functions"
-                / "ordax-device-setup"
-                / "index.ts"
-            ).is_file()
-        )
-        self.assertTrue(
-            (root / "ordax_dev_agent" / "development_control_plane.py").is_file()
-        )
+        self.assertIn('protocol != "cloudflare-v3"', control)
+        self.assertIn('control_plane_protocol: str = "cloudflare-v3"', config)
+        self.assertIn("device_id: str | None", config)
+        self.assertIn("DEFAULT_CONTROL_PLANE_URL", config)
         self.assertTrue(
             (root / "ordax_dev_agent" / "cloudflare_control_plane.py").is_file()
         )
+        self.assertFalse(
+            (root / "ordax_dev_agent" / "development_control_plane.py").exists()
+        )
+
+    def test_supabase_backend_and_v2_migration_scripts_are_gone(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+
+        self.assertFalse((root / "control-plane" / "supabase").exists())
+
+        for name in (
+            "ordax-development-v2-enroll.ps1",
+            "ordax-development-v2-recover.ps1",
+            "ordax-cloudflare-v3-cutover.ps1",
+            "ordax-cloudflare-v3-finalize.ps1",
+            "ordax-cloudflare-v3-retirement-status.ps1",
+        ):
+            self.assertFalse((root / "scripts" / "windows" / name).exists())
+
+        for name in (
+            "device-token.development-v2.txt",
+            "device-token.txt",
+        ):
+            credentials = (
+                root / "ordax_dev_agent" / "device_credentials.py"
+            ).read_text(encoding="utf-8")
+            self.assertNotIn(name, credentials)
 
 
 if __name__ == "__main__":
