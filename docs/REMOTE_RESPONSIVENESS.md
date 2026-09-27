@@ -74,3 +74,16 @@ Lease renewal now remains active until report delivery finishes. A failed option
 progress event no longer prevents sending the terminal result. No Blender action
 is repeated by this retry loop. No fault-injection or test suite was run for this
 change; deployment readiness is a separate operational observation.
+
+## 1.21.6: Cloudflare terminal report replay
+
+Cloudflare v3 persists a unique `report_id` with each terminal job result. If the
+Worker commits the result but the WebSocket ACK is lost, the Device Agent retries
+only the identical terminal report (same report id and execution context). The
+Worker acknowledges an exact replay, rejects a divergent replay as a conflict,
+and never asks the local action to execute again merely because the ACK was lost.
+
+The retry is bounded to three in-process delivery attempts. This closes the
+accepted-result/lost-ACK window; a separate durable local outbox is still the
+future mechanism for recovery across a full process or machine crash after an
+action finishes but before any terminal report is accepted.
