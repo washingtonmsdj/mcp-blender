@@ -97,6 +97,17 @@ def run(base_url: str, operator_token: str) -> None:
             )
             control.renew(job)
 
+            blocked = operator.post(
+                "/v3/jobs",
+                json={
+                    "device_id": device_id,
+                    "action": "agent.status",
+                    "payload": {"after_recovery": True},
+                },
+            )
+            blocked.raise_for_status()
+            blocked_job_id = str(blocked.json()["job_id"])
+
             artifact_path = root / "probe.txt"
             artifact_bytes = b"ordax-cloudflare-v3-e2e\n"
             artifact_path.write_bytes(artifact_bytes)
@@ -173,6 +184,18 @@ def run(base_url: str, operator_token: str) -> None:
                 raise RuntimeError("terminal outbox was not cleared after recovery")
             if restarted_control._socket is not None:
                 raise RuntimeError("terminal recovery must happen before websocket intake")
+
+            next_job = restarted_control.claim_next_job()
+            if next_job is None or next_job.id != blocked_job_id:
+                raise RuntimeError(
+                    "device queue did not resume with the job blocked behind running work"
+                )
+            if next_job.payload != {"after_recovery": True}:
+                raise RuntimeError("post-recovery queued job payload changed")
+            restarted_control.complete(
+                next_job,
+                ActionResult(True, "post-recovery queue resumed", {}),
+            )
 
             replay_report = restarted_control._recover_terminal_report(report)
             if replay_report.get("replayed") is not True:
