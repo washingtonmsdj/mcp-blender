@@ -112,36 +112,7 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertIn('"ordax_device_agent"', recovery)
         self.assertIn('Stop-ScheduledTask -TaskName $taskName', recovery)
 
-    def test_windows_v2_recovery_uses_pending_token_and_official_exchange(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        recovery = (
-            root / "scripts" / "windows" / "ordax-development-v2-recover.ps1"
-        ).read_text(encoding="utf-8")
 
-        self.assertIn("device-token.development-v2.txt.pending-recovery", recovery)
-        self.assertIn("ordax-development-recovery", recovery)
-        self.assertIn("development-credential-recovery", recovery)
-        self.assertIn("token_sha256", recovery)
-        self.assertIn("Move-Item -Force $pendingPath $tokenPath", recovery)
-        self.assertIn("TOKEN_VALUE=REDACTED", recovery)
-        self.assertNotIn("Write-Host $token", recovery)
-
-    def test_windows_v2_enrollment_binds_machine_and_redacts_token(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        enrollment = (
-            root / "scripts" / "windows" / "ordax-development-v2-enroll.ps1"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn("ordax-device-enrollment", enrollment)
-        self.assertIn("ExpectedMachineBindingSha256", enrollment)
-        self.assertIn("device_binding_sha256", enrollment)
-        self.assertIn("device-token.development-v2.txt.pending-enrollment", enrollment)
-        self.assertIn("control_plane_protocol", enrollment)
-        self.assertIn("development-v2", enrollment)
-        self.assertIn("development_device_id", enrollment)
-        self.assertIn("cerco-no-interior-mvp", enrollment)
-        self.assertIn("TOKEN_VALUE=REDACTED", enrollment)
-        self.assertNotIn("Write-Host $token", enrollment)
 
     def test_watchdog_requests_restart_without_cim_dependency(self) -> None:
         root = Path(__file__).resolve().parents[1]
@@ -215,23 +186,21 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         )
 
 
-    def test_external_bootstrap_recovers_selected_provider_identity_without_runner(self) -> None:
+    def test_external_bootstrap_recovers_cloudflare_identity_without_runner(self) -> None:
         root = Path(__file__).resolve().parents[1]
         bootstrap = (
             root / "scripts" / "windows" / "ordax-agent-bootstrap.ps1"
         ).read_text(encoding="utf-8")
 
         self.assertIn("function Ensure-ConfiguredDeviceIdentity", bootstrap)
-        self.assertIn("ordax-development-device-identify", bootstrap)
-        self.assertIn('"X-Ordax-Device-Token" = $token', bootstrap)
-        self.assertIn("control_plane_protocol", bootstrap)
-        self.assertIn('"development-v2"', bootstrap)
-        self.assertIn('"cloudflare-v3"', bootstrap)
-        self.assertIn('"--control-plane-url"', bootstrap)
-        self.assertIn('"device-token.cloudflare-v3.txt"', bootstrap)
-        self.assertIn('"device-token.development-v2.txt"', bootstrap)
-        self.assertIn("development_device_id", bootstrap)
-        self.assertIn("cerco-no-interior-mvp", bootstrap)
+        self.assertIn("ordax_dev_agent.device_setup", bootstrap)
+        self.assertIn("--control-plane-url", bootstrap)
+        self.assertIn("device-token.cloudflare-v3.txt", bootstrap)
+        self.assertIn("cloudflare-v3", bootstrap)
+        self.assertIn('"device_id"', bootstrap)
+        self.assertNotIn("development-v2", bootstrap)
+        self.assertNotIn("supabase", bootstrap.lower())
+        self.assertNotIn("device-token.development-v2.txt", bootstrap)
 
         loop_index = bootstrap.index("while ($true)")
         identify_index = bootstrap.index(
@@ -244,38 +213,6 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         )
         self.assertLess(identify_index, launch_index)
 
-
-    def test_external_bootstrap_never_downgrades_cloudflare_identity_to_v2(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        bootstrap = (
-            root / "scripts" / "windows" / "ordax-agent-bootstrap.ps1"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn(
-            "IDENTITY_RECOVERY_SKIP existing settings invalid; refusing provider downgrade",
-            bootstrap,
-        )
-        self.assertIn(
-            "IDENTITY_RECOVERY_SKIP cloudflare credential present but protocol missing",
-            bootstrap,
-        )
-        self.assertIn(
-            "IDENTITY_RECOVERY_SKIP cloudflare-v3 active; refusing development-v2 fallback",
-            bootstrap,
-        )
-        self.assertIn(
-            '$fallbackCloudflareTokenPath = Join-Path $stateDir "device-token.cloudflare-v3.txt"',
-            bootstrap,
-        )
-
-        guard_index = bootstrap.index(
-            "IDENTITY_RECOVERY_SKIP cloudflare-v3 active; refusing development-v2 fallback"
-        )
-        fallback_token_index = bootstrap.index(
-            '$tokenPath = Join-Path $stateDir "device-token.development-v2.txt"',
-            guard_index,
-        )
-        self.assertLess(guard_index, fallback_token_index)
 
     def test_all_managed_main_fetches_write_remote_tracking_ref(self) -> None:
         root = Path(__file__).resolve().parents[1]
@@ -547,36 +484,6 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         )
         self.assertLess(retarget_index, start_index)
 
-    def test_cloudflare_finalizer_retires_only_legacy_provider_state(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        finalizer = (
-            root / "scripts" / "windows" / "ordax-cloudflare-v3-finalize.ps1"
-        ).read_text(encoding="utf-8")
-
-        self.assertIn("cloudflare-v3-finalized.json", finalizer)
-        self.assertIn("Retire-DevelopmentV2LocalState", finalizer)
-        self.assertIn("Remove-JsonProperty -Object $settings -Name 'supabase_url'", finalizer)
-        self.assertIn("Remove-JsonProperty -Object $settings -Name 'publishable_key'", finalizer)
-        self.assertIn("Remove-JsonProperty -Object $settings.control_plane_identities -Name 'development-v2'", finalizer)
-        self.assertIn("'device-token.development-v2.txt'", finalizer)
-        self.assertIn("'device-token.development-v2.txt.pending-setup'", finalizer)
-        self.assertIn("'device-token.development-v2.txt.pending-recovery'", finalizer)
-        self.assertIn("'device-token.development-v2.txt.pending-enrollment'", finalizer)
-        self.assertIn("'device-token.txt'", finalizer)
-        self.assertIn("$cloudflareTokenPath = Join-Path $stateDir 'device-token.cloudflare-v3.txt'", finalizer)
-        self.assertIn("CLOUDFLARE_V3_CREDENTIAL_MISSING_DURING_V2_RETIREMENT", finalizer)
-        self.assertIn("CLOUDFLARE_V3_CREDENTIAL_LOST_DURING_V2_RETIREMENT", finalizer)
-        self.assertIn("SANITIZED_SETTINGS_STILL_CONTAIN_SUPABASE_KEYS", finalizer)
-        self.assertIn("SANITIZED_SETTINGS_STILL_CONTAIN_DEVELOPMENT_V2_IDENTITY", finalizer)
-        self.assertNotIn("'device-token.cloudflare-v3.txt',", finalizer)
-        self.assertIn("development_v2_local_state_retired = $true", finalizer)
-        self.assertIn("DEVELOPMENT_V2_LOCAL_STATE=RETIRED", finalizer)
-
-        retire_index = finalizer.index("Retire-DevelopmentV2LocalState @retirementArgs")
-        snapshot_index = finalizer.index("Remove-Item -LiteralPath $backupPath", retire_index)
-        cutover_index = finalizer.index("Remove-Item -LiteralPath $cutoverStatePath", retire_index)
-        self.assertLess(retire_index, snapshot_index)
-        self.assertLess(retire_index, cutover_index)
 
     def test_unity_refresh_recovery_has_no_cim_dependency(self) -> None:
         root = Path(__file__).resolve().parents[1]
