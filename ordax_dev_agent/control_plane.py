@@ -302,4 +302,8 @@ def build_control_plane(config: AgentConfig):
         from .development_control_plane import DevelopmentControlPlane
 
         return DevelopmentControlPlane(config)
+    if protocol == "cloudflare-v3":
+        from .cloudflare_control_plane import CloudflareControlPlane
+
+        return CloudflareControlPlane(config)
     raise ValueError(f"Unsupported control-plane protocol: {protocol}")
