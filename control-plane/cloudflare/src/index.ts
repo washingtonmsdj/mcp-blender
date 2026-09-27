@@ -128,12 +128,12 @@ async function verifyGithubRepositoryAdmin(
   const [userResponse, repoResponse] = await Promise.all([
     fetch("https://api.github.com/user", {
       headers,
-      redirect: "error",
+      redirect: "manual",
       signal: AbortSignal.timeout(15_000),
     }),
     fetch(`https://api.github.com/repos/${GITHUB_REPOSITORY}`, {
       headers,
-      redirect: "error",
+      redirect: "manual",
       signal: AbortSignal.timeout(15_000),
     }),
   ]);
