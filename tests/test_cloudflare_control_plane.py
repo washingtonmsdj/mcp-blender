@@ -194,8 +194,31 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             "status IN ('leased','running') AND lease_expires_at < ?2",
             worker,
         )
+        self.assertIn(
+            "SELECT id FROM ordax_jobs WHERE device_id = ?1 AND status = 'running' LIMIT 1",
+            worker,
+        )
+        self.assertIn("if (unresolvedRunning) return;", worker)
         self.assertIn("/v3/device/recover-report", worker)
         self.assertIn("execution_context_superseded", worker)
+
+    def test_main_recovers_outbox_before_pairing_or_heartbeat(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        main = (root / "ordax_dev_agent" / "main.py").read_text(encoding="utf-8")
+
+        build_index = main.index("control = build_control_plane(config)")
+        recovery_index = main.index(
+            'recover_pending_reports = getattr(control, "recover_pending_reports", None)',
+            build_index,
+        )
+        pairing_index = main.index('while not stop and not runtime["paired"]', recovery_index)
+        heartbeat_index = main.index("control.heartbeat(", pairing_index)
+
+        self.assertLess(build_index, recovery_index)
+        self.assertLess(recovery_index, pairing_index)
+        self.assertLess(pairing_index, heartbeat_index)
+        self.assertIn('runtime["state"] = "recovering-terminal-reports"', main)
+        self.assertIn('runtime["state"] = "terminal-recovery-error"', main)
 
     def test_job_envelope_reuses_v2_digest_and_action_contract(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
