@@ -826,6 +826,13 @@ export class DeviceSession extends DurableObject<Env> {
   }
 
   private async deliverNextJob(ws: WebSocket, deviceId: string): Promise<void> {
+    // A running action may already have mutated Blender/Unity/Git. Never allow
+    // another job onto the device until that execution is terminally resolved.
+    const unresolvedRunning = await this.env.DB.prepare(
+      "SELECT id FROM ordax_jobs WHERE device_id = ?1 AND status = 'running' LIMIT 1",
+    ).bind(deviceId).first();
+    if (unresolvedRunning) return;
+
     const now = nowIso();
     const candidate = await this.env.DB.prepare(
       `SELECT id, capability, payload_canonical_b64, payload_sha256, effect_id, execution_epoch
