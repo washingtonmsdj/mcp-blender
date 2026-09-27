@@ -15,7 +15,7 @@ class CloudflareCutoverTests(unittest.TestCase):
         self.assertIn("AGENT_BUSY_CUTOVER_REFUSED", script)
         self.assertIn("agent-settings.pre-cloudflare-v3.json", script)
         self.assertIn("cloudflare-v3-cutover.json", script)
-        self.assertIn("device-token", script)
+        self.assertIn("ordax_dev_agent.device_credentials", script)
         self.assertIn("Restore-V2ActiveSettings", script)
         self.assertIn("RequireRemoteHeartbeat", script)
         self.assertIn("awaiting-reboot-proof", script)
