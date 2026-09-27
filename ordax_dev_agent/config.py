@@ -11,7 +11,6 @@ from pathlib import Path
 class AgentConfig:
     agent_name: str
     supabase_url: str | None
-    publishable_key: str | None
     poll_seconds: float
     state_dir: Path
     agent_repo_path: Path
@@ -84,10 +83,6 @@ class AgentConfig:
             supabase_url=os.environ.get(
                 "ORDAX_SUPABASE_URL",
                 settings.get("supabase_url"),
-            ),
-            publishable_key=os.environ.get(
-                "ORDAX_SUPABASE_PUBLISHABLE_KEY",
-                settings.get("publishable_key"),
             ),
             poll_seconds=min(
                 1.0,
