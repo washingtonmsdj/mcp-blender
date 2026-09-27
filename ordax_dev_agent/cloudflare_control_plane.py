@@ -30,10 +30,9 @@ from .remote_protocol import (
 class CloudflareControlPlane:
     """Event-driven development control plane over one authenticated WebSocket.
 
-    The transport keeps the Device Agent's existing execution contract and local
-    allow-list, but removes the permanent Edge Function polling loop used by
-    development-v2. HTTP is reserved for artifact transfer; command delivery,
-    presence, leases, progress and terminal reports use the persistent socket.
+    The transport keeps the Device Agent's execution contract and local allow-list.
+    HTTP is reserved for artifact transfer; command delivery, presence, leases,
+    progress and terminal reports use the persistent socket.
     """
 
     uses_long_poll = True
