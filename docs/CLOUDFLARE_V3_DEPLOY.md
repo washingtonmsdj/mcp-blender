@@ -95,6 +95,23 @@ bem-sucedido seja `blender.*`. Só então:
 4. preserva `device-token.cloudflare-v3.txt`;
 5. remove o snapshot local de rollback.
 
-Isso aposenta o Supabase **na estação** somente depois da prova final. A remoção
-do código/backend Supabase do repositório continua sendo uma mudança posterior,
-separada e auditável.
+Isso aposenta o Supabase **na estação** somente depois da prova final.
+
+Antes de remover o código/backend `development-v2` do repositório, execute a
+verificação read-only:
+
+```powershell
+.\scripts\windows\ordax-cloudflare-v3-retirement-status.ps1
+```
+
+Ou consulte remotamente a ação tipada
+`agent.control_plane_retirement_status`.
+
+`ready_for_repository_v2_removal=true` só é emitido quando a prova final está
+`finalized`, a configuração/credencial Cloudflare v3 está íntegra, não há
+credenciais/configuração v2 locais, não existe cutover pendente e o Agent vivo
+está conectado ao mesmo device/URL com heartbeat recente. A verificação não
+altera arquivos, settings, credenciais ou variáveis de ambiente.
+
+A remoção do código/backend Supabase do repositório continua sendo uma mudança
+posterior, separada e auditável.
