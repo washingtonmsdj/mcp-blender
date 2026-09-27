@@ -136,14 +136,41 @@ def run(base_url: str, operator_token: str) -> None:
                     f"{bad_upload.status_code} {bad_upload.text}"
                 )
 
-            control.complete(
-                job,
-                ActionResult(
-                    True,
-                    "cloudflare-v3 e2e complete",
-                    {"transport": "cloudflare-v3"},
-                ),
+            terminal_result = ActionResult(
+                True,
+                "cloudflare-v3 e2e complete",
+                {"transport": "cloudflare-v3"},
             )
+            result_body, result_digest = control._canonical_result(terminal_result)
+            report = {
+                **control._execution_context(job),
+                "report_id": str(uuid.uuid4()),
+                "status": "succeeded",
+                "exit_code": 0,
+                "result": result_body,
+                "result_sha256": result_digest,
+                "error_code": None,
+            }
+
+            first_report = control._rpc("report", report, timeout=30.0)
+            if first_report.get("replayed") is not False:
+                raise RuntimeError("first terminal report was not committed normally")
+
+            replay_report = control._rpc("report", report, timeout=30.0)
+            if replay_report.get("replayed") is not True:
+                raise RuntimeError("identical terminal report replay was not acknowledged")
+
+            conflict = dict(report)
+            conflict["result_sha256"] = "0" * 64
+            try:
+                control._rpc("report", conflict, timeout=30.0)
+            except RuntimeError as error:
+                if "terminal_report_conflict" not in str(error):
+                    raise
+            else:
+                raise RuntimeError("conflicting terminal report replay was accepted")
+
+            control._jobs.pop(job.id, None)
 
             status = operator.get(f"/v3/jobs/{job_id}")
             status.raise_for_status()
@@ -151,6 +178,8 @@ def run(base_url: str, operator_token: str) -> None:
             row = body.get("job") or {}
             if row.get("status") != "succeeded":
                 raise RuntimeError(f"job did not finish successfully: {json.dumps(body)}")
+            if row.get("report_id") != report["report_id"]:
+                raise RuntimeError("terminal report id was not persisted")
             result = row.get("result") or {}
             if result.get("data", {}).get("transport") != "cloudflare-v3":
                 raise RuntimeError("terminal result was not persisted")
