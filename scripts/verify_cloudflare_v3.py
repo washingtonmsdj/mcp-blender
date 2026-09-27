@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 import httpx
@@ -113,6 +114,28 @@ def run(base_url: str, operator_token: str) -> None:
             if downloaded.content != artifact_bytes:
                 raise RuntimeError("artifact round-trip changed bytes")
 
+            bad_artifact_id = str(uuid.uuid4())
+            bad_upload = httpx.put(
+                f"{base_url}/v3/artifacts/{job.id}/{bad_artifact_id}",
+                headers={
+                    "X-Ordax-Device-Id": device_id,
+                    "X-Ordax-Device-Token": device_token,
+                    "X-Ordax-Artifact-Name": "bad-probe.txt",
+                    "X-Ordax-Artifact-Kind": "ci-negative-integrity-probe",
+                    "X-Ordax-Artifact-Sha256": "0" * 64,
+                    "X-Ordax-Artifact-Size": str(len(artifact_bytes)),
+                    "X-Ordax-Artifact-Metadata": "{}",
+                    "content-type": "text/plain",
+                },
+                content=artifact_bytes,
+                timeout=20.0,
+            )
+            if bad_upload.status_code != 422:
+                raise RuntimeError(
+                    "artifact checksum mismatch was not rejected: "
+                    f"{bad_upload.status_code} {bad_upload.text}"
+                )
+
             control.complete(
                 job,
                 ActionResult(
@@ -137,6 +160,8 @@ def run(base_url: str, operator_token: str) -> None:
             artifacts = body.get("artifacts") or []
             if not any(item.get("id") == artifact.get("artifact_id") for item in artifacts):
                 raise RuntimeError("artifact metadata was not persisted")
+            if any(item.get("id") == bad_artifact_id for item in artifacts):
+                raise RuntimeError("rejected artifact checksum was persisted")
     finally:
         active_error = sys.exc_info()[0] is not None
         if control is not None:
