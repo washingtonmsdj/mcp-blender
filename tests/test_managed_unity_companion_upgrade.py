@@ -13,7 +13,7 @@ class ManagedUnityCompanionUpgradeTests(unittest.TestCase):
         config = AgentConfig(
             "test",
             None,
-            None,
+            
             5,
             root / "state",
             root / "agent",
