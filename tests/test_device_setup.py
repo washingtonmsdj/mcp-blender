@@ -19,9 +19,16 @@ class SetupTests(unittest.TestCase):
         self.home = Path(self.temp.name) / 'home'
         self.state.mkdir()
         (self.home / 'Documents/github/cerco-no-interior-mvp').mkdir(parents=True)
-        self.device = str(uuid.uuid4())
+        self.devices = {
+            'development-v2': str(uuid.uuid4()),
+            'cloudflare-v3': str(uuid.uuid4()),
+        }
+        self.device = self.devices['development-v2']
         self.binding = 'a' * 64
-        self.credential_hash = None
+        self.credential_hashes = {
+            'development-v2': None,
+            'cloudflare-v3': None,
+        }
         self.enrollments = 0
         self.protocol = 'development-v2'
         self.calls = []
@@ -43,19 +50,36 @@ class SetupTests(unittest.TestCase):
         body = json.loads(req.content)
         self.calls.append(body)
         self.last_request_path = req.url.path
+        request_protocol = (
+            'cloudflare-v3'
+            if req.url.path == '/v3/device/setup'
+            else 'development-v2'
+        )
         if body['operation'] == 'enroll':
             self.assertEqual('Bearer github-private', req.headers['Authorization'])
             self.assertNotIn('token', body)
-            self.credential_hash = body['token_sha256']
+            self.credential_hashes[request_protocol] = body['token_sha256']
             self.enrollments += 1
             if self.lost_ack:
                 self.lost_ack = False
                 raise httpx.ReadTimeout('ack lost after commit')
         elif self.mismatch:
             return httpx.Response(403, json={'ok': False})
-        elif hashlib.sha256(req.headers['X-Ordax-Device-Token'].encode()).hexdigest() != self.credential_hash:
+        elif (
+            hashlib.sha256(
+                req.headers['X-Ordax-Device-Token'].encode()
+            ).hexdigest()
+            != self.credential_hashes[request_protocol]
+        ):
             return httpx.Response(401, json={'ok': False})
-        return httpx.Response(200, json={'ok': True, 'protocol': self.protocol, 'device_id': self.device})
+        return httpx.Response(
+            200,
+            json={
+                'ok': True,
+                'protocol': request_protocol,
+                'device_id': self.devices[request_protocol],
+            },
+        )
 
     def run_setup(self, **kwargs):
         return configure(
@@ -68,11 +92,12 @@ class SetupTests(unittest.TestCase):
 
     def test_new_machine_and_ten_idempotent_runs(self):
         self.run_setup()
-        token = (self.state / 'device-token.txt').read_text()
+        token_path = self.state / 'device-token.development-v2.txt'
+        token = token_path.read_text()
         for _ in range(10):
             self.assertEqual(self.device, self.run_setup()['device_id'])
         self.assertEqual(1, self.enrollments)
-        self.assertEqual(token, (self.state / 'device-token.txt').read_text())
+        self.assertEqual(token, token_path.read_text())
         self.assertEqual(1, self.auth_mock.call_count)
         settings = json.loads((self.state / 'agent-settings.json').read_text())
         self.assertEqual(CONTROL_PLANE, settings['supabase_url'])
@@ -82,21 +107,27 @@ class SetupTests(unittest.TestCase):
         self.lost_ack = True
         with self.assertRaises(SetupError):
             self.run_setup()
-        pending = (self.state / 'device-token.txt.pending-setup').read_text()
+        pending = (
+            self.state / 'device-token.development-v2.txt.pending-setup'
+        ).read_text()
         self.run_setup()
-        self.assertEqual(pending, (self.state / 'device-token.txt').read_text())
+        self.assertEqual(
+            pending,
+            (self.state / 'device-token.development-v2.txt').read_text(),
+        )
         self.assertEqual(1, self.enrollments)
 
     def test_revoked_token_reenrolls_and_preserves_device(self):
         self.run_setup()
-        old = (self.state / 'device-token.txt').read_text()
-        self.credential_hash = None
+        token_path = self.state / 'device-token.development-v2.txt'
+        old = token_path.read_text()
+        self.credential_hashes['development-v2'] = None
         self.assertEqual(self.device, self.run_setup()['device_id'])
-        self.assertNotEqual(old, (self.state / 'device-token.txt').read_text())
+        self.assertNotEqual(old, token_path.read_text())
 
     def test_missing_token_recovers_same_machine(self):
         self.run_setup()
-        (self.state / 'device-token.txt').unlink()
+        (self.state / 'device-token.development-v2.txt').unlink()
         self.assertEqual(self.device, self.run_setup()['device_id'])
         self.assertEqual(2, self.enrollments)
 
@@ -138,9 +169,73 @@ class SetupTests(unittest.TestCase):
         settings = json.loads((self.state / 'agent-settings.json').read_text())
         self.assertEqual('cloudflare-v3', settings['control_plane_protocol'])
         self.assertEqual('https://control.example', settings['control_plane_url'])
-        self.assertEqual(self.device, settings['development_device_id'])
+        self.assertEqual(
+            self.devices['cloudflare-v3'],
+            settings['development_device_id'],
+        )
         self.assertIn('cerco-no-interior-mvp', settings['projects'])
         self.assertEqual('/v3/device/setup', self.last_request_path)
+        self.assertEqual(
+            self.devices['cloudflare-v3'],
+            settings['control_plane_identities']['cloudflare-v3']['device_id'],
+        )
+
+    def test_provider_switch_preserves_both_credentials_and_identities(self):
+        v2 = self.run_setup()
+        v2_token = (
+            self.state / 'device-token.development-v2.txt'
+        ).read_text()
+
+        v3 = self.run_setup(
+            protocol='cloudflare-v3',
+            control_plane_url='https://control.example',
+        )
+        v3_token = (
+            self.state / 'device-token.cloudflare-v3.txt'
+        ).read_text()
+
+        self.assertEqual(self.devices['development-v2'], v2['device_id'])
+        self.assertEqual(self.devices['cloudflare-v3'], v3['device_id'])
+        self.assertNotEqual(v2_token, v3_token)
+        self.assertEqual(
+            v2_token,
+            (self.state / 'device-token.development-v2.txt').read_text(),
+        )
+
+        settings = json.loads((self.state / 'agent-settings.json').read_text())
+        identities = settings['control_plane_identities']
+        self.assertEqual(
+            self.devices['development-v2'],
+            identities['development-v2']['device_id'],
+        )
+        self.assertEqual(
+            self.devices['cloudflare-v3'],
+            identities['cloudflare-v3']['device_id'],
+        )
+
+        back = self.run_setup(protocol='development-v2')
+        self.assertEqual(self.devices['development-v2'], back['device_id'])
+        self.assertEqual(
+            v3_token,
+            (self.state / 'device-token.cloudflare-v3.txt').read_text(),
+        )
+
+    def test_legacy_v2_token_is_migrated_once(self):
+        legacy = self.state / 'device-token.txt'
+        legacy.write_text('a' * 64)
+        self.credential_hashes['development-v2'] = hashlib.sha256(
+            ('a' * 64).encode()
+        ).hexdigest()
+
+        result = self.run_setup()
+
+        self.assertEqual(self.devices['development-v2'], result['device_id'])
+        self.assertFalse(legacy.exists())
+        self.assertEqual(
+            'a' * 64,
+            (self.state / 'device-token.development-v2.txt').read_text(),
+        )
+        self.assertEqual(0, self.auth_mock.call_count)
 
     def test_cloudflare_v3_requires_https_outside_loopback(self):
         with self.assertRaisesRegex(SetupError, 'CONTROL_PLANE_URL_INVALID'):
