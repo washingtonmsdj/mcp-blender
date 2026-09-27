@@ -26,8 +26,7 @@ ChatGPT / GitHub / Codex
           | jobs + observations
           v
 OrdaX remote control plane
-  Supabase development-v2 (current)
-  Cloudflare cloudflare-v3 (migration candidate)
+  Cloudflare v3 (production)
           |
           | authenticated typed delivery
           v
@@ -81,38 +80,25 @@ Later:
 
 ## OrdaX remote control plane
 
-The currently deployed development backend remains the dedicated Supabase project
-**ordax-control-plane** while the event-driven `cloudflare-v3` transport is
-validated. The migration is deliberately parallel: the Windows station is not
-switched until a real job, artifact round-trip, reconnect and restart have passed.
-The historical `Ordax-2026-1` integration remains retired.
+Cloudflare v3 is the sole remote control plane for the Device Agent.
 
-Product and engineering share the backend project but **not authority**:
-product/account credentials never authenticate development jobs, and the
-Device Agent uses a dedicated device-scoped development credential.
+The Worker authenticates devices and administrative calls, one Durable Object per
+device owns the persistent WebSocket and serialized job delivery, D1 stores
+devices/jobs/events/artifact metadata, and R2 stores artifact bytes.
 
-The active Windows station still uses `development-v2` through
-`ordax-development-device`. The current Device Agent line also implements `cloudflare-v3`,
-which keeps one authenticated Durable Object WebSocket open and moves durable
-device/job/event state to D1 plus artifact bytes to R2. Mutable Blender work remains routed through the
-closed-world capability `ordax.dev.adapter.invoke`, which carries only a
-registered project slug, a `blender.*` action and a bounded JSON payload.
-The local ActionRegistry remains the final allow-list; the cloud does not gain a
-generic shell or raw-device capability through this adapter.
+The local closed-world `ActionRegistry` remains the final authority. Cloudflare
+cannot invoke arbitrary shell commands or bypass project/app allow-lists.
 
-Both transports preserve the same execution invariants
-(`effect_id`, `attempt_id`, lease, execution epoch and device identity).
-`development-v2` keeps bounded wait/poll fallback. `cloudflare-v3` delivers
-queued work over one persistent WebSocket and therefore does not require a new
-remote request for every idle wait/heartbeat cycle.
+Device execution preserves `effect_id`, `attempt_id`, lease, execution epoch,
+agent instance and boot identity. Terminal report replay is idempotent: an exact
+replay is acknowledged, while a divergent replay is rejected.
 
-The temporary development-v2 backend remains under
-`prototipo-ordax-os/infra/supabase/development/` only for rollback until the
-Cloudflare proof gate is complete. The active v3 implementation lives under
-`control-plane/cloudflare/`. The obsolete legacy-v1 backend, Python Supabase SDK,
-and its old pairing/job/presence SQL were removed. This repository retains only
-the v2 device-setup function and enrollment migration still required during the
-migration window.
+Production endpoint:
+
+`https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev`
+
+The production path has passed remote health, WebSocket delivery, D1/R2 round-trip,
+real Windows reboot/reconnect and a successful remote `blender.version` smoke.
 
 ## Visual loop
 
@@ -243,7 +229,7 @@ dependency where an old/broken agent could not update the very checkout needed
 to fix itself.
 
 - The bootstrap retries non-zero agent exits with bounded exponential backoff.
-- Identity recovery is provider-preserving: an existing Cloudflare v3 identity or credential is never silently downgraded to development-v2, including when settings are invalid or the shared setup client is unavailable.
+- Identity recovery validates and restores the Cloudflare v3 credential only; no alternate provider fallback exists.
 - Before every start it runs the external copy of the same non-refreshing
   tracked-file/index-tree preflight used by `agent.update`.
 - It fetches `main` with an explicit
