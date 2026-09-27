@@ -21,14 +21,13 @@ DEVICE_ID = "22222222-2222-4222-8222-222222222222"
 def make_config(root: Path, *, url: str = "https://control.example") -> AgentConfig:
     return AgentConfig(
         agent_name="test-agent",
-        supabase_url=None,
         poll_seconds=1.0,
         state_dir=root / "state",
         agent_repo_path=root / "agent",
         hordax_path=root / "hordax",
         bridge_path=root / "bridge",
         control_plane_protocol="cloudflare-v3",
-        development_device_id=DEVICE_ID,
+        device_id=DEVICE_ID,
         control_plane_url=url,
     )
 
