@@ -19,7 +19,6 @@ class AgentResilienceStatusTests(unittest.TestCase):
             AgentConfig(
                 agent_name="resilience-test",
                 supabase_url=None,
-                publishable_key=None,
                 poll_seconds=5.0,
                 state_dir=root / "state",
                 agent_repo_path=agent_repo,

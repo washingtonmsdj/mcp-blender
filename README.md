@@ -99,7 +99,7 @@ ordax_dev_agent/
     blender_modeling_contracts.py
 
 control-plane/supabase/
-  incubação histórica do backend v2
+  apenas setup/recovery temporários do development-v2 durante o cutover
 
 control-plane/cloudflare/
   Worker + Durable Object + D1 + R2 do protocolo v3

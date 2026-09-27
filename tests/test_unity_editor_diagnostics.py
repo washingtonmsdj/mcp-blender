@@ -31,7 +31,7 @@ class UnityEditorDiagnosticsTests(unittest.TestCase):
             config = AgentConfig(
                 "test",
                 None,
-                None,
+                
                 5,
                 root / "state",
                 root / "agent",
@@ -73,7 +73,7 @@ class UnityEditorDiagnosticsTests(unittest.TestCase):
             config = AgentConfig(
                 "test",
                 None,
-                None,
+                
                 5,
                 root / "state",
                 root / "agent",

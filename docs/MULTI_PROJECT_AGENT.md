@@ -1,7 +1,8 @@
 # OrdaX: projetos conectados e feedback visual
 
-O agente agora seleciona projetos cadastrados localmente. O GPT remoto continua
-enviando jobs pela fila autenticada Supabase existente. Não há chave OpenAI no
+O agente agora seleciona projetos cadastrados localmente. Jobs remotos usam o
+control plane selecionado: Cloudflare v3 é o destino da migração e
+development-v2 permanece apenas como rollback temporário. Não há chave OpenAI no
 agente e ele não escolhe o modelo: a inteligência fica no cliente que envia os
 jobs e examina os resultados.
 

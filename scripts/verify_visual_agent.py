@@ -29,7 +29,7 @@ def main():
                              timeout_seconds=120)
         if not create['ok']:
             raise RuntimeError(create)
-        config = AgentConfig('smoke', None, None, 5, root / 'state', root, root, root,
+        config = AgentConfig('smoke', None,  5, root / 'state', root, root, root,
                              projects={'cube': {'path': str(root), 'apps': ['blender'],
                                                 'blender': {'blend_file': 'scene.blend'}}}, default_project='cube')
         agent = ActionRegistry(config)

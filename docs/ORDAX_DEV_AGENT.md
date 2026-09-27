@@ -106,12 +106,12 @@ Both transports preserve the same execution invariants
 queued work over one persistent WebSocket and therefore does not require a new
 remote request for every idle wait/heartbeat cycle.
 
-The deployed Supabase source authority remains under
-`prototipo-ordax-os/infra/supabase/development/` until cutover.
-The new provider-neutral migration implementation lives under
-`control-plane/cloudflare/` in this repository so its protocol evolves with the
-Device Agent client. The legacy `control-plane/supabase/` directory remains
-historical incubation evidence.
+The temporary development-v2 backend remains under
+`prototipo-ordax-os/infra/supabase/development/` only for rollback until the
+Cloudflare proof gate is complete. The active v3 implementation lives under
+`control-plane/cloudflare/`. The obsolete legacy-v1 backend and Python Supabase
+SDK were removed; this repository retains only the v2 setup/recovery pieces still
+required during the migration window.
 
 ## Visual loop
 

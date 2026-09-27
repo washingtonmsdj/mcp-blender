@@ -67,7 +67,6 @@ class CloudflareCutoverTests(unittest.TestCase):
         config = AgentConfig(
             agent_name="test",
             supabase_url=None,
-            publishable_key=None,
             poll_seconds=1.0,
             state_dir=root,
             agent_repo_path=root,

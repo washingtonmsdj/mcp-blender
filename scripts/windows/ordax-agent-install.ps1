@@ -1,7 +1,4 @@
 param(
-    [string]$SupabaseUrl = "",
-    [string]$PublishableKey = "",
-    [string]$PairingCode = "",
     [string]$AgentName = "TONECOS-HORDAX",
     [string]$HordaxPath = "C:\Users\TONECOS\Documents\github\HORDAX-game",
     [string]$BridgePath = "",
@@ -17,7 +14,6 @@ $taskName = "OrdaX Dev Agent"
 $bootstrapInstaller = Join-Path $repoRoot "scripts\windows\ordax-agent-bootstrap-install.ps1"
 $stateDir = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent"
 $settingsPath = Join-Path $stateDir "agent-settings.json"
-$pairingPath = Join-Path $stateDir "pairing-code.txt"
 $bootstrapPath = Join-Path $stateDir "bootstrap\ordax-agent-bootstrap.ps1"
 
 if (-not $BridgePath) {
@@ -36,7 +32,7 @@ if (-not (Test-Path $python)) {
     }
 }
 
-& $python -c "import httpx, mcp, supabase, ordax_dev_agent" 2>$null
+& $python -c "import httpx, mcp, websockets, ordax_dev_agent" 2>$null
 if ($LASTEXITCODE -ne 0) {
     & $python -m pip install --disable-pip-version-check -e $repoRoot
     if ($LASTEXITCODE -ne 0) { throw "OrdaX Dev Agent install failed." }
@@ -44,24 +40,6 @@ if ($LASTEXITCODE -ne 0) {
 
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 
-if ($SupabaseUrl -and $PublishableKey) {
-    $settings = [ordered]@{
-        agent_name = $AgentName
-        supabase_url = $SupabaseUrl
-        publishable_key = $PublishableKey
-        poll_seconds = 5
-        hordax_path = $HordaxPath
-        bridge_path = $BridgePath
-    }
-
-    $settingsJson = $settings | ConvertTo-Json
-    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($settingsPath, $settingsJson, $utf8NoBom)
-}
-
-if ($PairingCode) {
-    Set-Content -Path $pairingPath -Value $PairingCode -Encoding ASCII
-}
 
 if (Test-Path $legacyLinkPath) {
     Remove-Item -Force $legacyLinkPath
@@ -122,17 +100,12 @@ Write-Host ("Task executable: " + $powershellPath)
 Write-Host ("Task bootstrap: " + $bootstrapPath)
 Write-Host ("External bootstrap retained for maintenance: " + $bootstrapPath)
 
-if ($SupabaseUrl -and $PublishableKey) {
-    Write-Host "Supabase control plane configured."
-} elseif (Test-Path $settingsPath) {
-    Write-Host "Supabase control plane settings preserved from existing installation."
+if (Test-Path $settingsPath -PathType Leaf) {
+    Write-Host "Existing control-plane settings preserved."
 } else {
-    Write-Host "Supabase control plane not configured."
+    Write-Host "Control plane not configured. Run ordax-device-agent-setup.ps1."
 }
 
-if ($PairingCode) {
-    Write-Host "One-time pairing code installed."
-}
 
 if ($StartNow) {
     Start-ScheduledTask -TaskName $taskName
