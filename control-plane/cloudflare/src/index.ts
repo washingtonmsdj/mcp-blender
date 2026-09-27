@@ -4,6 +4,7 @@ interface Env {
   DB: D1Database;
   ARTIFACTS: R2Bucket;
   DEVICE_SESSIONS: DurableObjectNamespace<DeviceSession>;
+  ENROLLMENT_SESSIONS: DurableObjectNamespace<EnrollmentSession>;
   ORDAX_OPERATOR_TOKEN: string;
 }
 
@@ -11,6 +12,9 @@ type JsonObject = Record<string, unknown>;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX64_RE = /^[0-9a-f]{64}$/i;
+const GITHUB_REPOSITORY = "washingtonmsdj/mcp-blender";
+const GITHUB_REPOSITORY_ID = 1141624338;
+
 const ACTION_PREFIXES = [
   "blender.", "unity.", "git.", "project.", "projects.", "artifact.",
   "observation.", "game_assets.", "geo.", "visual.", "agent.",
@@ -95,6 +99,126 @@ async function parseSmallJson(request: Request, maxBytes = 128 * 1024): Promise<
   } catch {
     return null;
   }
+}
+
+async function verifyGithubRepositoryAdmin(
+  rawToken: string,
+): Promise<{ userId: string } | null> {
+  if (!rawToken || rawToken.length > 1024) return null;
+  const headers = {
+    authorization: `Bearer ${rawToken}`,
+    accept: "application/vnd.github+json",
+    "user-agent": "OrdaX-Device-Setup",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  const [userResponse, repoResponse] = await Promise.all([
+    fetch("https://api.github.com/user", {
+      headers,
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+    }),
+    fetch(`https://api.github.com/repos/${GITHUB_REPOSITORY}`, {
+      headers,
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+    }),
+  ]);
+  if (!userResponse.ok || !repoResponse.ok) return null;
+
+  const user = await userResponse.json() as JsonObject;
+  const repo = await repoResponse.json() as JsonObject;
+  const permissions = isRecord(repo.permissions) ? repo.permissions : {};
+  if (
+    !Number.isSafeInteger(user.id)
+    || user.type !== "User"
+    || repo.id !== GITHUB_REPOSITORY_ID
+    || permissions.admin !== true
+  ) {
+    return null;
+  }
+  return { userId: String(user.id) };
+}
+
+async function deviceSetup(request: Request, env: Env): Promise<Response> {
+  const body = await parseSmallJson(request, 16 * 1024);
+  if (!body) return json({ ok: false, error: "request_invalid" }, 400);
+
+  const operation = typeof body.operation === "string" ? body.operation : "";
+  const binding = typeof body.machine_binding_sha256 === "string"
+    ? body.machine_binding_sha256.toLowerCase()
+    : "";
+  if (!HEX64_RE.test(binding)) {
+    return json({ ok: false, error: "request_invalid" }, 400);
+  }
+
+  if (operation === "identify") {
+    const rawToken = request.headers.get("X-Ordax-Device-Token") ?? "";
+    if (rawToken.length < 32 || rawToken.length > 512) {
+      return json({ ok: false, error: "device_auth_required" }, 401);
+    }
+    const digest = await sha256Text(rawToken);
+    const row = await env.DB.prepare(
+      `SELECT id, machine_binding_sha256, revoked_at
+       FROM ordax_devices WHERE token_sha256 = ?1`,
+    ).bind(digest).first<{
+      id: string;
+      machine_binding_sha256: string | null;
+      revoked_at: string | null;
+    }>();
+    if (!row || row.revoked_at) {
+      return json({ ok: false, error: "device_token_invalid" }, 401);
+    }
+    if (row.machine_binding_sha256 !== binding) {
+      return json({ ok: false, error: "machine_binding_mismatch" }, 403);
+    }
+    return json({
+      ok: true,
+      protocol: "cloudflare-v3",
+      device_id: row.id,
+    });
+  }
+
+  if (operation !== "enroll") {
+    return json({ ok: false, error: "operation_not_allowed" }, 400);
+  }
+
+  const tokenSha256 = typeof body.token_sha256 === "string"
+    ? body.token_sha256.toLowerCase()
+    : "";
+  const deviceName = typeof body.device_name === "string"
+    ? body.device_name.trim()
+    : "";
+  if (
+    !HEX64_RE.test(tokenSha256)
+    || deviceName.length < 1
+    || deviceName.length > 120
+    || /[\x00-\x1f\x7f]/.test(deviceName)
+  ) {
+    return json({ ok: false, error: "request_invalid" }, 400);
+  }
+
+  const authorization = request.headers.get("Authorization") ?? "";
+  if (!authorization.startsWith("Bearer ") || authorization.length > 1100) {
+    return json({ ok: false, error: "user_auth_required" }, 401);
+  }
+  const github = await verifyGithubRepositoryAdmin(authorization.slice(7));
+  if (!github) {
+    return json({ ok: false, error: "repository_admin_required" }, 403);
+  }
+
+  const id = env.ENROLLMENT_SESSIONS.idFromName(binding);
+  return env.ENROLLMENT_SESSIONS.get(id).fetch("https://enrollment.internal/enroll", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Ordax-GitHub-User-Id": github.userId,
+    },
+    body: JSON.stringify({
+      machine_binding_sha256: binding,
+      device_name: deviceName,
+      token_sha256: tokenSha256,
+    }),
+  });
 }
 
 async function provisionDevice(request: Request, env: Env): Promise<Response> {
@@ -335,6 +459,9 @@ export default {
       });
     }
 
+    if (request.method === "POST" && url.pathname === "/v3/device/setup") {
+      return deviceSetup(request, env);
+    }
     if (request.method === "POST" && url.pathname === "/v3/devices") {
       return provisionDevice(request, env);
     }
@@ -354,6 +481,115 @@ export default {
     return json({ ok: false, error: "not_found" }, 404);
   },
 };
+
+export class EnrollmentSession extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method !== "POST" || url.pathname !== "/enroll") {
+      return json({ ok: false, error: "not_found" }, 404);
+    }
+
+    const githubUserId = request.headers.get("X-Ordax-GitHub-User-Id") ?? "";
+    if (!/^[0-9]{1,32}$/.test(githubUserId)) {
+      return json({ ok: false, error: "user_identity_invalid" }, 401);
+    }
+    const body = await parseSmallJson(request, 8 * 1024);
+    if (!body) return json({ ok: false, error: "request_invalid" }, 400);
+
+    const binding = typeof body.machine_binding_sha256 === "string"
+      ? body.machine_binding_sha256.toLowerCase()
+      : "";
+    const tokenSha256 = typeof body.token_sha256 === "string"
+      ? body.token_sha256.toLowerCase()
+      : "";
+    const name = typeof body.device_name === "string" ? body.device_name.trim() : "";
+    if (!HEX64_RE.test(binding) || !HEX64_RE.test(tokenSha256) || !name) {
+      return json({ ok: false, error: "request_invalid" }, 400);
+    }
+
+    const existing = await this.env.DB.prepare(
+      `SELECT id, owner_github_user_id, enrollment_window_started_at, enrollment_count
+       FROM ordax_devices WHERE machine_binding_sha256 = ?1`,
+    ).bind(binding).first<{
+      id: string;
+      owner_github_user_id: string | null;
+      enrollment_window_started_at: string | null;
+      enrollment_count: number;
+    }>();
+
+    if (existing?.owner_github_user_id && existing.owner_github_user_id !== githubUserId) {
+      return json({ ok: false, error: "device_owner_mismatch" }, 403);
+    }
+
+    const now = new Date();
+    const previousWindow = existing?.enrollment_window_started_at
+      ? new Date(existing.enrollment_window_started_at)
+      : null;
+    const sameWindow = Boolean(
+      previousWindow
+      && Number.isFinite(previousWindow.getTime())
+      && now.getTime() - previousWindow.getTime() < 60 * 60 * 1000,
+    );
+    const previousCount = sameWindow ? Number(existing?.enrollment_count ?? 0) : 0;
+    if (previousCount >= 10) {
+      return json({ ok: false, error: "enrollment_rate_limited" }, 429);
+    }
+
+    const deviceId = existing?.id ?? crypto.randomUUID();
+    const windowStartedAt = sameWindow && previousWindow
+      ? previousWindow.toISOString()
+      : now.toISOString();
+    const enrolledAt = now.toISOString();
+    const nextCount = previousCount + 1;
+
+    if (existing) {
+      const updated = await this.env.DB.prepare(
+        `UPDATE ordax_devices SET
+           name = ?1,
+           token_sha256 = ?2,
+           owner_github_user_id = ?3,
+           revoked_at = NULL,
+           last_enrolled_at = ?4,
+           enrollment_window_started_at = ?5,
+           enrollment_count = ?6
+         WHERE id = ?7
+           AND machine_binding_sha256 = ?8
+           AND (owner_github_user_id IS NULL OR owner_github_user_id = ?3)`,
+      ).bind(
+        name, tokenSha256, githubUserId, enrolledAt,
+        windowStartedAt, nextCount, deviceId, binding,
+      ).run();
+      if ((updated.meta.changes ?? 0) !== 1) {
+        return json({ ok: false, error: "enrollment_conflict" }, 409);
+      }
+    } else {
+      try {
+        await this.env.DB.prepare(
+          `INSERT INTO ordax_devices
+            (id, name, token_sha256, created_at, revoked_at,
+             machine_binding_sha256, owner_github_user_id, last_enrolled_at,
+             enrollment_window_started_at, enrollment_count)
+           VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, ?7, ?8, ?9)`,
+        ).bind(
+          deviceId, name, tokenSha256, enrolledAt, binding,
+          githubUserId, enrolledAt, windowStartedAt, nextCount,
+        ).run();
+      } catch {
+        return json({ ok: false, error: "enrollment_conflict" }, 409);
+      }
+    }
+
+    return json({
+      ok: true,
+      protocol: "cloudflare-v3",
+      device_id: deviceId,
+    });
+  }
+}
 
 type SocketAttachment = {
   deviceId: string;
