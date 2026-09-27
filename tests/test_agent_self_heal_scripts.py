@@ -118,7 +118,7 @@ class AgentSelfHealScriptTests(unittest.TestCase):
             root / "scripts" / "windows" / "ordax-development-v2-recover.ps1"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("device-token.txt.pending-recovery", recovery)
+        self.assertIn("device-token.development-v2.txt.pending-recovery", recovery)
         self.assertIn("ordax-development-recovery", recovery)
         self.assertIn("development-credential-recovery", recovery)
         self.assertIn("token_sha256", recovery)
@@ -135,7 +135,7 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertIn("ordax-device-enrollment", enrollment)
         self.assertIn("ExpectedMachineBindingSha256", enrollment)
         self.assertIn("device_binding_sha256", enrollment)
-        self.assertIn("device-token.txt.pending-enrollment", enrollment)
+        self.assertIn("device-token.development-v2.txt.pending-enrollment", enrollment)
         self.assertIn("control_plane_protocol", enrollment)
         self.assertIn("development-v2", enrollment)
         self.assertIn("development_device_id", enrollment)
@@ -228,6 +228,8 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertIn('"development-v2"', bootstrap)
         self.assertIn('"cloudflare-v3"', bootstrap)
         self.assertIn('"--control-plane-url"', bootstrap)
+        self.assertIn('"device-token.cloudflare-v3.txt"', bootstrap)
+        self.assertIn('"device-token.development-v2.txt"', bootstrap)
         self.assertIn("development_device_id", bootstrap)
         self.assertIn("cerco-no-interior-mvp", bootstrap)
 
