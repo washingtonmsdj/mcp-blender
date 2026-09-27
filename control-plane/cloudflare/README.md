@@ -48,3 +48,11 @@ is required by v3.
 
 Supabase remains active during migration. Remove it only after v3 has passed a
 real Device Agent job, artifact upload/download, reconnect and Windows restart.
+
+### Artifact integrity
+
+Artifact uploads are streamed directly to R2 with the agent-provided SHA-256
+passed to R2 as a native checksum. R2 rejects a body whose bytes do not match the
+declared digest. The Worker also verifies the returned object size and checksum
+before writing artifact metadata to D1; a mismatch is deleted and never exposed
+through a signed read URL.
