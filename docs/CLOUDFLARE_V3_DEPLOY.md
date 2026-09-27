@@ -41,12 +41,23 @@ do runner, portanto uma conta Cloudflare nunca fica acoplada ao código-fonte.
 Depois do primeiro deploy:
 
 1. testar `GET /health`;
-2. provisionar uma identidade de teste em `POST /v3/devices`;
-3. executar a prova remota de job + artifact;
-4. somente então atualizar um Device Agent para:
+2. executar a prova remota de job + artifact com uma identidade de teste;
+3. validar `POST /v3/device/setup` com o login GitHub de um administrador do repositório;
+4. somente então atualizar um Device Agent usando o setup oficial:
+
+   ```powershell
+   .\scripts\windows\ordax-device-agent-setup.ps1 `
+     -ControlPlaneProtocol cloudflare-v3 `
+     -ControlPlaneUrl "https://<worker>.workers.dev"
+   ```
+
+   O PC gera a nova credencial localmente; não copie token do dashboard.
+
+5. confirmar que o Agent ficou em:
    - `control_plane_protocol = cloudflare-v3`
    - `control_plane_url = https://<worker>.workers.dev`
    - o `development_device_id` provisionado;
-5. reiniciar e confirmar reconnect;
-6. manter Supabase v2 disponível até a prova pós-reboot;
-7. remover v2 apenas em uma mudança posterior e explícita.
+6. reiniciar a Scheduled Task e confirmar reconnect;
+7. fazer um reboot real do Windows e confirmar novo `boot_id` + job Blender;
+8. manter Supabase v2 disponível até essa prova pós-reboot;
+9. remover v2 apenas em uma mudança posterior e explícita.

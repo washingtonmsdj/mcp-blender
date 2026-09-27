@@ -10,6 +10,7 @@ import socket
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -17,6 +18,7 @@ from .identity import machine_id
 
 CONTROL_PLANE = "https://eobcxuyvhkvdmkbaihwh.supabase.co"
 ENDPOINT = CONTROL_PLANE + "/functions/v1/ordax-device-setup"
+SUPPORTED_PROTOCOLS = {"development-v2", "cloudflare-v3"}
 
 
 class SetupError(RuntimeError):
@@ -104,9 +106,9 @@ def github_token(interactive: bool) -> str:
         raise SetupError("USER_LOGIN_REQUIRED") from None
 
 
-def request(client, body: dict, headers: dict) -> dict:
+def request(client, endpoint: str, body: dict, headers: dict) -> dict:
     try:
-        response = client.post(ENDPOINT, json=body, headers=headers)
+        response = client.post(endpoint, json=body, headers=headers)
         if response.status_code in (401, 403):
             return {"ok": False, "denied": response.status_code}
         if response.status_code >= 400:
@@ -151,9 +153,35 @@ def configure(state: Path, **kwargs) -> dict:
         return _configure(state, **kwargs)
 
 
-def _configure(state: Path, *, interactive: bool = False, client=None, binding=None, home=None) -> dict:
+def _resolve_control_plane(protocol: str, control_plane_url: str | None) -> tuple[str, str]:
+    protocol = str(protocol or "").strip().lower()
+    if protocol not in SUPPORTED_PROTOCOLS:
+        raise SetupError("PROTOCOL_UNSUPPORTED")
+    if protocol == "development-v2":
+        return CONTROL_PLANE, ENDPOINT
+
+    raw = str(control_plane_url or "").strip().rstrip("/")
+    parsed = urlparse(raw)
+    loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+    if not parsed.netloc or parsed.scheme not in ({"https"} if not loopback else {"http", "https"}):
+        raise SetupError("CONTROL_PLANE_URL_INVALID")
+    return raw, raw + "/v3/device/setup"
+
+
+def _configure(
+    state: Path,
+    *,
+    interactive: bool = False,
+    client=None,
+    binding=None,
+    home=None,
+    protocol: str = "development-v2",
+    control_plane_url: str | None = None,
+) -> dict:
     settings_path = state / "agent-settings.json"
     settings = load_settings(settings_path)
+    protocol = str(protocol or "").strip().lower()
+    control_plane, endpoint = _resolve_control_plane(protocol, control_plane_url)
     binding = binding or machine_id()
     token_path, pending = state / "device-token.txt", state / "device-token.txt.pending-setup"
     own_client = client is None
@@ -167,8 +195,12 @@ def _configure(state: Path, *, interactive: bool = False, client=None, binding=N
             token = path.read_text(encoding="utf-8-sig").strip()
             if not 32 <= len(token) <= 512:
                 continue
-            identity = request(client, {"operation": "identify", "machine_binding_sha256": binding},
-                               {"X-Ordax-Device-Token": token})
+            identity = request(
+                client,
+                endpoint,
+                {"operation": "identify", "machine_binding_sha256": binding},
+                {"X-Ordax-Device-Token": token},
+            )
             if identity.get("ok"):
                 if path == pending:
                     os.replace(pending, token_path)
@@ -184,20 +216,36 @@ def _configure(state: Path, *, interactive: bool = False, client=None, binding=N
             else:
                 token = secrets.token_hex(32)
                 atomic_write(pending, token)
-            identity = request(client, {
-                "operation": "enroll", "machine_binding_sha256": binding,
-                "device_name": socket.gethostname(),
-                "token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-            }, {"Authorization": "Bearer " + credential})
+            identity = request(
+                client,
+                endpoint,
+                {
+                    "operation": "enroll",
+                    "machine_binding_sha256": binding,
+                    "device_name": socket.gethostname(),
+                    "token_sha256": hashlib.sha256(token.encode()).hexdigest(),
+                },
+                {"Authorization": "Bearer " + credential},
+            )
             if not identity.get("ok"):
                 raise SetupError("USER_AUTHORIZATION_REQUIRED")
             os.replace(pending, token_path)
         import uuid
         device_id = str(uuid.UUID(identity["device_id"]))
-        if identity.get("protocol") != "development-v2":
+        if identity.get("protocol") != protocol:
             raise SetupError("PROTOCOL_MISMATCH")
-        settings.update(supabase_url=CONTROL_PLANE, control_plane_protocol="development-v2",
-                        development_device_id=device_id)
+        if protocol == "development-v2":
+            settings.update(
+                supabase_url=control_plane,
+                control_plane_protocol=protocol,
+                development_device_id=device_id,
+            )
+        else:
+            settings.update(
+                control_plane_url=control_plane,
+                control_plane_protocol=protocol,
+                development_device_id=device_id,
+            )
         projects = settings.setdefault("projects", {})
         root = (home or Path.home()) / "Documents" / "github"
         for slug in ("cerco-no-interior-mvp", "dioramas-biblicos"):
@@ -207,7 +255,7 @@ def _configure(state: Path, *, interactive: bool = False, client=None, binding=N
         if settings.get("default_project") not in projects and projects:
             settings["default_project"] = next(iter(projects))
         atomic_json(settings_path, settings)
-        return {"ok": True, "device_id": device_id, "protocol": "development-v2"}
+        return {"ok": True, "device_id": device_id, "protocol": protocol}
     finally:
         if own_client:
             client.close()
@@ -216,10 +264,24 @@ def _configure(state: Path, *, interactive: bool = False, client=None, binding=N
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--interactive", action="store_true")
+    parser.add_argument(
+        "--protocol",
+        choices=sorted(SUPPORTED_PROTOCOLS),
+        default=os.environ.get("ORDAX_CONTROL_PLANE_PROTOCOL", "development-v2"),
+    )
+    parser.add_argument(
+        "--control-plane-url",
+        default=os.environ.get("ORDAX_CONTROL_PLANE_URL"),
+    )
     args = parser.parse_args()
     try:
         state = Path(os.environ["LOCALAPPDATA"]) / "OrdaX" / "DevAgent"
-        result = configure(state, interactive=args.interactive)
+        result = configure(
+            state,
+            interactive=args.interactive,
+            protocol=args.protocol,
+            control_plane_url=args.control_plane_url,
+        )
         print(json.dumps(result))
         return 0
     except SetupError as error:

@@ -35,8 +35,25 @@ Se a resposta se perder, o setup identifica o token pendente e conclui sua
 promoção local. A escrita usa rename atômico no mesmo volume e ACL restrita
 ao usuário e SYSTEM. Falha de ACL impede enrollment.
 
-`agent-settings.json` conserva projetos e opções existentes. O setup configura
-o Control Plane oficial, `development-v2` e o device ID. Registra
+`agent-settings.json` conserva projetos e opções existentes. Por padrão o setup
+continua configurando o Control Plane oficial `development-v2`. Depois que o
+backend Cloudflare estiver publicado e validado, o mesmo setup pode migrar
+explicitamente para `cloudflare-v3`, sem copiar token manualmente:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\ordax-device-agent-setup.ps1 `
+  -ControlPlaneProtocol cloudflare-v3 `
+  -ControlPlaneUrl "https://<worker>.workers.dev"
+```
+
+No v3, o token continua nascendo localmente; somente o SHA-256 chega ao Worker.
+O Worker valida o usuário diretamente no GitHub e exige permissão `admin` no
+repositório oficial. O binding da máquina é único, o proprietário GitHub é
+preservado e rotações são limitadas a dez por hora. O bootstrap lê o provider
+salvo e recupera a mesma identidade após restart/reboot; ele não força retorno
+ao Supabase.
+
+O setup registra
 `cerco-no-interior-mvp` e `dioramas-biblicos` quando suas pastas conhecidas existem,
 sem sobrescrever personalizações de projetos já cadastrados.
 
@@ -49,8 +66,10 @@ Sem internet, a credencial e as configurações são preservadas. Uma resposta
 401 do transporte solicita recuperação; erros de rede não rotacionam tokens.
 Se o login também expirou, execute novamente o setup para autenticar-se.
 
-`ORDAX_DEVICE_AGENT=READY` só aparece depois de `/status` confirmar protocolo,
-identidade, projeto, tarefa externa e heartbeat aceito há menos de 60 segundos.
+`ORDAX_DEVICE_AGENT=READY` só aparece depois de `/status` confirmar o protocolo
+selecionado, identidade, projeto, tarefa externa e heartbeat aceito há menos de
+60 segundos. No `cloudflare-v3`, o setup também exige que a URL salva corresponda
+à URL solicitada.
 `paired=true` sozinho não comprova conexão.
 
 ## GitHub Actions

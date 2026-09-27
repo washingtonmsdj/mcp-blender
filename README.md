@@ -4,7 +4,9 @@
 
 Execute `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\ordax-device-agent-setup.ps1`.
 O setup atualiza a instalação gerenciada, autentica o usuário quando necessário,
-recupera a credencial da própria máquina e instala o supervisor externo.
+recupera a credencial da própria máquina e instala o supervisor externo. O padrão
+continua `development-v2`; a migração para `cloudflare-v3` é explícita e usa o
+mesmo login GitHub/binding seguro, sem copiar credenciais manualmente.
 GitHub Runner não é requisito. Veja [fluxo, requisitos e diagnóstico](docs/DEVICE_AGENT_SETUP.md).
 
 > Nome histórico do repositório: `mcp-blender`. O produto evolui agora para **OrdaX Device Agent**. Os comandos e pacotes antigos permanecem como aliases de compatibilidade durante a migração.
