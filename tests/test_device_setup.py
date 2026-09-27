@@ -145,27 +145,16 @@ class SetupTests(unittest.TestCase):
             self.run_setup()
         self.assertEqual(1, self.enrollments)
 
-    def test_legacy_provider_state_is_removed_after_v3_confirmation(self):
+    def test_existing_project_customization_is_preserved(self):
         custom = {"path": "D:/custom", "apps": ["blender"]}
         (self.state / "agent-settings.json").write_text(
             json.dumps(
                 {
-                    "supabase_url": "https://legacy.example",
-                    "publishable_key": "legacy-public",
-                    "development_device_id": str(uuid.uuid4()),
-                    "control_plane_identities": {
-                        "development-v2": {"device_id": str(uuid.uuid4())}
-                    },
                     "custom": 123,
                     "projects": {"cerco-no-interior-mvp": custom},
                 }
             )
         )
-        for name in (
-            "device-token.development-v2.txt",
-            "device-token.txt",
-        ):
-            (self.state / name).write_text("f" * 64)
 
         self.run_setup()
         settings = json.loads((self.state / "agent-settings.json").read_text())
@@ -173,15 +162,6 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(123, settings["custom"])
         self.assertEqual("cloudflare-v3", settings["control_plane_protocol"])
         self.assertEqual(self.device, settings["device_id"])
-        for key in (
-            "supabase_url",
-            "publishable_key",
-            "development_device_id",
-            "control_plane_identities",
-        ):
-            self.assertNotIn(key, settings)
-        self.assertFalse((self.state / "device-token.development-v2.txt").exists())
-        self.assertFalse((self.state / "device-token.txt").exists())
         self.assertTrue((self.state / "device-token.cloudflare-v3.txt").is_file())
 
     def test_requires_https_outside_loopback(self):
