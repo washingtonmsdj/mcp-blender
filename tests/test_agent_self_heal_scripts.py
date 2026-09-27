@@ -530,7 +530,12 @@ class AgentSelfHealScriptTests(unittest.TestCase):
         self.assertIn("'device-token.development-v2.txt.pending-recovery'", finalizer)
         self.assertIn("'device-token.development-v2.txt.pending-enrollment'", finalizer)
         self.assertIn("'device-token.txt'", finalizer)
-        self.assertNotIn("'device-token.cloudflare-v3.txt'", finalizer)
+        self.assertIn("$cloudflareTokenPath = Join-Path $stateDir 'device-token.cloudflare-v3.txt'", finalizer)
+        self.assertIn("CLOUDFLARE_V3_CREDENTIAL_MISSING_DURING_V2_RETIREMENT", finalizer)
+        self.assertIn("CLOUDFLARE_V3_CREDENTIAL_LOST_DURING_V2_RETIREMENT", finalizer)
+        self.assertIn("SANITIZED_SETTINGS_STILL_CONTAIN_SUPABASE_KEYS", finalizer)
+        self.assertIn("SANITIZED_SETTINGS_STILL_CONTAIN_DEVELOPMENT_V2_IDENTITY", finalizer)
+        self.assertNotIn("'device-token.cloudflare-v3.txt',", finalizer)
         self.assertIn("development_v2_local_state_retired = $true", finalizer)
         self.assertIn("DEVELOPMENT_V2_LOCAL_STATE=RETIRED", finalizer)
 
