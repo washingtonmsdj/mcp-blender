@@ -31,7 +31,6 @@ class GameAssetWebGlbAuditTests(unittest.TestCase):
         return AgentConfig(
             agent_name="test-agent",
             supabase_url=None,
-            publishable_key=None,
             poll_seconds=1.0,
             state_dir=root / "state",
             agent_repo_path=root / "agent",
