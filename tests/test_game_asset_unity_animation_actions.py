@@ -16,7 +16,6 @@ class GameAssetUnityAnimationActionsTests(unittest.TestCase):
         asset.write_bytes(b"fake-fbx")
         return AgentConfig(
             agent_name="test-agent",
-            supabase_url=None,
             poll_seconds=1.0,
             state_dir=root / "state",
             agent_repo_path=root / "agent",
