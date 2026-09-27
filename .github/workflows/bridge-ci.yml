@@ -88,10 +88,12 @@ jobs:
             --base-url http://127.0.0.1:8787 \
             --operator-token e2e-secret
 
-      - name: Validate branch hygiene shell
+      - name: Validate shell scripts
         if: runner.os == 'Linux'
         shell: bash
-        run: bash -n scripts/branch-hygiene.sh
+        run: |
+          bash -n scripts/branch-hygiene.sh
+          bash -n scripts/cloudflare/deploy-v3.sh
 
       - name: Verify packaged Blender companion bundle
         if: runner.os == 'Linux'
