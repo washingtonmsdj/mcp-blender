@@ -7,7 +7,14 @@ BUCKET_NAME="${ORDAX_CLOUDFLARE_R2_BUCKET:-ordax-device-artifacts}"
 WORKER_NAME="${ORDAX_CLOUDFLARE_WORKER_NAME:-ordax-control-plane-v3}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CLOUDFLARE_DIR="$ROOT/control-plane/cloudflare"
-GENERATED_CONFIG="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/ordax-wrangler.generated.jsonc"
+TEMP_ROOT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+GENERATED_CONFIG="$TEMP_ROOT/ordax-wrangler.generated.jsonc"
+SECRETS_FILE="$TEMP_ROOT/ordax-wrangler.secrets.json"
+
+cleanup() {
+  rm -f "$GENERATED_CONFIG" "$SECRETS_FILE"
+}
+trap cleanup EXIT
 
 : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
 : "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
@@ -108,11 +115,23 @@ PY
 echo "Applying D1 migrations"
 wrangler d1 migrations apply DB --remote --config "$GENERATED_CONFIG"
 
-echo "Updating Worker operator secret"
-printf '%s' "$ORDAX_OPERATOR_TOKEN" | wrangler secret put ORDAX_OPERATOR_TOKEN --config "$GENERATED_CONFIG"
+python - "$SECRETS_FILE" <<'PY'
+from __future__ import annotations
+import json
+import os
+import sys
+from pathlib import Path
 
-echo "Deploying ${WORKER_NAME}"
-wrangler deploy --config "$GENERATED_CONFIG"
+target = Path(sys.argv[1])
+target.write_text(
+    json.dumps({"ORDAX_OPERATOR_TOKEN": os.environ["ORDAX_OPERATOR_TOKEN"]}) + "\n",
+    encoding="utf-8",
+)
+target.chmod(0o600)
+PY
+
+echo "Deploying ${WORKER_NAME} with required secrets"
+wrangler deploy --config "$GENERATED_CONFIG" --secrets-file "$SECRETS_FILE"
 
 echo "Cloudflare v3 deployment complete."
 echo "D1=${DB_NAME}"
