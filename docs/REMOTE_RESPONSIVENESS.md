@@ -2,8 +2,9 @@
 
 ## Changes
 
-- Load the legacy Supabase storage SDK only when constructing the legacy transport.
-  Development-v2 no longer imports that dependency through the transport factory.
+- The obsolete legacy-v1 transport and Supabase Python storage SDK have now been
+  removed entirely. Development-v2 remains only as the bounded rollback transport
+  during the Cloudflare v3 cutover window and uses direct HTTP, not the Supabase SDK.
 - After an empty v2 wait lasting at least one second, reconnect after 100 ms.
   Immediate empty responses retain idle backoff to avoid a request flood.
 - Send device heartbeat during long jobs alongside lease renewal.
