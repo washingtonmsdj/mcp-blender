@@ -104,11 +104,21 @@ async function authenticateDevice(
   return { ok: true };
 }
 
-async function wakeDeviceSession(env: Env, deviceId: string): Promise<void> {
+async function wakeDeviceSession(
+  env: Env,
+  deviceId: string,
+  targetAgentInstanceId?: string,
+  targetBootId?: string,
+): Promise<void> {
   const id = env.DEVICE_SESSIONS.idFromName(deviceId);
+  const headers = new Headers({ "X-Ordax-Device-Id": deviceId });
+  if (targetAgentInstanceId && targetBootId) {
+    headers.set("X-Ordax-Target-Agent-Instance", targetAgentInstanceId);
+    headers.set("X-Ordax-Target-Boot-Id", targetBootId);
+  }
   await env.DEVICE_SESSIONS.get(id).fetch("https://device.internal/wake", {
     method: "POST",
-    headers: { "X-Ordax-Device-Id": deviceId },
+    headers,
   });
 }
 
@@ -411,6 +421,14 @@ async function recoverTerminalReport(request: Request, env: Env): Promise<Respon
   const body = await parseSmallJson(request, 640 * 1024);
   if (!body) return json({ ok: false, error: "report_invalid" }, 400);
 
+  const recoveryAgentInstanceId = request.headers.get(
+    "X-Ordax-Recovery-Agent-Instance",
+  ) ?? "";
+  const recoveryBootId = request.headers.get("X-Ordax-Recovery-Boot-Id") ?? "";
+  if (!UUID_RE.test(recoveryAgentInstanceId) || !UUID_RE.test(recoveryBootId)) {
+    return json({ ok: false, error: "recovery_runtime_identity_required" }, 400);
+  }
+
   const jobId = typeof body.job_id === "string" ? body.job_id : "";
   const effectId = typeof body.effect_id === "string" ? body.effect_id : "";
   const attemptId = typeof body.attempt_id === "string" ? body.attempt_id : "";
@@ -488,7 +506,9 @@ async function recoverTerminalReport(request: Request, env: Env): Promise<Respon
     if (!replayMatches) {
       return json({ ok: false, error: "terminal_report_conflict" }, 409);
     }
-    await wakeDeviceSession(env, deviceId);
+    await wakeDeviceSession(
+      env, deviceId, recoveryAgentInstanceId, recoveryBootId,
+    );
     return json({ ok: true, status, replayed: true });
   }
 
@@ -516,7 +536,9 @@ async function recoverTerminalReport(request: Request, env: Env): Promise<Respon
   if ((update.meta.changes ?? 0) !== 1) {
     return json({ ok: false, error: "terminal_recovery_race" }, 409);
   }
-  await wakeDeviceSession(env, deviceId);
+  await wakeDeviceSession(
+    env, deviceId, recoveryAgentInstanceId, recoveryBootId,
+  );
   return json({ ok: true, status, recovered: true, replayed: false });
 }
 
@@ -833,14 +855,19 @@ export class DeviceSession extends DurableObject<Env> {
   }
 
   private async deliverNextJob(ws: WebSocket, deviceId: string): Promise<void> {
-    // A running action may already have mutated Blender/Unity/Git. Never allow
-    // another job onto the device until that execution is terminally resolved.
-    const unresolvedRunning = await this.env.DB.prepare(
-      "SELECT id FROM ordax_jobs WHERE device_id = ?1 AND status = 'running' LIMIT 1",
-    ).bind(deviceId).first();
-    if (unresolvedRunning) return;
-
     const now = nowIso();
+
+    // One device executes one remote job at a time. A running action may already
+    // have mutated local state, and an unexpired lease belongs to another active
+    // delivery attempt. Either condition fences every later queued job.
+    const activeExecution = await this.env.DB.prepare(
+      `SELECT id FROM ordax_jobs
+       WHERE device_id = ?1
+         AND (status = 'running' OR (status = 'leased' AND lease_expires_at >= ?2))
+       LIMIT 1`,
+    ).bind(deviceId, now).first();
+    if (activeExecution) return;
+
     const candidate = await this.env.DB.prepare(
       `SELECT id, capability, payload_canonical_b64, payload_sha256, effect_id, execution_epoch
        FROM ordax_jobs
@@ -933,10 +960,30 @@ export class DeviceSession extends DurableObject<Env> {
     }
 
     if (url.pathname === "/wake" && request.method === "POST") {
+      const targetAgentInstanceId =
+        request.headers.get("X-Ordax-Target-Agent-Instance") ?? "";
+      const targetBootId = request.headers.get("X-Ordax-Target-Boot-Id") ?? "";
+      const targeted = Boolean(targetAgentInstanceId || targetBootId);
+      if (
+        targeted
+        && (!UUID_RE.test(targetAgentInstanceId) || !UUID_RE.test(targetBootId))
+      ) {
+        return json({ ok: false, error: "wake_target_invalid" }, 400);
+      }
+
       for (const ws of this.ctx.getWebSockets()) {
-        if (this.attachment(ws)?.deviceId === deviceId) {
-          await this.deliverNextJob(ws, deviceId);
+        const attachment = this.attachment(ws);
+        if (!attachment || attachment.deviceId !== deviceId) continue;
+        if (
+          targeted
+          && (
+            attachment.agentInstanceId !== targetAgentInstanceId
+            || attachment.bootId !== targetBootId
+          )
+        ) {
+          continue;
         }
+        await this.deliverNextJob(ws, deviceId);
       }
       return json({ ok: true });
     }
