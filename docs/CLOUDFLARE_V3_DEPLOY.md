@@ -86,7 +86,15 @@ Depois do cutover bem-sucedido:
 
 O finalizador usa o relógio monotônico do Windows (`TickCount64`) para provar
 que houve um novo boot, exige heartbeat v3 recente e exige que o último job remoto
-bem-sucedido seja `blender.*`. Só então remove o snapshot local de rollback.
+bem-sucedido seja `blender.*`. Só então:
 
-A infraestrutura Supabase v2 só deve ser removida em uma mudança posterior,
-depois dessa prova final.
+1. grava `cloudflare-v3-finalized.json` com a evidência local, sem segredo;
+2. remove `supabase_url`, `publishable_key` e a identidade
+   `development-v2` de `agent-settings.json`;
+3. remove apenas os arquivos de credencial v2/legados conhecidos;
+4. preserva `device-token.cloudflare-v3.txt`;
+5. remove o snapshot local de rollback.
+
+Isso aposenta o Supabase **na estação** somente depois da prova final. A remoção
+do código/backend Supabase do repositório continua sendo uma mudança posterior,
+separada e auditável.
