@@ -11,7 +11,7 @@ Replace ad-hoc CMD/PowerShell recovery with a persistent, auditable agent that c
 - execute approved Blender automation;
 - collect logs and compiler errors;
 - capture gameplay screenshots and structured snapshots;
-- publish heartbeats, jobs, events and artifact metadata to Supabase;
+- publish heartbeats, jobs, events and artifact metadata through the selected remote control plane;
 - accept only whitelisted actions;
 - preserve local work before any Git operation;
 - run unattended after Windows sign-in.
@@ -25,10 +25,11 @@ ChatGPT / GitHub / Codex
           |
           | jobs + observations
           v
-Supabase control plane
-  agents / jobs / events / artifacts
+OrdaX remote control plane
+  Supabase development-v2 (current)
+  Cloudflare cloudflare-v3 (migration candidate)
           |
-          | authenticated polling/realtime
+          | authenticated typed delivery
           v
 OrdaX Dev Agent (Windows)
           |
@@ -78,33 +79,39 @@ Later:
 - `unity.playtest_suite`
 - `git.create_diagnostic_branch`
 
-## Supabase / OrdaX Control Plane
+## OrdaX remote control plane
 
-The canonical development backend is the dedicated Supabase project
-**ordax-control-plane**, owned by `washingtonmsdj/prototipo-ordax-os`.
-The historical `Ordax-2026-1` integration is retired and must not be selected
-for new Device Agent installations.
+The currently deployed development backend remains the dedicated Supabase project
+**ordax-control-plane** while the event-driven `cloudflare-v3` transport is
+validated. The migration is deliberately parallel: the Windows station is not
+switched until a real job, artifact round-trip, reconnect and restart have passed.
+The historical `Ordax-2026-1` integration remains retired.
 
 Product and engineering share the backend project but **not authority**:
 product/account credentials never authenticate development jobs, and the
 Device Agent uses a dedicated device-scoped development credential.
 
-The Windows Device Agent uses development protocol v2 through
-`ordax-development-device`. Mutable Blender work is routed through the
+The active Windows station still uses `development-v2` through
+`ordax-development-device`. Agent 1.21.0 also implements `cloudflare-v3`,
+which keeps one authenticated Durable Object WebSocket open and moves durable
+device/job/event state to D1 plus artifact bytes to R2. Mutable Blender work remains routed through the
 closed-world capability `ordax.dev.adapter.invoke`, which carries only a
 registered project slug, a `blender.*` action and a bounded JSON payload.
 The local ActionRegistry remains the final allow-list; the cloud does not gain a
 generic shell or raw-device capability through this adapter.
 
-Jobs use the canonical v2 queue and execution context
+Both transports preserve the same execution invariants
 (`effect_id`, `attempt_id`, lease, execution epoch and device identity).
-Presence/leases are refreshed while work is active. Realtime wake-up is used
-when available, with bounded polling/wait fallback.
+`development-v2` keeps bounded wait/poll fallback. `cloudflare-v3` delivers
+queued work over one persistent WebSocket and therefore does not require a new
+remote request for every idle wait/heartbeat cycle.
 
-Source ownership for Control Plane extensions lives under
-`prototipo-ordax-os/infra/supabase/development/`. The legacy
-`control-plane/supabase/` directory in this repository is historical
-incubation evidence only and is not the production/source authority.
+The deployed Supabase source authority remains under
+`prototipo-ordax-os/infra/supabase/development/` until cutover.
+The new provider-neutral migration implementation lives under
+`control-plane/cloudflare/` in this repository so its protocol evolves with the
+Device Agent client. The legacy `control-plane/supabase/` directory remains
+historical incubation evidence.
 
 ## Visual loop
 
@@ -116,7 +123,7 @@ For Unity/HORDAX:
 4. capture Game View;
 5. write gameplay JSON snapshot;
 6. upload the image + snapshot;
-7. record the artifact in Supabase;
+7. record the artifact in the selected remote control plane;
 8. ChatGPT inspects both image and structured state;
 9. create the next Git change.
 
