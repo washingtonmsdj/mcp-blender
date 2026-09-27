@@ -109,9 +109,10 @@ remote request for every idle wait/heartbeat cycle.
 The temporary development-v2 backend remains under
 `prototipo-ordax-os/infra/supabase/development/` only for rollback until the
 Cloudflare proof gate is complete. The active v3 implementation lives under
-`control-plane/cloudflare/`. The obsolete legacy-v1 backend and Python Supabase
-SDK were removed; this repository retains only the v2 setup/recovery pieces still
-required during the migration window.
+`control-plane/cloudflare/`. The obsolete legacy-v1 backend, Python Supabase SDK,
+and its old pairing/job/presence SQL were removed. This repository retains only
+the v2 device-setup function and enrollment migration still required during the
+migration window.
 
 ## Visual loop
 
