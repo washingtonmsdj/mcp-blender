@@ -42,6 +42,10 @@ function Get-AgentStatus {
     }
 }
 
+function Get-WindowsBootEpochMilliseconds {
+    return [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - [Environment]::TickCount64
+}
+
 function Get-HeartbeatAgeSeconds($Status) {
     if (-not $Status -or -not $Status.runtime -or -not $Status.runtime.last_heartbeat_at) {
         return [double]::PositiveInfinity
@@ -262,6 +266,7 @@ try {
         target_device_id = $v3DeviceId
         target_url = $ControlPlaneUrl
         backup_path = $backupPath
+        source_windows_boot_epoch_ms = Get-WindowsBootEpochMilliseconds
     }
     Write-AtomicJson -Path $cutoverStatePath -Value $cutoverState
 
