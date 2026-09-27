@@ -38,17 +38,34 @@ function Ensure-ConfiguredDeviceIdentity {
         $setupProtocol = "development-v2"
         $setupControlPlaneUrl = $null
         $setupSettingsPath = Join-Path $stateDir "agent-settings.json"
+        $cloudflareTokenPath = Join-Path $stateDir "device-token.cloudflare-v3.txt"
         if (Test-Path $setupSettingsPath -PathType Leaf) {
             try {
                 $setupSettings = Get-Content $setupSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-                if ($setupSettings.control_plane_protocol -in @("development-v2", "cloudflare-v3")) {
-                    $setupProtocol = [string]$setupSettings.control_plane_protocol
-                }
-                if ($setupProtocol -eq "cloudflare-v3" -and $setupSettings.control_plane_url) {
-                    $setupControlPlaneUrl = [string]$setupSettings.control_plane_url
-                }
             } catch {
-                Write-BootstrapLog "IDENTITY_SETTINGS_INVALID fallback=development-v2"
+                Write-BootstrapLog "IDENTITY_RECOVERY_SKIP existing settings invalid; refusing provider downgrade"
+                return $false
+            }
+            if (-not $setupSettings) {
+                Write-BootstrapLog "IDENTITY_RECOVERY_SKIP existing settings empty; refusing provider downgrade"
+                return $false
+            }
+            $storedProtocol = if ($setupSettings.PSObject.Properties["control_plane_protocol"]) {
+                [string]$setupSettings.control_plane_protocol
+            } else {
+                ""
+            }
+            if ($storedProtocol -in @("development-v2", "cloudflare-v3")) {
+                $setupProtocol = $storedProtocol
+            } elseif ($storedProtocol) {
+                Write-BootstrapLog "IDENTITY_RECOVERY_SKIP unsupported stored protocol=$storedProtocol"
+                return $false
+            } elseif (Test-Path $cloudflareTokenPath -PathType Leaf) {
+                Write-BootstrapLog "IDENTITY_RECOVERY_SKIP cloudflare credential present but protocol missing"
+                return $false
+            }
+            if ($setupProtocol -eq "cloudflare-v3" -and $setupSettings.control_plane_url) {
+                $setupControlPlaneUrl = [string]$setupSettings.control_plane_url
             }
         }
         $setupArgs = @("-m", "ordax_dev_agent.device_setup", "--protocol", $setupProtocol)
@@ -62,6 +79,33 @@ function Ensure-ConfiguredDeviceIdentity {
         & $python @setupArgs | ForEach-Object { Write-BootstrapLog "SETUP $_" }
         return $LASTEXITCODE -eq 0
     }
+    $fallbackSettingsPath = Join-Path $stateDir "agent-settings.json"
+    $fallbackCloudflareTokenPath = Join-Path $stateDir "device-token.cloudflare-v3.txt"
+    $fallbackProtocol = ""
+    if (Test-Path $fallbackSettingsPath -PathType Leaf) {
+        try {
+            $fallbackSettings = Get-Content $fallbackSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        } catch {
+            Write-BootstrapLog "IDENTITY_RECOVERY_SKIP shared setup missing and settings invalid"
+            return $false
+        }
+        if (-not $fallbackSettings) {
+            Write-BootstrapLog "IDENTITY_RECOVERY_SKIP shared setup missing and settings empty"
+            return $false
+        }
+        if ($fallbackSettings.PSObject.Properties["control_plane_protocol"]) {
+            $fallbackProtocol = [string]$fallbackSettings.control_plane_protocol
+        }
+    }
+    if ($fallbackProtocol -eq "cloudflare-v3" -or (Test-Path $fallbackCloudflareTokenPath -PathType Leaf)) {
+        Write-BootstrapLog "IDENTITY_RECOVERY_SKIP cloudflare-v3 active; refusing development-v2 fallback"
+        return $false
+    }
+    if ($fallbackProtocol -and $fallbackProtocol -ne "development-v2") {
+        Write-BootstrapLog "IDENTITY_RECOVERY_SKIP unsupported fallback protocol=$fallbackProtocol"
+        return $false
+    }
+
     $tokenPath = Join-Path $stateDir "device-token.development-v2.txt"
     $legacyTokenPath = Join-Path $stateDir "device-token.txt"
     if (-not (Test-Path $tokenPath -PathType Leaf) -and (Test-Path $legacyTokenPath -PathType Leaf)) {
