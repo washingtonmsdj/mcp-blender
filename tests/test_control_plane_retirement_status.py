@@ -97,7 +97,7 @@ class ControlPlaneRetirementStatusTests(unittest.TestCase):
             self.assertEqual(expected, result.data["retirement"])
             command = run.call_args.args[0]
             self.assertEqual("powershell.exe", command[0])
-            self.assertEqual(str(script), command[-1])
+            self.assertEqual(script.resolve(), Path(command[-1]).resolve())
             self.assertNotIn("-Command", command)
 
     def test_action_rejects_unknown_fields_and_non_windows(self) -> None:
