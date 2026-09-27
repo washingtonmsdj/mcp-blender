@@ -198,28 +198,6 @@ def _resolve_control_plane(control_plane_url: str | None) -> tuple[str, str]:
     return raw, raw + "/v3/device/setup"
 
 
-def _retire_legacy_local_state(state: Path, settings: dict) -> None:
-    for key in (
-        "supabase_url",
-        "publishable_key",
-        "development_device_id",
-        "control_plane_identities",
-    ):
-        settings.pop(key, None)
-
-    for name in (
-        "device-token.development-v2.txt",
-        "device-token.development-v2.txt.pending-setup",
-        "device-token.development-v2.txt.pending-recovery",
-        "device-token.development-v2.txt.pending-enrollment",
-        "device-token.txt",
-        "device-token.txt.pending-setup",
-        "device-token.txt.pending-recovery",
-        "device-token.txt.pending-enrollment",
-    ):
-        (state / name).unlink(missing_ok=True)
-
-
 def _configure(
     state: Path,
     *,
@@ -290,7 +268,6 @@ def _configure(
         if identity.get("protocol") != "cloudflare-v3":
             raise SetupError("PROTOCOL_MISMATCH")
 
-        _retire_legacy_local_state(state, settings)
         settings.update(
             control_plane_url=control_plane,
             control_plane_protocol="cloudflare-v3",
