@@ -20,7 +20,7 @@ class AgentConfig:
     projects: dict | None = None
     default_project: str = "hordax"
     adapters: tuple[str, ...] = ()
-    control_plane_protocol: str = "legacy-v1"
+    control_plane_protocol: str = "development-v2"
     development_device_id: str | None = None
     control_plane_url: str | None = None
 
@@ -67,7 +67,7 @@ class AgentConfig:
             adapters=tuple(settings.get("adapters", [])),
             control_plane_protocol=os.environ.get(
                 "ORDAX_CONTROL_PLANE_PROTOCOL",
-                settings.get("control_plane_protocol", "legacy-v1"),
+                settings.get("control_plane_protocol", "development-v2"),
             ),
             development_device_id=os.environ.get(
                 "ORDAX_DEVICE_ID",
@@ -138,7 +138,7 @@ class AgentConfig:
             "agent_repo_path": str(self.agent_repo_path),
             "hordax_path": str(self.hordax_path),
             "bridge_path": str(self.bridge_path),
-            "supabase_configured": bool(self.supabase_url and self.publishable_key),
+            "development_v2_url_configured": bool(self.supabase_url),
             "control_plane_url_configured": bool(self.control_plane_url),
             "control_plane_url": self.control_plane_url,
             "control_plane_protocol": self.control_plane_protocol,
