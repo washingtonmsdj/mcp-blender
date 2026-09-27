@@ -97,8 +97,8 @@ function Wait-AgentProvider(
     while ([DateTime]::UtcNow -lt $deadline) {
         $status = Get-AgentStatus
         if ($status) {
-            $pid = Get-AgentPid $status
-            $pidChanged = $PreviousPid -le 0 -or ($pid -gt 0 -and $pid -ne $PreviousPid)
+            $processId = Get-AgentPid $status
+            $pidChanged = $PreviousPid -le 0 -or ($processId -gt 0 -and $processId -ne $PreviousPid)
             $protocolMatches = [string]$status.control_plane_protocol -eq $Protocol
             $deviceMatches = [string]$status.development_device_id -eq $DeviceId
             $urlMatches = $true
