@@ -12,7 +12,7 @@ class ManagedUnityCompanionUpgradeTests(unittest.TestCase):
         (project / "Assets" / "OrdaX" / "Editor").mkdir(parents=True)
         config = AgentConfig(
             "test",
-            None,
+            
             
             5,
             root / "state",
