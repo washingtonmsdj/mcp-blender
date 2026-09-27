@@ -360,11 +360,7 @@ async function enqueueJob(request: Request, env: Env): Promise<Response> {
      VALUES (?1, ?2, ?3, ?4, ?5, 'queued', ?6, 0, ?7)`,
   ).bind(jobId, deviceId, action, payloadB64, payloadSha256, effectId, createdAt).run();
 
-  const id = env.DEVICE_SESSIONS.idFromName(deviceId);
-  await env.DEVICE_SESSIONS.get(id).fetch("https://device.internal/wake", {
-    method: "POST",
-    headers: { "X-Ordax-Device-Id": deviceId },
-  });
+  await wakeDeviceSession(env, deviceId);
 
   return json({ ok: true, job_id: jobId, effect_id: effectId, status: "queued" }, 201);
 }
