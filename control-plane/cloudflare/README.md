@@ -23,23 +23,18 @@ therefore stop consuming a new Edge Function invocation every wait/heartbeat cyc
 
 ## Provisioning
 
-After creating the Cloudflare resources and setting the Worker secret
-`ORDAX_OPERATOR_TOKEN`, call the operator-only `POST /v3/devices` endpoint once.
-The raw device token is returned once; write it to:
+Normal Windows provisioning uses `ordax_dev_agent.device_setup` (or
+`ordax-device-agent-setup.ps1`) with `cloudflare-v3`. The credential is
+generated locally and stored at:
 
-`%LOCALAPPDATA%\\OrdaX\\DevAgent\\device-token.txt`
+`%LOCALAPPDATA%\\OrdaX\\DevAgent\\device-token.cloudflare-v3.txt`
 
-Then set:
+Only its SHA-256 is sent to the Worker. The existing Supabase v2 credential is
+kept separately at `device-token.development-v2.txt` during migration.
 
-```json
-{
-  "control_plane_protocol": "cloudflare-v3",
-  "control_plane_url": "https://<worker-host>",
-  "development_device_id": "<uuid>"
-}
-```
-
-No Supabase key is required by v3.
+`agent-settings.json` keeps `control_plane_identities` for each provider and
+the active `control_plane_protocol` / `development_device_id`. No Supabase key
+is required by v3.
 
 ## Deployment order
 
