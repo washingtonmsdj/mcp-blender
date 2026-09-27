@@ -104,6 +104,14 @@ async function authenticateDevice(
   return { ok: true };
 }
 
+async function wakeDeviceSession(env: Env, deviceId: string): Promise<void> {
+  const id = env.DEVICE_SESSIONS.idFromName(deviceId);
+  await env.DEVICE_SESSIONS.get(id).fetch("https://device.internal/wake", {
+    method: "POST",
+    headers: { "X-Ordax-Device-Id": deviceId },
+  });
+}
+
 async function parseSmallJson(request: Request, maxBytes = 128 * 1024): Promise<JsonObject | null> {
   const raw = await request.text();
   if (raw.length === 0 || raw.length > maxBytes) return null;
@@ -481,9 +489,11 @@ async function recoverTerminalReport(request: Request, env: Env): Promise<Respon
       && (row.result_sha256 ?? "").toLowerCase() === resultSha256
       && row.error_code === errorCode
     );
-    return replayMatches
-      ? json({ ok: true, status, replayed: true })
-      : json({ ok: false, error: "terminal_report_conflict" }, 409);
+    if (!replayMatches) {
+      return json({ ok: false, error: "terminal_report_conflict" }, 409);
+    }
+    await wakeDeviceSession(env, deviceId);
+    return json({ ok: true, status, replayed: true });
   }
 
   if (!contextMatches) {
@@ -510,6 +520,7 @@ async function recoverTerminalReport(request: Request, env: Env): Promise<Respon
   if ((update.meta.changes ?? 0) !== 1) {
     return json({ ok: false, error: "terminal_recovery_race" }, 409);
   }
+  await wakeDeviceSession(env, deviceId);
   return json({ ok: true, status, recovered: true, replayed: false });
 }
 
