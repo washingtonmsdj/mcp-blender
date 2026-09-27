@@ -217,7 +217,8 @@ def run(base_url: str, operator_token: str) -> None:
             restarted_control._terminal_outbox.persist(second_report)
             if restarted_control.recover_pending_reports() != 1:
                 raise RuntimeError("live terminal recovery did not clear one report")
-            restarted_control._jobs.pop(next_job.id, None)
+            if next_job.id in restarted_control._jobs:
+                raise RuntimeError("live terminal recovery left stale local job state")
 
             third_job = restarted_control.claim_next_job()
             if third_job is None or third_job.id != third_job_id:
