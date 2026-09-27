@@ -1079,19 +1079,38 @@ export class DeviceSession extends DurableObject<Env> {
       const startedAt = nowIso();
       const result = await this.env.DB.prepare(
         `UPDATE ordax_jobs SET status = 'running', started_at = COALESCE(started_at, ?1)
-         WHERE id = ?2 AND device_id = ?3 AND lease_id = ?4 AND execution_epoch = ?5`,
-      ).bind(startedAt, jobId, deviceId, leaseId, executionEpoch).run();
-      this.ack(ws, requestId, (result.meta.changes ?? 0) === 1);
+         WHERE id = ?2 AND device_id = ?3 AND effect_id = ?4 AND attempt_id = ?5
+           AND lease_id = ?6 AND execution_epoch = ?7
+           AND agent_instance_id = ?8 AND boot_id = ?9
+           AND status IN ('leased','running') AND report_id IS NULL`,
+      ).bind(
+        startedAt, jobId, deviceId, effectId, attemptId, leaseId, executionEpoch,
+        attachment.agentInstanceId, attachment.bootId,
+      ).run();
+      const ok = (result.meta.changes ?? 0) === 1;
+      this.ack(ws, requestId, ok, ok ? { started: true } : { error: "start_rejected" });
       return;
     }
 
     if (type === "lease_heartbeat") {
       const leasedUntil = new Date(Date.now() + 120_000).toISOString();
-      await this.env.DB.prepare(
+      const result = await this.env.DB.prepare(
         `UPDATE ordax_jobs SET lease_expires_at = ?1
-         WHERE id = ?2 AND device_id = ?3 AND lease_id = ?4 AND execution_epoch = ?5`,
-      ).bind(leasedUntil, jobId, deviceId, leaseId, executionEpoch).run();
-      this.ack(ws, requestId, true, { leased_until: leasedUntil });
+         WHERE id = ?2 AND device_id = ?3 AND effect_id = ?4 AND attempt_id = ?5
+           AND lease_id = ?6 AND execution_epoch = ?7
+           AND agent_instance_id = ?8 AND boot_id = ?9
+           AND status IN ('leased','running') AND report_id IS NULL`,
+      ).bind(
+        leasedUntil, jobId, deviceId, effectId, attemptId, leaseId, executionEpoch,
+        attachment.agentInstanceId, attachment.bootId,
+      ).run();
+      const ok = (result.meta.changes ?? 0) === 1;
+      this.ack(
+        ws,
+        requestId,
+        ok,
+        ok ? { leased_until: leasedUntil } : { error: "lease_not_active" },
+      );
       return;
     }
 
