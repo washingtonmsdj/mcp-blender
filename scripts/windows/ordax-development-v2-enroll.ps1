@@ -20,8 +20,8 @@ $python = Join-Path $repoRoot ".venv\Scripts\python.exe"
 $installer = Join-Path $repoRoot "scripts\windows\ordax-agent-install.ps1"
 $stateDir = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent"
 $settingsPath = Join-Path $stateDir "agent-settings.json"
-$tokenPath = Join-Path $stateDir "device-token.txt"
-$pendingPath = Join-Path $stateDir "device-token.txt.pending-enrollment"
+$tokenPath = Join-Path $stateDir "device-token.development-v2.txt"
+$pendingPath = Join-Path $stateDir "device-token.development-v2.txt.pending-enrollment"
 $endpoint = $ControlPlaneUrl.TrimEnd("/") + "/functions/v1/ordax-device-enrollment"
 
 if (-not (Test-Path $python -PathType Leaf)) {
@@ -114,6 +114,14 @@ if (Test-Path $settingsPath -PathType Leaf) {
 $settings | Add-Member -NotePropertyName supabase_url -NotePropertyValue $ControlPlaneUrl.TrimEnd("/") -Force
 $settings | Add-Member -NotePropertyName control_plane_protocol -NotePropertyValue "development-v2" -Force
 $settings | Add-Member -NotePropertyName development_device_id -NotePropertyValue $DeviceId -Force
+if (-not $settings.PSObject.Properties["control_plane_identities"] -or -not $settings.control_plane_identities) {
+    $settings | Add-Member -NotePropertyName control_plane_identities -NotePropertyValue ([pscustomobject]@{}) -Force
+}
+$v2Identity = [pscustomobject]@{
+    device_id = $DeviceId
+    control_plane_url = $ControlPlaneUrl.TrimEnd("/")
+}
+$settings.control_plane_identities | Add-Member -NotePropertyName "development-v2" -NotePropertyValue $v2Identity -Force
 
 if (-not $settings.PSObject.Properties["projects"] -or -not $settings.projects) {
     $settings | Add-Member -NotePropertyName projects -NotePropertyValue ([pscustomobject]@{}) -Force
