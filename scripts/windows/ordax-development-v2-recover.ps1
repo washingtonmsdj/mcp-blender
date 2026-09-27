@@ -12,8 +12,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $stateDir = Join-Path $env:LOCALAPPDATA "OrdaX\DevAgent"
-$tokenPath = Join-Path $stateDir "device-token.txt"
-$pendingPath = Join-Path $stateDir "device-token.txt.pending-recovery"
+$tokenPath = Join-Path $stateDir "device-token.development-v2.txt"
+$pendingPath = Join-Path $stateDir "device-token.development-v2.txt.pending-recovery"
 $recoveryUrl = $ControlPlaneUrl.TrimEnd("/") + "/functions/v1/ordax-development-recovery"
 
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
