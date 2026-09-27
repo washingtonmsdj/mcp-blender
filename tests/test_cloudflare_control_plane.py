@@ -34,7 +34,9 @@ def make_config(root: Path, *, url: str = "https://control.example") -> AgentCon
 def write_token(root: Path) -> None:
     state = root / "state"
     state.mkdir(parents=True, exist_ok=True)
-    (state / "device-token.txt").write_text("c" * 64 + "\n", encoding="utf-8")
+    (state / "device-token.cloudflare-v3.txt").write_text(
+        "c" * 64 + "\n", encoding="utf-8"
+    )
 
 
 class CloudflareControlPlaneTests(unittest.TestCase):
