@@ -25,6 +25,22 @@ def pending_token_path(state_dir: Path, protocol: str) -> Path:
     return path.with_name(path.name + ".pending-setup")
 
 
+def resolve_pending_token_path(state_dir: Path, protocol: str) -> Path:
+    path = pending_token_path(state_dir, protocol)
+    if (
+        str(protocol).strip().lower() == "development-v2"
+        and not path.exists()
+    ):
+        legacy = state_dir / (_LEGACY_TOKEN_FILE + ".pending-setup")
+        if legacy.is_file():
+            try:
+                os.replace(legacy, path)
+            except FileNotFoundError:
+                if not path.is_file():
+                    raise
+    return path
+
+
 def legacy_token_path(state_dir: Path) -> Path:
     return state_dir / _LEGACY_TOKEN_FILE
 
