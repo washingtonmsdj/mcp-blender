@@ -192,9 +192,43 @@ def run(base_url: str, operator_token: str) -> None:
                 )
             if next_job.payload != {"after_recovery": True}:
                 raise RuntimeError("post-recovery queued job payload changed")
+            third = operator.post(
+                "/v3/jobs",
+                json={
+                    "device_id": device_id,
+                    "action": "agent.status",
+                    "payload": {"after_live_recovery": True},
+                },
+            )
+            third.raise_for_status()
+            third_job_id = str(third.json()["job_id"])
+
+            second_result = ActionResult(True, "live recovery completed", {})
+            second_body, second_digest = restarted_control._canonical_result(second_result)
+            second_report = {
+                **restarted_control._execution_context(next_job),
+                "report_id": str(uuid.uuid4()),
+                "status": "succeeded",
+                "exit_code": 0,
+                "result": second_body,
+                "result_sha256": second_digest,
+                "error_code": None,
+            }
+            restarted_control._terminal_outbox.persist(second_report)
+            if restarted_control.recover_pending_reports() != 1:
+                raise RuntimeError("live terminal recovery did not clear one report")
+            restarted_control._jobs.pop(next_job.id, None)
+
+            third_job = restarted_control.claim_next_job()
+            if third_job is None or third_job.id != third_job_id:
+                raise RuntimeError(
+                    "terminal recovery did not wake the existing device websocket"
+                )
+            if third_job.payload != {"after_live_recovery": True}:
+                raise RuntimeError("live-recovery queued job payload changed")
             restarted_control.complete(
-                next_job,
-                ActionResult(True, "post-recovery queue resumed", {}),
+                third_job,
+                ActionResult(True, "queue wake verified", {}),
             )
 
             replay_report = restarted_control._recover_terminal_report(report)
