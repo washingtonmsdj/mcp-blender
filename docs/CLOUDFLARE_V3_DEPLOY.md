@@ -30,11 +30,14 @@ O script `scripts/cloudflare/deploy-v3.sh` é idempotente:
 2. localiza ou cria `ordax-device-artifacts` no R2;
 3. gera configuração Wrangler temporária fora do checkout;
 4. aplica migrations D1 remotas;
-5. atualiza `ORDAX_OPERATOR_TOKEN` como Worker secret;
-6. faz deploy do Worker + Durable Object.
+5. cria um arquivo de secrets temporário fora do checkout e com permissão restrita;
+6. faz um único `wrangler deploy --secrets-file`, enviando código + `ORDAX_OPERATOR_TOKEN` juntos;
+7. apaga configuração e arquivo de secrets temporários ao sair.
 
-O ID do banco D1 não é commitado. O arquivo gerado fica no diretório temporário
-do runner, portanto uma conta Cloudflare nunca fica acoplada ao código-fonte.
+O ID do banco D1 não é commitado. Os arquivos gerados ficam no diretório
+temporário do runner e são removidos por `trap` ao final. O primeiro deploy não
+depende de um Worker pré-existente: o secret é enviado junto com o código via
+`--secrets-file`.
 
 ## Primeiro corte
 
