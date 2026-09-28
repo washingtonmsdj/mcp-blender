@@ -205,8 +205,10 @@ Fase 2:
 - mover Blender e Unity para contratos claramente identificados como adapters;
 - adicionar contratos de Product MCP e Action Gateway;
   - **em andamento:** `ProductActionGateway` define uma superfície inicial
-    read-only com grants explícitos, redaction de paths locais e sem servidor
-    de rede; contrato detalhado em `docs/ACTION_GATEWAY.md`;
+    read-only com contexto autenticado, grants explícitos vinculáveis a
+    subject/Space/device, expiração, auditoria obrigatória, redaction de paths
+    locais e sem servidor de rede; contrato detalhado em
+    `docs/ACTION_GATEWAY.md`;
 - ligar identidade/grants do Control Plane sem misturar credenciais de
   desenvolvimento com credenciais do produto.
 
