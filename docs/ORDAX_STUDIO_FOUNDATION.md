@@ -164,3 +164,9 @@ O Studio expõe `agent.project_health` no ActionRegistry e `project_health` no M
 O diagnóstico agrega memória persistente, estado Git e adapters habilitados. Cada adapter informa estados como `ready`, `update_required`, `stale`, `offline` ou `disabled`; o projeto passa a `attention` quando uma integração habilitada requer intervenção.
 
 CLI, desktop e MCP usam a mesma regra `select_available_project`: projeto explícito válido, projeto ativo persistido, default disponível e, por fim, primeiro projeto registrado cuja pasta exista. Isso evita que uma pasta removida impeça a retomada de uma sessão futura.
+
+## Painel inicial
+
+A shell desktop passa a abrir com um **Painel** de continuidade antes do editor. Ele resume projeto ativo, sessão, memória/tarefas, Git, Blender, Unity e o último checkpoint.
+
+A saúde de Git e adapters é carregada fora da thread da interface usando `agent.project_health`; portanto uma inspeção lenta não deve congelar a janela. O painel é observacional e não inicia nem modifica engines automaticamente.

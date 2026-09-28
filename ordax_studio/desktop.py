@@ -87,16 +87,19 @@ class StudioApp(tk.Tk):
 
         self.tabs = ttk.Notebook(main)
         self.tabs.pack(fill="both", expand=True)
+        self.overview_tab = ttk.Frame(self.tabs)
         self.workspace_tab = ttk.Frame(self.tabs)
         self.context_tab = ttk.Frame(self.tabs)
         self.memory_tab = ttk.Frame(self.tabs)
         self.tasks_tab = ttk.Frame(self.tabs)
         self.capabilities_tab = ttk.Frame(self.tabs)
         self.terminal_tab = ttk.Frame(self.tabs)
-        for frame, title in ((self.workspace_tab, "Workspace"), (self.context_tab, "Contexto"),
-                             (self.memory_tab, "Memória"), (self.tasks_tab, "Tarefas"),
-                             (self.capabilities_tab, "Capabilities"), (self.terminal_tab, "Terminal")):
+        for frame, title in ((self.overview_tab, "Painel"), (self.workspace_tab, "Workspace"),
+                             (self.context_tab, "Contexto"), (self.memory_tab, "Memória"),
+                             (self.tasks_tab, "Tarefas"), (self.capabilities_tab, "Capabilities"),
+                             (self.terminal_tab, "Terminal")):
             self.tabs.add(frame, text=title)
+        self._build_overview_tab()
         self._build_workspace_tab()
         self._build_context_tab()
         self._build_memory_tab()
@@ -110,6 +113,45 @@ class StudioApp(tk.Tk):
                       font=("Consolas", 10), padx=12, pady=12)
         box.pack(fill="both", expand=True)
         return box
+
+    def _build_overview_tab(self) -> None:
+        wrap = tk.Frame(self.overview_tab, bg="#080F19")
+        wrap.pack(fill="both", expand=True, padx=18, pady=18)
+
+        header = tk.Frame(wrap, bg="#080F19")
+        header.pack(fill="x", pady=(0, 14))
+        tk.Label(header, text="Estado do workspace", bg="#080F19", fg="#E2EBF7",
+                 font=("Segoe UI Semibold", 17)).pack(side="left")
+        ttk.Button(header, text="Atualizar saúde", command=self.refresh_overview).pack(side="right")
+
+        grid = tk.Frame(wrap, bg="#080F19")
+        grid.pack(fill="x")
+        for col in range(3):
+            grid.grid_columnconfigure(col, weight=1, uniform="overview")
+
+        self.overview_values: dict[str, tk.Label] = {}
+        cards = [
+            ("project", "PROJETO"), ("session", "SESSÃO"), ("memory", "MEMÓRIA"),
+            ("git", "GIT"), ("blender", "BLENDER"), ("unity", "UNITY"),
+        ]
+        for index, (key, title) in enumerate(cards):
+            card = tk.Frame(grid, bg="#111E30", padx=14, pady=12)
+            card.grid(row=index // 3, column=index % 3, sticky="nsew", padx=5, pady=5)
+            tk.Label(card, text=title, bg="#111E30", fg="#8E9DB4",
+                     font=("Segoe UI Semibold", 9)).pack(anchor="w")
+            value = tk.Label(card, text="—", bg="#111E30", fg="#E2EBF7",
+                             justify="left", anchor="w", font=("Segoe UI", 11), wraplength=280)
+            value.pack(fill="x", pady=(7, 0))
+            self.overview_values[key] = value
+
+        tk.Label(wrap, text="ÚLTIMO CHECKPOINT", bg="#080F19", fg="#8E9DB4",
+                 font=("Segoe UI Semibold", 9)).pack(anchor="w", pady=(18, 7))
+        self.overview_checkpoint = tk.Label(
+            wrap, text="Nenhum checkpoint", bg="#111E30", fg="#E2EBF7",
+            justify="left", anchor="nw", padx=14, pady=12, wraplength=850,
+            font=("Segoe UI", 10),
+        )
+        self.overview_checkpoint.pack(fill="x")
 
     def _build_workspace_tab(self) -> None:
         wrap = tk.PanedWindow(self.workspace_tab, orient="horizontal", bg="#243249", sashwidth=4, bd=0)
@@ -252,6 +294,8 @@ class StudioApp(tk.Tk):
             return
         project = self.agent.projects[slug]
         data = self.store.context(project.slug, project.root)
+        self._refresh_overview_local(project, data)
+        self.refresh_overview()
         self.project_title.config(text=project.slug)
         self.project_path.config(text=str(project.root))
         self.status_label.config(text=f"{len(self.agent.names)} ações • memória persistente • {', '.join(project.apps) or 'workspace'}")
@@ -274,6 +318,72 @@ class StudioApp(tk.Tk):
         }
         self.capabilities_box.delete("1.0", "end")
         self.capabilities_box.insert("1.0", json.dumps(capability_data, ensure_ascii=False, indent=2, default=str))
+
+    def _refresh_overview_local(self, project, data: dict[str, Any]) -> None:
+        self.overview_values["project"].config(
+            text=f"{project.slug}\n{project.root}",
+            fg="#E2EBF7" if project.root.is_dir() else "#D7A3A3",
+        )
+        self.overview_values["session"].config(
+            text=f"Sessão #{self.current_session_id}" if self.current_session_id else "Sem sessão ativa"
+        )
+        memories = len(data.get("memories", []))
+        tasks = data.get("tasks", [])
+        pending = sum(1 for task in tasks if not task.get("done"))
+        self.overview_values["memory"].config(text=f"{memories} memórias • {pending} tarefas pendentes")
+        checkpoints = data.get("checkpoints", [])
+        if checkpoints:
+            latest = checkpoints[0]
+            self.overview_checkpoint.config(
+                text=f"{latest.get('created_at', '')}\n{latest.get('summary', '')}"
+            )
+        else:
+            self.overview_checkpoint.config(text="Nenhum checkpoint para este projeto")
+
+    def refresh_overview(self) -> None:
+        if not self.current_project or not hasattr(self, "overview_values"):
+            return
+        project_slug = self.current_project
+        for key in ("git", "blender", "unity"):
+            self.overview_values[key].config(text="Verificando…", fg="#8E9DB4")
+
+        def worker() -> None:
+            result = self.agent.execute("agent.project_health", {"project": project_slug})
+            self.after(0, lambda: self._apply_overview_health(project_slug, result))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_overview_health(self, project_slug: str, result) -> None:
+        if project_slug != self.current_project:
+            return
+        if not result.ok:
+            for key in ("git", "blender", "unity"):
+                self.overview_values[key].config(text=result.summary, fg="#D7A3A3")
+            return
+        data = result.data
+        git = data.get("git", {})
+        if not git.get("enabled"):
+            git_text = "Não configurado"
+        elif git.get("ok"):
+            changed = int(git.get("changed_entries") or 0)
+            git_text = "Limpo" if not git.get("dirty") else f"{changed} alteração(ões)"
+        else:
+            git_text = "Indisponível"
+        self.overview_values["git"].config(text=git_text, fg="#E2EBF7")
+
+        adapters = data.get("adapters", {})
+        labels = {
+            "ready": "Conectado", "configured": "Configurado", "disabled": "Desativado",
+            "update_required": "Atualização necessária", "stale": "Sessão antiga", "offline": "Offline",
+        }
+        for key in ("blender", "unity"):
+            adapter = adapters.get(key, {})
+            state = str(adapter.get("state") or "offline")
+            detail = labels.get(state, state)
+            version = adapter.get("blender_version") if key == "blender" else adapter.get("unity_version")
+            if version:
+                detail += f" • {version}"
+            color = "#E2EBF7" if state in {"ready", "configured", "disabled"} else "#E8C27A"
+            self.overview_values[key].config(text=detail, fg=color)
 
     def refresh_workspace(self) -> None:
         for item in self.workspace_tree.get_children():
