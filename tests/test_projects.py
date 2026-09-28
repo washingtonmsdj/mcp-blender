@@ -186,7 +186,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(catalog["schema"], "ordax.device-adapter-contracts/1")
         self.assertEqual(entries["blender"]["component_id"], "adapter-blender")
         self.assertEqual(entries["unity"]["component_id"], "adapter-unity")
-        self.assertEqual(entries["blender"]["global_actions"], ["blender.version"])
+        self.assertEqual(entries["blender"]["global_actions"], ["blender.adoption_install", "blender.instances", "blender.version"])
         self.assertFalse(registry.execute("blender.inspect", {}).ok)
         self.assertFalse(registry.execute("unity.install_companion", {}).ok)
 
@@ -233,6 +233,17 @@ class ProjectTests(unittest.TestCase):
         final = _upload_result_artifacts(control, job, ActionResult(True, 'done', {'artifacts': [{'path': str(image)}]}), cache)
         self.assertEqual(first, final)
         self.assertEqual(control.upload_artifact.call_count, 1)
+
+    def test_read_only_studio_surfaces_remain_available_while_agent_is_busy(self):
+        registry = ActionRegistry(self.config)
+        self.assertTrue(registry._execution_lock.acquire(blocking=False))
+        try:
+            catalog = registry.execute("workspace.repository_catalog", {})
+            preview = registry.execute("project.preview_status", {"project": "model"})
+        finally:
+            registry._execution_lock.release()
+        self.assertTrue(catalog.ok, catalog.summary)
+        self.assertTrue(preview.ok, preview.summary)
 
     def test_process_lock_excludes_second_client(self):
         first, second = ExecutionLock(self.config.state_dir), ExecutionLock(self.config.state_dir)

@@ -248,6 +248,32 @@ def _blender_image_result(project: str, result) -> list[TextContent | ImageConte
 
 
 @mcp.tool()
+def install_blender_adoption() -> dict:
+    """Install/sync the lightweight ORDAX bootstrap used to adopt manually opened Blender windows."""
+    result = registry().execute("blender.adoption_install", {})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def blender_instances() -> dict:
+    """List fresh Blender windows discovered by the ORDAX startup bootstrap."""
+    result = registry().execute("blender.instances", {})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def adopt_blender(project: str | None = None, pid: int | None = None, wait_seconds: float = 8.0) -> dict:
+    """Adopt one already-open Blender window for a registered project without opening another window."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute(
+        "blender.adopt",
+        {"project": selected, "pid": pid, "wait_seconds": wait_seconds},
+    )
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
 def get_blender_status(project: str | None = None) -> dict:
     """Read the visible Blender companion status for an ORDAX Studio project."""
     return _blender_action("blender.live_status", project)

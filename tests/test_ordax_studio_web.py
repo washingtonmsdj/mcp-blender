@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from ordax_dev_agent.models import ActionResult
 from ordax_studio.web_desktop import StudioApi
 
 
@@ -56,6 +57,65 @@ class OrdaxStudioWebTests(unittest.TestCase):
                     "Refinar a experiência do preview",
                     updated["data"]["continuity"]["open_tasks"][-1]["title"],
                 )
+
+    def test_blender_prepare_adopts_existing_window_without_starting_blender(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            (root / "agent-settings.json").write_text(json.dumps({
+                "default_project": "demo",
+                "projects": {"demo": {"path": str(project), "apps": ["blender"], "blender": {}}},
+            }), encoding="utf-8")
+            env = {
+                "ORDAX_AGENT_STATE_DIR": str(root),
+                "ORDAX_MEMORY_DB": str(root / "memory.db"),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                api = StudioApi()
+                with patch.object(api.agent, "execute") as execute:
+                    execute.side_effect = [
+                        ActionResult(False, "not connected", {}),
+                        ActionResult(True, "Existing Blender window adopted by ORDAX Studio", {
+                            "pid": 4242,
+                            "presence": {"pid": 4242, "file": str(project / "scene.blend")},
+                        }),
+                    ]
+                    result = api.blender_prepare()
+            self.assertTrue(result["ok"])
+            self.assertEqual("adopted", result["data"]["state"])
+            self.assertEqual(4242, result["data"]["pid"])
+            self.assertEqual(
+                ["blender.live_status", "blender.adopt"],
+                [call.args[0] for call in execute.call_args_list],
+            )
+
+    def test_blender_prepare_reports_running_unmanaged_window(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            (root / "agent-settings.json").write_text(json.dumps({
+                "default_project": "demo",
+                "projects": {"demo": {"path": str(project), "apps": ["blender"], "blender": {}}},
+            }), encoding="utf-8")
+            env = {"ORDAX_AGENT_STATE_DIR": str(root), "ORDAX_MEMORY_DB": str(root / "memory.db")}
+            with patch.dict(os.environ, env, clear=False):
+                api = StudioApi()
+                with patch.object(api.agent, "execute") as execute:
+                    execute.side_effect = [
+                        ActionResult(False, "not connected", {}),
+                        ActionResult(False, "no match", {"no_match": True}),
+                        ActionResult(True, "instances", {"unmanaged_blender_pids": [7777]}),
+                    ]
+                    result = api.blender_prepare()
+            self.assertTrue(result["ok"])
+            self.assertEqual("restart_required", result["data"]["state"])
+            self.assertEqual([7777], result["data"]["blender_pids"])
+            self.assertEqual(
+                ["blender.live_status", "blender.adopt", "blender.instances"],
+                [call.args[0] for call in execute.call_args_list],
+            )
 
     def test_package_without_dev_script_is_not_misclassified_as_web_preview(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -121,6 +181,8 @@ class OrdaxStudioWebTests(unittest.TestCase):
         self.assertIn("projects_catalog", script)
         self.assertIn("openProject", script)
         self.assertIn("prepareProjectPreview", script)
+        self.assertIn("blender_prepare", script)
+        self.assertIn("adotado", script)
         self.assertIn("preview_start", script)
         self.assertIn("preview_capture", script)
         self.assertIn("workspaceProjectList", stylesheet)

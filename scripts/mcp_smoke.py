@@ -38,6 +38,7 @@ async def main(project: str | None = None) -> int:
                 "studio_status", "repository_catalog", "agent_capabilities",
                 "project_inventory", "project_read", "project_write", "project_patch",
                 "project_preview_status", "git_status", "git_diff",
+                "install_blender_adoption", "blender_instances", "adopt_blender",
             }
             missing = sorted(required - tool_names)
             if missing:
@@ -52,6 +53,10 @@ async def main(project: str | None = None) -> int:
                 return 5
 
             payload = json.loads(catalog.content[0].text)
+            if payload.get("ok") is not True:
+                print("ERROR: repository_catalog returned a non-success payload")
+                print(json.dumps(payload, indent=2, ensure_ascii=False))
+                return 5
             print(json.dumps(payload, indent=2, ensure_ascii=False))
 
             if project:

@@ -141,6 +141,9 @@ class ActionRegistry(
             "blender.inspect": self.blender_inspect,
             "blender.benchmark": self.blender_benchmark,
             "blender.render_preview": self.blender_render_preview,
+            "blender.adoption_install": self.blender_adoption_install,
+            "blender.instances": self.blender_instances,
+            "blender.adopt": self.blender_adopt,
             "blender.live_start": self.blender_live_start,
             "blender.live_status": self.blender_live_status,
             "blender.live_inspect": self.blender_live_inspect,
@@ -347,7 +350,14 @@ class ActionRegistry(
         if handler is None:
             return ActionResult(False, f"action not allowed: {action}")
         payload = payload or {}
-        if action in ("agent.status", "agent.component_catalog", "agent.component_update_plan", "projects.list"):
+        if action in (
+            "agent.status",
+            "agent.component_catalog",
+            "agent.component_update_plan",
+            "projects.list",
+            "workspace.repository_catalog",
+            "project.preview_status",
+        ):
             return handler(payload)
         if not self._execution_lock.acquire(blocking=False):
             return ActionResult(False, "Agent is busy; retry after the current action", {"retryable": True})

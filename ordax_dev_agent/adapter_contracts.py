@@ -40,7 +40,7 @@ def builtin_adapter_contracts() -> dict[str, AdapterContract]:
             component_id="adapter-blender",
             # Version discovery is intentionally machine-global and has always
             # been callable without a registered project.
-            global_actions=frozenset({"blender.version"}),
+            global_actions=frozenset({"blender.version", "blender.instances", "blender.adoption_install"}),
         ),
         "unity": AdapterContract(
             name="unity",
