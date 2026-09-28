@@ -22,6 +22,7 @@ ordax-project-mcp = "ordax_dev_agent.mcp_server:main"
 ordax-device-agent = "ordax_device_agent.main:main"
 ordax-device-mcp = "ordax_device_agent.mcp_server:main"
 ordax-product-mcp = "ordax_dev_agent.product_mcp_server:main"
+ordax-device-pair = "ordax_dev_agent.product_pair_cli:main"
 
 [tool.setuptools.packages.find]
 include = ["mcp_blender_unity*", "ordax_dev_agent*", "ordax_device_agent*"]
