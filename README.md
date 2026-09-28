@@ -1,15 +1,27 @@
-# OrdaX Device Agent
+# ORDAX Studio
+
+> **Nome histórico do repositório:** `mcp-blender`. O repositório continua com esse nome por compatibilidade, mas o produto, o runtime e o MCP principal são **ORDAX Studio**. Blender é uma capability do Studio, não um produto separado.
+
+O ORDAX Studio é um ambiente agentic persistente para trabalhar diretamente em repositórios e ferramentas locais. Ele unifica projeto ativo, memória, arquivos, Git, preview, Blender, Unity, Unreal e adapters futuros sobre um único `ActionRegistry` tipado.
+
+A arquitetura possui duas superfícies do mesmo produto: `ordax-studio-mcp`/`mcp-blender` para clientes MCP locais e `ordax-product-mcp` para acesso remoto autenticado ao dispositivo. Ambas reutilizam os mesmos contratos de projeto; não existe um “Studio solto” ao lado do antigo MCP.
 
 ## Conectar ou recuperar um PC Windows
 
 Execute `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\ordax-device-agent-setup.ps1`.
 O setup atualiza a instalação gerenciada, autentica o usuário quando necessário,
 recupera a credencial Cloudflare da própria máquina e instala o supervisor externo.
-Cloudflare v3 é o único provider remoto suportado e usa login GitHub/binding seguro,
+Cloudflare v3 é o provider remoto de produção e usa login GitHub/binding seguro,
 sem copiar credenciais manualmente.
 GitHub Runner não é requisito. Veja [fluxo, requisitos e diagnóstico](docs/DEVICE_AGENT_SETUP.md).
 
-> Nome histórico do repositório: `mcp-blender`. O produto evolui agora para **OrdaX Device Agent**. Os comandos e pacotes antigos permanecem como aliases de compatibilidade durante a migração.
+## ORDAX Studio — direção atual
+
+O Device Agent é a camada de execução do **ORDAX Studio**. O `ORDAX Local AI` existente permanece preservado e seu banco SQLite pode ser reutilizado automaticamente pelo `ordax_core`.
+
+A integração com `prototipo-ordax-os` é uma fase posterior e não faz parte do gate atual. Primeiro o Studio deve ficar funcional e testado no Windows. Veja [docs/ORDAX_STUDIO_FOUNDATION.md](docs/ORDAX_STUDIO_FOUNDATION.md).
+
+O Studio possui duas shells durante a migração: `ordax-studio-desktop` (Tk, fallback estável) e `ordax-studio-web` (WebView2). A shell WebView2 usa um fluxo **repositório primeiro**: a home mostra projetos Git canônicos; ao abrir um repositório, o workspace combina arquivos/editor com preview lateral interativo para projetos web e evidência visual para Blender/Unity, preservando os mesmos contratos MCP e de memória.
 
 ## OrdaX multi-projeto (0.3.0)
 
@@ -50,24 +62,31 @@ Os aliases antigos continuam válidos enquanto bootstrap, recovery e estações 
 ```text
 ChatGPT / cliente MCP
         |
-        +--> mcp-blender-unity 0.3.x
-        |       +--> Blender CLI / headless export
-        |       +--> Unity CLI
+        +--> ORDAX Studio MCP local
+        |       aliases: ordax-studio-mcp, ordax-mcp, mcp-blender
         |
-        +--> ordax-project-mcp / OrdaX Dev Agent
-                |
-                +--> ActionRegistry tipado (allow-list)
-                +--> projetos locais cadastrados
-                +--> Blender Live companion (janela visível)
-                +--> Unity companion / Editor
-                +--> Reference Contract + evidência visual
-                +--> Git / artifacts / observações
-                |
-                +--> remote control plane\n                     +--> Cloudflare v3 (produção)
+        +--> ORDAX Studio Remote MCP
+                autenticado por dispositivo / Space / grant
+                        |
+                        v
+                Cloudflare Control Plane
+                        |
+                        v
+                 Device Agent local
+                        |
+                        +-----------------------------+
+                        | ActionRegistry tipado       |
+                        +-----------------------------+
+                        | Projetos / arquivos / Git   |
+                        | Preview / memória / sessões |
+                        | Blender / Unity / Unreal    |
+                        | Assets / observações        |
+                        +-----------------------------+
 
-Blender Live companion <--> inbox/results/trajectory locais versionados por protocolo
-Unity CLI / companion   <--> HORDAX-game e outros projetos Unity cadastrados
+mcp-blender-unity --> bridge histórica de baixo nível, mantida para compatibilidade e diagnóstico
 ```
+
+A UI do ORDAX Studio, o MCP local, o Device Agent e o MCP remoto não são sistemas paralelos: todos convergem para os mesmos projetos e contratos tipados. Veja [o contrato de arquitetura do MCP](docs/ORDAX_STUDIO_MCP_ARCHITECTURE.md).
 
 A `main` é a única linha ativa de integração. Implementações históricas ficam
 sob `archive/*` e não participam de updates, recovery ou deploy normal.
@@ -76,6 +95,9 @@ O HORDAX permanece no repositório `washingtonmsdj/HORDAX-game`.
 ## Estrutura
 
 ```text
+ordax_core/
+  memory.py
+
 mcp_blender_unity/
   config.py
   process.py
@@ -142,8 +164,10 @@ Instalação manual:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .
-python -m mcp_blender_unity.server
+python -m ordax_studio.mcp_server
 ```
+
+Depois da instalação, `ordax-studio-mcp`, `ordax-mcp` e o alias histórico `mcp-blender` iniciam esse mesmo servidor. `mcp-blender-unity` permanece disponível apenas para a bridge de baixo nível usada por testes/diagnóstico específicos de Blender/Unity.
 
 Variáveis opcionais:
 
@@ -177,13 +201,17 @@ depend on PowerShell certificate services.
 
 ## Tools MCP
 
-- `toolchain_status`
-- `blender_version`
-- `blender_run_python`
-- `unity_compile_project`
-- `unity_validate_project`
-- `unity_run_method`
-- `unity_capture_project`
+A superfície recomendada é o **ORDAX Studio MCP**, não a bridge histórica. Entre as ferramentas de primeira classe estão:
+
+- `studio_status`, `repository_catalog`, `agent_capabilities` e `agent_briefing`;
+- `project_inventory`, `project_search`, `project_read` e `project_read_batch`;
+- `project_write` e `project_patch`, com precondição SHA-256 para evitar sobrescrita stale;
+- `git_status` e `git_diff`;
+- `project_preview_status`, `project_preview_start`, `project_preview_stop` e `project_preview_image`;
+- `session_context`, `session_resume`, `session_finish`, `memory_remember` e `session_checkpoint`;
+- `action_execute` para capabilities tipadas registradas, incluindo Blender, Unity, Unreal e pipelines de assets.
+
+A bridge `mcp-blender-unity` conserva ferramentas de baixo nível como `blender_version` e rotinas CLI de Unity para compatibilidade, mas novos clientes devem descobrir e usar o MCP do Studio.
 
 `unity_compile_project` abre/importa o projeto em batch mode e inspeciona o log por erros de compilação.
 
@@ -196,11 +224,14 @@ frames para a cena se estabilizar e renderiza uma captura PNG da câmera do jogo
 Isso permite validar visualmente câmera, HUD, hordas e composição sem depender de
 uma captura manual feita no Editor.
 
-For a project-specific toolchain report, pass its path to the Windows smoke test:
+Para validar o MCP completo e, opcionalmente, um projeto já registrado no ORDAX:
 
 ```powershell
-.\scripts\windows\mcp-test.ps1 -ProjectPath "C:\dev\HORDAX-game"
+.\scripts\windows\mcp-test.ps1
+.\scripts\windows\mcp-test.ps1 -Project "ordax-games"
 ```
+
+O alias de parâmetro `-ProjectPath` foi preservado por compatibilidade do script, mas o valor agora deve ser o **slug registrado do projeto**, não um caminho arbitrário do computador.
 
 ## CLI direto
 

@@ -15,6 +15,7 @@ class Project:
     allowed_branches: tuple[str, ...] = ()
     unity: dict[str, Any] = field(default_factory=dict)
     blender: dict[str, Any] = field(default_factory=dict)
+    preview: dict[str, Any] = field(default_factory=dict)
 
     def path(self, value: str, *, must_exist: bool = True) -> Path:
         candidate = Path(value).expanduser()
@@ -28,7 +29,7 @@ class Project:
     def public(self) -> dict:
         return {"slug": self.slug, "path": str(self.root), "apps": list(self.apps),
                 "available": self.root.is_dir(), "allowed_branches": list(self.allowed_branches),
-                "unity": self.unity, "blender": self.blender}
+                "unity": self.unity, "blender": self.blender, "preview": self.preview}
 
 
 def load_projects(config) -> dict[str, Project]:
@@ -59,9 +60,11 @@ def load_projects(config) -> dict[str, Project]:
             raise ValueError(f"project {slug} apps must be a list of strings")
         if not isinstance(branches, list) or not all(isinstance(b, str) and not b.startswith('-') for b in branches):
             raise ValueError(f"project {slug} allowed_branches must be a list of branch names")
-        for app in ("unity", "blender"):
+        for app in ("unity", "blender", "preview"):
             if not isinstance(entry.get(app, {}), dict):
                 raise ValueError(f"project {slug} {app} must be an object")
-        result[slug] = Project(slug, root.resolve(), tuple(apps), tuple(branches),
-                               entry.get("unity", {}), entry.get("blender", {}))
+        result[slug] = Project(
+            slug, root.resolve(), tuple(apps), tuple(branches),
+            entry.get("unity", {}), entry.get("blender", {}), entry.get("preview", {}),
+        )
     return result

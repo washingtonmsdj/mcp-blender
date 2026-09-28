@@ -20,6 +20,8 @@ from .artifact_actions import ArtifactActions
 from .git_actions import GitActions
 from .project_text_actions import ProjectTextActions
 from .workspace_actions import WorkspaceActions
+from .preview_actions import PreviewActions
+from .memory_actions import MemoryActions
 from .component_actions import ComponentActions
 from .game_asset_catalog_actions import GameAssetCatalogActions
 from .game_asset_status_actions import GameAssetStatusActions
@@ -68,6 +70,8 @@ class ActionRegistry(
     GitActions,
     ProjectTextActions,
     WorkspaceActions,
+    PreviewActions,
+    MemoryActions,
     ComponentActions,
     GameAssetCatalogActions,
     GameAssetStatusActions,
@@ -104,14 +108,30 @@ class ActionRegistry(
         self._execution_lock = threading.Lock()
         self._actions: dict[str, Action] = {
             "projects.list": self.projects_list,
+            "workspace.repository_catalog": self.workspace_repository_catalog,
             "workspace.list_projects": self.workspace_list_projects,
             "workspace.bind_project": self.workspace_bind_project,
+            "memory.status": self.memory_status,
+            "memory.context": self.memory_context,
+            "memory.remember": self.memory_remember,
+            "memory.task_add": self.memory_task_add,
+            "memory.task_toggle": self.memory_task_toggle,
+            "memory.checkpoint": self.memory_checkpoint,
+            "session.resume": self.session_resume,
+            "session.finish": self.session_finish,
             "project.archive_to_hordax": self.project_archive_to_hordax,
             "project.observe": self.project_observe,
             "project.inventory": self.project_inventory,
+            "project.preview_status": self.project_preview_status,
+            "project.preview_capture": self.project_preview_capture,
+            "project.preview_start": self.project_preview_start,
+            "project.preview_stop": self.project_preview_stop,
+            "project.preview_logs": self.project_preview_logs,
             "project.references": self.project_references,
             "project.reference_images": self.project_reference_images,
             "project.text_read": self.project_text_read,
+            "project.text_read_batch": self.project_text_read_batch,
+            "project.search_text": self.project_search_text,
             "project.text_write": self.project_text_write,
             "project.text_patch": self.project_text_patch,
             "observation.capture": self.observation_capture,
@@ -241,6 +261,8 @@ class ActionRegistry(
             "unity.spatial_audit": self.unity_spatial_audit,
             "unity.benchmark_islands_generate": self.unity_benchmark_islands_generate,
             "agent.status": self.agent_status,
+            "agent.project_health": self.agent_project_health,
+            "agent.project_briefing": self.agent_project_briefing,
             "agent.component_catalog": self.agent_component_catalog,
             "agent.component_update_plan": self.agent_component_update_plan,
             "agent.resilience_status": self.agent_resilience_status,
@@ -250,6 +272,7 @@ class ActionRegistry(
             "artifacts.list": self.artifacts_list,
             "artifact.preview": self.artifact_preview,
             "artifact.read_chunk": self.artifact_read_chunk,
+            "git.repository_info": self.git_repository_info,
             "git.status": self.git_status,
             "git.diff": self.git_diff,
             "git.sync": self.git_sync,
@@ -275,7 +298,7 @@ class ActionRegistry(
         self._adapter_contracts = builtin_adapter_contracts()
         available = {entry.name: entry for entry in entry_points(group="ordax_dev_agent.adapters")}
         for name in config.adapters:
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets", "geo", "visual"}:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets", "geo", "visual", "memory"}:
                 raise ValueError(f"invalid or reserved adapter name: {name}")
             if name not in available:
                 raise ValueError(f"configured adapter is not installed: {name}")
@@ -294,6 +317,30 @@ class ActionRegistry(
     @property
     def adapter_contracts(self) -> dict[str, Any]:
         return adapter_contract_catalog(self._adapter_contracts)
+
+    def select_available_project(self, requested: str | None = None) -> str:
+        """Resolve one usable project consistently across CLI, MCP and desktop clients."""
+        if requested:
+            if requested not in self.projects:
+                raise ValueError(f"project not registered: {requested}")
+            project = self.projects[requested]
+            if not project.root.is_dir():
+                raise FileNotFoundError(f"Project directory not found: {project.root}")
+            return requested
+
+        active = self._memory_store_instance().active_project()
+        active_name = str(active.get("name") or "") if active else ""
+        if active_name in self.projects and self.projects[active_name].root.is_dir():
+            return active_name
+
+        default = self.config.default_project
+        if default in self.projects and self.projects[default].root.is_dir():
+            return default
+
+        for slug, project in self.projects.items():
+            if project.root.is_dir():
+                return slug
+        raise ValueError("no registered project directories are available")
 
     def execute(self, action: str, payload: dict[str, Any]) -> ActionResult:
         handler = self._actions.get(action)

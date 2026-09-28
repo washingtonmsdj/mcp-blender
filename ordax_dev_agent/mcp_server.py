@@ -1,6 +1,9 @@
-"""MCP stdio front end for a client running on the workstation.
+"""Local MCP front end for ORDAX Studio.
 
-Remote jobs continue to use the paired cloud queue; this does not publish a public server.
+The historical repository/connector name is ``mcp-blender``. Blender is now one
+capability of the broader ORDAX Studio runtime alongside workspace, Git, preview,
+memory, Unity and other typed adapters. Remote jobs continue through the paired
+control plane; this stdio server itself is not public.
 """
 from __future__ import annotations
 
@@ -14,7 +17,7 @@ from mcp.types import ImageContent, TextContent
 from .actions import ActionRegistry
 from .config import AgentConfig
 
-mcp = FastMCP("ordax-projects")
+mcp = FastMCP("ordax-studio")
 _registry: ActionRegistry | None = None
 
 
@@ -32,10 +35,369 @@ def projects_list() -> dict:
 
 
 @mcp.tool()
+def repository_catalog() -> dict:
+    """List the canonical Git repositories shown on the ORDAX Studio project home."""
+    result = registry().execute("workspace.repository_catalog", {})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
 def agent_capabilities() -> dict:
-    """Discover action names and registered projects. Observe before changing or retrying."""
+    """Discover ORDAX Studio action names, adapters and registered projects."""
     return registry().agent_status({}).data
 
+
+@mcp.tool()
+def studio_status(project: str | None = None) -> dict:
+    """Return the active ORDAX Studio project, health, preview and capability summary."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    health = agent.execute("agent.project_health", {"project": selected})
+    preview = agent.execute("project.preview_status", {"project": selected})
+    return {
+        "product": "ORDAX Studio",
+        "server": "ordax-studio",
+        "repository_alias": "mcp-blender",
+        "project": selected,
+        "health": {"ok": health.ok, "summary": health.summary, "data": health.data},
+        "preview": {"ok": preview.ok, "summary": preview.summary, "data": preview.data},
+        "capabilities": agent.agent_status({}).data,
+    }
+
+
+@mcp.tool()
+def workspace_discover(query: str = "", max_depth: int = 3, max_entries: int = 200) -> dict:
+    """Discover repository/workspace folders that can be bound into ORDAX Studio."""
+    result = registry().execute("workspace.list_projects", {
+        "query": query, "max_depth": max_depth, "max_entries": max_entries,
+    })
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_inventory(project: str | None = None, max_depth: int = 4, max_entries: int = 500) -> dict:
+    """List a bounded inventory of approved files in one ORDAX Studio project."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.inventory", {
+        "project": selected, "max_depth": max_depth, "max_entries": max_entries,
+    })
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_read(project: str | None = None, path: str = "") -> dict:
+    """Read one approved project-relative text file and return its SHA-256 precondition."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.text_read", {"project": selected, "path": path})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_write(
+    project: str | None = None,
+    path: str = "",
+    content: str = "",
+    expected_sha256: str = "",
+    create: bool = False,
+) -> dict:
+    """Safely write a project text file using optimistic SHA-256 concurrency control."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.text_write", {
+        "project": selected, "path": path, "content": content,
+        "expected_sha256": expected_sha256, "create": create,
+    })
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_patch(
+    project: str | None = None,
+    path: str = "",
+    expected_sha256: str = "",
+    replacements: list[dict] | None = None,
+) -> dict:
+    """Apply exact bounded replacements to a text file with stale-write protection."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.text_patch", {
+        "project": selected, "path": path, "expected_sha256": expected_sha256,
+        "replacements": replacements or [],
+    })
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def git_status(project: str | None = None) -> dict:
+    """Read bounded Git status for one ORDAX Studio project."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("git.status", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def git_diff(project: str | None = None, paths: list[str] | None = None) -> dict:
+    """Read a bounded no-color Git diff, optionally restricted to project-relative paths."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("git.diff", {"project": selected, "paths": paths or []})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_health(project: str | None = None) -> dict:
+    """Read project memory, Git and Blender/Unity health without mutating applications."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("agent.project_health", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def agent_briefing(project: str | None = None) -> dict:
+    """Load one compact project handoff: repo, memory, tasks, Git, preview, adapters and context files."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("agent.project_briefing", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_search(project: str | None = None, query: str = "", max_results: int = 40) -> dict:
+    """Search approved project text sources with bounded literal matching and line snippets."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.search_text", {
+        "project": selected, "query": query, "max_results": max_results,
+    })
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_read_batch(project: str, paths: list[str], max_total_bytes: int = 393216) -> dict:
+    """Read several approved project text files in one bounded context call."""
+    result = registry().execute("project.text_read_batch", {
+        "project": project, "paths": paths, "max_total_bytes": max_total_bytes,
+    })
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_preview_status(project: str | None = None) -> dict:
+    """Read the project-level preview runtime state and URL without mutating it."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.preview_status", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_preview_logs(project: str | None = None, max_bytes: int = 32768) -> dict:
+    """Read the tail of the supervised project preview runtime log."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.preview_logs", {"project": selected, "max_bytes": max_bytes})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_preview_start(project: str | None = None) -> dict:
+    """Start the typed local web preview runtime for a project."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.preview_start", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_preview_stop(project: str | None = None) -> dict:
+    """Stop the typed local web preview runtime for a project."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.preview_stop", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+def _blender_action(action: str, project: str | None, arguments: dict | None = None) -> dict:
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute(action, {**(arguments or {}), "project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+def _blender_image_result(project: str, result) -> list[TextContent | ImageContent]:
+    if not result.ok:
+        return [TextContent(type="text", text=json.dumps({"ok": False, "summary": result.summary, "data": result.data}))]
+    artifact = result.data.get("artifact") if isinstance(result.data, dict) else None
+    if not isinstance(artifact, str):
+        return [TextContent(type="text", text=json.dumps({"ok": False, "summary": "Blender capture did not return an artifact", "data": result.data}))]
+    agent = registry()
+    selected = agent._project({"project": project})
+    root = (agent.config.state_dir / "artifacts" / selected.slug).resolve()
+    path = Path(artifact).resolve()
+    if not path.is_relative_to(root) or path.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+        raise ValueError("Blender capture must belong to the selected project artifact root")
+    if path.stat().st_size > 10 * 1024 * 1024:
+        raise ValueError("Blender capture exceeds 10 MiB; request a lower resolution")
+    mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+    meta = {"ok": True, "summary": result.summary, "project": selected.slug, "artifact": str(path), "sha256": result.data.get("sha256")}
+    return [TextContent(type="text", text=json.dumps(meta)), ImageContent(type="image", mimeType=mime, data=base64.b64encode(path.read_bytes()).decode("ascii"))]
+
+
+@mcp.tool()
+def get_blender_status(project: str | None = None) -> dict:
+    """Read the visible Blender companion status for an ORDAX Studio project."""
+    return _blender_action("blender.live_status", project)
+
+
+@mcp.tool()
+def start_blender(project: str | None = None, blend_file: str | None = None, wait_seconds: float = 60.0) -> dict:
+    """Start or attach the typed visible Blender companion for a registered project."""
+    args: dict = {"wait_seconds": wait_seconds}
+    if blend_file:
+        args["blend_file"] = blend_file
+    return _blender_action("blender.live_start", project, args)
+
+
+@mcp.tool()
+def get_scene_info(project: str | None = None, max_objects: int = 200) -> dict:
+    """Inspect the current Blender scene through the ORDAX live companion."""
+    return _blender_action("blender.live_inspect", project, {"max_objects": max_objects})
+
+
+@mcp.tool()
+def get_object_info(project: str | None = None, object_name: str = "", ordax_object_id: str = "") -> dict:
+    """Inspect exactly one Blender object by name or stable ORDAX object id."""
+    args = {"object_name": object_name} if object_name else {"ordax_object_id": ordax_object_id}
+    return _blender_action("blender.live_object_inspect", project, args)
+
+
+@mcp.tool()
+def get_viewport_screenshot(project: str | None = None, timeout_seconds: float = 120.0) -> list[TextContent | ImageContent]:
+    """Capture the visible Blender viewport and return actual image pixels to the model."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("blender.live_capture", {"project": selected, "timeout_seconds": timeout_seconds})
+    return _blender_image_result(selected, result)
+
+
+@mcp.tool()
+def add_primitive(
+    project: str | None = None,
+    name: str = "",
+    primitive: str = "cube",
+    location: list[float] | None = None,
+    size: float | None = None,
+    radius: float | None = None,
+    depth: float | None = None,
+    segments: int | None = None,
+) -> dict:
+    """Create a contract-validated cube, sphere or cylinder in the visible Blender scene."""
+    args: dict = {"name": name, "primitive": primitive}
+    for key, value in (("location", location), ("size", size), ("radius", radius), ("depth", depth), ("segments", segments)):
+        if value is not None:
+            args[key] = value
+    return _blender_action("blender.live_create_primitive", project, args)
+
+
+@mcp.tool()
+def modify_object(
+    project: str | None = None,
+    object_name: str = "",
+    ordax_object_id: str = "",
+    location: list[float] | None = None,
+    rotation_euler: list[float] | None = None,
+    scale: list[float] | None = None,
+    dimensions: list[float] | None = None,
+) -> dict:
+    """Apply bounded transforms to one Blender object using a typed selector."""
+    args: dict = {"object_name": object_name} if object_name else {"ordax_object_id": ordax_object_id}
+    for key, value in (("location", location), ("rotation_euler", rotation_euler), ("scale", scale), ("dimensions", dimensions)):
+        if value is not None:
+            args[key] = value
+    return _blender_action("blender.live_object_transform", project, args)
+
+
+@mcp.tool()
+def delete_object(project: str | None = None, object_name: str = "", missing_ok: bool = False) -> dict:
+    """Remove one named Blender object through the bounded live mutation contract."""
+    return _blender_action("blender.live_object_remove", project, {"object_names": [object_name], "missing_ok": missing_ok})
+
+
+@mcp.tool()
+def set_material(
+    project: str | None = None,
+    object_name: str = "",
+    ordax_object_id: str = "",
+    material_name: str = "",
+    base_color: list[float] | None = None,
+    roughness: float = 0.4,
+    metallic: float = 0.0,
+    transmission: float = 0.0,
+    alpha: float = 1.0,
+    ior: float = 1.45,
+) -> dict:
+    """Apply a normalized Principled material to one Blender object."""
+    args: dict = {"material_name": material_name, "roughness": roughness, "metallic": metallic, "transmission": transmission, "alpha": alpha, "ior": ior}
+    args.update({"object_name": object_name} if object_name else {"ordax_object_id": ordax_object_id})
+    if base_color is not None:
+        args["base_color"] = base_color
+    return _blender_action("blender.live_material_apply", project, args)
+
+
+@mcp.tool()
+def batch_edit(project: str | None = None, steps: list[dict] | None = None, stop_on_error: bool = True) -> dict:
+    """Execute up to 128 allow-listed Blender edits as one typed ORDAX batch."""
+    return _blender_action("blender.live_batch", project, {"steps": steps or [], "stop_on_error": stop_on_error})
+
+
+@mcp.tool()
+def save_blender(project: str | None = None) -> dict:
+    """Save the currently attached Blender project through the live companion."""
+    return _blender_action("blender.live_save", project)
+
+
+@mcp.tool()
+def run_blender_project_script(project: str | None = None, script_path: str = "", timeout_seconds: float = 300.0) -> dict:
+    """Run an approved project-relative .py automation file; arbitrary inline Python is not accepted."""
+    return _blender_action("blender.live_run_script", project, {"script_path": script_path, "timeout_seconds": timeout_seconds})
+
+
+@mcp.tool()
+def session_context(project: str) -> dict:
+    """Load persistent project memory, tasks and checkpoints before continuing work."""
+    result = registry().execute("memory.context", {"project": project})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+@mcp.tool()
+def session_resume(project: str | None = None) -> dict:
+    """Resume a persistent ORDAX Studio session using the active or configured project."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("session.resume", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def session_finish(session_id: int) -> dict:
+    """Mark an ORDAX Studio session as finished without deleting history."""
+    result = registry().execute("session.finish", {"session_id": session_id})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+@mcp.tool()
+def memory_remember(project: str, content: str, kind: str = "note") -> dict:
+    """Persist an important project fact or decision for future sessions."""
+    result = registry().execute("memory.remember", {"project": project, "content": content, "kind": kind})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+@mcp.tool()
+def session_checkpoint(project: str, summary: str) -> dict:
+    """Save a resumable checkpoint including the current Git state."""
+    result = registry().execute("memory.checkpoint", {"project": project, "summary": summary})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
 
 @mcp.tool()
 def action_execute(action: str, project: str, arguments: dict | None = None) -> dict:
@@ -53,6 +415,27 @@ Use artifact_image for managed reference/model PNG/JPEG evidence returned by act
     payload = {**(arguments or {}), "project": project}
     result = registry().execute(action, payload)
     return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_preview_image(project: str | None = None, refresh: bool = False) -> list[TextContent | ImageContent]:
+    """Return the current ORDAX project preview as actual image pixels for visual reasoning."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    if refresh:
+        captured = agent.execute("project.preview_capture", {"project": selected})
+        if not captured.ok:
+            return [TextContent(type="text", text=json.dumps({"ok": False, "summary": captured.summary}))]
+    status = agent.execute("project.preview_status", {"project": selected})
+    image = status.data.get("latest_image") if status.ok else None
+    if not image:
+        return [TextContent(type="text", text=json.dumps({"ok": False, "summary": "No preview image is available", "data": status.data}))]
+    preview_payload = {"project": selected, **image["artifact_preview_payload"], "thumbnail": True, "max_width": 1600, "max_height": 1200}
+    preview = agent.execute("artifact.preview", preview_payload)
+    if not preview.ok:
+        return [TextContent(type="text", text=json.dumps({"ok": False, "summary": preview.summary}))]
+    meta = {"project": selected, "mode": status.data.get("mode"), "artifact": image.get("path"), "sha256": preview.data.get("sha256")}
+    return [TextContent(type="text", text=json.dumps(meta)), ImageContent(type="image", mimeType=preview.data["mime_type"], data=preview.data["base64"])]
 
 
 def _artifact_image_contents(

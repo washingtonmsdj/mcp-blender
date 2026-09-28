@@ -8,7 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from .product_remote_client import ProductRemoteClient
 
 
-mcp = FastMCP("ordax-product")
+mcp = FastMCP("ordax-studio-remote")
 
 
 def _access_token() -> str:
@@ -89,6 +89,20 @@ def projects_list(
 
 
 @mcp.tool()
+def repository_catalog(
+    device_id: str,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """List canonical ORDAX Studio repositories on one authorized device."""
+    return _invoke(
+        device_id=device_id,
+        action="workspace.repository_catalog",
+        space_id=space_id,
+        arguments={},
+    )
+
+
+@mcp.tool()
 def project_inventory(
     device_id: str,
     project: str,
@@ -124,6 +138,74 @@ def project_text_read(
         project=project,
         space_id=space_id,
         arguments={"project": project, "path": path},
+    )
+
+
+@mcp.tool()
+def project_health(
+    device_id: str,
+    project: str,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Read sanitized ORDAX Studio health for one granted project."""
+    return _invoke(
+        device_id=device_id,
+        action="agent.project_health",
+        project=project,
+        space_id=space_id,
+        arguments={"project": project},
+    )
+
+
+@mcp.tool()
+def project_search(
+    device_id: str,
+    project: str,
+    query: str,
+    max_results: int = 40,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Search bounded approved text sources in one granted project."""
+    return _invoke(
+        device_id=device_id,
+        action="project.search_text",
+        project=project,
+        space_id=space_id,
+        arguments={"project": project, "query": query, "max_results": max_results},
+    )
+
+
+@mcp.tool()
+def project_read_batch(
+    device_id: str,
+    project: str,
+    paths: list[str],
+    max_total_bytes: int = 393216,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Read several approved text files from one granted project."""
+    return _invoke(
+        device_id=device_id,
+        action="project.text_read_batch",
+        project=project,
+        space_id=space_id,
+        arguments={"project": project, "paths": paths, "max_total_bytes": max_total_bytes},
+    )
+
+
+@mcp.tool()
+def project_preview_status(
+    device_id: str,
+    project: str,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Read sanitized project preview/runtime state without exposing local process details."""
+    return _invoke(
+        device_id=device_id,
+        action="project.preview_status",
+        project=project,
+        space_id=space_id,
+        arguments={"project": project},
     )
 
 

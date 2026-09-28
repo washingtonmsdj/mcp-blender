@@ -63,6 +63,171 @@ class AgentActions:
             },
         )
 
+    def agent_project_health(self, payload: dict[str, Any]) -> ActionResult:
+        """Aggregate read-only project, memory, Git and live-adapter health."""
+        unsupported = set(payload) - {"project"}
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(sorted(unsupported)))
+
+        project = self._project(payload)
+        project_payload = {"project": project.slug}
+        memory = self._memory_store_instance().status()
+
+        git_enabled = (project.root / ".git").exists()
+        if git_enabled:
+            git_result = self.git_status(project_payload)
+            git_stdout = str(git_result.data.get("stdout") or "") if isinstance(git_result.data, dict) else ""
+            git = {
+                "enabled": True,
+                "ok": git_result.ok,
+                "state": "ready" if git_result.ok else "unavailable",
+                "dirty": bool(git_stdout.strip()) if git_result.ok else None,
+                "changed_entries": len([line for line in git_stdout.splitlines() if line.strip()]) if git_result.ok else None,
+                "summary": git_result.summary,
+            }
+        else:
+            git = {
+                "enabled": False,
+                "ok": True,
+                "state": "disabled",
+                "dirty": None,
+                "changed_entries": None,
+                "summary": "project is not a Git worktree",
+            }
+
+        adapters: dict[str, dict[str, Any]] = {}
+        for contract in self.adapter_contracts.get("adapters", []):
+            name = str(contract.get("name") or "")
+            enabled = str(contract.get("project_app") or name) in project.apps
+            item: dict[str, Any] = {
+                "enabled": enabled,
+                "state": "disabled" if not enabled else "configured",
+                "contract": contract,
+            }
+            if enabled and name == "blender":
+                result = self.blender_live_status(project_payload)
+                data = result.data if isinstance(result.data, dict) else {}
+                presence = data.get("presence") if isinstance(data.get("presence"), dict) else {}
+                if result.ok and data.get("companion_current", True):
+                    state = "ready"
+                elif presence and data.get("protocol_compatible") and not data.get("companion_current", True):
+                    state = "update_required"
+                elif presence and not data.get("presence_fresh"):
+                    state = "stale"
+                else:
+                    state = "offline"
+                item.update({
+                    "ok": result.ok,
+                    "state": state,
+                    "summary": result.summary,
+                    "presence_fresh": bool(data.get("presence_fresh")),
+                    "protocol_version": data.get("protocol_version"),
+                    "protocol_compatible": data.get("protocol_compatible"),
+                    "companion_current": data.get("companion_current"),
+                    "blender_version": presence.get("blender_version"),
+                    "file": presence.get("file"),
+                })
+            elif enabled and name == "unity":
+                result = self.unity_editor_status(project_payload)
+                data = result.data if isinstance(result.data, dict) else {}
+                item.update({
+                    "ok": result.ok,
+                    "state": "ready" if result.ok else ("stale" if data else "offline"),
+                    "summary": result.summary,
+                    "presence_fresh": bool(data.get("presence_fresh")),
+                    "project_open": data.get("project_open"),
+                    "unity_version": data.get("unity_version") or data.get("version"),
+                })
+            adapters[name] = item
+
+        enabled_states = [item["state"] for item in adapters.values() if item.get("enabled")]
+        if not memory.get("ok"):
+            overall_state = "degraded"
+        elif any(state in {"update_required", "stale", "offline"} for state in enabled_states):
+            overall_state = "attention"
+        else:
+            overall_state = "ready"
+        return ActionResult(
+            True,
+            "project health observed",
+            {
+                "project": project.public(),
+                "state": overall_state,
+                "memory": memory,
+                "git": git,
+                "adapters": adapters,
+                "live_adapter_states": enabled_states,
+            },
+        )
+
+    def agent_project_briefing(self, payload: dict[str, Any]) -> ActionResult:
+        """Return a compact, resumable project context bundle for agent clients."""
+        unsupported = set(payload) - {"project"}
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(sorted(unsupported)))
+        project = self._project(payload)
+        scoped = {"project": project.slug}
+        repository = self.git_repository_info(scoped)
+        health = self.agent_project_health(scoped)
+        preview = self.project_preview_status(scoped)
+        inventory = self.project_inventory({"project": project.slug, "max_depth": 2, "max_entries": 180})
+        store = self._memory_store_instance()
+        continuity = store.context(project.slug, project.root)
+        context_path = str(store.write_context(project.slug, project.root))
+
+        open_tasks = [item for item in continuity.get("tasks", []) if not item.get("done")]
+        checkpoints = continuity.get("checkpoints", [])
+        known_context_files = [
+            name for name in (
+                "AGENTS.md", "CLAUDE.md", "README.md", "pyproject.toml",
+                "package.json", "tsconfig.json", "vite.config.ts", "Cargo.toml", "go.mod",
+            ) if (project.root / name).is_file()
+        ]
+        if (project.root / ".cursor" / "rules").is_dir():
+            known_context_files.append(".cursor/rules")
+
+        attention: list[str] = []
+        repo_data = repository.data if repository.ok else {}
+        if repo_data.get("dirty"):
+            attention.append(f"Git has {repo_data.get('changed_entries') or 0} changed entrie(s)")
+        health_data = health.data if health.ok else {}
+        if health_data.get("state") not in {None, "ready"}:
+            attention.append(f"Project health: {health_data.get('state')}")
+        for name, item in (health_data.get("adapters") or {}).items():
+            if item.get("enabled") and item.get("state") not in {"ready", "configured"}:
+                attention.append(f"{name}: {item.get('state')}")
+
+        inventory_data = inventory.data if inventory.ok else {}
+        top_level = [
+            item for item in inventory_data.get("entries", [])
+            if int(item.get("depth") or 0) == 1
+        ][:80]
+        return ActionResult(True, "agent project briefing ready", {
+            "project": project.public(),
+            "repository": repo_data,
+            "health": health_data,
+            "preview": preview.data if preview.ok else {"error": preview.summary},
+            "continuity": {
+                "context_path": context_path,
+                "memories": continuity.get("memories", [])[-12:],
+                "open_tasks": open_tasks[-16:],
+                "latest_checkpoint": checkpoints[-1] if checkpoints else None,
+                "recent_checkpoints": checkpoints[-5:],
+            },
+            "workspace": {
+                "top_level": top_level,
+                "documents": inventory_data.get("documents", [])[:40],
+                "scripts": inventory_data.get("scripts", [])[:40],
+                "models": inventory_data.get("models", [])[:20],
+                "context_files": known_context_files,
+            },
+            "capabilities": {
+                "apps": list(project.apps),
+                "action_groups": sorted({name.split(".", 1)[0] for name in self.names}),
+            },
+            "attention": attention,
+        })
+
     def agent_resilience_status(self, payload: dict[str, Any]) -> ActionResult:
         unsupported = sorted(set(payload) - {"timeout_seconds"})
         if unsupported:

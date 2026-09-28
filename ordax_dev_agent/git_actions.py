@@ -10,6 +10,51 @@ from .process_runner import run_command as _run
 
 
 class GitActions:
+    def git_repository_info(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project_path(payload)
+        include_status = payload.get("include_status", True)
+        if not isinstance(include_status, bool):
+            return ActionResult(False, "include_status must be boolean")
+        if not (project / ".git").exists():
+            return ActionResult(True, "project is not a Git repository", {
+                "is_repository": False, "path": str(project),
+            })
+
+        branch_result = _run(
+            ["git", "-C", str(project), "branch", "--show-current"], timeout=4,
+        )
+        branch = str(branch_result.data.get("stdout") or "").strip() if branch_result.ok else ""
+        remote_result = _run(
+            ["git", "-C", str(project), "config", "--get", "remote.origin.url"], timeout=4,
+        )
+        remote = str(remote_result.data.get("stdout") or "").strip() if remote_result.ok else ""
+
+        dirty: bool | None = None
+        changed_entries: int | None = None
+        status_available = False
+        if include_status:
+            status = _run([
+                "git", "-C", str(project), "status", "--porcelain=v1",
+                "--untracked-files=normal",
+            ], timeout=10)
+            if status.ok:
+                changes = [line for line in str(status.data.get("stdout") or "").splitlines() if line.strip()]
+                dirty = bool(changes)
+                changed_entries = len(changes)
+                status_available = True
+
+        return ActionResult(True, "Git repository identity ready", {
+            "is_repository": True,
+            "path": str(project),
+            "root": str(project.resolve()),
+            "branch": branch or "detached",
+            "remote": remote or None,
+            "has_origin": bool(remote),
+            "dirty": dirty,
+            "changed_entries": changed_entries,
+            "status_available": status_available,
+        })
+
     def git_status(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
         return _run(["git", "-C", str(project), "status", "--short"], timeout=60)

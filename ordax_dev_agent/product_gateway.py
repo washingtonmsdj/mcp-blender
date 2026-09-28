@@ -87,6 +87,32 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
         local_action="project.text_read",
         allowed_fields=frozenset({"project", "path"}),
     ),
+    "project.search_text": ProductActionSpec(
+        name="project.search_text",
+        local_action="project.search_text",
+        allowed_fields=frozenset({"project", "query", "max_results", "max_files", "case_sensitive"}),
+    ),
+    "project.text_read_batch": ProductActionSpec(
+        name="project.text_read_batch",
+        local_action="project.text_read_batch",
+        allowed_fields=frozenset({"project", "paths", "max_total_bytes"}),
+    ),
+    "project.preview_status": ProductActionSpec(
+        name="project.preview_status",
+        local_action="project.preview_status",
+        allowed_fields=frozenset({"project"}),
+    ),
+    "agent.project_health": ProductActionSpec(
+        name="agent.project_health",
+        local_action="agent.project_health",
+        allowed_fields=frozenset({"project"}),
+    ),
+    "workspace.repository_catalog": ProductActionSpec(
+        name="workspace.repository_catalog",
+        local_action="workspace.repository_catalog",
+        allowed_fields=frozenset(),
+        project_required=False,
+    ),
     "artifacts.list": ProductActionSpec(
         name="artifacts.list",
         local_action="artifacts.list",
@@ -138,20 +164,71 @@ def product_action_catalog() -> list[dict[str, Any]]:
 def _sanitize_product_result(action: str, result: ActionResult) -> ActionResult:
     data = dict(result.data) if isinstance(result.data, dict) else {}
 
+    def public_project(item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: item[key]
+            for key in ("slug", "apps", "available", "allowed_branches", "preview_mode")
+            if key in item
+        }
+
     if action == "projects.list":
         projects = data.get("projects")
         if isinstance(projects, list):
-            data["projects"] = [
-                {
-                    key: item[key]
-                    for key in ("slug", "apps", "available", "allowed_branches")
-                    if isinstance(item, dict) and key in item
-                }
-                for item in projects
-                if isinstance(item, dict)
-            ]
+            data["projects"] = [public_project(item) for item in projects if isinstance(item, dict)]
+    elif action == "workspace.repository_catalog":
+        projects = data.get("projects")
+        if isinstance(projects, list):
+            safe_projects: list[dict[str, Any]] = []
+            for item in projects:
+                if not isinstance(item, dict):
+                    continue
+                safe = public_project(item)
+                repository = item.get("repository")
+                if isinstance(repository, dict):
+                    safe["repository"] = {
+                        key: repository[key]
+                        for key in (
+                            "is_repository", "branch", "remote", "has_origin", "dirty",
+                            "changed_entries", "status_available",
+                        )
+                        if key in repository
+                    }
+                safe_projects.append(safe)
+            data["projects"] = safe_projects
     elif action == "project.inventory":
         data.pop("project_root", None)
+    elif action == "agent.project_health":
+        project = data.get("project")
+        if isinstance(project, dict):
+            data["project"] = public_project(project)
+        memory = data.get("memory")
+        if isinstance(memory, dict):
+            data["memory"] = {key: value for key, value in memory.items() if key not in {"db_path", "context_dir"}}
+        git = data.get("git")
+        if isinstance(git, dict):
+            data["git"] = {key: value for key, value in git.items() if key not in {"command", "path", "root"}}
+    elif action == "project.preview_status":
+        data.pop("url", None)
+        runtime = data.get("runtime")
+        if isinstance(runtime, dict):
+            data["runtime"] = {
+                key: runtime[key]
+                for key in (
+                    "state", "running", "url_ready", "ownership_valid", "started_at_unix",
+                    "ready_at_unix", "stopped_at_unix", "exit_code",
+                )
+                if key in runtime
+            }
+        latest = data.get("latest_image")
+        if isinstance(latest, dict):
+            data["latest_image"] = {
+                key: latest[key]
+                for key in (
+                    "source", "relative_path", "modified_at_ns", "size_bytes",
+                    "artifact_preview_payload",
+                )
+                if key in latest
+            }
     elif action in {"git.status", "git.diff"}:
         data.pop("command", None)
     elif action == "artifact.preview":
