@@ -47,6 +47,11 @@ from .comfyui_actions import ComfyUIActions
 from .aleph_actions import AlephActions
 from .aleph_scene_actions import AlephSceneActions
 from .execution_lock import ExecutionLock
+from .adapter_contracts import (
+    adapter_contract_catalog,
+    builtin_adapter_contracts,
+    external_adapter_contract,
+)
 
 
 Action = Callable[[dict[str, Any]], ActionResult]
@@ -266,7 +271,7 @@ class ActionRegistry(
             "blender.version": self.blender_version,
             "blender.run_python": self.blender_run_python,
         }
-        self._app_prefixes = {"unity", "blender"}
+        self._adapter_contracts = builtin_adapter_contracts()
         available = {entry.name: entry for entry in entry_points(group="ordax_dev_agent.adapters")}
         for name in config.adapters:
             if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets", "geo", "visual"}:
@@ -279,11 +284,15 @@ class ActionRegistry(
                     raise ValueError(f"invalid action in adapter {name}: {operation}")
                 self._actions[f"{name}.{operation}"] = (
                     lambda payload, fn=handler: fn(self._project(payload), payload))
-            self._app_prefixes.add(name)
+            self._adapter_contracts[name] = external_adapter_contract(name)
 
     @property
     def names(self) -> list[str]:
         return sorted(self._actions)
+
+    @property
+    def adapter_contracts(self) -> dict[str, Any]:
+        return adapter_contract_catalog(self._adapter_contracts)
 
     def execute(self, action: str, payload: dict[str, Any]) -> ActionResult:
         handler = self._actions.get(action)
@@ -298,10 +307,15 @@ class ActionRegistry(
         try:
             if not process_lock.acquire():
                 return ActionResult(False, "Another agent/MCP action is running", {"retryable": True})
-            if action.split('.')[0] in self._app_prefixes and action != "blender.version":
+            prefix = action.split(".", 1)[0]
+            adapter = self._adapter_contracts.get(prefix)
+            if adapter is not None and action not in adapter.global_actions:
                 project = self._project(payload)
-                if action.split('.')[0] not in project.apps:
-                    raise ValueError(f"application not enabled for project {project.slug}")
+                if adapter.project_app not in project.apps:
+                    raise ValueError(
+                        f"application not enabled for project {project.slug}: "
+                        f"{adapter.project_app}"
+                    )
             result = handler(payload)
             return result
         except (ValueError, FileNotFoundError, OSError, subprocess.TimeoutExpired) as error:

@@ -57,6 +57,7 @@ class AgentActions:
                 "busy": self._execution_lock.locked(),
                 "versions": component_versions(),
                 "capability_contracts": capability_contracts(),
+                "adapter_contracts": self.adapter_contracts,
                 "components": component_catalog(),
                 "live_apps": live_apps,
             },

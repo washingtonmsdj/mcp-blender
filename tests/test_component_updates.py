@@ -55,6 +55,12 @@ class ComponentUpdateTests(unittest.TestCase):
         self.assertEqual(plan["affected_components"], ["adapter-git"])
 
 
+    def test_adapter_contract_is_owned_by_device_core(self):
+        plan = plan_component_update(["ordax_dev_agent/adapter_contracts.py"])
+        self.assertEqual(plan["affected_components"], ["device-agent-core"])
+        self.assertTrue(plan["device_agent_restart_required"])
+        self.assertEqual(plan["unknown_paths"], [])
+
     def test_shared_action_contract_is_owned_by_device_core(self):
         plan = plan_component_update(["ordax_dev_agent/action_contracts.py"])
         self.assertEqual(plan["affected_components"], ["device-agent-core"])

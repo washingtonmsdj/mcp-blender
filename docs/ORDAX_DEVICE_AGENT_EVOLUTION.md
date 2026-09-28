@@ -203,6 +203,10 @@ Fase 2:
   - **em andamento:** o dispatch remoto já usa um contrato de actions/capabilities
     transport-neutral em `action_contracts.py`, sem ampliar permissões;
 - mover Blender e Unity para contratos claramente identificados como adapters;
+  - **em andamento:** Blender e Unity agora possuem contratos tipados explícitos
+    (`ordax.device-adapter-contracts/1`) usados pelo `ActionRegistry` para
+    project scope e publicados em `agent.status`; plugins por entry point entram
+    no mesmo modelo sem ampliar permissões;
 - adicionar contratos de Product MCP e Action Gateway;
   - **em andamento:** `ProductActionGateway` define uma superfície inicial
     read-only com contexto autenticado, grants explícitos vinculáveis a
