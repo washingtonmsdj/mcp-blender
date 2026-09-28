@@ -20,6 +20,7 @@ from .artifact_actions import ArtifactActions
 from .git_actions import GitActions
 from .project_text_actions import ProjectTextActions
 from .workspace_actions import WorkspaceActions
+from .preview_actions import PreviewActions
 from .memory_actions import MemoryActions
 from .component_actions import ComponentActions
 from .game_asset_catalog_actions import GameAssetCatalogActions
@@ -69,6 +70,7 @@ class ActionRegistry(
     GitActions,
     ProjectTextActions,
     WorkspaceActions,
+    PreviewActions,
     MemoryActions,
     ComponentActions,
     GameAssetCatalogActions,
@@ -119,6 +121,10 @@ class ActionRegistry(
             "project.archive_to_hordax": self.project_archive_to_hordax,
             "project.observe": self.project_observe,
             "project.inventory": self.project_inventory,
+            "project.preview_status": self.project_preview_status,
+            "project.preview_capture": self.project_preview_capture,
+            "project.preview_start": self.project_preview_start,
+            "project.preview_stop": self.project_preview_stop,
             "project.references": self.project_references,
             "project.reference_images": self.project_reference_images,
             "project.text_read": self.project_text_read,

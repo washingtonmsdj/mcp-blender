@@ -170,3 +170,20 @@ CLI, desktop e MCP usam a mesma regra `select_available_project`: projeto explí
 A shell desktop passa a abrir com um **Painel** de continuidade antes do editor. Ele resume projeto ativo, sessão, memória/tarefas, Git, Blender, Unity e o último checkpoint.
 
 A saúde de Git e adapters é carregada fora da thread da interface usando `agent.project_health`; portanto uma inspeção lenta não deve congelar a janela. O painel é observacional e não inicia nem modifica engines automaticamente.
+
+## Preview visual contínuo
+
+O Workspace agora possui um painel lateral de preview, inspirado no fluxo do Lovable.
+A mesma superfície atende projetos web, Blender e Unity sem duplicar o runtime.
+
+Blender e Unity mostram o artifact visual mais recente e permitem captura sob demanda.
+Projetos web com `preview.url`, `preview.entry` ou `index.html` podem gerar screenshot via Chrome/Edge.
+O painel acompanha novos artifacts automaticamente sem reiniciar a sessão.
+
+`project.preview_status` e `project.preview_capture` são actions tipadas do mesmo gateway.
+O MCP `project_preview_image` devolve os pixels reais da imagem ao modelo via `ImageContent`.
+Essa camada prepara o futuro preview web interativo com WebView2 usando o mesmo contrato no Desktop, MCP e Ordax OS.
+
+O runtime web também possui `project.preview_start` e `project.preview_stop`.
+Para projetos estáticos o Studio usa um servidor HTTP local; para projetos com `package.json`, detecta Vite/Next ou um script `dev` suportado e inicia o processo sem shell remoto genérico.
+A UI expõe **Executar**, **Parar**, **Capturar**, **Atualizar** e atualização automática do preview.

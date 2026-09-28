@@ -9,8 +9,11 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 from typing import Any
 
+
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
+
+from .preview import PreviewPane
 
 APP_NAME = "ORDAX Studio"
 
@@ -158,8 +161,12 @@ class StudioApp(tk.Tk):
         wrap.pack(fill="both", expand=True, padx=12, pady=12)
         left = tk.Frame(wrap, bg="#0C1625")
         right = tk.Frame(wrap, bg="#080F19")
-        wrap.add(left, minsize=320)
-        wrap.add(right, minsize=500)
+        wrap.add(left, minsize=250)
+        wrap.add(right, minsize=380)
+        preview = tk.Frame(wrap, bg="#080F19")
+        wrap.add(preview, minsize=320)
+        self.preview_pane = PreviewPane(preview, self.agent, lambda: self.current_project)
+        self.preview_pane.pack(fill="both", expand=True)
 
         bar = tk.Frame(left, bg="#0C1625")
         bar.pack(fill="x", padx=8, pady=8)
@@ -273,6 +280,7 @@ class StudioApp(tk.Tk):
             self.current_project = self.project_slugs[selected_index]
         self.refresh_all()
         self.refresh_workspace()
+        self.preview_pane.project_changed()
 
     def _project_selected(self, _event=None) -> None:
         selection = self.project_list.curselection()
@@ -287,6 +295,7 @@ class StudioApp(tk.Tk):
         self.store.set_active_project(project.slug, project.root)
         self.refresh_all()
         self.refresh_workspace()
+        self.preview_pane.project_changed()
 
     def refresh_all(self) -> None:
         slug = self.current_project

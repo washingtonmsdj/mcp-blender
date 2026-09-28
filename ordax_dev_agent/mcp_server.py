@@ -47,6 +47,24 @@ def project_health(project: str | None = None) -> dict:
 
 
 @mcp.tool()
+def project_preview_start(project: str | None = None) -> dict:
+    """Start the typed local web preview runtime for a project."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.preview_start", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_preview_stop(project: str | None = None) -> dict:
+    """Stop the typed local web preview runtime for a project."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.preview_stop", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
 def session_context(project: str) -> dict:
     """Load persistent project memory, tasks and checkpoints before continuing work."""
     result = registry().execute("memory.context", {"project": project})
@@ -95,6 +113,27 @@ Use artifact_image for managed reference/model PNG/JPEG evidence returned by act
     payload = {**(arguments or {}), "project": project}
     result = registry().execute(action, payload)
     return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_preview_image(project: str | None = None, refresh: bool = False) -> list[TextContent | ImageContent]:
+    """Return the current ORDAX project preview as actual image pixels for visual reasoning."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    if refresh:
+        captured = agent.execute("project.preview_capture", {"project": selected})
+        if not captured.ok:
+            return [TextContent(type="text", text=json.dumps({"ok": False, "summary": captured.summary}))]
+    status = agent.execute("project.preview_status", {"project": selected})
+    image = status.data.get("latest_image") if status.ok else None
+    if not image:
+        return [TextContent(type="text", text=json.dumps({"ok": False, "summary": "No preview image is available", "data": status.data}))]
+    preview_payload = {"project": selected, **image["artifact_preview_payload"], "thumbnail": True, "max_width": 1600, "max_height": 1200}
+    preview = agent.execute("artifact.preview", preview_payload)
+    if not preview.ok:
+        return [TextContent(type="text", text=json.dumps({"ok": False, "summary": preview.summary}))]
+    meta = {"project": selected, "mode": status.data.get("mode"), "artifact": image.get("path"), "sha256": preview.data.get("sha256")}
+    return [TextContent(type="text", text=json.dumps(meta)), ImageContent(type="image", mimeType=preview.data["mime_type"], data=preview.data["base64"])]
 
 
 def _artifact_image_contents(
