@@ -2,6 +2,9 @@ name: Deploy Cloudflare v3 Control Plane
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Bridge CI"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -12,6 +15,10 @@ concurrency:
 
 jobs:
   deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: cloudflare-v3
@@ -27,10 +34,10 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
           test -n "$ORDAX_OPERATOR_TOKEN" || { echo "Missing ORDAX_OPERATOR_TOKEN"; exit 1; }
 
-      - name: Checkout main
+      - name: Checkout verified main revision
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || 'main' }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
