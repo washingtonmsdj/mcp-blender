@@ -132,3 +132,16 @@ mutations:
 
 The generic operator `/v3/jobs` API is not used as Product identity. The Product
 surface remains limited to the explicit read-only catalog.
+
+
+## Device-bound Product targets
+
+Until OrdaX has a persisted Account/Space-to-device ownership model, remote
+Product grants must be explicitly scoped to one device. Device-null grants are
+not eligible for remote execution.
+
+Authenticated clients can discover their safe execution targets with
+`GET /v3/product/targets`. The endpoint is subject-scoped, includes only active,
+non-revoked, device-bound grants, and returns device id/name/last-seen plus the
+exact grant action/project scopes. It does not expose device tokens, machine
+bindings, operator data, or devices belonging only to other subjects.
