@@ -210,20 +210,36 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.data["error_code"], "invalid_request_context")
 
-        bad_grant = ProductGrant(
-            grant_id="",
-            subject_id="user:123",
-            actions=frozenset({"git.status"}),
-            projects=frozenset({"scene"}),
-        )
-        result = self.gateway.execute(
-            "git.status",
-            {"project": "scene"},
-            context=self.context,
-            grant=bad_grant,
-        )
-        self.assertFalse(result.ok)
-        self.assertEqual(result.data["error_code"], "invalid_grant_provenance")
+        malformed_grants = [
+            ProductGrant(
+                grant_id="",
+                subject_id="user:123",
+                actions=frozenset({"git.status"}),
+                projects=frozenset({"scene"}),
+            ),
+            ProductGrant(
+                grant_id="grant-1",
+                subject_id="user:123",
+                actions=["git.status"],  # type: ignore[arg-type]
+                projects=frozenset({"scene"}),
+            ),
+            ProductGrant(
+                grant_id="grant-1",
+                subject_id="user:123",
+                actions=frozenset({"git.status"}),
+                projects=frozenset({"scene"}),
+                expires_at_unix="tomorrow",  # type: ignore[arg-type]
+            ),
+        ]
+        for bad_grant in malformed_grants:
+            result = self.gateway.execute(
+                "git.status",
+                {"project": "scene"},
+                context=self.context,
+                grant=bad_grant,
+            )
+            self.assertFalse(result.ok)
+            self.assertEqual(result.data["error_code"], "invalid_grant_provenance")
         self.assertEqual(self.executor.calls, [])
 
     def test_unsupported_payload_field_is_rejected_before_execution(self) -> None:
