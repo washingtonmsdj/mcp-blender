@@ -204,6 +204,9 @@ Fase 2:
     transport-neutral em `action_contracts.py`, sem ampliar permissões;
 - mover Blender e Unity para contratos claramente identificados como adapters;
 - adicionar contratos de Product MCP e Action Gateway;
+  - **em andamento:** `ProductActionGateway` define uma superfície inicial
+    read-only com grants explícitos, redaction de paths locais e sem servidor
+    de rede; contrato detalhado em `docs/ACTION_GATEWAY.md`;
 - ligar identidade/grants do Control Plane sem misturar credenciais de
   desenvolvimento com credenciais do produto.
 
