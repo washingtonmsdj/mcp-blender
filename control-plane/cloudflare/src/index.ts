@@ -319,15 +319,13 @@ type ProductGrantRow = {
 
 function normalizedStringArray(
   value: unknown,
-  *,
-  maxItems,
-  validator,
-  allowed,
-}: {
-  maxItems: number;
-  validator: (item: string) => boolean;
-  allowed?: Set<string>;
-}): string[] | null {
+  options: {
+    maxItems: number;
+    validator: (item: string) => boolean;
+    allowed?: Set<string>;
+  },
+): string[] | null {
+  const { maxItems, validator, allowed } = options;
   if (!Array.isArray(value) || value.length > maxItems) return null;
   const result = new Set<string>();
   for (const item of value) {
