@@ -134,3 +134,15 @@ a live preflight and refuses to publish the Worker unless the JWKS endpoint is
 HTTPS and exposes at least one usable RS256 or ES256 key with a `kid`. This
 prevents a legacy HS256 configuration from making Product authentication appear
 ready when the Worker cannot verify it safely.
+
+
+## Production deployment gate
+
+Cloudflare v3 production deployment can still be started manually, but normal
+mainline deployment is now chained to the repository's `Bridge CI` workflow.
+The deploy job runs only when that workflow completed successfully for
+`main`, and it checks out the exact `workflow_run.head_sha` that passed CI.
+
+This prevents production from racing ahead of Python tests, Worker compilation
+or the Cloudflare v3 E2E gate. The existing JWKS preflight and post-deploy
+`product_auth_configured=true` health requirement remain mandatory.
