@@ -30,7 +30,7 @@ class ProductAuthProviderPreflightContractTests(unittest.TestCase):
 
     def test_workflow_points_to_ordax_supabase_auth(self):
         self.assertIn("eobcxuyvhkvdmkbaihwh.supabase.co/auth/v1", self.workflow)
-        self.assertIn("audience: authenticated", self.workflow)
+        self.assertIn("PRODUCT_AUTH_AUDIENCE: authenticated", self.workflow)
 
 
 if __name__ == "__main__":
