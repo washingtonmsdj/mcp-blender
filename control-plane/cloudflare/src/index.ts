@@ -380,9 +380,7 @@ async function createProductGrant(request: Request, env: Env): Promise<Response>
   const spaceId = body.space_id == null
     ? null
     : typeof body.space_id === "string" ? body.space_id : "";
-  const deviceId = body.device_id == null
-    ? null
-    : typeof body.device_id === "string" ? body.device_id : "";
+  const deviceId = typeof body.device_id === "string" ? body.device_id : "";
 
   const actions = normalizedStringArray(body.actions, {
     maxItems: 32,
@@ -397,7 +395,7 @@ async function createProductGrant(request: Request, env: Env): Promise<Response>
   if (
     !PRODUCT_ID_RE.test(subjectId)
     || (spaceId !== null && !PRODUCT_ID_RE.test(spaceId))
-    || (deviceId !== null && !UUID_RE.test(deviceId))
+    || !UUID_RE.test(deviceId)
     || !actions
     || actions.length === 0
     || !projects
@@ -418,12 +416,10 @@ async function createProductGrant(request: Request, env: Env): Promise<Response>
     expiresAt = parsed.toISOString();
   }
 
-  if (deviceId) {
-    const device = await env.DB.prepare(
-      "SELECT id FROM ordax_devices WHERE id = ?1 AND revoked_at IS NULL",
-    ).bind(deviceId).first();
-    if (!device) return json({ ok: false, error: "device_not_found" }, 404);
-  }
+  const device = await env.DB.prepare(
+    "SELECT id FROM ordax_devices WHERE id = ?1 AND revoked_at IS NULL",
+  ).bind(deviceId).first();
+  if (!device) return json({ ok: false, error: "device_not_found" }, 404);
 
   const grantId = crypto.randomUUID();
   const createdAt = nowIso();
@@ -516,10 +512,9 @@ async function resolveProductGrantForContext(
      WHERE subject_id = ?1
        AND revoked_at IS NULL
        AND (expires_at IS NULL OR expires_at > ?2)
-       AND (device_id IS NULL OR device_id = ?3)
+       AND device_id = ?3
        AND (space_id IS NULL OR space_id = ?4)
      ORDER BY
-       CASE WHEN device_id IS NULL THEN 0 ELSE 1 END DESC,
        CASE WHEN space_id IS NULL THEN 0 ELSE 1 END DESC,
        created_at DESC
      LIMIT 100`,
@@ -655,6 +650,81 @@ async function revokeProductGrant(
     revoked: true,
     grant: publicProductGrant({ ...existing, revoked_at: revokedAt }),
   });
+}
+
+async function listProductTargets(request: Request, env: Env): Promise<Response> {
+  const identity = await authenticateProductRequest(request, env);
+  if (!identity.ok) return json({ ok: false, error: identity.error }, identity.status);
+
+  const url = new URL(request.url);
+  const spaceId = url.searchParams.get("space_id");
+  if (spaceId !== null && !PRODUCT_ID_RE.test(spaceId)) {
+    return json({ ok: false, error: "space_id_invalid" }, 400);
+  }
+
+  const now = nowIso();
+  const rows = await env.DB.prepare(
+    `SELECT
+       g.id AS grant_id, g.space_id, g.device_id, g.actions_json, g.projects_json,
+       g.expires_at, g.created_at,
+       d.name AS device_name, d.last_seen_at
+     FROM ordax_product_grants g
+     JOIN ordax_devices d ON d.id = g.device_id
+     WHERE g.subject_id = ?1
+       AND g.device_id IS NOT NULL
+       AND g.revoked_at IS NULL
+       AND d.revoked_at IS NULL
+       AND (g.expires_at IS NULL OR g.expires_at > ?2)
+       AND (?3 IS NULL OR g.space_id IS NULL OR g.space_id = ?3)
+     ORDER BY d.name ASC, g.created_at DESC
+     LIMIT 200`,
+  ).bind(identity.subjectId, now, spaceId).all<{
+    grant_id: string;
+    space_id: string | null;
+    device_id: string;
+    actions_json: string;
+    projects_json: string;
+    expires_at: string | null;
+    created_at: string;
+    device_name: string;
+    last_seen_at: string | null;
+  }>();
+
+  const devices = new Map<string, JsonObject>();
+  for (const row of rows.results ?? []) {
+    let actions: unknown = [];
+    let projects: unknown = [];
+    try { actions = JSON.parse(row.actions_json); } catch { continue; }
+    try { projects = JSON.parse(row.projects_json); } catch { continue; }
+    if (
+      !Array.isArray(actions)
+      || !actions.every((item) => typeof item === "string")
+      || !Array.isArray(projects)
+      || !projects.every((item) => typeof item === "string")
+    ) {
+      continue;
+    }
+    let entry = devices.get(row.device_id) as (JsonObject & { grants?: unknown[] }) | undefined;
+    if (!entry) {
+      entry = {
+        device_id: row.device_id,
+        name: row.device_name,
+        last_seen_at: row.last_seen_at,
+        grants: [],
+      };
+      devices.set(row.device_id, entry);
+    }
+    (entry.grants as unknown[]).push({
+      grant_id: row.grant_id,
+      space_id: row.space_id,
+      actions,
+      projects,
+      expires_at: row.expires_at,
+      created_at: row.created_at,
+    });
+  }
+
+  return json({ ok: true, targets: [...devices.values()] });
 }
 
 async function productSession(request: Request, env: Env): Promise<Response> {
@@ -1705,6 +1775,9 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/v3/product/session") {
       return productSession(request, env);
+    }
+    if (request.method === "GET" && url.pathname === "/v3/product/targets") {
+      return listProductTargets(request, env);
     }
     if (request.method === "POST" && url.pathname === "/v3/product/actions") {
       return createProductAction(request, env);
