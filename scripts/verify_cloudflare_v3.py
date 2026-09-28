@@ -42,6 +42,7 @@ def run(base_url: str, operator_token: str) -> None:
             not isinstance(capabilities, list)
             or "artifact_multipart_v1" not in capabilities
             or "product_grant_store_v1" not in capabilities
+            or "product_grant_resolution_v1" not in capabilities
         ):
             raise RuntimeError("control-plane required capabilities are missing")
 
