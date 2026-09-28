@@ -49,6 +49,9 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+          PRODUCT_AUTH_ISSUER: https://eobcxuyvhkvdmkbaihwh.supabase.co/auth/v1
+          PRODUCT_AUTH_AUDIENCE: authenticated
+          PRODUCT_AUTH_JWKS_URL: https://eobcxuyvhkvdmkbaihwh.supabase.co/auth/v1/.well-known/jwks.json
         run: bash scripts/cloudflare/deploy-v3.sh
 
       - name: Wait for public health
