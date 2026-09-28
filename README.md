@@ -372,3 +372,14 @@ See `docs/REFERENCE_CONTRACT.md` and `config/references.example.json`.
 ## Segurança
 
 Não versione tokens, segredos ou dados de licença. Use variáveis de ambiente locais e GitHub Secrets quando necessário.
+
+
+### Product MCP (read-only)
+
+The authenticated Product MCP host is available as:
+
+`ordax-product-mcp`
+
+It uses `ORDAX_PRODUCT_ACCESS_TOKEN` plus the Cloudflare v3 Product API and
+exposes only the read-only Product surface. It does not provide a generic shell
+or mutation endpoint.
