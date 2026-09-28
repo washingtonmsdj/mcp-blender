@@ -461,8 +461,13 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         )[1].split("]);", 1)[0]
         for action in (
             "projects.list",
+            "workspace.repository_catalog",
             "project.inventory",
             "project.text_read",
+            "project.search_text",
+            "project.text_read_batch",
+            "project.preview_status",
+            "agent.project_health",
             "git.status",
             "git.diff",
             "artifact.preview",

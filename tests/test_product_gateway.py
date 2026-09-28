@@ -19,8 +19,13 @@ class FakeExecutor:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self._names = [
             "projects.list",
+            "workspace.repository_catalog",
             "project.inventory",
             "project.text_read",
+            "project.search_text",
+            "project.text_read_batch",
+            "project.preview_status",
+            "agent.project_health",
             "project.text_write",
             "artifacts.list",
             "git.status",
@@ -57,6 +62,43 @@ class FakeExecutor:
                     ],
                 },
             )
+        if action == "workspace.repository_catalog":
+            return ActionResult(True, "catalog", {
+                "active_project": "scene",
+                "projects": [{
+                    "slug": "scene", "path": "C:/Users/example/secret/project",
+                    "apps": ["blender"], "available": True, "allowed_branches": ["main"],
+                    "preview_mode": "blender",
+                    "repository": {
+                        "is_repository": True, "root": "C:/Users/example/secret/project",
+                        "path": "C:/Users/example/secret/project", "branch": "main",
+                        "remote": "https://github.com/example/scene.git", "has_origin": True,
+                        "dirty": False, "changed_entries": 0, "status_available": True,
+                    },
+                }],
+            })
+        if action == "agent.project_health":
+            return ActionResult(True, "health", {
+                "project": {"slug": "scene", "path": "C:/secret", "apps": ["blender"], "available": True},
+                "state": "ready",
+                "memory": {"ok": True, "db_path": "C:/secret/state.db", "context_dir": "C:/secret/contexts"},
+                "git": {"ok": True, "command": ["git", "-C", "C:/secret"], "dirty": False},
+                "adapters": {"blender": {"enabled": True, "state": "ready"}},
+            })
+        if action == "project.preview_status":
+            return ActionResult(True, "preview", {
+                "project": "scene", "mode": "web", "url": "http://127.0.0.1:5173",
+                "runtime": {
+                    "state": "running", "running": True, "url_ready": True,
+                    "ownership_valid": True, "pid": 123, "token": "secret",
+                    "command": ["npm", "run", "dev"], "log": "C:/secret/preview.log",
+                },
+                "latest_image": {
+                    "source": "managed", "path": "C:/secret/preview.png",
+                    "relative_path": "preview.png", "size_bytes": 42,
+                    "artifact_preview_payload": {"artifact_name": "preview.png"},
+                },
+            })
         if action == "project.inventory":
             return ActionResult(
                 True,
@@ -159,7 +201,12 @@ class ProductGatewayTests(unittest.TestCase):
     def test_catalog_contains_only_explicit_read_only_surface(self) -> None:
         names = {entry["name"] for entry in product_action_catalog()}
         self.assertEqual(names, set(PRODUCT_READ_ONLY_ACTIONS))
+        self.assertIn("workspace.repository_catalog", names)
         self.assertIn("project.text_read", names)
+        self.assertIn("project.search_text", names)
+        self.assertIn("project.text_read_batch", names)
+        self.assertIn("project.preview_status", names)
+        self.assertIn("agent.project_health", names)
         self.assertIn("git.diff", names)
         self.assertIn("artifacts.list", names)
         self.assertNotIn("project.text_write", names)
@@ -346,6 +393,46 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertNotIn("path", project)
         self.assertNotIn("unity", project)
         self.assertNotIn("blender", project)
+
+    def test_repository_catalog_redacts_local_roots_but_keeps_studio_identity(self) -> None:
+        result = self.gateway.execute(
+            "workspace.repository_catalog",
+            {},
+            context=self.context,
+            grant=self.grant("workspace.repository_catalog", projects=()),
+        )
+
+        self.assertTrue(result.ok)
+        project = result.data["projects"][0]
+        self.assertEqual(project["preview_mode"], "blender")
+        self.assertNotIn("path", project)
+        self.assertNotIn("root", project["repository"])
+        self.assertNotIn("path", project["repository"])
+        self.assertEqual(project["repository"]["branch"], "main")
+
+    def test_project_health_and_preview_redact_local_runtime_details(self) -> None:
+        health = self.gateway.execute(
+            "agent.project_health", {"project": "scene"},
+            context=self.context, grant=self.grant("agent.project_health"),
+        )
+        self.assertTrue(health.ok)
+        self.assertNotIn("path", health.data["project"])
+        self.assertNotIn("db_path", health.data["memory"])
+        self.assertNotIn("context_dir", health.data["memory"])
+        self.assertNotIn("command", health.data["git"])
+
+        preview = self.gateway.execute(
+            "project.preview_status", {"project": "scene"},
+            context=self.context, grant=self.grant("project.preview_status"),
+        )
+        self.assertTrue(preview.ok)
+        self.assertNotIn("url", preview.data)
+        self.assertNotIn("pid", preview.data["runtime"])
+        self.assertNotIn("token", preview.data["runtime"])
+        self.assertNotIn("command", preview.data["runtime"])
+        self.assertNotIn("log", preview.data["runtime"])
+        self.assertNotIn("path", preview.data["latest_image"])
+        self.assertEqual(preview.data["latest_image"]["relative_path"], "preview.png")
 
     def test_inventory_redacts_absolute_project_root(self) -> None:
         result = self.gateway.execute(

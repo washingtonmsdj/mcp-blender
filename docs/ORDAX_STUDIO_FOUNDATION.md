@@ -9,7 +9,9 @@ A primeira regra da evolução é preservar compatibilidade. O aplicativo `C:\Us
 
 ## Decisão de arquitetura
 
-O repositório histórico `mcp-blender` continua sendo a linha de desenvolvimento do agente. Blender e Unity passam a ser capabilities do ORDAX, não produtos separados.
+O repositório histórico `mcp-blender` continua sendo a linha de desenvolvimento do agente e pode manter esse nome no Git para preservar integrações existentes. O nome do **produto**, do runtime principal e do MCP canônico, porém, é **ORDAX Studio**. Blender e Unity passam a ser capabilities do ORDAX, não produtos separados.
+
+O alias `mcp-blender` permanece válido para clientes antigos, mas resolve para o MCP completo do Studio. A bridge `mcp-blender-unity` fica restrita ao papel de compatibilidade/diagnóstico de baixo nível. O contrato detalhado está em [ORDAX_STUDIO_MCP_ARCHITECTURE.md](ORDAX_STUDIO_MCP_ARCHITECTURE.md).
 
 ```text
 ChatGPT / cliente MCP

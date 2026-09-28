@@ -17,19 +17,25 @@ from .models import ActionResult
 
 _READABLE_SUFFIXES = {
     ".asmdef", ".asmref", ".cginc", ".compute", ".cs", ".css", ".glsl",
-    ".hlsl", ".html", ".js", ".json", ".md", ".mjs", ".py", ".shader", ".ts", ".txt", ".uss", ".uxml",
-    ".xml", ".yaml", ".yml",
+    ".hlsl", ".html", ".js", ".jsx", ".json", ".md", ".mjs", ".mod", ".py",
+    ".shader", ".toml", ".ts", ".tsx", ".txt", ".uss", ".uxml", ".xml",
+    ".yaml", ".yml",
     # Serialized Unity text may be inspected, but is intentionally not writable
     # through this generic action.
     ".unity", ".prefab", ".meta",
 }
 _WRITABLE_SUFFIXES = _READABLE_SUFFIXES - {".unity", ".prefab", ".meta"}
 _ALLOWED_TOP_LEVEL = {
-    "Assets", "Packages", "ProjectSettings", "automation", "docs", "blender", "src",
-    "ordax_core", "ordax_studio", "ordax_dev_agent", "ordax_device_agent",
-    "mcp_blender_unity", "tests", "scripts",
+    ".cursor", ".github", "Assets", "Packages", "ProjectSettings", "automation",
+    "docs", "blender", "src", "ordax_core", "ordax_studio", "ordax_dev_agent",
+    "ordax_device_agent", "mcp_blender_unity", "tests", "scripts",
 }
-_ALLOWED_ROOT_FILES = {"README.md", "package.json", "index.html", "pnpm-lock.yaml"}
+_ALLOWED_ROOT_FILES = {
+    ".editorconfig", "AGENTS.md", "CLAUDE.md", "README.md", "Cargo.toml",
+    "composer.json", "go.mod", "index.html", "next.config.js", "next.config.mjs",
+    "package.json", "pnpm-lock.yaml", "pyproject.toml", "tsconfig.json",
+    "vite.config.js", "vite.config.ts",
+}
 _BLOCKED_PARTS = {"Library", "Temp", "Logs", "Builds", "obj", ".git"}
 _MAX_READ_BYTES = 2 * 1024 * 1024
 _MAX_WRITE_BYTES = 1024 * 1024
@@ -92,7 +98,7 @@ class ProjectTextActions:
             except OSError:
                 continue
             for child in children:
-                if child.name in blocked or child.name.startswith("."):
+                if child.name in blocked or (child.name.startswith(".") and child.name not in {".cursor", ".github"}):
                     continue
                 try:
                     relative = child.relative_to(root).as_posix()
@@ -139,7 +145,8 @@ class ProjectTextActions:
         raw = str(payload.get("path") or "")
         path, relative = _relative_project_path(project, raw, must_exist=True)
 
-        if path.suffix.lower() not in _READABLE_SUFFIXES:
+        root_file = len(relative.parts) == 1 and relative.as_posix() in _ALLOWED_ROOT_FILES
+        if path.suffix.lower() not in _READABLE_SUFFIXES and not root_file:
             return ActionResult(False, f"text file extension is not readable: {path.suffix or '<none>'}")
         if not path.is_file():
             return ActionResult(False, f"path is not a file: {relative.as_posix()}")
@@ -170,6 +177,121 @@ class ProjectTextActions:
                 "content": content,
             },
         )
+
+    def project_search_text(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        query = str(payload.get("query") or "").strip()
+        if not query or len(query) > 200:
+            return ActionResult(False, "query must contain between 1 and 200 characters")
+        try:
+            max_results = int(payload.get("max_results", 40))
+            max_files = int(payload.get("max_files", 1500))
+        except (TypeError, ValueError):
+            return ActionResult(False, "max_results and max_files must be integers")
+        if not 1 <= max_results <= 100 or not 50 <= max_files <= 5000:
+            return ActionResult(False, "max_results must be 1..100 and max_files 50..5000")
+        case_sensitive = bool(payload.get("case_sensitive", False))
+        needle = query if case_sensitive else query.casefold()
+        root = project.root.resolve()
+        matches: list[dict[str, Any]] = []
+        scanned = 0
+
+        candidates: list[Path] = []
+        for name in sorted(_ALLOWED_TOP_LEVEL):
+            base = root / name
+            if base.is_dir():
+                candidates.append(base)
+        for name in sorted(_ALLOWED_ROOT_FILES):
+            candidate = root / name
+            if candidate.is_file():
+                candidates.append(candidate)
+
+        def inspect(path: Path) -> None:
+            nonlocal scanned
+            if scanned >= max_files or len(matches) >= max_results:
+                return
+            if path.is_dir():
+                for child in sorted(path.iterdir(), key=lambda item: item.name.lower()):
+                    if child.name.startswith(".") or child.name in _BLOCKED_PARTS:
+                        continue
+                    inspect(child)
+                    if scanned >= max_files or len(matches) >= max_results:
+                        break
+                return
+            relative = path.relative_to(root).as_posix()
+            root_file = "/" not in relative and relative in _ALLOWED_ROOT_FILES
+            if path.suffix.lower() not in _READABLE_SUFFIXES and not root_file:
+                return
+            scanned += 1
+            try:
+                if path.stat().st_size > _MAX_READ_BYTES:
+                    return
+                text = path.read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeDecodeError):
+                return
+            relative = path.relative_to(root).as_posix()
+            for line_number, line in enumerate(text.splitlines(), start=1):
+                haystack = line if case_sensitive else line.casefold()
+                if needle in haystack:
+                    matches.append({
+                        "path": relative,
+                        "line": line_number,
+                        "text": line.strip()[:500],
+                    })
+                    if len(matches) >= max_results:
+                        break
+
+        for candidate in candidates:
+            inspect(candidate)
+            if scanned >= max_files or len(matches) >= max_results:
+                break
+        return ActionResult(True, "project text search ready", {
+            "project": project.slug,
+            "query": query,
+            "case_sensitive": case_sensitive,
+            "scanned_files": scanned,
+            "match_count": len(matches),
+            "truncated": len(matches) >= max_results or scanned >= max_files,
+            "matches": matches,
+        })
+
+    def project_text_read_batch(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        paths = payload.get("paths")
+        if not isinstance(paths, list) or not paths or len(paths) > 16:
+            return ActionResult(False, "paths must be a non-empty list with at most 16 entries")
+        try:
+            max_total_bytes = int(payload.get("max_total_bytes", 393216))
+        except (TypeError, ValueError):
+            return ActionResult(False, "max_total_bytes must be an integer")
+        if not 65536 <= max_total_bytes <= 786432:
+            return ActionResult(False, "max_total_bytes must be between 65536 and 786432")
+
+        files: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        total_bytes = 0
+        for raw in paths:
+            if not isinstance(raw, str) or not raw.strip():
+                errors.append({"path": str(raw), "error": "path must be a non-empty string"})
+                continue
+            result = self.project_text_read({"project": project.slug, "path": raw})
+            if not result.ok:
+                errors.append({"path": raw, "error": result.summary})
+                continue
+            size = int(result.data.get("size_bytes") or 0)
+            if total_bytes + size > max_total_bytes:
+                errors.append({"path": raw, "error": "batch context byte limit reached"})
+                break
+            files.append(result.data)
+            total_bytes += size
+        return ActionResult(True, "project text batch ready", {
+            "project": project.slug,
+            "file_count": len(files),
+            "total_bytes": total_bytes,
+            "max_total_bytes": max_total_bytes,
+            "files": files,
+            "errors": errors,
+        })
 
     def project_text_write(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)

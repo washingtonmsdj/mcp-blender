@@ -82,6 +82,15 @@ class ProductMcpServerTests(unittest.TestCase):
         self.assertEqual(submit[2]["arguments"], {"project": "demo"})
         self.assertIn(("wait", "jwt-secret", "req-1"), calls)
 
+    def test_studio_catalog_routes_without_project_scope(self):
+        result = server.repository_catalog("dev-1", "space-1")
+        self.assertEqual(result["status"], "succeeded")
+        calls = [call for instance in FakeClient.instances for call in instance.calls]
+        submit = next(call for call in calls if call[0] == "submit")
+        self.assertEqual(submit[2]["action"], "workspace.repository_catalog")
+        self.assertIsNone(submit[2]["project"])
+        self.assertEqual(submit[2]["arguments"], {})
+
     def test_mutation_or_generic_execute_tool_is_not_defined(self):
         self.assertFalse(hasattr(server, "action_execute"))
         self.assertFalse(hasattr(server, "git_sync"))
@@ -93,8 +102,13 @@ class ProductMcpServerTests(unittest.TestCase):
             "product_session",
             "product_targets",
             "projects_list",
+            "repository_catalog",
             "project_inventory",
             "project_text_read",
+            "project_health",
+            "project_search",
+            "project_read_batch",
+            "project_preview_status",
             "git_status",
             "git_diff",
             "artifacts_list",

@@ -119,7 +119,8 @@ class WorkspaceActions:
 
         def inspect(project) -> dict[str, Any]:
             card = project.public()
-            repository = self.git_repository_info({"project": project.slug})
+            card["preview_mode"] = self._preview_mode(project)
+            repository = self.git_repository_info({"project": project.slug, "include_status": False})
             card["repository"] = repository.data if repository.ok else {
                 "is_repository": False, "error": repository.summary,
             }

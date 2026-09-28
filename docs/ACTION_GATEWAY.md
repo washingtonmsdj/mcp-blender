@@ -15,9 +15,16 @@ device, expiry, action or project scope does not match.
 
 ## Initial read-only surface
 
+A superfície remota é o braço autenticado do **ORDAX Studio Remote MCP**. Ela permanece deliberadamente read-only nesta fase e expõe contexto suficiente para uma conversa remota entender e revisar o workspace sem ganhar shell genérico.
+
 - `projects.list`
+- `workspace.repository_catalog`
 - `project.inventory`
 - `project.text_read`
+- `project.search_text`
+- `project.text_read_batch`
+- `project.preview_status`
+- `agent.project_health`
 - `artifacts.list`
 - `git.status`
 - `git.diff`
@@ -38,7 +45,9 @@ The local Device Agent may legitimately know workstation-specific absolute
 paths. Product-facing results remove those details where the existing local
 action returns them:
 
-- project roots are removed from project discovery/inventory;
+- project roots are removed from project discovery/inventory and repository catalog results;
+- health responses remove memory database/context paths and Git command paths;
+- preview status removes local URLs, PIDs, ownership tokens, command lines, log paths and absolute image paths;
 - Git command arrays are removed because they contain local paths;
 - artifact absolute paths are removed from previews;
 - project discovery omits private adapter configuration.

@@ -15,7 +15,7 @@ class ProductMcpConnectivityContractTests(unittest.TestCase):
         self.env = (root / ".env.example").read_text(encoding="utf-8")
 
     def test_example_uses_product_entrypoint_without_real_secret(self):
-        server = self.config["mcpServers"]["ordax-product"]
+        server = self.config["mcpServers"]["ordax-studio"]
         self.assertEqual(server["command"], "ordax-product-mcp")
         token = server["env"]["ORDAX_PRODUCT_ACCESS_TOKEN"]
         self.assertIn("provide-at-runtime", token)

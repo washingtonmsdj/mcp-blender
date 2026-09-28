@@ -17,25 +17,45 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
             (root / 'agent-settings.json').write_text(json.dumps({
                 'default_project': 'test', 'projects': {'test': {'path': str(root), 'apps': ['unity']}}
             }))
+            (root / 'README.md').write_text('ORDAX agent bridge\n', encoding='utf-8')
             image = root / 'artifacts/test/frame.png'
             image.parent.mkdir(parents=True)
             png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1cAAAAASUVORK5CYII=')
             image.write_bytes(png)
             server = StdioServerParameters(command=sys.executable,
-                args=['-m', 'ordax_dev_agent.mcp_server'],
+                args=['-m', 'ordax_studio.mcp_server'],
                 env={**os.environ, 'ORDAX_AGENT_STATE_DIR': directory,
                      'ORDAX_MEMORY_DB': str(root / 'memory.db')},
                 cwd=str(Path(__file__).resolve().parents[1]))
             async with stdio_client(server) as (read, write):
                 async with ClientSession(read, write) as session:
-                    await session.initialize()
+                    initialized = await session.initialize()
+                    self.assertEqual('ordax-studio', initialized.serverInfo.name)
                     names = [tool.name for tool in (await session.list_tools()).tools]
+                    self.assertIn('studio_status', names)
+                    self.assertIn('workspace_discover', names)
+                    self.assertIn('project_inventory', names)
+                    self.assertIn('project_read', names)
+                    self.assertIn('project_write', names)
+                    self.assertIn('project_patch', names)
+                    self.assertIn('git_status', names)
+                    self.assertIn('git_diff', names)
+                    for blender_tool in (
+                        'get_blender_status', 'start_blender', 'get_scene_info',
+                        'get_object_info', 'get_viewport_screenshot', 'add_primitive',
+                        'modify_object', 'delete_object', 'set_material', 'batch_edit',
+                        'save_blender', 'run_blender_project_script',
+                    ):
+                        self.assertIn(blender_tool, names)
                     self.assertIn('artifact_image', names)
                     self.assertIn('blender_live_view', names)
                     self.assertIn('blender_live_multiview', names)
                     self.assertIn('repository_catalog', names)
                     self.assertIn('session_context', names)
                     self.assertIn('project_health', names)
+                    self.assertIn('agent_briefing', names)
+                    self.assertIn('project_search', names)
+                    self.assertIn('project_read_batch', names)
                     self.assertIn('session_resume', names)
                     self.assertIn('session_finish', names)
                     self.assertIn('memory_remember', names)
@@ -48,11 +68,41 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                     response = await session.call_tool('projects_list', {})
                     self.assertFalse(response.isError)
                     self.assertIn('test', response.content[0].text)
+                    studio = await session.call_tool('studio_status', {'project': 'test'})
+                    self.assertFalse(studio.isError)
+                    self.assertIn('ORDAX Studio', studio.content[0].text)
+                    inventory = await session.call_tool('project_inventory', {'project': 'test'})
+                    self.assertFalse(inventory.isError)
+                    self.assertIn('README.md', inventory.content[0].text)
+                    opened = await session.call_tool('project_read', {'project': 'test', 'path': 'README.md'})
+                    opened_payload = json.loads(opened.content[0].text)
+                    self.assertTrue(opened_payload['ok'])
+                    written = await session.call_tool('project_write', {
+                        'project': 'test', 'path': 'README.md', 'content': 'ORDAX Studio MCP\n',
+                        'expected_sha256': opened_payload['data']['sha256'],
+                    })
+                    written_payload = json.loads(written.content[0].text)
+                    self.assertTrue(written_payload['ok'])
+                    patched = await session.call_tool('project_patch', {
+                        'project': 'test', 'path': 'README.md',
+                        'expected_sha256': written_payload['data']['sha256'],
+                        'replacements': [{'old': 'Studio', 'new': 'Studio Unified', 'expected_count': 1}],
+                    })
+                    self.assertTrue(json.loads(patched.content[0].text)['ok'])
                     catalog = await session.call_tool('repository_catalog', {})
                     self.assertFalse(catalog.isError)
                     health = await session.call_tool('project_health', {'project': 'test'})
                     self.assertFalse(health.isError)
                     self.assertIn('memory', health.content[0].text)
+                    briefing = await session.call_tool('agent_briefing', {'project': 'test'})
+                    self.assertFalse(briefing.isError)
+                    self.assertIn('continuity', briefing.content[0].text)
+                    search = await session.call_tool('project_search', {'project': 'test', 'query': 'Studio Unified'})
+                    self.assertFalse(search.isError)
+                    self.assertIn('README.md', search.content[0].text)
+                    batch = await session.call_tool('project_read_batch', {'project': 'test', 'paths': ['README.md']})
+                    self.assertFalse(batch.isError)
+                    self.assertIn('ORDAX Studio Unified MCP', batch.content[0].text)
                     preview_status = await session.call_tool('project_preview_status', {'project': 'test'})
                     self.assertFalse(preview_status.isError)
                     preview_logs = await session.call_tool('project_preview_logs', {'project': 'test'})

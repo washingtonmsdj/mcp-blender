@@ -49,6 +49,34 @@ class OrdaxProjectHealthTests(unittest.TestCase):
             self.assertEqual(1, result.data["git"]["changed_entries"])
             self.assertEqual("disabled", result.data["adapters"]["unity"]["state"])
 
+    def test_project_briefing_combines_continuity_workspace_and_capabilities(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project = root / "project"
+            project.mkdir()
+            (project / "README.md").write_text("# Demo\n", encoding="utf-8")
+            config = AgentConfig(
+                agent_name="test", poll_seconds=1, state_dir=root / "state",
+                agent_repo_path=root / "agent", hordax_path=root / "hordax",
+                bridge_path=root / "bridge",
+                projects={"demo": {"path": str(project), "apps": []}},
+                default_project="demo",
+            )
+            env = {"ORDAX_MEMORY_DB": str(root / "memory.db")}
+            with patch.dict(os.environ, env, clear=False):
+                registry = ActionRegistry(config)
+                registry.execute("memory.remember", {"project": "demo", "content": "Keep continuity"})
+                registry.execute("memory.task_add", {"project": "demo", "title": "Ship preview"})
+                registry.execute("memory.checkpoint", {"project": "demo", "summary": "Initial checkpoint"})
+                result = registry.execute("agent.project_briefing", {"project": "demo"})
+
+            self.assertTrue(result.ok, result.summary)
+            self.assertEqual("demo", result.data["project"]["slug"])
+            self.assertIn("README.md", result.data["workspace"]["context_files"])
+            self.assertEqual("Ship preview", result.data["continuity"]["open_tasks"][-1]["title"])
+            self.assertEqual("Initial checkpoint", result.data["continuity"]["latest_checkpoint"]["summary"])
+            self.assertIn("project", result.data["capabilities"]["action_groups"])
+
 
 if __name__ == "__main__":
     unittest.main()

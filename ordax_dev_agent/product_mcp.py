@@ -41,6 +41,31 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
         description="Read a granted project-relative text file.",
     ),
     ProductMcpToolSpec(
+        name="repository_catalog",
+        action="workspace.repository_catalog",
+        description="List canonical ORDAX Studio repositories without exposing local filesystem roots.",
+    ),
+    ProductMcpToolSpec(
+        name="project_health",
+        action="agent.project_health",
+        description="Read sanitized ORDAX Studio project health, Git, memory and adapter state.",
+    ),
+    ProductMcpToolSpec(
+        name="project_search",
+        action="project.search_text",
+        description="Search bounded approved text sources in a granted project.",
+    ),
+    ProductMcpToolSpec(
+        name="project_read_batch",
+        action="project.text_read_batch",
+        description="Read a bounded batch of granted project text files.",
+    ),
+    ProductMcpToolSpec(
+        name="project_preview_status",
+        action="project.preview_status",
+        description="Read sanitized ORDAX Studio preview/runtime state for a granted project.",
+    ),
+    ProductMcpToolSpec(
         name="git_status",
         action="git.status",
         description="Read Git working-tree status for a granted project.",

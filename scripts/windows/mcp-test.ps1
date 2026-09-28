@@ -1,5 +1,6 @@
 param(
-    [string]$ProjectPath = ""
+    [Alias("ProjectPath")]
+    [string]$Project = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,6 +13,6 @@ if (-not (Test-Path $python)) {
 }
 
 $scriptArgs = @()
-if ($ProjectPath) { $scriptArgs += $ProjectPath }
+if ($Project) { $scriptArgs += $Project }
 & $python $script @scriptArgs
 exit $LASTEXITCODE

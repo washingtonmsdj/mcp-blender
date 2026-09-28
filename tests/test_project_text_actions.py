@@ -242,6 +242,28 @@ class ProjectTextActionTests(unittest.TestCase):
         self.assertTrue(write.ok)
         self.assertEqual("VALUE = 2\n", source.read_text(encoding="utf-8"))
 
+    def test_search_and_batch_read_agent_context_files(self) -> None:
+        (self.project / "AGENTS.md").write_text("Always validate the preview.\n", encoding="utf-8")
+        (self.project / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
+        (self.project / ".cursor" / "rules").mkdir(parents=True)
+        (self.project / ".cursor" / "rules" / "quality.md").write_text(
+            "Preview changes before checkpoint.\n", encoding="utf-8"
+        )
+        search = self.registry.execute("project.search_text", {
+            "query": "preview", "max_results": 10,
+        })
+        self.assertTrue(search.ok, search.summary)
+        paths = {item["path"] for item in search.data["matches"]}
+        self.assertIn("AGENTS.md", paths)
+        self.assertIn(".cursor/rules/quality.md", paths)
+
+        batch = self.registry.execute("project.text_read_batch", {
+            "paths": ["AGENTS.md", "pyproject.toml"],
+        })
+        self.assertTrue(batch.ok, batch.summary)
+        self.assertEqual(2, batch.data["file_count"])
+        self.assertIn("Always validate", batch.data["files"][0]["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

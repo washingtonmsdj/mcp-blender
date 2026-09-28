@@ -17,8 +17,10 @@ class OrdaXDeviceAgentAliasTests(unittest.TestCase):
     def test_device_mcp_entrypoint_reuses_same_server(self):
         from ordax_dev_agent.mcp_server import mcp as legacy_mcp
         from ordax_device_agent.mcp_server import mcp as product_mcp
+        from ordax_studio.mcp_server import mcp as studio_mcp
 
         self.assertIs(product_mcp, legacy_mcp)
+        self.assertIs(studio_mcp, legacy_mcp)
 
 
 if __name__ == "__main__":

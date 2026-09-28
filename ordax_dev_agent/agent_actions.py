@@ -160,6 +160,74 @@ class AgentActions:
             },
         )
 
+    def agent_project_briefing(self, payload: dict[str, Any]) -> ActionResult:
+        """Return a compact, resumable project context bundle for agent clients."""
+        unsupported = set(payload) - {"project"}
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(sorted(unsupported)))
+        project = self._project(payload)
+        scoped = {"project": project.slug}
+        repository = self.git_repository_info(scoped)
+        health = self.agent_project_health(scoped)
+        preview = self.project_preview_status(scoped)
+        inventory = self.project_inventory({"project": project.slug, "max_depth": 2, "max_entries": 180})
+        store = self._memory_store_instance()
+        continuity = store.context(project.slug, project.root)
+        context_path = str(store.write_context(project.slug, project.root))
+
+        open_tasks = [item for item in continuity.get("tasks", []) if not item.get("done")]
+        checkpoints = continuity.get("checkpoints", [])
+        known_context_files = [
+            name for name in (
+                "AGENTS.md", "CLAUDE.md", "README.md", "pyproject.toml",
+                "package.json", "tsconfig.json", "vite.config.ts", "Cargo.toml", "go.mod",
+            ) if (project.root / name).is_file()
+        ]
+        if (project.root / ".cursor" / "rules").is_dir():
+            known_context_files.append(".cursor/rules")
+
+        attention: list[str] = []
+        repo_data = repository.data if repository.ok else {}
+        if repo_data.get("dirty"):
+            attention.append(f"Git has {repo_data.get('changed_entries') or 0} changed entrie(s)")
+        health_data = health.data if health.ok else {}
+        if health_data.get("state") not in {None, "ready"}:
+            attention.append(f"Project health: {health_data.get('state')}")
+        for name, item in (health_data.get("adapters") or {}).items():
+            if item.get("enabled") and item.get("state") not in {"ready", "configured"}:
+                attention.append(f"{name}: {item.get('state')}")
+
+        inventory_data = inventory.data if inventory.ok else {}
+        top_level = [
+            item for item in inventory_data.get("entries", [])
+            if int(item.get("depth") or 0) == 1
+        ][:80]
+        return ActionResult(True, "agent project briefing ready", {
+            "project": project.public(),
+            "repository": repo_data,
+            "health": health_data,
+            "preview": preview.data if preview.ok else {"error": preview.summary},
+            "continuity": {
+                "context_path": context_path,
+                "memories": continuity.get("memories", [])[-12:],
+                "open_tasks": open_tasks[-16:],
+                "latest_checkpoint": checkpoints[-1] if checkpoints else None,
+                "recent_checkpoints": checkpoints[-5:],
+            },
+            "workspace": {
+                "top_level": top_level,
+                "documents": inventory_data.get("documents", [])[:40],
+                "scripts": inventory_data.get("scripts", [])[:40],
+                "models": inventory_data.get("models", [])[:20],
+                "context_files": known_context_files,
+            },
+            "capabilities": {
+                "apps": list(project.apps),
+                "action_groups": sorted({name.split(".", 1)[0] for name in self.names}),
+            },
+            "attention": attention,
+        })
+
     def agent_resilience_status(self, payload: dict[str, Any]) -> ActionResult:
         unsupported = sorted(set(payload) - {"timeout_seconds"})
         if unsupported:

@@ -16,8 +16,13 @@ class _Executor:
         self.calls = []
         self._names = [
             "projects.list",
+            "workspace.repository_catalog",
             "project.inventory",
             "project.text_read",
+            "project.search_text",
+            "project.text_read_batch",
+            "project.preview_status",
+            "agent.project_health",
             "artifacts.list",
             "git.status",
             "git.diff",
@@ -73,8 +78,13 @@ class ProductMcpFacadeTests(unittest.TestCase):
             names,
             {
                 "projects_list",
+                "repository_catalog",
                 "project_inventory",
                 "project_text_read",
+                "project_health",
+                "project_search",
+                "project_read_batch",
+                "project_preview_status",
                 "artifacts_list",
                 "git_status",
                 "git_diff",
