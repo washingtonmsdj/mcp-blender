@@ -174,6 +174,45 @@ class ProjectTests(unittest.TestCase):
         self.assertTrue(registry.execute('example.observe', {}).ok)
         self.assertEqual(handler.call_args.args[0].slug, 'model')
 
+    def test_builtin_adapter_contracts_preserve_project_scope_and_global_blender_version(self):
+        config = replace(
+            self.config,
+            projects={"model": {"path": str(self.project), "apps": []}},
+        )
+        registry = ActionRegistry(config)
+        catalog = registry.adapter_contracts
+        entries = {item["name"]: item for item in catalog["adapters"]}
+
+        self.assertEqual(catalog["schema"], "ordax.device-adapter-contracts/1")
+        self.assertEqual(entries["blender"]["component_id"], "adapter-blender")
+        self.assertEqual(entries["unity"]["component_id"], "adapter-unity")
+        self.assertEqual(entries["blender"]["global_actions"], ["blender.version"])
+        self.assertFalse(registry.execute("blender.inspect", {}).ok)
+        self.assertFalse(registry.execute("unity.install_companion", {}).ok)
+
+        with patch.object(registry, "blender_version", return_value=ActionResult(True, "version")):
+            registry._actions["blender.version"] = registry.blender_version
+            self.assertTrue(registry.execute("blender.version", {}).ok)
+
+    def test_external_adapter_contract_is_entry_point_and_project_scoped(self):
+        entry = Mock()
+        entry.name = "example"
+        handler = Mock(return_value=ActionResult(True, "observed"))
+        entry.load.return_value = lambda config: {"observe": handler}
+        config = replace(
+            self.config,
+            adapters=("example",),
+            projects={"model": {"path": str(self.project), "apps": ["example"]}},
+        )
+        with patch("ordax_dev_agent.actions.entry_points", return_value=[entry]):
+            registry = ActionRegistry(config)
+
+        entries = {item["name"]: item for item in registry.adapter_contracts["adapters"]}
+        self.assertEqual(entries["example"]["source"], "entry-point")
+        self.assertEqual(entries["example"]["project_app"], "example")
+        self.assertEqual(entries["example"]["global_actions"], [])
+        self.assertTrue(registry.execute("example.observe", {}).ok)
+
     def test_latest_preview_never_crosses_projects(self):
         registry = ActionRegistry(self.config)
         output = registry._capture_output({})
