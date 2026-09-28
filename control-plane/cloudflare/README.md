@@ -79,11 +79,16 @@ Os grants aceitam apenas a superfície read-only já definida pelo Action Gatewa
 Resolver um grant **não autentica o usuário e não executa ação**. Não existe rota
 Product para enfileirar/executar uma ação nesta etapa.
 
-O token de operador **não é identidade do usuário Product**, não cria uma sessão
-Product e não pode ser reutilizado pelo futuro Product MCP para agir em nome de
-um usuário. A futura autenticação de Conta/Space deverá resolver um grant ativo
-e não expirado e então usar o mesmo `ProductActionGateway`, incluindo a
-persistência obrigatória de auditoria.
+O token de operador **não é identidade do usuário Product** e não pode ser reutilizado
+pelo Product MCP para agir em nome de um usuário.
+
+O Worker agora possui uma fundação de autenticação Product separada:
+`GET /v3/product/session` aceita somente JWT assinado e valida issuer, audience,
+expiração, not-before e assinatura via JWKS HTTPS. A autenticação é provider-neutral
+e só é habilitada quando `PRODUCT_AUTH_ISSUER`, `PRODUCT_AUTH_AUDIENCE` e
+`PRODUCT_AUTH_JWKS_URL` estão configurados. Sem essa configuração, a rota falha
+fechado. Nesta etapa ela apenas comprova o `subject_id`; não resolve grants nem
+enfileira ações.
 
 ## Segurança
 

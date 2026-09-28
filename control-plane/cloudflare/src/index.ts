@@ -1,6 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
+import {
+  authenticateProductRequest,
+  productAuthConfigured,
+  type ProductAuthEnv,
+} from "./product_auth";
 
-interface Env {
+interface Env extends ProductAuthEnv {
   DB: D1Database;
   ARTIFACTS: R2Bucket;
   DEVICE_SESSIONS: DurableObjectNamespace<DeviceSession>;
@@ -22,6 +27,7 @@ const CONTROL_PLANE_CAPABILITIES = [
   "terminal_report_recovery_v1",
   "product_grant_store_v1",
   "product_grant_resolution_v1",
+  "product_subject_auth_jwks_v1",
 ];
 
 const ACTION_PREFIXES = [
@@ -645,6 +651,22 @@ async function revokeProductGrant(
     ok: true,
     revoked: true,
     grant: publicProductGrant({ ...existing, revoked_at: revokedAt }),
+  });
+}
+
+async function productSession(request: Request, env: Env): Promise<Response> {
+  const identity = await authenticateProductRequest(request, env);
+  if (!identity.ok) {
+    return json({ ok: false, error: identity.error }, identity.status);
+  }
+  return json({
+    ok: true,
+    session: {
+      subject_id: identity.subjectId,
+      issuer: identity.issuer,
+      audience: identity.audience,
+      expires_at_unix: identity.expiresAt,
+    },
   });
 }
 
@@ -1555,6 +1577,7 @@ export default {
         ok: true,
         service: "ordax-control-plane-v3",
         capabilities: CONTROL_PLANE_CAPABILITIES,
+        product_auth_configured: productAuthConfigured(env),
       });
     }
 
@@ -1588,6 +1611,9 @@ export default {
     }
     if (request.method === "DELETE" && parts[0] === "v3" && parts[1] === "devices" && parts.length === 3) {
       return deleteDevice(request, env, parts[2]);
+    }
+    if (request.method === "GET" && url.pathname === "/v3/product/session") {
+      return productSession(request, env);
     }
     if (request.method === "POST" && url.pathname === "/v3/product-grants") {
       return createProductGrant(request, env);
