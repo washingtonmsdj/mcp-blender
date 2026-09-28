@@ -90,10 +90,22 @@ operator credential administers/diagnoses grants but never becomes the
 authenticated Product subject, and there is no Product action execution
 endpoint.
 
+## Product MCP facade
+
+`ordax_dev_agent.product_mcp.ProductMcpFacade` now defines the first read-only
+Product MCP tool surface without creating a public server. It maps MCP-friendly
+tool names to this gateway and still requires a verified `ProductRequestContext`
+plus a resolved `ProductGrant` on every call.
+
+The facade intentionally performs no authentication, grant lookup, network I/O
+or credential handling. Mutation tools are not registered. This keeps Product
+MCP and OrdaX Web on the same authorization/audit path instead of duplicating
+allow-lists.
+
 ## Next integration step
 
-Do not expose this gateway over HTTP/MCP until the Control Plane can authenticate
-the real Account/Space subject, resolve a live non-revoked/non-expired grant for
-that subject/device/project, and persist the gateway's mandatory audit events.
-The future Product MCP and Web surfaces must call this same gateway instead of
-re-implementing its allow-list.
+Do not expose this gateway over HTTP/public MCP until the Control Plane can
+authenticate the real Account/Space subject, resolve a live
+non-revoked/non-expired grant for that subject/device/project, and persist the
+gateway's mandatory audit events. The future authenticated MCP host should wrap
+`ProductMcpFacade` rather than re-implementing its allow-list.
