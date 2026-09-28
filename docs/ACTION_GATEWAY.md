@@ -74,9 +74,20 @@ Audit events contain identifiers, action/project, decision, phase and only the
 **names** of payload fields. They do not copy text-file contents, Git diffs,
 artifact bytes or other payload values into the audit record.
 
+## Control Plane persistence boundary
+
+Cloudflare v3 now has the administrative persistence foundation for this
+contract: D1 stores Product grants and the audit schema, and the Worker can
+create/list/revoke only the same explicit read-only action set.
+
+This is deliberately **not** Product authentication or Product execution. The
+operator credential administers grants but never becomes the authenticated
+Product subject, and there is no Product action execution endpoint.
+
 ## Next integration step
 
-Do not expose this gateway over HTTP/MCP until the Control Plane can provide a
-verified identity plus durable user/Space/Project/device grants and audit
-metadata. The future network surfaces should call this same gateway rather than
-re-implement its allow-list.
+Do not expose this gateway over HTTP/MCP until the Control Plane can authenticate
+the real Account/Space subject, resolve a live non-revoked/non-expired grant for
+that subject/device/project, and persist the gateway's mandatory audit events.
+The future Product MCP and Web surfaces must call this same gateway instead of
+re-implementing its allow-list.
