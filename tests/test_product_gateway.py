@@ -22,6 +22,7 @@ class FakeExecutor:
             "project.inventory",
             "project.text_read",
             "project.text_write",
+            "artifacts.list",
             "git.status",
             "git.diff",
             "git.sync",
@@ -75,6 +76,24 @@ class FakeExecutor:
                     "stderr": "",
                     "returncode": 0,
                     "command": ["git", "-C", "C:/Users/example/secret/project", "status"],
+                },
+            )
+        if action == "artifacts.list":
+            return ActionResult(
+                True,
+                "artifacts",
+                {
+                    "project": "scene",
+                    "items": [
+                        {
+                            "source": "managed",
+                            "name": "preview.png",
+                            "relative_path": "preview.png",
+                            "size_bytes": 42,
+                        }
+                    ],
+                    "truncated": False,
+                    "max_items": 100,
                 },
             )
         if action == "artifact.preview":
@@ -142,6 +161,7 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertEqual(names, set(PRODUCT_READ_ONLY_ACTIONS))
         self.assertIn("project.text_read", names)
         self.assertIn("git.diff", names)
+        self.assertIn("artifacts.list", names)
         self.assertNotIn("project.text_write", names)
         self.assertNotIn("git.sync", names)
         self.assertNotIn("artifact.read_chunk", names)
@@ -349,6 +369,22 @@ class ProductGatewayTests(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertNotIn("command", result.data)
+
+    def test_artifacts_list_is_project_scoped_read_only_metadata(self) -> None:
+        result = self.gateway.execute(
+            "artifacts.list",
+            {"project": "scene", "max_items": 25},
+            context=self.context,
+            grant=self.grant("artifacts.list"),
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.data["items"][0]["relative_path"], "preview.png")
+        self.assertNotIn("path", result.data["items"][0])
+        self.assertEqual(
+            self.executor.calls[-1],
+            ("artifacts.list", {"project": "scene", "max_items": 25}),
+        )
 
     def test_artifact_preview_redacts_local_absolute_path(self) -> None:
         result = self.gateway.execute(
