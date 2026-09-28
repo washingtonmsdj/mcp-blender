@@ -228,6 +228,20 @@ class ProjectTextActionTests(unittest.TestCase):
             ).ok
         )
 
+    def test_ordax_package_source_is_readable_and_sha_guarded(self) -> None:
+        source = self.project / "ordax_studio" / "demo.py"
+        source.parent.mkdir()
+        source.write_text("VALUE = 1\n", encoding="utf-8")
+        read = self.registry.execute("project.text_read", {"path": "ordax_studio/demo.py"})
+        self.assertTrue(read.ok)
+        write = self.registry.execute("project.text_write", {
+            "path": "ordax_studio/demo.py",
+            "expected_sha256": read.data["sha256"],
+            "content": "VALUE = 2\n",
+        })
+        self.assertTrue(write.ok)
+        self.assertEqual("VALUE = 2\n", source.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

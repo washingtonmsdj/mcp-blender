@@ -24,7 +24,11 @@ _READABLE_SUFFIXES = {
     ".unity", ".prefab", ".meta",
 }
 _WRITABLE_SUFFIXES = _READABLE_SUFFIXES - {".unity", ".prefab", ".meta"}
-_ALLOWED_TOP_LEVEL = {"Assets", "Packages", "ProjectSettings", "automation", "docs", "blender", "src"}
+_ALLOWED_TOP_LEVEL = {
+    "Assets", "Packages", "ProjectSettings", "automation", "docs", "blender", "src",
+    "ordax_core", "ordax_studio", "ordax_dev_agent", "ordax_device_agent",
+    "mcp_blender_unity", "tests", "scripts",
+}
 _ALLOWED_ROOT_FILES = {"README.md", "package.json", "index.html", "pnpm-lock.yaml"}
 _BLOCKED_PARTS = {"Library", "Temp", "Logs", "Builds", "obj", ".git"}
 _MAX_READ_BYTES = 2 * 1024 * 1024
