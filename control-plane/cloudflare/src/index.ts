@@ -673,9 +673,9 @@ async function existingArtifactGrant(
   expected?: ArtifactDescriptor,
 ): Promise<Response | null> {
   const row = await env.DB.prepare(
-    \`SELECT job_id, device_id, storage_path, file_name, kind, content_type,
+    `SELECT job_id, device_id, storage_path, file_name, kind, content_type,
             sha256, size_bytes, metadata_json
-     FROM ordax_artifacts WHERE id = ?1\`,
+     FROM ordax_artifacts WHERE id = ?1`,
   ).bind(artifactId).first<{
     job_id: string;
     device_id: string;
@@ -710,9 +710,9 @@ async function existingArtifactGrant(
   const readTokenSha256 = await sha256Text(readToken);
   const readExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   await env.DB.prepare(
-    \`UPDATE ordax_artifacts
+    `UPDATE ordax_artifacts
      SET read_token_sha256 = ?1, read_expires_at = ?2
-     WHERE id = ?3 AND job_id = ?4 AND device_id = ?5\`,
+     WHERE id = ?3 AND job_id = ?4 AND device_id = ?5`,
   ).bind(
     readTokenSha256, readExpiresAt, artifactId, jobId, deviceId,
   ).run();
@@ -806,10 +806,10 @@ async function uploadArtifact(request: Request, env: Env, parts: string[]): Prom
   const createdAt = nowIso();
   const readExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   await env.DB.prepare(
-    \`INSERT INTO ordax_artifacts
+    `INSERT INTO ordax_artifacts
       (id, job_id, device_id, storage_path, file_name, kind, content_type, sha256,
        size_bytes, metadata_json, read_token_sha256, read_expires_at, created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)\`,
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
   ).bind(
     descriptor.artifactId, descriptor.jobId, descriptor.deviceId,
     descriptor.storagePath, descriptor.fileName, descriptor.kind,
@@ -835,10 +835,10 @@ async function loadMultipartUpload(
   deviceId: string,
 ): Promise<MultipartUploadRow | null> {
   return env.DB.prepare(
-    \`SELECT artifact_id, job_id, device_id, upload_id, storage_path, file_name,
+    `SELECT artifact_id, job_id, device_id, upload_id, storage_path, file_name,
             kind, content_type, sha256, size_bytes, metadata_json, created_at
      FROM ordax_artifact_uploads
-     WHERE artifact_id = ?1 AND job_id = ?2 AND device_id = ?3\`,
+     WHERE artifact_id = ?1 AND job_id = ?2 AND device_id = ?3`,
   ).bind(artifactId, jobId, deviceId).first<MultipartUploadRow>();
 }
 
@@ -897,10 +897,10 @@ async function createMultipartArtifact(
   );
   try {
     await env.DB.prepare(
-      \`INSERT INTO ordax_artifact_uploads
+      `INSERT INTO ordax_artifact_uploads
         (artifact_id, job_id, device_id, upload_id, storage_path, file_name, kind,
          content_type, sha256, size_bytes, metadata_json, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)\`,
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
     ).bind(
       descriptor.artifactId, descriptor.jobId, descriptor.deviceId,
       multipart.uploadId, descriptor.storagePath, descriptor.fileName,
@@ -1064,11 +1064,11 @@ async function completeMultipartArtifact(
   const createdAt = nowIso();
   const readExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   await env.DB.prepare(
-    \`INSERT INTO ordax_artifacts
+    `INSERT INTO ordax_artifacts
       (id, job_id, device_id, storage_path, file_name, kind, content_type, sha256,
        size_bytes, metadata_json, read_token_sha256, read_expires_at, created_at)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
-     ON CONFLICT(id) DO NOTHING\`,
+     ON CONFLICT(id) DO NOTHING`,
   ).bind(
     session.artifact_id, session.job_id, session.device_id, session.storage_path,
     session.file_name, session.kind, session.content_type, session.sha256,
@@ -1077,8 +1077,8 @@ async function completeMultipartArtifact(
   ).run();
 
   const persisted = await env.DB.prepare(
-    \`SELECT job_id, device_id, storage_path, sha256, size_bytes
-     FROM ordax_artifacts WHERE id = ?1\`,
+    `SELECT job_id, device_id, storage_path, sha256, size_bytes
+     FROM ordax_artifacts WHERE id = ?1`,
   ).bind(access.artifactId).first<{
     job_id: string;
     device_id: string;
