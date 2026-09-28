@@ -162,3 +162,37 @@ surface:
 The Product JWT is supplied explicitly on every call and is not stored on the
 client object. Polling is bounded and synchronous; there is no background worker
 or hidden retry loop.
+
+
+## Product MCP stdio host
+
+`ordax-product-mcp` is the first real MCP host for the Product path. It is a
+stdio MCP process intended to be launched by an MCP-capable client such as a
+desktop assistant or development environment.
+
+Configuration:
+
+- `ORDAX_PRODUCT_CONTROL_PLANE_URL` — HTTPS Cloudflare v3 endpoint;
+- `ORDAX_PRODUCT_ACCESS_TOKEN` — current Product JWT issued by OrdaX/Supabase.
+
+The JWT is read from the host environment on each tool invocation. It is never
+declared as an MCP tool argument and therefore is not exposed to the model as
+normal tool input.
+
+The host exposes only explicit read-only tools:
+
+- `product_session`
+- `product_targets`
+- `projects_list`
+- `project_inventory`
+- `project_text_read`
+- `git_status`
+- `git_diff`
+- `artifacts_list`
+- `artifact_preview`
+
+There is no generic `action_execute`, shell tool, Git mutation or Blender/Unity
+execution tool on this Product host. Every remote operation goes through
+`ProductRemoteClient` and therefore through Product JWT authentication, target
+discovery, live grant resolution, the dedicated Product job capability, local
+`ProductActionGateway` enforcement and mandatory audit persistence.
