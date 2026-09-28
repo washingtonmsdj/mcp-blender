@@ -86,15 +86,17 @@ class StudioApp(tk.Tk):
 
         self.tabs = ttk.Notebook(main)
         self.tabs.pack(fill="both", expand=True)
+        self.workspace_tab = ttk.Frame(self.tabs)
         self.context_tab = ttk.Frame(self.tabs)
         self.memory_tab = ttk.Frame(self.tabs)
         self.tasks_tab = ttk.Frame(self.tabs)
         self.capabilities_tab = ttk.Frame(self.tabs)
         self.terminal_tab = ttk.Frame(self.tabs)
-        for frame, title in ((self.context_tab, "Contexto"), (self.memory_tab, "Memória"),
-                             (self.tasks_tab, "Tarefas"), (self.capabilities_tab, "Capabilities"),
-                             (self.terminal_tab, "Terminal")):
+        for frame, title in ((self.workspace_tab, "Workspace"), (self.context_tab, "Contexto"),
+                             (self.memory_tab, "Memória"), (self.tasks_tab, "Tarefas"),
+                             (self.capabilities_tab, "Capabilities"), (self.terminal_tab, "Terminal")):
             self.tabs.add(frame, text=title)
+        self._build_workspace_tab()
         self._build_context_tab()
         self._build_memory_tab()
         self._build_tasks_tab()
@@ -107,6 +109,37 @@ class StudioApp(tk.Tk):
                       font=("Consolas", 10), padx=12, pady=12)
         box.pack(fill="both", expand=True)
         return box
+
+    def _build_workspace_tab(self) -> None:
+        wrap = tk.PanedWindow(self.workspace_tab, orient="horizontal", bg="#243249", sashwidth=4, bd=0)
+        wrap.pack(fill="both", expand=True, padx=12, pady=12)
+        left = tk.Frame(wrap, bg="#0C1625")
+        right = tk.Frame(wrap, bg="#080F19")
+        wrap.add(left, minsize=320)
+        wrap.add(right, minsize=500)
+
+        bar = tk.Frame(left, bg="#0C1625")
+        bar.pack(fill="x", padx=8, pady=8)
+        tk.Label(bar, text="ARQUIVOS", bg="#0C1625", fg="#8E9DB4", font=("Segoe UI Semibold", 9)).pack(side="left")
+        ttk.Button(bar, text="Atualizar", command=self.refresh_workspace).pack(side="right")
+        self.workspace_tree = ttk.Treeview(left, columns=("kind", "path", "size"), show="headings")
+        self.workspace_tree.heading("kind", text="Tipo")
+        self.workspace_tree.heading("path", text="Caminho")
+        self.workspace_tree.heading("size", text="Tamanho")
+        self.workspace_tree.column("kind", width=70, stretch=False)
+        self.workspace_tree.column("path", width=330)
+        self.workspace_tree.column("size", width=90, stretch=False)
+        self.workspace_tree.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.workspace_tree.bind("<Double-1>", self.open_workspace_file)
+
+        editor_bar = tk.Frame(right, bg="#080F19")
+        editor_bar.pack(fill="x", padx=8, pady=8)
+        self.workspace_file_label = tk.Label(editor_bar, text="Nenhum arquivo aberto", bg="#080F19", fg="#E2EBF7", font=("Segoe UI", 10))
+        self.workspace_file_label.pack(side="left")
+        ttk.Button(editor_bar, text="Salvar", command=self.save_workspace_file).pack(side="right")
+        self.workspace_editor = self._text_box(right)
+        self.workspace_path: str | None = None
+        self.workspace_sha256: str | None = None
 
     def _build_context_tab(self) -> None:
         wrap = tk.Frame(self.context_tab, bg="#080F19")
@@ -151,6 +184,14 @@ class StudioApp(tk.Tk):
     def _build_capabilities_tab(self) -> None:
         wrap = tk.Frame(self.capabilities_tab, bg="#080F19")
         wrap.pack(fill="both", expand=True, padx=18, pady=18)
+        bar = tk.Frame(wrap, bg="#080F19")
+        bar.pack(fill="x", pady=(0, 10))
+        for label, action in (("Git status", self.show_git_status),
+                              ("Blender status", self.show_blender_status),
+                              ("Abrir Blender", self.start_blender),
+                              ("Unity status", self.show_unity_status),
+                              ("Abrir Unity", self.start_unity)):
+            ttk.Button(bar, text=label, command=action).pack(side="left", padx=(0, 6))
         self.capabilities_box = self._text_box(wrap)
 
     def _build_terminal_tab(self) -> None:
@@ -190,6 +231,7 @@ class StudioApp(tk.Tk):
             self.project_list.activate(selected_index)
             self.current_project = self.project_slugs[selected_index]
         self.refresh_all()
+        self.refresh_workspace()
 
     def _project_selected(self, _event=None) -> None:
         selection = self.project_list.curselection()
@@ -199,6 +241,7 @@ class StudioApp(tk.Tk):
         project = self.agent.projects[self.current_project]
         self.store.set_active_project(project.slug, project.root)
         self.refresh_all()
+        self.refresh_workspace()
 
     def refresh_all(self) -> None:
         slug = self.current_project
@@ -228,6 +271,62 @@ class StudioApp(tk.Tk):
         }
         self.capabilities_box.delete("1.0", "end")
         self.capabilities_box.insert("1.0", json.dumps(capability_data, ensure_ascii=False, indent=2, default=str))
+
+    def refresh_workspace(self) -> None:
+        for item in self.workspace_tree.get_children():
+            self.workspace_tree.delete(item)
+        self.workspace_path = None
+        self.workspace_sha256 = None
+        self.workspace_file_label.config(text="Nenhum arquivo aberto")
+        self.workspace_editor.delete("1.0", "end")
+        if not self.current_project:
+            return
+        result = self.agent.execute("project.inventory", {
+            "project": self.current_project,
+            "max_depth": 4,
+            "max_entries": 600,
+        })
+        if not result.ok:
+            self.workspace_editor.insert("1.0", result.summary)
+            return
+        for index, entry in enumerate(result.data.get("entries", [])):
+            size = entry.get("size_bytes")
+            size_text = "" if size is None else (f"{size / 1024:.1f} KB" if size < 1024 * 1024 else f"{size / 1024 / 1024:.1f} MB")
+            self.workspace_tree.insert("", "end", iid=f"e{index}", values=(entry.get("kind", ""), entry.get("path", ""), size_text))
+
+    def open_workspace_file(self, _event=None) -> None:
+        selection = self.workspace_tree.selection()
+        if not selection or not self.current_project:
+            return
+        values = self.workspace_tree.item(selection[0], "values")
+        if not values or values[0] != "file":
+            return
+        path = str(values[1])
+        result = self.agent.execute("project.text_read", {"project": self.current_project, "path": path})
+        if not result.ok:
+            messagebox.showerror(APP_NAME, result.summary)
+            return
+        self.workspace_path = path
+        self.workspace_sha256 = str(result.data.get("sha256") or "")
+        self.workspace_file_label.config(text=path)
+        self.workspace_editor.delete("1.0", "end")
+        self.workspace_editor.insert("1.0", result.data.get("content", ""))
+
+    def save_workspace_file(self) -> None:
+        if not self.current_project or not self.workspace_path or not self.workspace_sha256:
+            return
+        content = self.workspace_editor.get("1.0", "end-1c")
+        result = self.agent.execute("project.text_write", {
+            "project": self.current_project,
+            "path": self.workspace_path,
+            "content": content,
+            "expected_sha256": self.workspace_sha256,
+        })
+        if not result.ok:
+            messagebox.showerror(APP_NAME, result.summary)
+            return
+        self.workspace_sha256 = str(result.data.get("sha256") or "")
+        messagebox.showinfo(APP_NAME, f"Arquivo salvo: {self.workspace_path}")
 
     def resume_session(self) -> None:
         if not self.current_project:
@@ -279,6 +378,46 @@ class StudioApp(tk.Tk):
         root = self.agent.projects[self.current_project].root
         if root.is_dir():
             os.startfile(root)
+
+    def _run_capability(self, action: str, *, required_app: str | None = None) -> None:
+        if not self.current_project:
+            return
+        project_slug = self.current_project
+        project = self.agent.projects[project_slug]
+        if required_app and required_app not in project.apps:
+            messagebox.showinfo(APP_NAME, f"{required_app.title()} não está configurado para {project.slug}.")
+            return
+        self.capabilities_box.delete("1.0", "end")
+        self.capabilities_box.insert("1.0", f"Executando {action}...\n")
+
+        def worker() -> None:
+            try:
+                result = self.agent.execute(action, {"project": project_slug})
+                payload = {"action": action, "ok": result.ok, "summary": result.summary, "data": result.data}
+            except Exception as error:
+                payload = {"action": action, "ok": False, "error": f"{type(error).__name__}: {error}"}
+            text = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+            self.after(0, lambda: self._show_capability_result(text))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_capability_result(self, text: str) -> None:
+        self.capabilities_box.delete("1.0", "end")
+        self.capabilities_box.insert("1.0", text)
+
+    def show_git_status(self) -> None:
+        self._run_capability("git.status")
+
+    def show_blender_status(self) -> None:
+        self._run_capability("blender.live_status", required_app="blender")
+
+    def start_blender(self) -> None:
+        self._run_capability("blender.live_start", required_app="blender")
+
+    def show_unity_status(self) -> None:
+        self._run_capability("unity.editor_status", required_app="unity")
+
+    def start_unity(self) -> None:
+        self._run_capability("unity.editor_start", required_app="unity")
 
     def run_command(self) -> None:
         command = self.command_entry.get().strip()

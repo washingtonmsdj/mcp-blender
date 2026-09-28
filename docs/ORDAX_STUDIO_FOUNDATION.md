@@ -136,3 +136,17 @@ ordax-studio-desktop --smoke
 ```
 
 O aplicativo legado `ORDAX Local AI` permanece preservado como fallback durante esta fase.
+
+## Workspace e editor seguro
+
+A shell desktop inclui uma aba **Workspace** alimentada pelas actions existentes `project.inventory`, `project.text_read` e `project.text_write`.
+
+O explorador ignora caches, builds e controle do repositorio. O editor aceita apenas caminhos/extensoes aprovados pelo gateway do projeto e usa o SHA-256 retornado na leitura como precondicao de salvamento; se outro processo alterar o arquivo antes do save, o Studio recusa a sobrescrita stale em vez de destruir a mudanca externa.
+
+Essa camada e deliberadamente construida sobre o ActionRegistry, e nao sobre acesso irrestrito ao filesystem, para que a mesma politica possa ser reutilizada no futuro pelo app desktop, MCP e Ordax OS.
+
+## Capabilities no Studio
+
+A aba **Capabilities** deixa de ser apenas diagnostico e passa a usar o mesmo ActionRegistry do MCP. A primeira versao oferece Git status e controles de status/inicializacao para Blender e Unity, respeitando as capabilities declaradas por projeto.
+
+Essas operacoes rodam fora da thread da interface para que inicializacao ou recuperacao de uma engine nao congele o Studio. Projetos sem a capability solicitada sao recusados pela propria UI antes da execucao.
