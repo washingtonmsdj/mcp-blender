@@ -18,6 +18,7 @@ device, expiry, action or project scope does not match.
 - `projects.list`
 - `project.inventory`
 - `project.text_read`
+- `artifacts.list`
 - `git.status`
 - `git.diff`
 - `artifact.preview`
@@ -42,8 +43,9 @@ action returns them:
 - artifact absolute paths are removed from previews;
 - project discovery omits private adapter configuration.
 
-The project slug, relative project paths, bounded text content, bounded diffs
-and explicitly granted artifact preview bytes remain available.
+The project slug, relative project paths, bounded text content, bounded diffs,
+bounded artifact metadata and explicitly granted artifact preview bytes remain
+available.
 
 ## Execution contract
 
@@ -85,10 +87,10 @@ subject, optional Space/device scope, action, project, expiry and revocation.
 Its current HTTP surface is operator-only diagnostic plumbing; the resolver is
 intended to be reused after real Product authentication is added.
 
-This is deliberately **not** Product authentication or Product execution. The
-operator credential administers/diagnoses grants but never becomes the
-authenticated Product subject, and there is no Product action execution
-endpoint.
+The operator credential remains administrative only and never becomes the
+authenticated Product subject. Product execution now uses the separate JWT/JWKS
+identity path, live grant resolution, dedicated read-only jobs and mandatory
+gateway audit persistence.
 
 ## Product MCP facade
 
@@ -102,17 +104,13 @@ or credential handling. Mutation tools are not registered. This keeps Product
 MCP and OrdaX Web on the same authorization/audit path instead of duplicating
 allow-lists.
 
-## Next integration step
+## Current integration boundary
 
-The Control Plane now has a separate JWT/JWKS Product identity probe at
-`/v3/product/session`. It proves the Product subject only; it does not resolve a
-grant or execute work.
-
-Do not expose Product action execution over HTTP/public MCP until that authenticated
-subject is bound to a live non-revoked/non-expired grant for the requested
-subject/device/project and the gateway's mandatory audit events are persisted.
-The future authenticated MCP host should wrap `ProductMcpFacade` rather than
-re-implementing its allow-list.
+`/v3/product/session` remains an identity probe only. Actual read-only execution
+uses `/v3/product/actions`, live grant resolution and the dedicated
+`ordax.product.read.invoke` capability. Any future public MCP host must wrap this
+same path rather than re-implementing authentication, allow-lists, grants or
+audit. Mutations remain outside the Product surface.
 
 
 ## Authenticated read-only remote flow
