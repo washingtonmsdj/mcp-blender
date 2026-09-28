@@ -6,6 +6,11 @@ import json
 import unittest
 from pathlib import Path
 
+from ordax_dev_agent.action_contracts import (
+    DEVICE_ACTION_PREFIXES,
+    dispatch_device_capability,
+    is_device_owned_capability,
+)
 from ordax_dev_agent.models import ActionResult
 from ordax_dev_agent.remote_protocol import (
     canonical_result,
@@ -55,6 +60,52 @@ class ProviderNeutralRemoteProtocolTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(RuntimeError, "digest mismatch"):
             decode_job_payload(row)
+
+    def test_device_action_contract_keeps_existing_owned_prefixes(self) -> None:
+        self.assertIn("blender.", DEVICE_ACTION_PREFIXES)
+        self.assertIn("unity.", DEVICE_ACTION_PREFIXES)
+        self.assertIn("git.", DEVICE_ACTION_PREFIXES)
+        self.assertTrue(is_device_owned_capability("artifact.preview"))
+        self.assertFalse(is_device_owned_capability("shell.exec"))
+        self.assertFalse(is_device_owned_capability("workspace.bind_project"))
+
+    def test_contract_dispatches_direct_capability_without_rewriting_payload(self) -> None:
+        payload = {"project": "scene", "frames": 2}
+        dispatched = dispatch_device_capability("observation.capture", payload)
+
+        self.assertEqual(dispatched.action, "observation.capture")
+        self.assertIs(dispatched.payload, payload)
+        self.assertEqual(dispatched.project, "scene")
+
+    def test_adapter_invoke_preserves_existing_blender_scope(self) -> None:
+        dispatched = dispatch_device_capability(
+            "ordax.dev.adapter.invoke",
+            {
+                "adapter": "blender",
+                "action": "blender.live_inspect",
+                "payload": {"limit": 3},
+                "project": "scene",
+            },
+        )
+
+        self.assertEqual(dispatched.action, "blender.live_inspect")
+        self.assertEqual(dispatched.payload, {"limit": 3})
+        self.assertEqual(dispatched.project, "scene")
+
+    def test_adapter_invoke_does_not_expand_permissions(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "not an allowed capability"):
+            dispatch_device_capability(
+                "ordax.dev.adapter.invoke",
+                {
+                    "adapter": "unity",
+                    "action": "unity.scene_summary",
+                    "payload": {},
+                    "project": "scene",
+                },
+            )
+
+        with self.assertRaisesRegex(RuntimeError, "not owned by Device Agent"):
+            dispatch_device_capability("shell.exec", {"command": "whoami"})
 
 
 if __name__ == "__main__":
