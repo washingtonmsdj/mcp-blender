@@ -41,6 +41,57 @@ class ArtifactActions:
             return ActionResult(False, f"artifact not found: {path}")
         return path
 
+    def artifacts_list(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        max_items = payload.get("max_items", 100)
+        if type(max_items) is not int or not 1 <= max_items <= 500:
+            return ActionResult(False, "max_items must be between 1 and 500")
+
+        roots = (
+            ("managed", (self.config.state_dir / "artifacts" / project.slug).resolve()),
+            ("project", (project.root / "Artifacts").resolve()),
+        )
+        items: list[dict[str, Any]] = []
+        truncated = False
+
+        for source, root in roots:
+            if not root.is_dir():
+                continue
+            for candidate in sorted(root.rglob("*")):
+                if not candidate.is_file():
+                    continue
+                try:
+                    resolved = candidate.resolve()
+                    relative = resolved.relative_to(root)
+                except (OSError, ValueError):
+                    continue
+                if len(items) >= max_items:
+                    truncated = True
+                    break
+                stat = resolved.stat()
+                items.append(
+                    {
+                        "source": source,
+                        "name": resolved.name,
+                        "relative_path": relative.as_posix(),
+                        "size_bytes": stat.st_size,
+                        "modified_at_unix": int(stat.st_mtime),
+                    }
+                )
+            if truncated:
+                break
+
+        return ActionResult(
+            True,
+            "artifact catalog ready",
+            {
+                "project": project.slug,
+                "items": items,
+                "truncated": truncated,
+                "max_items": max_items,
+            },
+        )
+
     def artifact_read_chunk(self, payload: dict[str, Any]) -> ActionResult:
         """Read a bounded part of a project artifact for resumable remote delivery."""
         path = self._artifact_path(payload)
