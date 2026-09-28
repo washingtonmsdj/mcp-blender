@@ -14,6 +14,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 const HEX64_RE = /^[0-9a-f]{64}$/i;
 const GITHUB_REPOSITORY = "washingtonmsdj/mcp-blender";
 const GITHUB_REPOSITORY_ID = 1141624338;
+const DIRECT_ARTIFACT_MAX_BYTES = 90 * 1024 * 1024;
+const MULTIPART_ARTIFACT_MAX_BYTES = DIRECT_ARTIFACT_MAX_BYTES * 10_000;
+const MULTIPART_MAX_PARTS = 10_000;
 
 const ACTION_PREFIXES = [
   "blender.", "unity.", "git.", "project.", "projects.", "artifact.",
@@ -329,9 +332,23 @@ async function deleteDevice(request: Request, env: Env, deviceId: string): Promi
     if (row.storage_path) await env.ARTIFACTS.delete(row.storage_path);
   }
 
+  const uploadRows = await env.DB.prepare(
+    "SELECT storage_path, upload_id FROM ordax_artifact_uploads WHERE device_id = ?1",
+  ).bind(deviceId).all<{ storage_path: string; upload_id: string }>();
+  for (const row of uploadRows.results ?? []) {
+    try {
+      await env.ARTIFACTS.resumeMultipartUpload(row.storage_path, row.upload_id).abort();
+    } catch {
+      // The R2 lifecycle may already have removed an abandoned upload.
+    }
+  }
+
   const statements = [
     env.DB.prepare(
       "DELETE FROM ordax_job_events WHERE job_id IN (SELECT id FROM ordax_jobs WHERE device_id = ?1)",
+    ).bind(deviceId),
+    env.DB.prepare(
+      "DELETE FROM ordax_artifact_uploads WHERE device_id = ?1",
     ).bind(deviceId),
     env.DB.prepare(
       "DELETE FROM ordax_artifacts WHERE device_id = ?1",
@@ -344,13 +361,14 @@ async function deleteDevice(request: Request, env: Env, deviceId: string): Promi
     ).bind(deviceId),
   ];
   const results = await env.DB.batch(statements);
-  const deleted = results[3];
+  const deleted = results[results.length - 1];
 
   return json({
     ok: true,
     device_id: deviceId,
     deleted: (deleted?.meta.changes ?? 0) === 1,
     artifacts_deleted: artifactRows.results?.length ?? 0,
+    multipart_uploads_aborted: uploadRows.results?.length ?? 0,
   });
 }
 
@@ -567,46 +585,200 @@ async function recoverTerminalReport(request: Request, env: Env): Promise<Respon
   return json({ ok: true, status, recovered: true, replayed: false });
 }
 
-async function uploadArtifact(request: Request, env: Env, parts: string[]): Promise<Response> {
+type ArtifactDescriptor = {
+  artifactId: string;
+  jobId: string;
+  deviceId: string;
+  storagePath: string;
+  fileName: string;
+  kind: string;
+  contentType: string;
+  sha256: string;
+  sizeBytes: number;
+  metadataRaw: string;
+};
+
+type MultipartUploadRow = {
+  artifact_id: string;
+  job_id: string;
+  device_id: string;
+  upload_id: string;
+  storage_path: string;
+  file_name: string;
+  kind: string;
+  content_type: string;
+  sha256: string;
+  size_bytes: number;
+  metadata_json: string;
+  created_at: string;
+};
+
+function parseArtifactDescriptor(
+  request: Request,
+  deviceId: string,
+  jobId: string,
+  artifactId: string,
+  maxBytes: number,
+): ArtifactDescriptor | null {
+  const fileName = (request.headers.get("X-Ordax-Artifact-Name") ?? "artifact.bin")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 180) || "artifact.bin";
+  const kind = (request.headers.get("X-Ordax-Artifact-Kind") ?? "artifact").slice(0, 80);
+  const sha256 = (request.headers.get("X-Ordax-Artifact-Sha256") ?? "").toLowerCase();
+  const sizeBytes = Number(
+    request.headers.get("X-Ordax-Artifact-Size")
+      ?? request.headers.get("content-length")
+      ?? "0",
+  );
+  const metadataRaw = request.headers.get("X-Ordax-Artifact-Metadata") ?? "{}";
+  const contentType = (
+    request.headers.get("content-type") ?? "application/octet-stream"
+  ).slice(0, 255);
+
+  if (
+    !HEX64_RE.test(sha256)
+    || !Number.isSafeInteger(sizeBytes)
+    || sizeBytes < 0
+    || sizeBytes > maxBytes
+    || metadataRaw.length > 4000
+  ) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(metadataRaw);
+    if (!isRecord(parsed)) return null;
+  } catch {
+    return null;
+  }
+
+  return {
+    artifactId,
+    jobId,
+    deviceId,
+    storagePath: deviceId + "/" + jobId + "/" + artifactId + "-" + fileName,
+    fileName,
+    kind,
+    contentType,
+    sha256,
+    sizeBytes,
+    metadataRaw,
+  };
+}
+
+async function existingArtifactGrant(
+  request: Request,
+  env: Env,
+  artifactId: string,
+  jobId: string,
+  deviceId: string,
+  expected?: ArtifactDescriptor,
+): Promise<Response | null> {
+  const row = await env.DB.prepare(
+    \`SELECT job_id, device_id, storage_path, file_name, kind, content_type,
+            sha256, size_bytes, metadata_json
+     FROM ordax_artifacts WHERE id = ?1\`,
+  ).bind(artifactId).first<{
+    job_id: string;
+    device_id: string;
+    storage_path: string;
+    file_name: string;
+    kind: string;
+    content_type: string;
+    sha256: string;
+    size_bytes: number;
+    metadata_json: string;
+  }>();
+  if (!row) return null;
+
+  const matches = (
+    row.job_id === jobId
+    && row.device_id === deviceId
+    && (!expected || (
+      row.storage_path === expected.storagePath
+      && row.file_name === expected.fileName
+      && row.kind === expected.kind
+      && row.content_type === expected.contentType
+      && row.sha256.toLowerCase() === expected.sha256
+      && Number(row.size_bytes) === expected.sizeBytes
+      && row.metadata_json === expected.metadataRaw
+    ))
+  );
+  if (!matches) {
+    return json({ ok: false, error: "artifact_replay_conflict" }, 409);
+  }
+
+  const readToken = randomHex(32);
+  const readTokenSha256 = await sha256Text(readToken);
+  const readExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  await env.DB.prepare(
+    \`UPDATE ordax_artifacts
+     SET read_token_sha256 = ?1, read_expires_at = ?2
+     WHERE id = ?3 AND job_id = ?4 AND device_id = ?5\`,
+  ).bind(
+    readTokenSha256, readExpiresAt, artifactId, jobId, deviceId,
+  ).run();
+
+  const origin = new URL(request.url).origin;
+  return json({
+    ok: true,
+    complete: true,
+    replayed: true,
+    artifact_id: artifactId,
+    storage_path: row.storage_path,
+    signed_url: origin + "/v3/artifacts/" + artifactId
+      + "?token=" + encodeURIComponent(readToken),
+    expires_at: readExpiresAt,
+  });
+}
+
+async function artifactJobAuthorized(
+  request: Request,
+  env: Env,
+  parts: string[],
+): Promise<
+  | { ok: true; deviceId: string; jobId: string; artifactId: string }
+  | { ok: false; response: Response }
+> {
   const jobId = parts[2] ?? "";
   const artifactId = parts[3] ?? "";
   const deviceId = request.headers.get("X-Ordax-Device-Id") ?? "";
   const token = request.headers.get("X-Ordax-Device-Token") ?? "";
   if (!UUID_RE.test(jobId) || !UUID_RE.test(artifactId)) {
-    return json({ ok: false, error: "artifact_path_invalid" }, 400);
+    return { ok: false, response: json({ ok: false, error: "artifact_path_invalid" }, 400) };
   }
   const auth = await authenticateDevice(env, deviceId, token);
-  if (!auth.ok) return json({ ok: false, error: auth.error }, 401);
-
+  if (!auth.ok) {
+    return { ok: false, response: json({ ok: false, error: auth.error }, 401) };
+  }
   const job = await env.DB.prepare(
     "SELECT id FROM ordax_jobs WHERE id = ?1 AND device_id = ?2",
   ).bind(jobId, deviceId).first();
-  if (!job) return json({ ok: false, error: "job_not_found" }, 404);
+  if (!job) {
+    return { ok: false, response: json({ ok: false, error: "job_not_found" }, 404) };
+  }
+  return { ok: true, deviceId, jobId, artifactId };
+}
 
-  const fileName = (request.headers.get("X-Ordax-Artifact-Name") ?? "artifact.bin")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 180) || "artifact.bin";
-  const kind = (request.headers.get("X-Ordax-Artifact-Kind") ?? "artifact").slice(0, 80);
-  const sha256 = request.headers.get("X-Ordax-Artifact-Sha256") ?? "";
-  const sizeBytes = Number(request.headers.get("X-Ordax-Artifact-Size") ?? request.headers.get("content-length") ?? "0");
-  if (!HEX64_RE.test(sha256) || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > 90 * 1024 * 1024) {
+async function uploadArtifact(request: Request, env: Env, parts: string[]): Promise<Response> {
+  const access = await artifactJobAuthorized(request, env, parts);
+  if (!access.ok) return access.response;
+  const descriptor = parseArtifactDescriptor(
+    request, access.deviceId, access.jobId, access.artifactId,
+    DIRECT_ARTIFACT_MAX_BYTES,
+  );
+  if (!descriptor) {
     return json({ ok: false, error: "artifact_metadata_invalid" }, 400);
   }
-  const metadataRaw = request.headers.get("X-Ordax-Artifact-Metadata") ?? "{}";
-  try {
-    const parsed = JSON.parse(metadataRaw);
-    if (!isRecord(parsed)) throw new Error("not object");
-  } catch {
-    return json({ ok: false, error: "artifact_metadata_invalid" }, 400);
-  }
 
-  const storagePath = `${deviceId}/${jobId}/${artifactId}-${fileName}`;
+  const replay = await existingArtifactGrant(
+    request, env, access.artifactId, access.jobId, access.deviceId, descriptor,
+  );
+  if (replay) return replay;
+
   let stored: R2Object | null;
   try {
-    stored = await env.ARTIFACTS.put(storagePath, request.body, {
-      sha256: hexToArrayBuffer(sha256),
-      httpMetadata: {
-        contentType: request.headers.get("content-type") ?? "application/octet-stream",
-      },
+    stored = await env.ARTIFACTS.put(descriptor.storagePath, request.body, {
+      sha256: hexToArrayBuffer(descriptor.sha256),
+      httpMetadata: { contentType: descriptor.contentType },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -621,11 +793,11 @@ async function uploadArtifact(request: Request, env: Env, parts: string[]): Prom
   }
   const storedSha256 = stored.checksums.sha256;
   if (
-    stored.size !== sizeBytes
+    stored.size !== descriptor.sizeBytes
     || !storedSha256
-    || arrayBufferToHex(storedSha256).toLowerCase() !== sha256
+    || arrayBufferToHex(storedSha256).toLowerCase() !== descriptor.sha256
   ) {
-    await env.ARTIFACTS.delete(storagePath);
+    await env.ARTIFACTS.delete(descriptor.storagePath);
     return json({ ok: false, error: "artifact_integrity_mismatch" }, 422);
   }
 
@@ -634,25 +806,344 @@ async function uploadArtifact(request: Request, env: Env, parts: string[]): Prom
   const createdAt = nowIso();
   const readExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   await env.DB.prepare(
-    `INSERT INTO ordax_artifacts
+    \`INSERT INTO ordax_artifacts
       (id, job_id, device_id, storage_path, file_name, kind, content_type, sha256,
        size_bytes, metadata_json, read_token_sha256, read_expires_at, created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)\`,
   ).bind(
-    artifactId, jobId, deviceId, storagePath, fileName, kind,
-    request.headers.get("content-type") ?? "application/octet-stream",
-    sha256, sizeBytes, metadataRaw, readTokenSha256, readExpiresAt, createdAt,
+    descriptor.artifactId, descriptor.jobId, descriptor.deviceId,
+    descriptor.storagePath, descriptor.fileName, descriptor.kind,
+    descriptor.contentType, descriptor.sha256, descriptor.sizeBytes,
+    descriptor.metadataRaw, readTokenSha256, readExpiresAt, createdAt,
   ).run();
 
   const origin = new URL(request.url).origin;
-  const signedUrl = `${origin}/v3/artifacts/${artifactId}?token=${encodeURIComponent(readToken)}`;
   return json({
     ok: true,
-    artifact_id: artifactId,
-    storage_path: storagePath,
-    signed_url: signedUrl,
+    artifact_id: descriptor.artifactId,
+    storage_path: descriptor.storagePath,
+    signed_url: origin + "/v3/artifacts/" + descriptor.artifactId
+      + "?token=" + encodeURIComponent(readToken),
     expires_at: readExpiresAt,
   }, 201);
+}
+
+async function loadMultipartUpload(
+  env: Env,
+  artifactId: string,
+  jobId: string,
+  deviceId: string,
+): Promise<MultipartUploadRow | null> {
+  return env.DB.prepare(
+    \`SELECT artifact_id, job_id, device_id, upload_id, storage_path, file_name,
+            kind, content_type, sha256, size_bytes, metadata_json, created_at
+     FROM ordax_artifact_uploads
+     WHERE artifact_id = ?1 AND job_id = ?2 AND device_id = ?3\`,
+  ).bind(artifactId, jobId, deviceId).first<MultipartUploadRow>();
+}
+
+async function createMultipartArtifact(
+  request: Request,
+  env: Env,
+  parts: string[],
+): Promise<Response> {
+  const access = await artifactJobAuthorized(request, env, parts);
+  if (!access.ok) return access.response;
+  const descriptor = parseArtifactDescriptor(
+    request, access.deviceId, access.jobId, access.artifactId,
+    MULTIPART_ARTIFACT_MAX_BYTES,
+  );
+  if (!descriptor || descriptor.sizeBytes < 1) {
+    return json({ ok: false, error: "artifact_metadata_invalid" }, 400);
+  }
+
+  const replay = await existingArtifactGrant(
+    request, env, access.artifactId, access.jobId, access.deviceId, descriptor,
+  );
+  if (replay) return replay;
+
+  const staleBefore = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+  await env.DB.prepare(
+    "DELETE FROM ordax_artifact_uploads WHERE device_id = ?1 AND created_at < ?2",
+  ).bind(access.deviceId, staleBefore).run();
+
+  const existing = await loadMultipartUpload(
+    env, access.artifactId, access.jobId, access.deviceId,
+  );
+  if (existing) {
+    const matches = (
+      existing.storage_path === descriptor.storagePath
+      && existing.file_name === descriptor.fileName
+      && existing.kind === descriptor.kind
+      && existing.content_type === descriptor.contentType
+      && existing.sha256.toLowerCase() === descriptor.sha256
+      && Number(existing.size_bytes) === descriptor.sizeBytes
+      && existing.metadata_json === descriptor.metadataRaw
+    );
+    if (!matches) {
+      return json({ ok: false, error: "multipart_upload_conflict" }, 409);
+    }
+    return json({
+      ok: true,
+      upload_id: existing.upload_id,
+      storage_path: existing.storage_path,
+      resumed: true,
+    });
+  }
+
+  const multipart = await env.ARTIFACTS.createMultipartUpload(
+    descriptor.storagePath,
+    { httpMetadata: { contentType: descriptor.contentType } },
+  );
+  try {
+    await env.DB.prepare(
+      \`INSERT INTO ordax_artifact_uploads
+        (artifact_id, job_id, device_id, upload_id, storage_path, file_name, kind,
+         content_type, sha256, size_bytes, metadata_json, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)\`,
+    ).bind(
+      descriptor.artifactId, descriptor.jobId, descriptor.deviceId,
+      multipart.uploadId, descriptor.storagePath, descriptor.fileName,
+      descriptor.kind, descriptor.contentType, descriptor.sha256,
+      descriptor.sizeBytes, descriptor.metadataRaw, nowIso(),
+    ).run();
+  } catch (error) {
+    try { await multipart.abort(); } catch {}
+    throw error;
+  }
+
+  return json({
+    ok: true,
+    upload_id: multipart.uploadId,
+    storage_path: descriptor.storagePath,
+    resumed: false,
+  }, 201);
+}
+
+async function uploadMultipartPart(
+  request: Request,
+  env: Env,
+  parts: string[],
+): Promise<Response> {
+  const access = await artifactJobAuthorized(request, env, parts);
+  if (!access.ok) return access.response;
+  const url = new URL(request.url);
+  const uploadId = url.searchParams.get("uploadId") ?? "";
+  const partNumber = Number(url.searchParams.get("partNumber") ?? "0");
+  const partSha256 = (request.headers.get("X-Ordax-Part-Sha256") ?? "").toLowerCase();
+  const contentLength = Number(request.headers.get("content-length") ?? "0");
+  if (
+    !uploadId
+    || uploadId.length > 512
+    || !Number.isSafeInteger(partNumber)
+    || partNumber < 1
+    || partNumber > MULTIPART_MAX_PARTS
+    || !HEX64_RE.test(partSha256)
+    || !Number.isSafeInteger(contentLength)
+    || contentLength < 1
+    || contentLength > DIRECT_ARTIFACT_MAX_BYTES
+    || !request.body
+  ) {
+    return json({ ok: false, error: "multipart_part_invalid" }, 400);
+  }
+
+  const session = await loadMultipartUpload(
+    env, access.artifactId, access.jobId, access.deviceId,
+  );
+  if (!session) return json({ ok: false, error: "multipart_upload_not_found" }, 404);
+  if (session.upload_id !== uploadId) {
+    return json({ ok: false, error: "multipart_upload_conflict" }, 409);
+  }
+
+  const [r2Body, digestBody] = request.body.tee();
+  const digestStream = new crypto.DigestStream("SHA-256");
+  const digestPromise = (async () => {
+    await digestBody.pipeTo(digestStream);
+    return arrayBufferToHex(await digestStream.digest).toLowerCase();
+  })();
+  const uploadPromise = env.ARTIFACTS
+    .resumeMultipartUpload(session.storage_path, uploadId)
+    .uploadPart(partNumber, r2Body);
+
+  const [uploaded, observedSha256] = await Promise.all([uploadPromise, digestPromise]);
+  if (observedSha256 !== partSha256) {
+    return json({ ok: false, error: "multipart_part_checksum_mismatch" }, 422);
+  }
+
+  return json({
+    ok: true,
+    part_number: uploaded.partNumber,
+    etag: uploaded.etag,
+    sha256: observedSha256,
+  }, 201);
+}
+
+async function completeMultipartArtifact(
+  request: Request,
+  env: Env,
+  parts: string[],
+): Promise<Response> {
+  const access = await artifactJobAuthorized(request, env, parts);
+  if (!access.ok) return access.response;
+
+  const alreadyComplete = await existingArtifactGrant(
+    request, env, access.artifactId, access.jobId, access.deviceId,
+  );
+  if (alreadyComplete) return alreadyComplete;
+
+  const session = await loadMultipartUpload(
+    env, access.artifactId, access.jobId, access.deviceId,
+  );
+  if (!session) return json({ ok: false, error: "multipart_upload_not_found" }, 404);
+
+  const body = await parseSmallJson(request, 1024 * 1024);
+  const uploadId = body && typeof body.upload_id === "string" ? body.upload_id : "";
+  const rawParts = body && Array.isArray(body.parts) ? body.parts : [];
+  if (
+    uploadId !== session.upload_id
+    || rawParts.length < 1
+    || rawParts.length > MULTIPART_MAX_PARTS
+  ) {
+    return json({ ok: false, error: "multipart_complete_invalid" }, 400);
+  }
+
+  const uploadedParts: Array<{ partNumber: number; etag: string }> = [];
+  for (const value of rawParts) {
+    if (!isRecord(value)) {
+      return json({ ok: false, error: "multipart_complete_invalid" }, 400);
+    }
+    const partNumber = Number(value.part_number);
+    const etag = typeof value.etag === "string" ? value.etag : "";
+    if (
+      !Number.isSafeInteger(partNumber)
+      || partNumber < 1
+      || partNumber > MULTIPART_MAX_PARTS
+      || etag.length < 1
+      || etag.length > 256
+    ) {
+      return json({ ok: false, error: "multipart_complete_invalid" }, 400);
+    }
+    uploadedParts.push({ partNumber, etag });
+  }
+  uploadedParts.sort((a, b) => a.partNumber - b.partNumber);
+  if (uploadedParts.some((item, index) => item.partNumber !== index + 1)) {
+    return json({ ok: false, error: "multipart_parts_not_contiguous" }, 400);
+  }
+
+  let stored = await env.ARTIFACTS.head(session.storage_path);
+  if (!stored) {
+    stored = await env.ARTIFACTS
+      .resumeMultipartUpload(session.storage_path, session.upload_id)
+      .complete(uploadedParts);
+  }
+  if (!stored || stored.size !== Number(session.size_bytes)) {
+    await env.ARTIFACTS.delete(session.storage_path);
+    await env.DB.prepare(
+      "DELETE FROM ordax_artifact_uploads WHERE artifact_id = ?1",
+    ).bind(access.artifactId).run();
+    return json({ ok: false, error: "artifact_integrity_mismatch" }, 422);
+  }
+
+  const object = await env.ARTIFACTS.get(session.storage_path);
+  if (!object || !object.body) {
+    return json({ ok: false, error: "artifact_storage_read_failed" }, 503);
+  }
+  const digestStream = new crypto.DigestStream("SHA-256");
+  await object.body.pipeTo(digestStream);
+  const observedSha256 = arrayBufferToHex(await digestStream.digest).toLowerCase();
+  if (observedSha256 !== session.sha256.toLowerCase()) {
+    await env.ARTIFACTS.delete(session.storage_path);
+    await env.DB.prepare(
+      "DELETE FROM ordax_artifact_uploads WHERE artifact_id = ?1",
+    ).bind(access.artifactId).run();
+    return json({ ok: false, error: "artifact_integrity_mismatch" }, 422);
+  }
+
+  const readToken = randomHex(32);
+  const readTokenSha256 = await sha256Text(readToken);
+  const createdAt = nowIso();
+  const readExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  await env.DB.prepare(
+    \`INSERT INTO ordax_artifacts
+      (id, job_id, device_id, storage_path, file_name, kind, content_type, sha256,
+       size_bytes, metadata_json, read_token_sha256, read_expires_at, created_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+     ON CONFLICT(id) DO NOTHING\`,
+  ).bind(
+    session.artifact_id, session.job_id, session.device_id, session.storage_path,
+    session.file_name, session.kind, session.content_type, session.sha256,
+    session.size_bytes, session.metadata_json, readTokenSha256,
+    readExpiresAt, createdAt,
+  ).run();
+
+  const persisted = await env.DB.prepare(
+    \`SELECT job_id, device_id, storage_path, sha256, size_bytes
+     FROM ordax_artifacts WHERE id = ?1\`,
+  ).bind(access.artifactId).first<{
+    job_id: string;
+    device_id: string;
+    storage_path: string;
+    sha256: string;
+    size_bytes: number;
+  }>();
+  if (
+    !persisted
+    || persisted.job_id !== session.job_id
+    || persisted.device_id !== session.device_id
+    || persisted.storage_path !== session.storage_path
+    || persisted.sha256.toLowerCase() !== session.sha256.toLowerCase()
+    || Number(persisted.size_bytes) !== Number(session.size_bytes)
+  ) {
+    return json({ ok: false, error: "artifact_publish_conflict" }, 409);
+  }
+
+  await env.DB.prepare(
+    "DELETE FROM ordax_artifact_uploads WHERE artifact_id = ?1",
+  ).bind(access.artifactId).run();
+
+  const origin = new URL(request.url).origin;
+  return json({
+    ok: true,
+    complete: true,
+    multipart: true,
+    artifact_id: session.artifact_id,
+    storage_path: session.storage_path,
+    sha256: observedSha256,
+    size_bytes: Number(session.size_bytes),
+    signed_url: origin + "/v3/artifacts/" + session.artifact_id
+      + "?token=" + encodeURIComponent(readToken),
+    expires_at: readExpiresAt,
+  }, 201);
+}
+
+async function abortMultipartArtifact(
+  request: Request,
+  env: Env,
+  parts: string[],
+): Promise<Response> {
+  const access = await artifactJobAuthorized(request, env, parts);
+  if (!access.ok) return access.response;
+  const url = new URL(request.url);
+  const uploadId = url.searchParams.get("uploadId") ?? "";
+  const session = await loadMultipartUpload(
+    env, access.artifactId, access.jobId, access.deviceId,
+  );
+  if (!session) return json({ ok: true, aborted: false, missing: true });
+  if (uploadId !== session.upload_id) {
+    return json({ ok: false, error: "multipart_upload_conflict" }, 409);
+  }
+
+  try {
+    await env.ARTIFACTS
+      .resumeMultipartUpload(session.storage_path, session.upload_id)
+      .abort();
+  } catch {
+    // R2 automatically aborts incomplete multipart uploads after its lifecycle.
+  }
+  await env.DB.prepare(
+    "DELETE FROM ordax_artifact_uploads WHERE artifact_id = ?1",
+  ).bind(access.artifactId).run();
+  return json({ ok: true, aborted: true });
 }
 
 async function downloadArtifact(request: Request, env: Env, artifactId: string): Promise<Response> {
@@ -729,8 +1220,23 @@ export default {
     if (request.method === "GET" && parts[0] === "v3" && parts[1] === "jobs" && parts.length === 3) {
       return getJob(request, env, parts[2]);
     }
-    if (request.method === "PUT" && parts[0] === "v3" && parts[1] === "artifacts" && parts.length === 4) {
-      return uploadArtifact(request, env, parts);
+    if (parts[0] === "v3" && parts[1] === "artifacts" && parts.length === 4) {
+      const action = url.searchParams.get("action") ?? "";
+      if (request.method === "POST" && action === "mpu-create") {
+        return createMultipartArtifact(request, env, parts);
+      }
+      if (request.method === "PUT" && action === "mpu-uploadpart") {
+        return uploadMultipartPart(request, env, parts);
+      }
+      if (request.method === "POST" && action === "mpu-complete") {
+        return completeMultipartArtifact(request, env, parts);
+      }
+      if (request.method === "DELETE" && action === "mpu-abort") {
+        return abortMultipartArtifact(request, env, parts);
+      }
+      if (request.method === "PUT" && action === "") {
+        return uploadArtifact(request, env, parts);
+      }
     }
     if (request.method === "GET" && parts[0] === "v3" && parts[1] === "artifacts" && parts.length === 3) {
       return downloadArtifact(request, env, parts[2]);

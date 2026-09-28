@@ -28,6 +28,11 @@ from .remote_protocol import (
 )
 
 
+DIRECT_ARTIFACT_MAX_BYTES = 90 * 1024 * 1024
+MULTIPART_PART_BYTES = 64 * 1024 * 1024
+MULTIPART_MAX_PARTS = 10_000
+
+
 class CloudflareControlPlane:
     """Event-driven development control plane over one authenticated WebSocket.
 
@@ -423,6 +428,243 @@ class CloudflareControlPlane:
         self._terminal_outbox.acknowledge(outbox_path)
         self._jobs.pop(job.id, None)
 
+    @staticmethod
+    def _artifact_headers(
+        file_path: Path,
+        *,
+        kind: str,
+        metadata: dict[str, Any] | None,
+        digest: str,
+        size: int,
+        content_type: str,
+    ) -> dict[str, str]:
+        metadata_raw = json.dumps(
+            metadata or {}, separators=(",", ":"), ensure_ascii=False
+        )
+        if len(metadata_raw) > 4000:
+            raise ValueError("artifact metadata exceeds 4000 characters")
+        return {
+            "content-type": content_type,
+            "X-Ordax-Artifact-Name": file_path.name[:180],
+            "X-Ordax-Artifact-Kind": str(kind)[:80],
+            "X-Ordax-Artifact-Sha256": digest,
+            "X-Ordax-Artifact-Size": str(size),
+            "X-Ordax-Artifact-Metadata": metadata_raw,
+        }
+
+    def _artifact_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        operation: str,
+        headers: dict[str, str] | None = None,
+        content: bytes | None = None,
+        json_body: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                response = self.http.request(
+                    method,
+                    url,
+                    headers=headers,
+                    content=content,
+                    json=json_body,
+                )
+            except httpx.HTTPError as error:
+                last_error = error
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise TransientDeliveryError(
+                    f"cloudflare-v3 {operation} failed: "
+                    f"{type(error).__name__}: {error}"
+                ) from error
+
+            if response.status_code in {401, 403}:
+                raise DeviceAuthorizationError("DEVICE_CREDENTIAL_REJECTED")
+            if response.status_code in {408, 429} or response.status_code >= 500:
+                last_error = TransientDeliveryError(
+                    f"cloudflare-v3 {operation} HTTP {response.status_code}"
+                )
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise last_error
+            if response.status_code >= 400:
+                raise RuntimeError(
+                    f"cloudflare-v3 {operation} HTTP {response.status_code}: "
+                    f"{response.text[-2000:]}"
+                )
+            try:
+                result = response.json()
+            except ValueError as error:
+                raise RuntimeError(
+                    f"cloudflare-v3 {operation} returned invalid JSON"
+                ) from error
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                raise RuntimeError(
+                    f"cloudflare-v3 {operation} returned invalid response"
+                )
+            return result
+
+        raise TransientDeliveryError(
+            f"cloudflare-v3 {operation} failed: {last_error}"
+        )
+
+    def _upload_artifact_multipart_once(
+        self,
+        job: AgentJob,
+        file_path: Path,
+        *,
+        artifact_id: str,
+        kind: str,
+        metadata: dict[str, Any] | None,
+        digest: str,
+        size: int,
+        content_type: str,
+    ) -> dict[str, Any]:
+        url = (
+            f"{self.base_http_url}/v3/artifacts/{quote(job.id)}/{quote(artifact_id)}"
+        )
+        headers = self._artifact_headers(
+            file_path,
+            kind=kind,
+            metadata=metadata,
+            digest=digest,
+            size=size,
+            content_type=content_type,
+        )
+        created = self._artifact_request(
+            "POST",
+            f"{url}?action=mpu-create",
+            operation="multipart create",
+            headers=headers,
+        )
+        if created.get("complete") is True:
+            return {
+                "artifact_id": artifact_id,
+                "storage_path": created.get("storage_path"),
+                "sha256": digest,
+                "size_bytes": size,
+                "signed_url": created.get("signed_url"),
+                "delivery": "cloudflare-v3-multipart",
+                "metadata": metadata or {},
+            }
+
+        upload_id = created.get("upload_id")
+        if not isinstance(upload_id, str) or not upload_id:
+            raise RuntimeError("cloudflare-v3 multipart create returned no upload id")
+
+        uploaded_parts: list[dict[str, Any]] = []
+        try:
+            with file_path.open("rb") as stream:
+                part_number = 0
+                while True:
+                    chunk = stream.read(MULTIPART_PART_BYTES)
+                    if not chunk:
+                        break
+                    part_number += 1
+                    if part_number > MULTIPART_MAX_PARTS:
+                        raise RuntimeError(
+                            "artifact exceeds Cloudflare multipart part-count limit"
+                        )
+                    part_sha256 = hashlib.sha256(chunk).hexdigest()
+                    part_url = (
+                        f"{url}?action=mpu-uploadpart"
+                        f"&uploadId={quote(upload_id, safe='')}"
+                        f"&partNumber={part_number}"
+                    )
+                    uploaded = self._artifact_request(
+                        "PUT",
+                        part_url,
+                        operation=f"multipart part {part_number}",
+                        headers={
+                            "content-type": "application/octet-stream",
+                            "content-length": str(len(chunk)),
+                            "X-Ordax-Part-Sha256": part_sha256,
+                        },
+                        content=chunk,
+                    )
+                    etag = uploaded.get("etag")
+                    if (
+                        uploaded.get("part_number") != part_number
+                        or not isinstance(etag, str)
+                        or not etag
+                    ):
+                        raise RuntimeError(
+                            "cloudflare-v3 multipart part returned invalid response"
+                        )
+                    uploaded_parts.append(
+                        {"part_number": part_number, "etag": etag}
+                    )
+
+            completed = self._artifact_request(
+                "POST",
+                f"{url}?action=mpu-complete",
+                operation="multipart complete",
+                json_body={
+                    "upload_id": upload_id,
+                    "parts": uploaded_parts,
+                },
+            )
+        except TransientDeliveryError:
+            raise
+        except Exception:
+            try:
+                self.http.delete(
+                    f"{url}?action=mpu-abort"
+                    f"&uploadId={quote(upload_id, safe='')}",
+                    timeout=20.0,
+                )
+            except httpx.HTTPError:
+                pass
+            raise
+
+        returned_id = completed.get("artifact_id")
+        if returned_id not in {None, artifact_id}:
+            raise RuntimeError("cloudflare-v3 multipart artifact id changed")
+        return {
+            "artifact_id": artifact_id,
+            "storage_path": completed.get("storage_path"),
+            "sha256": digest,
+            "size_bytes": size,
+            "signed_url": completed.get("signed_url"),
+            "delivery": "cloudflare-v3-multipart",
+            "metadata": metadata or {},
+        }
+
+    def _upload_artifact_multipart(
+        self,
+        job: AgentJob,
+        file_path: Path,
+        *,
+        artifact_id: str,
+        kind: str,
+        metadata: dict[str, Any] | None,
+        digest: str,
+        size: int,
+        content_type: str,
+    ) -> dict[str, Any]:
+        for attempt in range(2):
+            try:
+                return self._upload_artifact_multipart_once(
+                    job,
+                    file_path,
+                    artifact_id=artifact_id,
+                    kind=kind,
+                    metadata=metadata,
+                    digest=digest,
+                    size=size,
+                    content_type=content_type,
+                )
+            except TransientDeliveryError:
+                if attempt == 1:
+                    raise
+                time.sleep(1)
+        raise RuntimeError("unreachable multipart retry state")
+
     def upload_artifact(
         self,
         job: AgentJob,
@@ -436,38 +678,45 @@ class CloudflareControlPlane:
             raise FileNotFoundError(file_path)
 
         size = file_path.stat().st_size
-        # Cloudflare Free request bodies are bounded. Large scene files stay local
-        # until multipart R2 upload is added; normal screenshots/snapshots/GLBs use R2.
-        if size > 90 * 1024 * 1024:
-            with file_path.open("rb") as handle:
-                digest = hashlib.file_digest(handle, "sha256").hexdigest()
-            return {
-                "delivery": "local-only-v3-artifact-too-large",
-                "kind": kind,
-                "local_name": file_path.name,
-                "sha256": digest,
-                "size_bytes": size,
-                "metadata": metadata or {},
-            }
-
         with file_path.open("rb") as handle:
             digest = hashlib.file_digest(handle, "sha256").hexdigest()
 
         artifact_id = str(uuid.uuid4())
         content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+
+        if size > DIRECT_ARTIFACT_MAX_BYTES:
+            part_count = (size + MULTIPART_PART_BYTES - 1) // MULTIPART_PART_BYTES
+            if part_count > MULTIPART_MAX_PARTS:
+                return {
+                    "delivery": "local-only-v3-artifact-part-count-limit",
+                    "kind": kind,
+                    "local_name": file_path.name,
+                    "sha256": digest,
+                    "size_bytes": size,
+                    "metadata": metadata or {},
+                }
+            return self._upload_artifact_multipart(
+                job,
+                file_path,
+                artifact_id=artifact_id,
+                kind=kind,
+                metadata=metadata,
+                digest=digest,
+                size=size,
+                content_type=content_type,
+            )
+
         url = (
             f"{self.base_http_url}/v3/artifacts/{quote(job.id)}/{quote(artifact_id)}"
         )
-        headers = {
-            "content-type": content_type,
-            "X-Ordax-Artifact-Name": file_path.name[:180],
-            "X-Ordax-Artifact-Kind": str(kind)[:80],
-            "X-Ordax-Artifact-Sha256": digest,
-            "X-Ordax-Artifact-Size": str(size),
-            "X-Ordax-Artifact-Metadata": json.dumps(
-                metadata or {}, separators=(",", ":"), ensure_ascii=False
-            )[:4000],
-        }
+        headers = self._artifact_headers(
+            file_path,
+            kind=kind,
+            metadata=metadata,
+            digest=digest,
+            size=size,
+            content_type=content_type,
+        )
         try:
             with file_path.open("rb") as stream:
                 response = self.http.put(url, headers=headers, content=stream)
@@ -497,5 +746,6 @@ class CloudflareControlPlane:
             "sha256": digest,
             "size_bytes": size,
             "signed_url": result.get("signed_url"),
+            "delivery": "cloudflare-v3-direct",
             "metadata": metadata or {},
         }
