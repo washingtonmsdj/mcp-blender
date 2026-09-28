@@ -12,7 +12,8 @@ dependencies = [
   "mcp>=1.0.0,<2.0.0",
   "httpx>=0.26.0,<1.0.0",
   "websockets>=14.0,<16.0",
-  "Pillow>=10.0.0,<12.0.0"
+  "Pillow>=10.0.0,<12.0.0",
+  "pywebview>=5.0,<7.0"
 ]
 
 [project.scripts]
@@ -25,6 +26,7 @@ ordax-product-mcp = "ordax_dev_agent.product_mcp_server:main"
 ordax-device-pair = "ordax_dev_agent.product_pair_cli:main"
 ordax-studio = "ordax_studio.cli:main"
 ordax-studio-desktop = "ordax_studio.desktop:main"
+ordax-studio-web = "ordax_studio.web_desktop:main"
 ordax-studio-mcp = "ordax_dev_agent.mcp_server:main"
 
 [tool.setuptools.packages.find]
@@ -32,3 +34,4 @@ include = ["mcp_blender_unity*", "ordax_core*", "ordax_studio*", "ordax_dev_agen
 
 [tool.setuptools.package-data]
 ordax_dev_agent = ["assets/*.py", "assets/*.cs", "assets/*.json"]
+ordax_studio = ["*.html"]

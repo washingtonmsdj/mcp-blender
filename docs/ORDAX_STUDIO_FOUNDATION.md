@@ -187,3 +187,12 @@ Essa camada prepara o futuro preview web interativo com WebView2 usando o mesmo 
 O runtime web também possui `project.preview_start` e `project.preview_stop`.
 Para projetos estáticos o Studio usa um servidor HTTP local; para projetos com `package.json`, detecta Vite/Next ou um script `dev` suportado e inicia o processo sem shell remoto genérico.
 A UI expõe **Executar**, **Parar**, **Capturar**, **Atualizar** e atualização automática do preview.
+
+## Shell interativa WebView2
+
+Além da shell Tk de fallback, `ordax-studio-web` oferece uma interface WebView2 inspirada no Lovable.
+Ela usa o mesmo `ActionRegistry`, banco de memória e regras de segurança do Studio.
+
+A primeira versão organiza três áreas simultâneas: arquivos, editor seguro e preview.
+Projetos web usam um `iframe` interativo conectado ao runtime local; Blender e Unity usam a imagem visual mais recente.
+Salvar continua exigindo o SHA-256 da leitura original, portanto a nova UI não contorna o controle de escrita stale.
