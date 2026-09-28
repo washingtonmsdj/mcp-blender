@@ -20,6 +20,14 @@ trap cleanup EXIT
 : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
 : "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
 : "${ORDAX_OPERATOR_TOKEN:?ORDAX_OPERATOR_TOKEN is required}"
+: "${PRODUCT_AUTH_ISSUER:?PRODUCT_AUTH_ISSUER is required}"
+: "${PRODUCT_AUTH_AUDIENCE:?PRODUCT_AUTH_AUDIENCE is required}"
+: "${PRODUCT_AUTH_JWKS_URL:?PRODUCT_AUTH_JWKS_URL is required}"
+
+python "$ROOT/scripts/cloudflare/verify_product_auth_provider.py" \
+  "$PRODUCT_AUTH_ISSUER" \
+  "$PRODUCT_AUTH_AUDIENCE" \
+  "$PRODUCT_AUTH_JWKS_URL"
 
 wrangler() {
   npx --yes "wrangler@${WRANGLER_VERSION}" "$@"
@@ -98,20 +106,25 @@ if ! wrangler r2 bucket info "$BUCKET_NAME" --json >/dev/null 2>&1; then
   wrangler r2 bucket create "$BUCKET_NAME"
 fi
 
-python - "$GENERATED_CONFIG" "$WORKER_NAME" "$db_id" "$DB_NAME" "$BUCKET_NAME" "$CLOUDFLARE_DIR" <<'PY'
+python - "$GENERATED_CONFIG" "$WORKER_NAME" "$db_id" "$DB_NAME" "$BUCKET_NAME" "$CLOUDFLARE_DIR" "$PRODUCT_AUTH_ISSUER" "$PRODUCT_AUTH_AUDIENCE" "$PRODUCT_AUTH_JWKS_URL" <<'PY'
 from __future__ import annotations
 import json
 import sys
 from pathlib import Path
 
 target = Path(sys.argv[1])
-worker_name, db_id, db_name, bucket_name, cloudflare_dir = sys.argv[2:]
+worker_name, db_id, db_name, bucket_name, cloudflare_dir, product_issuer, product_audience, product_jwks = sys.argv[2:]
 config = {
     "name": worker_name,
     "main": str(Path(cloudflare_dir) / "src" / "index.ts"),
     "compatibility_date": "2026-09-27",
     "workers_dev": True,
     "observability": {"enabled": True},
+    "vars": {
+        "PRODUCT_AUTH_ISSUER": product_issuer,
+        "PRODUCT_AUTH_AUDIENCE": product_audience,
+        "PRODUCT_AUTH_JWKS_URL": product_jwks,
+    },
     "d1_databases": [{
         "binding": "DB",
         "database_name": db_name,
