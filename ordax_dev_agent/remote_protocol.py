@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .action_contracts import dispatch_device_capability
 from .models import ActionResult
 
 
@@ -52,54 +53,8 @@ def dispatch_job(
     payload: dict[str, Any],
 ) -> tuple[str, dict[str, Any], str | None]:
     capability = str(row.get("capability") or row.get("operation") or "")
-    if capability == "ordax.dev.adapter.invoke":
-        allowed = {"adapter", "action", "payload", "project"}
-        if set(payload) - allowed:
-            raise RuntimeError("adapter invocation contains unsupported fields")
-
-        adapter = payload.get("adapter")
-        action = payload.get("action")
-        action_payload = payload.get("payload", {})
-        project = payload.get("project")
-
-        if not isinstance(action_payload, dict):
-            raise RuntimeError("adapter invocation payload must be an object")
-        if project is not None and not isinstance(project, str):
-            raise RuntimeError("adapter invocation project must be a string")
-
-        if adapter == "blender":
-            if not isinstance(action, str) or not action.startswith("blender."):
-                raise RuntimeError("adapter invocation action is not a Blender action")
-            return action, action_payload, project
-
-        if adapter == "workspace":
-            if action != "workspace.bind_project":
-                raise RuntimeError("adapter invocation workspace action is not allowed")
-            if project is not None:
-                raise RuntimeError("workspace binding must not target an existing project")
-            return action, action_payload, None
-
-        raise RuntimeError("adapter invocation is not an allowed capability")
-
-    if capability.startswith(
-        (
-            "blender.",
-            "unity.",
-            "git.",
-            "project.",
-            "projects.",
-            "artifact.",
-            "observation.",
-            "game_assets.",
-            "geo.",
-            "visual.",
-            "agent.",
-        )
-    ):
-        project = payload.get("project")
-        return capability, payload, project if isinstance(project, str) else None
-
-    raise RuntimeError(f"remote capability is not owned by Device Agent: {capability}")
+    dispatched = dispatch_device_capability(capability, payload)
+    return dispatched.action, dispatched.payload, dispatched.project
 
 
 def canonical_result(result: ActionResult) -> tuple[dict[str, Any], str]:
