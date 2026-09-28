@@ -20,13 +20,15 @@ def select_project(agent: ActionRegistry, requested: str | None = None) -> str:
     active = agent._memory_store_instance().active_project()
     if active:
         active_name = str(active.get("name") or "")
-        if active_name in agent.projects:
+        if active_name in agent.projects and agent.projects[active_name].root.is_dir():
             return active_name
-    if agent.config.default_project in agent.projects:
-        return agent.config.default_project
-    if agent.projects:
-        return next(iter(agent.projects))
-    raise ValueError("no registered projects are available")
+    default = agent.config.default_project
+    if default in agent.projects and agent.projects[default].root.is_dir():
+        return default
+    for slug, project in agent.projects.items():
+        if project.root.is_dir():
+            return slug
+    raise ValueError("no registered project directories are available")
 
 
 def emit(payload: Any) -> None:

@@ -218,10 +218,12 @@ class StudioApp(tk.Tk):
             marker = "●" if slug == active_name else " "
             availability = "" if project.root.is_dir() else " [indisponível]"
             self.project_list.insert("end", f"{marker} {slug}{availability}")
-            if slug == active_name:
+            if slug == active_name and project.root.is_dir():
                 selected_index = index
-        if selected_index is None and self.agent.config.default_project in self.project_slugs:
-            selected_index = self.project_slugs.index(self.agent.config.default_project)
+        default = self.agent.config.default_project
+        if (selected_index is None and default in self.project_slugs
+                and self.agent.projects[default].root.is_dir()):
+            selected_index = self.project_slugs.index(default)
         if selected_index is None:
             selected_index = next(
                 (index for index, slug in enumerate(self.project_slugs) if self.agent.projects[slug].root.is_dir()),
