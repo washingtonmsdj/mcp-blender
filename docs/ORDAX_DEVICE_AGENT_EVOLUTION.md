@@ -226,7 +226,11 @@ Fase 3:
 - adicionar conexão GitHub central da Conta/Space;
 - criar contexto portátil seguro de projeto para GitHub, separado da memória
   privada;
-- expor primeiro conjunto read-only do Product MCP.
+- expor primeiro conjunto read-only do Product MCP;
+  - **foundation pronta:** `ProductMcpFacade` já define a superfície read-only
+    sobre o mesmo `ProductActionGateway`, sem servidor público e sem autenticação
+    própria; a exposição remota continua bloqueada até existir sessão Product real
+    no Control Plane.
 
 Fase 4:
 - habilitar mutações MCP por capability;
