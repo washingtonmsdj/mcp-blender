@@ -28,6 +28,7 @@ const CONTROL_PLANE_CAPABILITIES = [
   "product_grant_store_v1",
   "product_grant_resolution_v1",
   "product_subject_auth_jwks_v1",
+  "product_readonly_actions_v1",
 ];
 
 const ACTION_PREFIXES = [
@@ -670,6 +671,94 @@ async function productSession(request: Request, env: Env): Promise<Response> {
   });
 }
 
+async function createProductAction(request: Request, env: Env): Promise<Response> {
+  const identity = await authenticateProductRequest(request, env);
+  if (!identity.ok) return json({ ok: false, error: identity.error }, identity.status);
+  const body = await parseSmallJson(request, 64 * 1024);
+  if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+  const deviceId = typeof body.device_id === "string" ? body.device_id : "";
+  const spaceId = body.space_id == null ? null : typeof body.space_id === "string" ? body.space_id : "";
+  const action = typeof body.action === "string" ? body.action : "";
+  const project = body.project == null ? null : typeof body.project === "string" ? body.project : "";
+  const argumentsValue = isRecord(body.arguments) ? { ...body.arguments } : {};
+  if (!UUID_RE.test(deviceId) || (spaceId !== null && !PRODUCT_ID_RE.test(spaceId)) || !PRODUCT_READ_ONLY_ACTIONS.has(action) || (project !== null && !PROJECT_SLUG_RE.test(project)) || (PRODUCT_PROJECT_ACTIONS.has(action) && project === null) || (!PRODUCT_PROJECT_ACTIONS.has(action) && project !== null)) {
+    return json({ ok: false, error: "product_action_invalid" }, 400);
+  }
+  if (project !== null) {
+    if (argumentsValue.project != null && argumentsValue.project !== project) return json({ ok: false, error: "product_project_conflict" }, 400);
+    argumentsValue.project = project;
+  } else if ("project" in argumentsValue) {
+    return json({ ok: false, error: "product_action_invalid" }, 400);
+  }
+  const device = await env.DB.prepare("SELECT id FROM ordax_devices WHERE id = ?1 AND revoked_at IS NULL").bind(deviceId).first();
+  if (!device) return json({ ok: false, error: "device_not_found" }, 404);
+  const grant = await resolveProductGrantForContext(env, { subjectId: identity.subjectId, spaceId, deviceId, action, project });
+  if (!grant) return json({ ok: false, error: "product_grant_not_resolved" }, 403);
+  let actions: string[] = [];
+  let projects: string[] = [];
+  try {
+    const rawActions = JSON.parse(grant.actions_json);
+    const rawProjects = JSON.parse(grant.projects_json);
+    if (!Array.isArray(rawActions) || !rawActions.every((item) => typeof item === "string") || !Array.isArray(rawProjects) || !rawProjects.every((item) => typeof item === "string")) throw new Error("invalid grant");
+    actions = rawActions; projects = rawProjects;
+  } catch { return json({ ok: false, error: "product_grant_corrupt" }, 500); }
+  const requestId = crypto.randomUUID();
+  const jobId = crypto.randomUUID();
+  const effectId = crypto.randomUUID();
+  const createdAt = nowIso();
+  const expiresAtUnix = grant.expires_at == null ? null : Math.floor(new Date(grant.expires_at).getTime() / 1000);
+  const invocation = {
+    action, arguments: argumentsValue,
+    context: { request_id: requestId, subject_id: identity.subjectId, device_id: deviceId, space_id: spaceId },
+    grant: { grant_id: grant.id, subject_id: grant.subject_id, actions, projects, space_id: grant.space_id, device_id: grant.device_id, expires_at_unix: Number.isFinite(expiresAtUnix) ? expiresAtUnix : null },
+  };
+  const payloadBytes = new TextEncoder().encode(JSON.stringify(invocation));
+  if (payloadBytes.byteLength > 64 * 1024) return json({ ok: false, error: "product_payload_too_large" }, 413);
+  const payloadText = new TextDecoder().decode(payloadBytes);
+  const payloadB64 = bytesToBase64(payloadBytes);
+  const payloadSha256 = await sha256Text(payloadText);
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO ordax_jobs (id, device_id, capability, payload_canonical_b64, payload_sha256, status, effect_id, execution_epoch, created_at) VALUES (?1, ?2, 'ordax.product.read.invoke', ?3, ?4, 'queued', ?5, 0, ?6)`).bind(jobId, deviceId, payloadB64, payloadSha256, effectId, createdAt),
+    env.DB.prepare(`INSERT INTO ordax_product_action_requests (request_id, job_id, subject_id, space_id, device_id, grant_id, action, project, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`).bind(requestId, jobId, identity.subjectId, spaceId, deviceId, grant.id, action, project, createdAt),
+  ]);
+  await wakeDeviceSession(env, deviceId);
+  return json({ ok: true, request_id: requestId, status: "queued" }, 202);
+}
+
+async function getProductAction(request: Request, env: Env, requestId: string): Promise<Response> {
+  const identity = await authenticateProductRequest(request, env);
+  if (!identity.ok) return json({ ok: false, error: identity.error }, identity.status);
+  if (!UUID_RE.test(requestId)) return json({ ok: false, error: "product_request_id_invalid" }, 400);
+  const row = await env.DB.prepare(`SELECT r.request_id, r.action, r.project, r.created_at, j.status, j.result_json, j.error_code, j.started_at, j.finished_at FROM ordax_product_action_requests r JOIN ordax_jobs j ON j.id = r.job_id WHERE r.request_id = ?1 AND r.subject_id = ?2`).bind(requestId, identity.subjectId).first<Record<string, unknown>>();
+  if (!row) return json({ ok: false, error: "product_action_not_found" }, 404);
+  let result: unknown = null;
+  if (typeof row.result_json === "string" && row.result_json) { try { result = JSON.parse(row.result_json); } catch { result = null; } }
+  return json({ ok: true, action: { request_id: row.request_id, action: row.action, project: row.project, status: row.status, result, error_code: row.error_code, created_at: row.created_at, started_at: row.started_at, finished_at: row.finished_at } });
+}
+
+async function recordProductAudit(request: Request, env: Env): Promise<Response> {
+  const deviceId = request.headers.get("X-Ordax-Device-Id") ?? "";
+  const token = request.headers.get("X-Ordax-Device-Token") ?? "";
+  const auth = await authenticateDevice(env, deviceId, token);
+  if (!auth.ok) return json({ ok: false, error: auth.error }, 401);
+  const body = await parseSmallJson(request, 32 * 1024);
+  if (!body) return json({ ok: false, error: "product_audit_invalid" }, 400);
+  const requestId = typeof body.request_id === "string" ? body.request_id : "";
+  const subjectId = typeof body.subject_id === "string" ? body.subject_id : "";
+  const grantId = body.grant_id == null ? null : typeof body.grant_id === "string" ? body.grant_id : "";
+  const action = typeof body.action === "string" ? body.action : "";
+  const project = body.project == null ? null : typeof body.project === "string" ? body.project : "";
+  const phase = typeof body.phase === "string" ? body.phase : "";
+  const decision = typeof body.decision === "string" ? body.decision : "";
+  const reason = typeof body.reason === "string" ? body.reason : "";
+  const fields = normalizedStringArray(body.payload_fields ?? [], { maxItems: 32, validator: (item) => PRODUCT_ID_RE.test(item) });
+  const resultOk = body.result_ok == null ? null : typeof body.result_ok === "boolean" ? body.result_ok : undefined;
+  if (!UUID_RE.test(requestId) || !PRODUCT_ID_RE.test(subjectId) || (grantId !== null && !UUID_RE.test(grantId)) || !PRODUCT_READ_ONLY_ACTIONS.has(action) || (project !== null && !PROJECT_SLUG_RE.test(project)) || !["decision","result"].includes(phase) || !["allow","deny"].includes(decision) || !reason || reason.length > 200 || !fields || resultOk === undefined) return json({ ok: false, error: "product_audit_invalid" }, 400);
+  const owner = await env.DB.prepare(`SELECT subject_id, space_id, device_id, grant_id, action, project FROM ordax_product_action_requests WHERE request_id = ?1`).bind(requestId).first<{ subject_id: string; space_id: string | null; device_id: string; grant_id: string; action: string; project: string | null }>();
+  if (!owner || owner.device_id !== deviceId || owner.subject_id !== subjectId || owner.grant_id !== grantId || owner.action !== action || owner.project !== project) return json({ ok: false, error: "product_audit_context_mismatch" }, 403);
+  await env.DB.prepare(`INSERT INTO ordax_product_audit (request_id, subject_id, grant_id, device_id, space_id, action, project, phase, decision, reason, payload_fields_json, result_ok, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`).bind(requestId, subjectId, grantId, deviceId, owner.space_id, action, project, phase, decision, reason, stableJson(fields), resultOk === null ? null : resultOk ? 1 : 0, nowIso()).run();
+  return json({ ok: true });
+}
 async function provisionDevice(request: Request, env: Env): Promise<Response> {
   if (!await operatorAuthorized(request, env)) return json({ ok: false, error: "operator_unauthorized" }, 401);
   const body = await parseSmallJson(request, 16 * 1024);
@@ -1614,6 +1703,15 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/v3/product/session") {
       return productSession(request, env);
+    }
+    if (request.method === "POST" && url.pathname === "/v3/product/actions") {
+      return createProductAction(request, env);
+    }
+    if (request.method === "GET" && parts[0] === "v3" && parts[1] === "product" && parts[2] === "actions" && parts.length === 4) {
+      return getProductAction(request, env, parts[3]);
+    }
+    if (request.method === "POST" && url.pathname === "/v3/product/audit") {
+      return recordProductAudit(request, env);
     }
     if (request.method === "POST" && url.pathname === "/v3/product-grants") {
       return createProductGrant(request, env);

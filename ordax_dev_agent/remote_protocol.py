@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .action_contracts import dispatch_device_capability
+from .product_remote import PRODUCT_REMOTE_CAPABILITY
 from .models import ActionResult
 
 
@@ -53,6 +54,8 @@ def dispatch_job(
     payload: dict[str, Any],
 ) -> tuple[str, dict[str, Any], str | None]:
     capability = str(row.get("capability") or row.get("operation") or "")
+    if capability == PRODUCT_REMOTE_CAPABILITY:
+        return capability, payload, None
     dispatched = dispatch_device_capability(capability, payload)
     return dispatched.action, dispatched.payload, dispatched.project
 

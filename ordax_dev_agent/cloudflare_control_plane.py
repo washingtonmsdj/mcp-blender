@@ -432,6 +432,39 @@ class CloudflareControlPlane:
         self._terminal_outbox.acknowledge(outbox_path)
         self._jobs.pop(job.id, None)
 
+    def record_product_audit(self, event) -> None:
+        body = {
+            "request_id": event.request_id,
+            "subject_id": event.subject_id,
+            "grant_id": event.grant_id,
+            "action": event.action,
+            "project": event.project,
+            "phase": event.phase,
+            "decision": event.decision,
+            "reason": event.reason,
+            "payload_fields": list(event.payload_fields),
+            "result_ok": event.result_ok,
+        }
+        response = self.http.post(
+            f"{self.base_http_url}/v3/product/audit",
+            json=body,
+            timeout=15.0,
+        )
+        if response.status_code in {401, 403}:
+            raise DeviceAuthorizationError("DEVICE_CREDENTIAL_REJECTED")
+        if response.status_code in {408, 429} or response.status_code >= 500:
+            raise TransientDeliveryError(
+                f"cloudflare-v3 product audit HTTP {response.status_code}"
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"cloudflare-v3 product audit HTTP {response.status_code}: "
+                f"{response.text[-2000:]}"
+            )
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            raise RuntimeError("cloudflare-v3 product audit returned invalid response")
+
     def _control_plane_capabilities(self) -> frozenset[str]:
         now = time.monotonic()
         cached = self._capability_cache

@@ -113,3 +113,24 @@ subject is bound to a live non-revoked/non-expired grant for the requested
 subject/device/project and the gateway's mandatory audit events are persisted.
 The future authenticated MCP host should wrap `ProductMcpFacade` rather than
 re-implementing its allow-list.
+
+
+## Authenticated read-only remote flow
+
+The first end-to-end Product execution path is now defined without adding
+mutations:
+
+1. `POST /v3/product/actions` authenticates the Product JWT.
+2. The Control Plane resolves a live grant for subject/Space/device/action/project.
+3. It persists request ownership and enqueues only
+   `ordax.product.read.invoke`.
+4. The Device Agent intercepts that capability before the normal ActionRegistry
+   path and executes it through `ProductActionGateway`.
+5. Gateway authorization/result audit events are sent back through the
+   device-authenticated `/v3/product/audit` route and bound to the stored
+   Product request.
+6. `GET /v3/product/actions/{request_id}` returns the already-sanitized result
+   only to the same authenticated Product subject.
+
+The generic operator `/v3/jobs` API is not used as Product identity. The Product
+surface remains limited to the explicit read-only catalog.
