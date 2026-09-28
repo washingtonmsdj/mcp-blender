@@ -816,14 +816,45 @@ async function claimProductDevicePairing(
   if (row.expires_at <= now) {
     return json({ ok: false, error: "product_pairing_expired" }, 410);
   }
-  if (
-    row.claimed_at
-    && (
+  if (row.claimed_at) {
+    if (
       row.claimed_subject_id !== identity.subjectId
       || (row.claimed_space_id ?? "") !== spaceId
-    )
-  ) {
-    return json({ ok: false, error: "product_pairing_already_claimed" }, 409);
+    ) {
+      return json({ ok: false, error: "product_pairing_already_claimed" }, 409);
+    }
+
+    const existingLink = await env.DB.prepare(
+      `SELECT l.id, l.space_id, l.device_id, l.created_at,
+              d.name AS device_name, d.last_seen_at
+       FROM ordax_product_device_links l
+       JOIN ordax_devices d ON d.id = l.device_id
+       WHERE l.subject_id = ?1 AND l.device_id = ?2 AND l.space_id = ?3
+         AND l.revoked_at IS NULL AND d.revoked_at IS NULL`,
+    ).bind(identity.subjectId, row.device_id, spaceId).first<{
+      id: string;
+      space_id: string;
+      device_id: string;
+      created_at: string;
+      device_name: string;
+      last_seen_at: string | null;
+    }>();
+
+    if (!existingLink) {
+      return json({ ok: false, error: "product_pairing_already_claimed" }, 409);
+    }
+    return json({
+      ok: true,
+      link: {
+        link_id: existingLink.id,
+        space_id: existingLink.space_id || null,
+        device_id: existingLink.device_id,
+        device_name: existingLink.device_name,
+        last_seen_at: existingLink.last_seen_at,
+        created_at: existingLink.created_at,
+      },
+      replayed: true,
+    });
   }
 
   if (!row.claimed_at) {
