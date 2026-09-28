@@ -33,7 +33,7 @@ class ProductAuthContractTests(unittest.TestCase):
 
     def test_product_session_does_not_reuse_operator_or_device_auth(self) -> None:
         session_start = self.worker.index("async function productSession")
-        session_end = self.worker.index("async function provisionDevice", session_start)
+        session_end = self.worker.index("async function createProductAction", session_start)
         session_source = self.worker[session_start:session_end]
 
         self.assertIn("authenticateProductRequest", session_source)
