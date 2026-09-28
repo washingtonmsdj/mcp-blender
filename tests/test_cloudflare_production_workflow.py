@@ -10,7 +10,7 @@ class CloudflareProductionWorkflowTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         validate_index = workflow.index("- name: Validate required secrets")
-        checkout_index = workflow.index("- name: Checkout main")
+        checkout_index = workflow.index("- name: Checkout verified main revision")
         setup_index = workflow.index("uses: actions/setup-python@v5")
         install_index = workflow.index(
             "python -m pip install --disable-pip-version-check -e ."
