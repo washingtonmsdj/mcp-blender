@@ -118,3 +118,19 @@ A `running` job is never re-leased automatically. It fences later jobs for that
 device until terminal recovery succeeds or an operator resolves the stalled job.
 This prevents an expired lease from becoming an implicit second execution of a
 Blender/Unity/Git mutation.
+
+
+## Product identity provider
+
+Production deploys are configured to use the OrdaX Supabase Auth project as the
+Product identity provider:
+
+- issuer: `https://eobcxuyvhkvdmkbaihwh.supabase.co/auth/v1`
+- audience: `authenticated`
+- JWKS: the project's `/.well-known/jwks.json`
+
+These values are public verification metadata, not secrets. The deploy performs
+a live preflight and refuses to publish the Worker unless the JWKS endpoint is
+HTTPS and exposes at least one usable RS256 or ES256 key with a `kid`. This
+prevents a legacy HS256 configuration from making Product authentication appear
+ready when the Worker cannot verify it safely.
