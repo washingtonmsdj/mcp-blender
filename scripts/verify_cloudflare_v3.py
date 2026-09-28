@@ -42,6 +42,7 @@ def run(base_url: str, operator_token: str) -> None:
             not isinstance(capabilities, list)
             or "artifact_multipart_v1" not in capabilities
             or "product_grant_store_v1" not in capabilities
+            or "product_grant_resolution_v1" not in capabilities
         ):
             raise RuntimeError("control-plane required capabilities are missing")
 
@@ -89,6 +90,83 @@ def run(base_url: str, operator_token: str) -> None:
         if grant.get("projects") != ["scene"]:
             raise RuntimeError("Product grant projects were not persisted")
 
+        unauthorized_resolution = httpx.post(
+            f"{base_url}/v3/product-grants/resolve",
+            json={
+                "subject_id": "ci:user",
+                "space_id": "ci:space",
+                "device_id": device_id,
+                "action": "git.status",
+                "project": "scene",
+            },
+            timeout=20.0,
+        )
+        if unauthorized_resolution.status_code != 401:
+            raise RuntimeError(
+                "Product grant resolver accepted missing operator auth"
+            )
+
+        resolved_grant = operator.post(
+            "/v3/product-grants/resolve",
+            json={
+                "subject_id": "ci:user",
+                "space_id": "ci:space",
+                "device_id": device_id,
+                "action": "git.status",
+                "project": "scene",
+            },
+        )
+        resolved_grant.raise_for_status()
+        if (resolved_grant.json().get("grant") or {}).get("id") != grant_id:
+            raise RuntimeError("Product grant resolver returned the wrong grant")
+
+        wrong_project = operator.post(
+            "/v3/product-grants/resolve",
+            json={
+                "subject_id": "ci:user",
+                "space_id": "ci:space",
+                "device_id": device_id,
+                "action": "git.status",
+                "project": "other",
+            },
+        )
+        if (
+            wrong_project.status_code != 404
+            or wrong_project.json().get("error") != "product_grant_not_resolved"
+        ):
+            raise RuntimeError("Product grant resolver crossed project scope")
+
+        wrong_space = operator.post(
+            "/v3/product-grants/resolve",
+            json={
+                "subject_id": "ci:user",
+                "space_id": "ci:other-space",
+                "device_id": device_id,
+                "action": "git.status",
+                "project": "scene",
+            },
+        )
+        if (
+            wrong_space.status_code != 404
+            or wrong_space.json().get("error") != "product_grant_not_resolved"
+        ):
+            raise RuntimeError("Product grant resolver crossed Space scope")
+
+        invalid_resolution_action = operator.post(
+            "/v3/product-grants/resolve",
+            json={
+                "subject_id": "ci:user",
+                "space_id": "ci:space",
+                "device_id": device_id,
+                "action": "git.sync",
+                "project": "scene",
+            },
+        )
+        if invalid_resolution_action.status_code != 400:
+            raise RuntimeError(
+                "Product grant resolver accepted a mutating action"
+            )
+
         mutation_grant = operator.post(
             "/v3/product-grants",
             json={
@@ -117,6 +195,23 @@ def run(base_url: str, operator_token: str) -> None:
             raise RuntimeError("Product grant revocation was not confirmed")
         if not (revoked_payload.get("grant") or {}).get("revoked_at"):
             raise RuntimeError("Product grant revocation timestamp was not persisted")
+
+        revoked_resolution = operator.post(
+            "/v3/product-grants/resolve",
+            json={
+                "subject_id": "ci:user",
+                "space_id": "ci:space",
+                "device_id": device_id,
+                "action": "git.status",
+                "project": "scene",
+            },
+        )
+        if (
+            revoked_resolution.status_code != 404
+            or revoked_resolution.json().get("error")
+            != "product_grant_not_resolved"
+        ):
+            raise RuntimeError("Revoked Product grant still resolved")
 
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)

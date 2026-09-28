@@ -450,7 +450,10 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn('"product_grant_store_v1"', worker)
+        self.assertIn('"product_grant_resolution_v1"', worker)
         self.assertIn("createProductGrant", worker)
+        self.assertIn("resolveProductGrantForContext", worker)
+        self.assertIn("resolveProductGrantAdmin", worker)
         self.assertIn("listProductGrants", worker)
         self.assertIn("revokeProductGrant", worker)
         product_block = worker.split(
@@ -479,6 +482,7 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertIn("CREATE TABLE IF NOT EXISTS ordax_product_audit", migration)
         self.assertIn("revoked_at TEXT", migration)
         self.assertIn("payload_fields_json TEXT", migration)
+        self.assertIn("/v3/product-grants/resolve", worker)
         self.assertNotIn("/v3/product-execute", worker)
         self.assertNotIn("/v3/product-actions", worker)
         self.assertIn("deleted: !remaining", worker)

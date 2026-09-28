@@ -21,6 +21,7 @@ const CONTROL_PLANE_CAPABILITIES = [
   "artifact_multipart_v1",
   "terminal_report_recovery_v1",
   "product_grant_store_v1",
+  "product_grant_resolution_v1",
 ];
 
 const ACTION_PREFIXES = [
@@ -485,6 +486,126 @@ async function listProductGrants(request: Request, env: Env): Promise<Response> 
   return json({
     ok: true,
     grants: (rows.results ?? []).map((row) => publicProductGrant(row)),
+  });
+}
+
+async function resolveProductGrantForContext(
+  env: Env,
+  context: {
+    subjectId: string;
+    spaceId: string | null;
+    deviceId: string;
+    action: string;
+    project: string | null;
+  },
+): Promise<ProductGrantRow | null> {
+  const now = nowIso();
+  const rows = await env.DB.prepare(
+    `SELECT id, subject_id, space_id, device_id, actions_json, projects_json,
+            expires_at, created_at, revoked_at
+     FROM ordax_product_grants
+     WHERE subject_id = ?1
+       AND revoked_at IS NULL
+       AND (expires_at IS NULL OR expires_at > ?2)
+       AND (device_id IS NULL OR device_id = ?3)
+       AND (space_id IS NULL OR space_id = ?4)
+     ORDER BY
+       CASE WHEN device_id IS NULL THEN 0 ELSE 1 END DESC,
+       CASE WHEN space_id IS NULL THEN 0 ELSE 1 END DESC,
+       created_at DESC
+     LIMIT 100`,
+  ).bind(
+    context.subjectId,
+    now,
+    context.deviceId,
+    context.spaceId,
+  ).all<ProductGrantRow>();
+
+  for (const row of rows.results ?? []) {
+    let actions: unknown = [];
+    let projects: unknown = [];
+    try { actions = JSON.parse(row.actions_json); } catch { continue; }
+    try { projects = JSON.parse(row.projects_json); } catch { continue; }
+    if (
+      !Array.isArray(actions)
+      || !actions.every((item) => typeof item === "string")
+      || !actions.includes(context.action)
+    ) {
+      continue;
+    }
+    if (PRODUCT_PROJECT_ACTIONS.has(context.action)) {
+      if (
+        context.project === null
+        || !Array.isArray(projects)
+        || !projects.every((item) => typeof item === "string")
+        || !projects.includes(context.project)
+      ) {
+        continue;
+      }
+    }
+    return row;
+  }
+  return null;
+}
+
+async function resolveProductGrantAdmin(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  if (!await operatorAuthorized(request, env)) {
+    return json({ ok: false, error: "operator_unauthorized" }, 401);
+  }
+  const body = await parseSmallJson(request, 16 * 1024);
+  if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const subjectId = typeof body.subject_id === "string" ? body.subject_id : "";
+  const spaceId = body.space_id == null
+    ? null
+    : typeof body.space_id === "string" ? body.space_id : "";
+  const deviceId = typeof body.device_id === "string" ? body.device_id : "";
+  const action = typeof body.action === "string" ? body.action : "";
+  const project = body.project == null
+    ? null
+    : typeof body.project === "string" ? body.project : "";
+
+  if (
+    !PRODUCT_ID_RE.test(subjectId)
+    || (spaceId !== null && !PRODUCT_ID_RE.test(spaceId))
+    || !UUID_RE.test(deviceId)
+    || !PRODUCT_READ_ONLY_ACTIONS.has(action)
+    || (project !== null && !PROJECT_SLUG_RE.test(project))
+    || (PRODUCT_PROJECT_ACTIONS.has(action) && project === null)
+    || (!PRODUCT_PROJECT_ACTIONS.has(action) && project !== null)
+  ) {
+    return json({ ok: false, error: "product_grant_resolution_invalid" }, 400);
+  }
+
+  const device = await env.DB.prepare(
+    "SELECT id FROM ordax_devices WHERE id = ?1 AND revoked_at IS NULL",
+  ).bind(deviceId).first();
+  if (!device) return json({ ok: false, error: "device_not_found" }, 404);
+
+  const grant = await resolveProductGrantForContext(env, {
+    subjectId,
+    spaceId,
+    deviceId,
+    action,
+    project,
+  });
+  if (!grant) {
+    return json({ ok: false, error: "product_grant_not_resolved" }, 404);
+  }
+
+  return json({
+    ok: true,
+    grant: publicProductGrant(grant),
+    resolved_for: {
+      subject_id: subjectId,
+      space_id: spaceId,
+      device_id: deviceId,
+      action,
+      project,
+    },
   });
 }
 
@@ -1473,6 +1594,9 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/v3/product-grants") {
       return listProductGrants(request, env);
+    }
+    if (request.method === "POST" && url.pathname === "/v3/product-grants/resolve") {
+      return resolveProductGrantAdmin(request, env);
     }
     if (
       request.method === "DELETE"

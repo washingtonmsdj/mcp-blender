@@ -67,10 +67,17 @@ O Worker expõe somente administração autenticada pelo token de operador:
 
 - `POST /v3/product-grants`: cria um grant explicitamente read-only;
 - `GET /v3/product-grants`: lista grants para operação/diagnóstico;
-- `DELETE /v3/product-grants/{id}`: revoga logicamente sem apagar histórico.
+- `DELETE /v3/product-grants/{id}`: revoga logicamente sem apagar histórico;
+- `POST /v3/product-grants/resolve`: diagnóstico administrativo que resolve um
+  grant ativo para subject/Space/device/action/project.
+
+A resolução é fail-closed: ignora grants revogados/expirados, respeita Space,
+device, action e project e prefere grants mais específicos. Ela anuncia
+`product_grant_resolution_v1` em `/health`.
 
 Os grants aceitam apenas a superfície read-only já definida pelo Action Gateway.
-Não existe rota Product para enfileirar/executar uma ação nesta etapa.
+Resolver um grant **não autentica o usuário e não executa ação**. Não existe rota
+Product para enfileirar/executar uma ação nesta etapa.
 
 O token de operador **não é identidade do usuário Product**, não cria uma sessão
 Product e não pode ser reutilizado pelo futuro Product MCP para agir em nome de
