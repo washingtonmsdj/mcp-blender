@@ -32,6 +32,13 @@ def projects_list() -> dict:
 
 
 @mcp.tool()
+def repository_catalog() -> dict:
+    """List the canonical Git repositories shown on the ORDAX Studio project home."""
+    result = registry().execute("workspace.repository_catalog", {})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
 def agent_capabilities() -> dict:
     """Discover action names and registered projects. Observe before changing or retrying."""
     return registry().agent_status({}).data

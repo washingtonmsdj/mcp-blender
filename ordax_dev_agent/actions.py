@@ -108,6 +108,7 @@ class ActionRegistry(
         self._execution_lock = threading.Lock()
         self._actions: dict[str, Action] = {
             "projects.list": self.projects_list,
+            "workspace.repository_catalog": self.workspace_repository_catalog,
             "workspace.list_projects": self.workspace_list_projects,
             "workspace.bind_project": self.workspace_bind_project,
             "memory.status": self.memory_status,
@@ -268,6 +269,7 @@ class ActionRegistry(
             "artifacts.list": self.artifacts_list,
             "artifact.preview": self.artifact_preview,
             "artifact.read_chunk": self.artifact_read_chunk,
+            "git.repository_info": self.git_repository_info,
             "git.status": self.git_status,
             "git.diff": self.git_diff,
             "git.sync": self.git_sync,

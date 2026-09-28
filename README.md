@@ -17,7 +17,7 @@ O Device Agent passa a ser também a fundação do **ORDAX Studio**: um ambiente
 
 A integração com `prototipo-ordax-os` é uma fase posterior e não faz parte do gate atual. Primeiro o Studio deve ficar funcional e testado no Windows. Veja [docs/ORDAX_STUDIO_FOUNDATION.md](docs/ORDAX_STUDIO_FOUNDATION.md).
 
-O Studio possui duas shells durante a migração: `ordax-studio-desktop` (Tk, fallback estável) e `ordax-studio-web` (WebView2). A shell WebView2 combina arquivos/editor com preview lateral interativo para projetos web e evidência visual para Blender/Unity, preservando os mesmos contratos MCP e de memória.
+O Studio possui duas shells durante a migração: `ordax-studio-desktop` (Tk, fallback estável) e `ordax-studio-web` (WebView2). A shell WebView2 usa um fluxo **repositório primeiro**: a home mostra projetos Git canônicos; ao abrir um repositório, o workspace combina arquivos/editor com preview lateral interativo para projetos web e evidência visual para Blender/Unity, preservando os mesmos contratos MCP e de memória.
 
 ## OrdaX multi-projeto (0.3.0)
 

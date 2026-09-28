@@ -7,6 +7,7 @@ import re
 import shutil
 import stat
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -108,6 +109,44 @@ def _remove_tree_force(path: Path) -> None:
 
 
 class WorkspaceActions:
+    def workspace_repository_catalog(self, payload: dict[str, Any]) -> ActionResult:
+        if payload:
+            return ActionResult(False, "workspace.repository_catalog does not accept fields")
+
+        active = self._memory_store_instance().active_project()
+        active_slug = str(active.get("name") or "") if active else ""
+        projects = [project for project in self.projects.values() if project.root.is_dir()]
+
+        def inspect(project) -> dict[str, Any]:
+            card = project.public()
+            repository = self.git_repository_info({"project": project.slug})
+            card["repository"] = repository.data if repository.ok else {
+                "is_repository": False, "error": repository.summary,
+            }
+            return card
+
+        workers = max(1, min(8, len(projects)))
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ordax-repo") as pool:
+            cards = list(pool.map(inspect, projects))
+
+        cards.sort(key=lambda item: (item.get("slug") != active_slug, str(item.get("slug") or "").lower()))
+        visible: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for card in cards:
+            repository = card.get("repository") or {}
+            if not repository.get("is_repository"):
+                continue
+            remote = str(repository.get("remote") or "").strip().lower().removesuffix(".git")
+            identity = remote or str(repository.get("root") or card.get("path") or "").lower()
+            if identity in seen:
+                continue
+            seen.add(identity)
+            visible.append(card)
+        return ActionResult(True, "repository catalog ready", {
+            "active_project": active_slug or None,
+            "projects": visible,
+        })
+
     def workspace_list_projects(self, payload: dict[str, Any]) -> ActionResult:
         allowed = {"query", "max_depth", "max_entries"}
         unsupported = sorted(set(payload) - allowed)
@@ -222,13 +261,12 @@ class WorkspaceActions:
         if not target.is_dir():
             return ActionResult(False, f"project directory not found: {target}")
 
-        apps = payload.get("apps", ["blender"])
+        apps = payload.get("apps", [])
         if (
             not isinstance(apps, list)
-            or not apps
             or not all(isinstance(app, str) and app in _ALLOWED_APPS for app in apps)
         ):
-            return ActionResult(False, "apps must be a non-empty list containing only blender/unity")
+            return ActionResult(False, "apps must be a list containing only blender/unity")
 
         set_default = payload.get("set_default", False)
         if not isinstance(set_default, bool):

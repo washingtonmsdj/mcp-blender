@@ -323,6 +323,21 @@ class ProjectTests(unittest.TestCase):
             settings["default_project"],
         )
 
+    def test_workspace_bind_project_allows_repository_without_engine_adapter(self):
+        workspace = self.root / "github"
+        hordax = workspace / "HORDAX-game"
+        target = workspace / "web-app"
+        hordax.mkdir(parents=True)
+        target.mkdir(parents=True)
+        config = replace(self.config, state_dir=self.root / "state-bind-web", hordax_path=hordax)
+        registry = ActionRegistry(config)
+        result = registry.execute("workspace.bind_project", {
+            "slug": "web-app", "relative_path": "web-app", "apps": [],
+        })
+        self.assertTrue(result.ok, result.summary)
+        settings = json.loads((config.state_dir / "agent-settings.json").read_text(encoding="utf-8"))
+        self.assertEqual([], settings["projects"]["web-app"]["apps"])
+
     def test_workspace_bind_project_rejects_escape(self):
         workspace = self.root / "github"
         hordax = workspace / "HORDAX-game"

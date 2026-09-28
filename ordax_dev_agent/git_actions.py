@@ -10,6 +10,37 @@ from .process_runner import run_command as _run
 
 
 class GitActions:
+    def git_repository_info(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project_path(payload)
+        status = _run([
+            "git", "-C", str(project), "status", "--porcelain=v1", "--branch",
+            "--untracked-files=normal",
+        ], timeout=30)
+        if not status.ok:
+            return ActionResult(True, "project is not a Git repository", {
+                "is_repository": False, "path": str(project),
+            })
+
+        lines = [line for line in str(status.data.get("stdout") or "").splitlines() if line.strip()]
+        header = lines[0] if lines and lines[0].startswith("## ") else ""
+        branch = header[3:].split("...")[0].strip() if header else "detached"
+        if branch.startswith("No commits yet on "):
+            branch = branch.removeprefix("No commits yet on ").strip()
+        changes = lines[1:] if header else lines
+
+        remote_result = _run(["git", "-C", str(project), "config", "--get", "remote.origin.url"], timeout=15)
+        remote = str(remote_result.data.get("stdout") or "").strip() if remote_result.ok else ""
+        return ActionResult(True, "Git repository identity ready", {
+            "is_repository": True,
+            "path": str(project),
+            "root": str(project.resolve()),
+            "branch": branch or "detached",
+            "remote": remote or None,
+            "has_origin": bool(remote),
+            "dirty": bool(changes),
+            "changed_entries": len(changes),
+        })
+
     def git_status(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
         return _run(["git", "-C", str(project), "status", "--short"], timeout=60)

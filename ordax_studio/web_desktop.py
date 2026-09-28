@@ -24,6 +24,23 @@ class StudioApi:
     def _result(result) -> dict[str, Any]:
         return {"ok": result.ok, "summary": result.summary, "data": result.data}
 
+    def _project_card(self, project) -> dict[str, Any]:
+        card = project.public()
+        if not project.root.is_dir():
+            card["repository"] = {"is_repository": False, "available": False}
+            return card
+        repository = self.agent.execute("git.repository_info", {"project": project.slug})
+        card["repository"] = repository.data if repository.ok else {
+            "is_repository": False, "error": repository.summary,
+        }
+        return card
+
+    def projects_catalog(self) -> dict[str, Any]:
+        result = self.agent.execute("workspace.repository_catalog", {})
+        if not result.ok:
+            return {"ok": False, "summary": result.summary, "projects": []}
+        return {"ok": True, **result.data}
+
     def _activate(self, slug: str) -> None:
         project = self.agent._project({"project": slug})
         self.project = slug
@@ -39,8 +56,8 @@ class StudioApi:
         health = self.agent.execute("agent.project_health", {"project": self.project})
         return {
             "product": APP_NAME,
-            "project": project.public(),
-            "projects": [item.public() for item in self.agent.projects.values()],
+            "project": self._project_card(project),
+            "projects": [self._project_card(item) for item in self.agent.projects.values()],
             "session_id": self.session_id,
             "memory": {
                 "memories": context.get("memories", []),

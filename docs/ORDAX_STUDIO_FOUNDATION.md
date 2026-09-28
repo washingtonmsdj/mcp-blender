@@ -196,3 +196,12 @@ Ela usa o mesmo `ActionRegistry`, banco de memória e regras de segurança do St
 A primeira versão organiza três áreas simultâneas: arquivos, editor seguro e preview.
 Projetos web usam um `iframe` interativo conectado ao runtime local; Blender e Unity usam a imagem visual mais recente.
 Salvar continua exigindo o SHA-256 da leitura original, portanto a nova UI não contorna o controle de escrita stale.
+
+## Modelo de projeto: repositório primeiro
+
+A unidade principal do ORDAX Studio é um repositório Git, não um arquivo nem uma pasta arbitrária.
+A home consulta `workspace.repository_catalog`, deduplica worktrees/aliases pelo remoto Git e oculta entradas legadas que não sejam repositórios.
+Projetos web ou de software podem ser registrados com `apps: []`; Blender e Unity passam a ser capabilities opcionais do repositório.
+
+Arquivos só aparecem depois de `Abrir projeto`. O preview continua pertencendo ao projeto/repositório ativo e não ao arquivo selecionado.
+O mesmo catálogo é exposto pelo MCP através de `repository_catalog`, preparando a integração futura com o Ordax OS.
