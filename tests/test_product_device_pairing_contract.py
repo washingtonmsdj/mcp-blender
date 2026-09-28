@@ -20,6 +20,9 @@ class ProductDevicePairingContractTests(unittest.TestCase):
         self.mcp = (
             root / "ordax_dev_agent" / "product_mcp_server.py"
         ).read_text(encoding="utf-8")
+        self.cli = (
+            root / "ordax_dev_agent" / "product_pair_cli.py"
+        ).read_text(encoding="utf-8")
 
     def test_pairing_is_device_initiated_and_product_claimed(self):
         self.assertIn('"/v3/device/product-pairings"', self.worker)
@@ -45,6 +48,15 @@ class ProductDevicePairingContractTests(unittest.TestCase):
     def test_pairing_secret_is_not_exposed_as_mcp_tool(self):
         self.assertNotIn("pairing_secret", self.mcp)
         self.assertNotIn("claim_device_pairing", self.mcp)
+
+    def test_pairing_secret_is_one_time_and_cli_does_not_persist_it(self):
+        start = self.worker.index("async function claimProductDevicePairing")
+        end = self.worker.index("async function listProductDeviceLinks", start)
+        claim_body = self.worker[start:end]
+        self.assertIn("product_pairing_already_claimed", claim_body)
+        self.assertIn("replayed: true", claim_body)
+        self.assertNotIn("write_text", self.cli)
+        self.assertNotIn("open(", self.cli)
 
 
 if __name__ == "__main__":
