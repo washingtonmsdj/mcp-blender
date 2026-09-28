@@ -58,7 +58,7 @@ class PreviewActions:
 
     def _preview_mode(self, project) -> str:
         preview = getattr(project, "preview", {}) or {}
-        if preview.get("url") or preview.get("entry") or (project.root / "package.json").is_file():
+        if preview.get("url") or preview.get("entry"):
             return "web"
         if "blender" in project.apps:
             return "blender"
@@ -66,6 +66,14 @@ class PreviewActions:
             return "unity"
         if (project.root / "index.html").is_file():
             return "web"
+        package = project.root / "package.json"
+        if package.is_file():
+            try:
+                data = json.loads(package.read_text(encoding="utf-8-sig"))
+            except Exception:
+                data = {}
+            if isinstance(data.get("scripts"), dict) and data["scripts"].get("dev"):
+                return "web"
         return "artifact"
 
     def project_preview_status(self, payload: dict[str, Any]) -> ActionResult:

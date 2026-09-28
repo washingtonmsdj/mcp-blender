@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ class StudioApi:
 
     def _project_card(self, project) -> dict[str, Any]:
         card = project.public()
+        card["preview_mode"] = self.agent._preview_mode(project)
         if not project.root.is_dir():
             card["repository"] = {"is_repository": False, "available": False}
             return card
@@ -39,7 +41,22 @@ class StudioApi:
         result = self.agent.execute("workspace.repository_catalog", {})
         if not result.ok:
             return {"ok": False, "summary": result.summary, "projects": []}
-        return {"ok": True, **result.data}
+        startup = self.startup_project()
+        return {
+            "ok": True,
+            **result.data,
+            "startup_project": startup.get("project") if startup.get("ok") else None,
+        }
+
+    def startup_project(self) -> dict[str, Any]:
+        requested = str(os.environ.get("ORDAX_STUDIO_OPEN_PROJECT") or "").strip()
+        if not requested:
+            return {"ok": True, "project": None}
+        try:
+            selected = self.agent.select_available_project(requested)
+        except Exception as error:
+            return {"ok": False, "summary": f"{type(error).__name__}: {error}", "project": None}
+        return {"ok": True, "project": selected}
 
     def _activate(self, slug: str) -> None:
         project = self.agent._project({"project": slug})
@@ -133,6 +150,14 @@ class StudioApi:
             },
         }
 
+    def task_add(self, title: str) -> dict[str, Any]:
+        title = str(title or "").strip()
+        if not title:
+            return {"ok": False, "summary": "A tarefa não pode ficar vazia"}
+        return self._result(self.agent.execute("memory.task_add", {
+            "project": self.project, "title": title,
+        }))
+
     def checkpoint(self, summary: str) -> dict[str, Any]:
         return self._result(self.agent.execute("memory.checkpoint", {
             "project": self.project, "summary": summary,
@@ -140,6 +165,20 @@ class StudioApi:
 
     def health(self) -> dict[str, Any]:
         return self._result(self.agent.execute("agent.project_health", {"project": self.project}))
+
+    def briefing(self) -> dict[str, Any]:
+        return self._result(self.agent.execute("agent.project_briefing", {"project": self.project}))
+
+    def search(self, query: str, max_results: int = 50) -> dict[str, Any]:
+        return self._result(self.agent.execute("project.search_text", {
+            "project": self.project, "query": query, "max_results": max_results,
+        }))
+
+    def git_diff(self) -> dict[str, Any]:
+        return self._result(self.agent.execute("git.diff", {"project": self.project}))
+
+    def memory_context(self) -> dict[str, Any]:
+        return self._result(self.agent.execute("memory.context", {"project": self.project}))
 
 
 def main() -> int:
@@ -153,14 +192,14 @@ def main() -> int:
         return 0
     try:
         api = StudioApi(ActionRegistry(config))
-        html = Path(__file__).with_name("studio.html").read_text(encoding="utf-8")
+        html = Path(__file__).with_name("studio.html").resolve()
         webview.create_window(
             APP_NAME,
-            html=html,
+            url=html.as_uri(),
             js_api=api,
-            width=1500,
-            height=900,
-            min_size=(1100, 700),
+            width=1600,
+            height=960,
+            min_size=(1180, 720),
         )
         webview.start(gui="edgechromium", debug=False)
         return 0

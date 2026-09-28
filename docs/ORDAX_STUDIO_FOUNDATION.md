@@ -190,11 +190,22 @@ A UI expõe **Executar**, **Parar**, **Capturar**, **Atualizar** e atualização
 
 ## Shell interativa WebView2
 
-Além da shell Tk de fallback, `ordax-studio-web` oferece uma interface WebView2 inspirada no Lovable.
+Além da shell Tk de fallback, `ordax-studio-web` oferece uma interface WebView2 inspirada em IDEs agentic modernas e no fluxo do Lovable.
 Ela usa o mesmo `ActionRegistry`, banco de memória e regras de segurança do Studio.
 
-A primeira versão organiza três áreas simultâneas: arquivos, editor seguro e preview.
-Projetos web usam um `iframe` interativo conectado ao runtime local; Blender e Unity usam a imagem visual mais recente.
+O workspace segue um contrato estável de três superfícies:
+
+1. **sidebar esquerda — Projetos:** lista apenas workspaces/repositórios, com o projeto ativo destacado; arquivos não competem com projetos nessa navegação;
+2. **centro — Agente:** continuidade, tarefas e futuro transporte de chat ocupam a superfície principal; arquivos, busca, Git, memória e MCP são vistas contextuais do projeto;
+3. **direita — Preview:** superfície visual de primeira classe, independente do arquivo selecionado, com refresh, captura, logs e modo maximizado.
+
+Ao clicar em um projeto `web`, o Studio reutiliza o runtime local quando ele já existe ou executa `project.preview_start` automaticamente quando está parado. O `iframe` recebe a URL local do runtime assim que ela fica disponível.
+Projetos Blender/Unity não iniciam engines pesadas apenas por navegação: o painel restaura a captura visual mais recente e permite uma nova captura sob demanda.
+Projetos sem runtime visual permanecem em modo `artifact`.
+
+A detecção web é conservadora: configuração explícita de preview, `index.html` ou `package.json` com script `dev`. Um `package.json` sem runtime de desenvolvimento não transforma um repositório de código em projeto visual.
+O Studio persiste a vista central por projeto e invalida respostas assíncronas antigas durante trocas rápidas de workspace para impedir que o preview do projeto anterior substitua o atual.
+
 Salvar continua exigindo o SHA-256 da leitura original, portanto a nova UI não contorna o controle de escrita stale.
 
 ## Modelo de projeto: repositório primeiro
