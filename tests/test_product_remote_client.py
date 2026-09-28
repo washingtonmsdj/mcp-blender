@@ -90,6 +90,52 @@ class ProductRemoteClientTests(unittest.TestCase):
             ],
         )
 
+    def test_device_pairing_methods_are_explicit_and_product_authenticated(self):
+        seen = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append((request.method, request.url.path, request.headers.get("authorization", "")))
+            if request.url.path == "/v3/product/device-links" and request.method == "POST":
+                body = json.loads(request.content.decode("utf-8"))
+                self.assertEqual(body["pairing_id"], "pair-1")
+                self.assertEqual(body["pairing_secret"], "secret-1")
+                return httpx.Response(201, json={
+                    "ok": True,
+                    "link": {"link_id": "link-1", "device_id": "dev-1"},
+                })
+            if request.url.path == "/v3/product/device-links" and request.method == "GET":
+                return httpx.Response(200, json={
+                    "ok": True,
+                    "links": [{"link_id": "link-1", "device_id": "dev-1"}],
+                })
+            if request.url.path == "/v3/product/device-links/link-1" and request.method == "DELETE":
+                return httpx.Response(200, json={
+                    "ok": True,
+                    "link_id": "link-1",
+                    "revoked_at": "2026-09-28T12:00:00Z",
+                })
+            return httpx.Response(404, json={"ok": False, "error": "not_found"})
+
+        client = ProductRemoteClient(
+            "https://control.example.test",
+            http=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        link = client.claim_device_pairing(
+            "jwt-claim",
+            pairing_id="pair-1",
+            pairing_secret="secret-1",
+        )
+        self.assertEqual(link["link_id"], "link-1")
+        self.assertEqual(client.device_links("jwt-list")[0]["device_id"], "dev-1")
+        self.assertEqual(
+            client.revoke_device_link("jwt-revoke", "link-1")["link_id"],
+            "link-1",
+        )
+        self.assertEqual(
+            [item[2] for item in seen],
+            ["Bearer jwt-claim", "Bearer jwt-list", "Bearer jwt-revoke"],
+        )
+
     def test_control_plane_errors_are_typed(self):
         def handler(_request: httpx.Request) -> httpx.Response:
             return httpx.Response(
