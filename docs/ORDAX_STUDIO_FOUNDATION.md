@@ -122,3 +122,17 @@ ordax-studio mcp
 ```
 
 `ordax-studio-mcp` permanece disponivel como alias direto para o MCP local. O CLI usa o mesmo `AgentConfig`, `ActionRegistry`, projetos cadastrados e banco persistente do Studio.
+
+## Primeira shell desktop
+
+`ordax-studio-desktop` abre a primeira interface desktop do produto. Ela usa o mesmo runtime do Device Agent e nao cria uma segunda implementacao de Blender/Unity/Git.
+
+A shell inicial oferece projetos registrados, contexto persistente, memorias, tarefas, capabilities e terminal no diretorio do projeto. O botao **Retomar sessao** cria uma sessao persistente ligada ao ultimo checkpoint e ao estado Git atual; uma nova retomada do mesmo projeto encerra logicamente a sessao aberta anterior sem apagar seu historico.
+
+Para validacao sem abrir janela:
+
+```powershell
+ordax-studio-desktop --smoke
+```
+
+O aplicativo legado `ORDAX Local AI` permanece preservado como fallback durante esta fase.

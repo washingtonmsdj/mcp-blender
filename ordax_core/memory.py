@@ -184,6 +184,10 @@ class MemoryStore:
         project = self.set_active_project(slug, path)
         project_id = int(project["id"])
         with self._connect() as connection:
+            connection.execute(
+                "UPDATE sessions SET ended_at=? WHERE project_id=? AND ended_at IS NULL",
+                (now(), project_id),
+            )
             checkpoint = connection.execute("SELECT id FROM checkpoints WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
             resumed_from = int(checkpoint["id"]) if checkpoint else None
             cursor = connection.execute("INSERT INTO sessions(project_id,started_at,resumed_from_checkpoint_id) VALUES(?,?,?)", (project_id, now(), resumed_from))

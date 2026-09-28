@@ -74,9 +74,11 @@ class OrdaxCoreMemoryTests(unittest.TestCase):
 
             reopened = MemoryStore(root / "state.db")
             self.assertEqual(reopened.active_project()["name"], "demo")
-            self.assertTrue(reopened.finish_session(session["session_id"]))
+            second = reopened.start_session("demo", project)
+            self.assertNotEqual(second["session_id"], session["session_id"])
             self.assertFalse(reopened.finish_session(session["session_id"]))
-            self.assertEqual(reopened.status()["counts"]["sessions"], 1)
+            self.assertTrue(reopened.finish_session(second["session_id"]))
+            self.assertEqual(reopened.status()["counts"]["sessions"], 2)
 
 
 if __name__ == "__main__":
