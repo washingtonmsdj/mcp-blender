@@ -125,6 +125,7 @@ class ActionRegistry(
             "project.preview_capture": self.project_preview_capture,
             "project.preview_start": self.project_preview_start,
             "project.preview_stop": self.project_preview_stop,
+            "project.preview_logs": self.project_preview_logs,
             "project.references": self.project_references,
             "project.reference_images": self.project_reference_images,
             "project.text_read": self.project_text_read,

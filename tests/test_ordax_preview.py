@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,7 +36,7 @@ class OrdaxPreviewTests(unittest.TestCase):
 
             self.assertTrue(status.ok)
             self.assertEqual("web", status.data["mode"])
-            self.assertTrue(status.data["url"].startswith("file:"))
+            self.assertIsNone(status.data["url"])
             latest = status.data["latest_image"]
             self.assertEqual("frame.png", latest["relative_path"])
             self.assertEqual({"artifact_name": "frame.png"}, latest["artifact_preview_payload"])
@@ -71,18 +72,49 @@ class OrdaxPreviewRuntimeTests(unittest.TestCase):
             registry = ActionRegistry(config)
             started = registry.execute("project.preview_start", {"project": "web", "wait_seconds": 10})
             self.assertTrue(started.ok, started.summary)
-            self.assertTrue(started.data["url_ready"])
-            status = registry.execute("project.preview_status", {"project": "web"})
-            self.assertTrue(status.data["runtime"]["running"])
-            self.assertEqual(started.data["url"], status.data["url"])
+            try:
+                self.assertTrue(started.data["url_ready"])
+                status = registry.execute("project.preview_status", {"project": "web"})
+                self.assertTrue(status.data["runtime"]["running"])
+                self.assertTrue(status.data["runtime"]["ownership_valid"])
+                self.assertEqual("running", status.data["runtime"]["state"])
+                self.assertEqual(started.data["url"], status.data["url"])
 
-            captured = registry.execute("project.preview_capture", {"project": "web", "width": 640, "height": 480})
-            self.assertTrue(captured.ok, captured.summary)
-            self.assertTrue(Path(captured.data["artifact"]).is_file())
-
-            stopped = registry.execute("project.preview_stop", {"project": "web"})
+                logs = registry.execute("project.preview_logs", {"project": "web"})
+                self.assertTrue(logs.ok, logs.summary)
+                self.assertTrue(Path(logs.data["log"]).is_file())
+            finally:
+                stopped = registry.execute("project.preview_stop", {"project": "web"})
             self.assertTrue(stopped.ok, stopped.summary)
             self.assertFalse(stopped.data["running"])
+            self.assertEqual("stopped", stopped.data["state"])
+            self.assertTrue((config.state_dir / "previews" / "web.json").is_file())
+
+    def test_stop_refuses_stale_foreign_pid(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project = root / "web"
+            project.mkdir()
+            (project / "index.html").write_text("<h1>safe</h1>", encoding="utf-8")
+            config = AgentConfig(
+                agent_name="test", poll_seconds=1, state_dir=root / "state",
+                agent_repo_path=root / "agent", hordax_path=root / "hordax",
+                bridge_path=root / "bridge",
+                projects={"web": {"path": str(project), "apps": []}},
+                default_project="web",
+            )
+            registry = ActionRegistry(config)
+            state_path = config.state_dir / "previews" / "web.json"
+            state_path.parent.mkdir(parents=True)
+            state_path.write_text(json.dumps({
+                "schema_version": 1, "project": "web", "token": "not-owned",
+                "state": "running", "pid": os.getpid(), "url": "http://127.0.0.1:9",
+            }), encoding="utf-8")
+            stopped = registry.execute("project.preview_stop", {"project": "web"})
+            self.assertFalse(stopped.ok)
+            self.assertEqual("stale", stopped.data["state"])
+            self.assertIn("not owned by ORDAX", stopped.summary)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,14 +4,17 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import sys
 import time
+import uuid
 import urllib.request
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from .models import ActionResult
+from .browser_capture import BrowserCaptureError, capture_url, find_chromium
 
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 
@@ -70,13 +73,9 @@ class PreviewActions:
         preview = getattr(project, "preview", {}) or {}
         latest = self._latest_preview_image(project)
         runtime = self._preview_runtime_status(project)
-        url = str(runtime.get("url") or preview.get("url") or "").strip()
-        entry = str(preview.get("entry") or "").strip()
-        if not url and entry:
-            entry_path = project.path(entry)
-            url = entry_path.as_uri()
-        if not url and (project.root / "index.html").is_file():
-            url = (project.root / "index.html").resolve().as_uri()
+        url = str((runtime.get("url") if runtime.get("running") else "") or preview.get("url") or "").strip()
+        # Web preview is a project runtime/host, never a direct file:// view.
+        # A configured external URL is allowed; local projects use preview_start.
         return ActionResult(True, "project preview status ready", {
             "project": project.slug,
             "mode": self._preview_mode(project),
@@ -85,21 +84,6 @@ class PreviewActions:
             "latest_image": latest,
             "auto_refresh_seconds": int(preview.get("refresh_seconds", 3) or 3),
         })
-
-    @staticmethod
-    def _find_chromium() -> Path | None:
-        candidates = [
-            shutil.which("chrome"), shutil.which("msedge"),
-            str(Path.home() / "AppData/Local/Google/Chrome/Application/chrome.exe"),
-            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-        ]
-        for raw in candidates:
-            if raw and Path(raw).is_file():
-                return Path(raw)
-        return None
 
     def project_preview_capture(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
@@ -121,37 +105,48 @@ class PreviewActions:
         url = str(status.data.get("url") or "") if status.ok else ""
         if not url:
             return ActionResult(False, "no visual or web preview source is configured")
-        browser = self._find_chromium()
-        if browser is None:
-            return ActionResult(False, "Chrome or Edge executable not found for web preview")
         output = (self.config.state_dir / "artifacts" / project.slug / "web-preview.png").resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         width = max(320, min(int(payload.get("width", 1280)), 2560))
         height = max(240, min(int(payload.get("height", 720)), 1600))
-        command = [
-            str(browser), "--headless=new", "--disable-gpu", "--hide-scrollbars",
-            f"--window-size={width},{height}", f"--screenshot={output}", url,
-        ]
+        timeout_seconds = max(5.0, min(float(payload.get("timeout_seconds", 30)), 60.0))
+        browser = find_chromium()
+        if browser is None:
+            return ActionResult(False, "Chrome or Edge executable not found for web preview")
         try:
-            completed = subprocess.run(command, capture_output=True, text=True,
-                                       shell=False, timeout=30)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            return ActionResult(False, f"web preview capture failed: {error}")
-        if completed.returncode != 0 or not output.is_file() or output.stat().st_size == 0:
-            return ActionResult(False, "web preview capture did not produce an image", {
-                "returncode": completed.returncode,
-                "stderr": (completed.stderr or "")[-2000:],
+            captured = capture_url(
+                browser, url, output, self.config.state_dir / "previews" / "chromium",
+                width=width, height=height, timeout_seconds=timeout_seconds,
+            )
+        except (BrowserCaptureError, OSError, ValueError) as error:
+            return ActionResult(False, f"web preview capture failed: {error}", {
+                "url": url, "browser": str(browser), "provider": "chromium-cdp",
             })
         return ActionResult(True, "web preview captured", {
-            "artifact": str(output),
-            "url": url,
-            "browser": str(browser),
-            "width": width,
-            "height": height,
+            **captured, "url": url,
         })
 
     def _preview_state_path(self, project) -> Path:
         return self.config.state_dir / "previews" / f"{project.slug}.json"
+
+    def _preview_log_path(self, project) -> Path:
+        return self.config.state_dir / "previews" / f"{project.slug}.log"
+
+    @staticmethod
+    def _available_port(configured: int = 0) -> int:
+        if configured < 0 or configured > 65535:
+            raise ValueError("preview port must be between 1 and 65535")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind(("127.0.0.1", configured))
+            return int(probe.getsockname()[1])
+
+    def _write_preview_state(self, project, state: dict[str, Any]) -> None:
+        path = self._preview_state_path(project)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp = path.with_suffix(".tmp")
+        temp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        temp.replace(path)
 
     @staticmethod
     def _process_running(pid: int) -> bool:
@@ -173,6 +168,40 @@ class PreviewActions:
             return False
 
     @staticmethod
+    def _process_commandline(pid: int) -> str:
+        if pid <= 0:
+            return ""
+        if os.name == "nt":
+            command = (
+                "$ErrorActionPreference='SilentlyContinue'; "
+                f"(Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\").CommandLine"
+            )
+            try:
+                result = subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-Command", command],
+                    capture_output=True, text=True, shell=False, timeout=4,
+                )
+                return (result.stdout or "").strip()
+            except (OSError, subprocess.TimeoutExpired):
+                return ""
+        proc = Path(f"/proc/{pid}/cmdline")
+        try:
+            return proc.read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+        except OSError:
+            return ""
+
+    def _runtime_owned(self, project, state: dict[str, Any]) -> bool:
+        pid = int(state.get("pid") or 0)
+        token = str(state.get("token") or "")
+        if not pid or not token:
+            return False
+        process = getattr(self, "_preview_processes", {}).get(project.slug)
+        if process is not None and process.pid == pid and process.poll() is None:
+            return True
+        commandline = self._process_commandline(pid)
+        return "preview_runtime.py" in commandline and token in commandline
+
+    @staticmethod
     def _url_ready(url: str) -> bool:
         try:
             with urllib.request.urlopen(url, timeout=1.0) as response:
@@ -183,23 +212,35 @@ class PreviewActions:
     def _preview_runtime_status(self, project) -> dict[str, Any]:
         path = self._preview_state_path(project)
         if not path.is_file():
-            return {"running": False}
+            return {"state": "stopped", "running": False, "ownership_valid": False}
         try:
             state = json.loads(path.read_text(encoding="utf-8-sig"))
             pid = int(state.get("pid") or 0)
         except Exception as error:
-            return {"running": False, "error": str(error)}
-        running = self._process_running(pid)
+            return {"state": "error", "running": False, "ownership_valid": False, "error": str(error)}
+        process_running = self._process_running(pid)
+        ownership_valid = bool(process_running and self._runtime_owned(project, state))
+        if process_running and not ownership_valid:
+            return {**state, "state": "stale", "running": False, "ownership_valid": False,
+                    "error": "stored preview PID is not owned by ORDAX"}
+        if not process_running:
+            lifecycle = str(state.get("state") or "stopped")
+            if lifecycle in {"starting", "running"}:
+                lifecycle = "stopped"
+            return {**state, "state": lifecycle, "running": False, "ownership_valid": False,
+                    "url_ready": False}
         url = str(state.get("url") or "")
-        return {
-            **state,
-            "running": running,
-            "url_ready": bool(running and url and self._url_ready(url)),
-        }
+        ready = bool(url and self._url_ready(url))
+        lifecycle = "running" if ready else str(state.get("state") or "starting")
+        return {**state, "state": lifecycle, "running": True, "ownership_valid": True,
+                "url_ready": ready}
 
     def _web_launch_spec(self, project) -> tuple[list[str], str, dict[str, str]] | ActionResult:
         preview = getattr(project, "preview", {}) or {}
-        port = int(preview.get("port") or 0)
+        try:
+            port = self._available_port(int(preview.get("port") or 0))
+        except (OSError, ValueError) as error:
+            return ActionResult(False, f"preview port is unavailable: {error}")
         package = project.root / "package.json"
         env = os.environ.copy()
         if package.is_file():
@@ -213,20 +254,16 @@ class PreviewActions:
             if not npm or "dev" not in scripts:
                 return ActionResult(False, "web preview needs npm and a package.json dev script")
             if "vite" in deps:
-                port = port or 5173
                 command = [npm, "run", "dev", "--", "--host", "127.0.0.1", "--port", str(port)]
             elif "next" in deps:
-                port = port or 3000
                 command = [npm, "run", "dev", "--", "-H", "127.0.0.1", "-p", str(port)]
             else:
-                port = port or 3000
                 env["HOST"] = "127.0.0.1"
                 env["PORT"] = str(port)
                 env["BROWSER"] = "none"
                 command = [npm, "run", "dev"]
             return command, f"http://127.0.0.1:{port}", env
         if (project.root / "index.html").is_file():
-            port = port or 4173
             command = [sys.executable, "-m", "http.server", str(port),
                        "--bind", "127.0.0.1", "--directory", str(project.root)]
             return command, f"http://127.0.0.1:{port}", env
@@ -243,18 +280,24 @@ class PreviewActions:
         if isinstance(spec, ActionResult):
             return spec
         command, url, env = spec
-        log = self.config.state_dir / "previews" / f"{project.slug}.log"
+        log = self._preview_log_path(project)
         log.parent.mkdir(parents=True, exist_ok=True)
+        token = uuid.uuid4().hex
+        supervisor = Path(__file__).with_name("preview_runtime.py").resolve()
+        manager_command = [
+            sys.executable, str(supervisor),
+            "--token", token, "--cwd", str(project.root),
+            "--log", str(log), "--", *command,
+        ]
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         if os.name == "nt":
             creationflags |= getattr(subprocess, "DETACHED_PROCESS", 0)
         try:
-            with log.open("a", encoding="utf-8", errors="replace") as handle:
-                process = subprocess.Popen(
-                    command, cwd=str(project.root), env=env,
-                    stdin=subprocess.DEVNULL, stdout=handle, stderr=subprocess.STDOUT,
-                    shell=False, creationflags=creationflags,
-                )
+            process = subprocess.Popen(
+                manager_command, cwd=str(project.root), env=env,
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                shell=False, creationflags=creationflags,
+            )
         except OSError as error:
             return ActionResult(False, f"cannot start web preview runtime: {error}")
         processes = getattr(self, "_preview_processes", None)
@@ -262,47 +305,93 @@ class PreviewActions:
             processes = {}
             self._preview_processes = processes
         processes[project.slug] = process
-        state = {"pid": process.pid, "url": url, "command": command, "log": str(log)}
-        self._preview_state_path(project).write_text(json.dumps(state, indent=2), encoding="utf-8")
+        state = {
+            "schema_version": 1, "project": project.slug, "token": token,
+            "state": "starting", "pid": process.pid, "url": url,
+            "command": command, "log": str(log), "started_at_unix": time.time(),
+        }
+        self._write_preview_state(project, state)
         deadline = time.monotonic() + max(2.0, min(float(payload.get("wait_seconds", 20)), 45.0))
         while time.monotonic() < deadline:
             if self._url_ready(url):
-                state.update({"running": True, "url_ready": True})
+                state.update({"state": "running", "running": True, "url_ready": True,
+                              "ready_at_unix": time.time(), "ownership_valid": True})
+                self._write_preview_state(project, state)
                 return ActionResult(True, "web preview runtime started", state)
-            if process.poll() is not None:
+            exit_code = process.poll()
+            if exit_code is not None:
+                state.update({"state": "error", "running": False, "url_ready": False,
+                              "exit_code": int(exit_code), "stopped_at_unix": time.time()})
+                self._write_preview_state(project, state)
                 return ActionResult(False, "web preview runtime exited during startup", state)
             time.sleep(0.25)
-        state.update({"running": self._process_running(process.pid), "url_ready": False})
-        return ActionResult(state["running"], "web preview runtime started but URL is not ready yet", state)
+        state.update({"state": "starting", "running": self._process_running(process.pid),
+                      "url_ready": False, "ownership_valid": self._runtime_owned(project, state)})
+        self._write_preview_state(project, state)
+        return ActionResult(bool(state["running"]),
+                            "web preview runtime started but URL is not ready yet", state)
 
     def project_preview_stop(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
         state = self._preview_runtime_status(project)
         pid = int(state.get("pid") or 0)
+        if state.get("state") == "stale" and pid:
+            return ActionResult(False, "refusing to stop a process not owned by ORDAX", state)
         if not state.get("running") or not pid:
             return ActionResult(True, "web preview runtime is already stopped", state)
+        if not state.get("ownership_valid"):
+            return ActionResult(False, "refusing to stop a process not owned by ORDAX", state)
+        process = getattr(self, "_preview_processes", {}).pop(project.slug, None)
         try:
             if os.name == "nt":
                 completed = subprocess.run(
                     ["taskkill", "/PID", str(pid), "/T", "/F"],
                     capture_output=True, text=True, shell=False, timeout=10,
                 )
-                stopped = completed.returncode == 0
             else:
                 os.kill(pid, 15)
-                stopped = True
+                completed = None
         except (OSError, subprocess.TimeoutExpired) as error:
             return ActionResult(False, f"cannot stop web preview runtime: {error}", state)
-        if stopped:
-            process = getattr(self, "_preview_processes", {}).pop(project.slug, None)
-            if process is not None:
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass
+        if process is not None:
             try:
-                self._preview_state_path(project).unlink(missing_ok=True)
-            except OSError:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
                 pass
-            return ActionResult(True, "web preview runtime stopped", {**state, "running": False})
-        return ActionResult(False, "web preview runtime stop failed", state)
+        deadline = time.monotonic() + 3.0
+        while self._process_running(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        stopped = not self._process_running(pid)
+        if not stopped:
+            details = {**state}
+            if completed is not None:
+                details["taskkill_returncode"] = completed.returncode
+                details["taskkill_stderr"] = (completed.stderr or "")[-1000:]
+            return ActionResult(False, "web preview runtime stop failed", details)
+        state.update({"state": "stopped", "running": False, "url_ready": False,
+                      "ownership_valid": False, "stopped_at_unix": time.time()})
+        self._write_preview_state(project, state)
+        return ActionResult(True, "web preview runtime stopped", state)
+
+    def project_preview_logs(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        raw_max = payload.get("max_bytes", 32768)
+        if type(raw_max) is not int or not 1024 <= raw_max <= 131072:
+            return ActionResult(False, "max_bytes must be between 1024 and 131072")
+        log = self._preview_log_path(project)
+        runtime = self._preview_runtime_status(project)
+        if not log.is_file():
+            return ActionResult(True, "preview runtime has no log output yet",
+                                {"project": project.slug, "runtime": runtime, "log": str(log), "tail": ""})
+        size = log.stat().st_size
+        offset = max(0, size - raw_max)
+        with log.open("rb") as handle:
+            handle.seek(offset)
+            chunk = handle.read(raw_max)
+        text = chunk.decode("utf-8", "replace")
+        if offset and "\n" in text:
+            text = text.split("\n", 1)[1]
+        return ActionResult(True, "preview runtime log ready", {
+            "project": project.slug, "runtime": runtime, "log": str(log),
+            "size_bytes": size, "truncated": offset > 0, "tail": text,
+        })

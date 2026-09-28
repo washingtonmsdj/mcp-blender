@@ -47,6 +47,24 @@ def project_health(project: str | None = None) -> dict:
 
 
 @mcp.tool()
+def project_preview_status(project: str | None = None) -> dict:
+    """Read the project-level preview runtime state and URL without mutating it."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.preview_status", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def project_preview_logs(project: str | None = None, max_bytes: int = 32768) -> dict:
+    """Read the tail of the supervised project preview runtime log."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("project.preview_logs", {"project": selected, "max_bytes": max_bytes})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
 def project_preview_start(project: str | None = None) -> dict:
     """Start the typed local web preview runtime for a project."""
     agent = registry()
