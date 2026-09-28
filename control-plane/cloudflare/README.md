@@ -53,6 +53,11 @@ de 64 MiB e até 10.000 partes, mantendo cada request abaixo do limite do Worker
 Uploads multipart abandonados são descartados pelo lifecycle do R2 e as sessões
 D1 antigas são limpas antes de novos uploads.
 
+O endpoint `/health` publica capacidades explícitas. O Agent só ativa multipart
+quando o Worker anuncia `artifact_multipart_v1`; contra um Worker anterior ele
+mantém artifacts grandes localmente em vez de tentar uma API incompatível. Isso
+permite rollout seguro na ordem Worker primeiro, Agent depois.
+
 ## Segurança
 
 - token administrativo separado do token do dispositivo;

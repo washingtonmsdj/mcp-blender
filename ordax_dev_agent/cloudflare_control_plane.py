@@ -14,6 +14,7 @@ from urllib.parse import quote, urlparse, urlunparse
 import httpx
 from websockets.sync.client import connect
 
+from . import __version__ as DEVICE_AGENT_VERSION
 from .config import AgentConfig
 from .device_credentials import resolve_token_path
 from .models import ActionResult, AgentJob
@@ -31,6 +32,8 @@ from .remote_protocol import (
 DIRECT_ARTIFACT_MAX_BYTES = 90 * 1024 * 1024
 MULTIPART_PART_BYTES = 64 * 1024 * 1024
 MULTIPART_MAX_PARTS = 10_000
+ARTIFACT_MULTIPART_CAPABILITY = "artifact_multipart_v1"
+CONTROL_PLANE_CAPABILITY_CACHE_SECONDS = 60.0
 
 
 class CloudflareControlPlane:
@@ -76,6 +79,7 @@ class CloudflareControlPlane:
         self._queued_messages: list[dict[str, Any]] = []
         self._socket = None
         self._lock = threading.RLock()
+        self._capability_cache: tuple[float, frozenset[str]] | None = None
         self._terminal_outbox = TerminalOutbox(
             config.state_dir,
             "cloudflare-v3",
@@ -92,7 +96,7 @@ class CloudflareControlPlane:
             headers={
                 "X-Ordax-Device-Id": self.device_id,
                 "X-Ordax-Device-Token": self.device_token,
-                "user-agent": "OrdaX-Device-Agent/1.22.1",
+                "user-agent": f"OrdaX-Device-Agent/{DEVICE_AGENT_VERSION}",
             },
         )
 
@@ -428,6 +432,53 @@ class CloudflareControlPlane:
         self._terminal_outbox.acknowledge(outbox_path)
         self._jobs.pop(job.id, None)
 
+    def _control_plane_capabilities(self) -> frozenset[str]:
+        now = time.monotonic()
+        cached = self._capability_cache
+        if cached is not None and now - cached[0] < CONTROL_PLANE_CAPABILITY_CACHE_SECONDS:
+            return cached[1]
+
+        try:
+            response = self.http.get("/health", timeout=10.0)
+        except httpx.HTTPError as error:
+            raise TransientDeliveryError(
+                "cloudflare-v3 capability probe failed: "
+                f"{type(error).__name__}: {error}"
+            ) from error
+
+        if response.status_code in {408, 429} or response.status_code >= 500:
+            raise TransientDeliveryError(
+                f"cloudflare-v3 capability probe HTTP {response.status_code}"
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"cloudflare-v3 capability probe HTTP {response.status_code}: "
+                f"{response.text[-2000:]}"
+            )
+
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise RuntimeError(
+                "cloudflare-v3 capability probe returned invalid JSON"
+            ) from error
+        if (
+            not isinstance(payload, dict)
+            or payload.get("ok") is not True
+            or payload.get("service") != "ordax-control-plane-v3"
+        ):
+            raise RuntimeError(
+                "cloudflare-v3 capability probe returned invalid response"
+            )
+
+        raw = payload.get("capabilities")
+        capabilities = frozenset(
+            item for item in raw
+            if isinstance(item, str) and item
+        ) if isinstance(raw, list) else frozenset()
+        self._capability_cache = (now, capabilities)
+        return capabilities
+
     @staticmethod
     def _artifact_headers(
         file_path: Path,
@@ -685,6 +736,15 @@ class CloudflareControlPlane:
         content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
 
         if size > DIRECT_ARTIFACT_MAX_BYTES:
+            if ARTIFACT_MULTIPART_CAPABILITY not in self._control_plane_capabilities():
+                return {
+                    "delivery": "local-only-v3-artifact-multipart-unavailable",
+                    "kind": kind,
+                    "local_name": file_path.name,
+                    "sha256": digest,
+                    "size_bytes": size,
+                    "metadata": metadata or {},
+                }
             part_count = (size + MULTIPART_PART_BYTES - 1) // MULTIPART_PART_BYTES
             if part_count > MULTIPART_MAX_PARTS:
                 return {

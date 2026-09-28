@@ -33,8 +33,15 @@ def run(base_url: str, operator_token: str) -> None:
     try:
         health = operator.get("/health")
         health.raise_for_status()
-        if health.json().get("service") != "ordax-control-plane-v3":
+        health_payload = health.json()
+        if health_payload.get("service") != "ordax-control-plane-v3":
             raise RuntimeError("unexpected control-plane health response")
+        capabilities = health_payload.get("capabilities")
+        if (
+            not isinstance(capabilities, list)
+            or "artifact_multipart_v1" not in capabilities
+        ):
+            raise RuntimeError("control-plane multipart capability is missing")
 
         provision = operator.post("/v3/devices", json={"name": "ci-e2e-device"})
         provision.raise_for_status()
