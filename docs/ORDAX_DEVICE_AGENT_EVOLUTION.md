@@ -219,7 +219,8 @@ Fase 2:
     auditoria em D1, resolve grants ativos por subject/Space/device/action/project
     e já possui autenticação Product separada por JWT/JWKS (issuer/audience
     explícitos, fail-closed). O token de operador continua apenas administrativo;
-    a sessão Product ainda não executa ações.
+    o fluxo Product read-only já autentica o subject, resolve grant, enfileira
+    capability dedicada, executa pelo ProductActionGateway e persiste auditoria.
 
 Fase 3:
 - integrar Device Agent ao app Projetos do OrdaX;
@@ -227,10 +228,10 @@ Fase 3:
 - criar contexto portátil seguro de projeto para GitHub, separado da memória
   privada;
 - expor primeiro conjunto read-only do Product MCP;
-  - **foundation pronta:** `ProductMcpFacade` já define a superfície read-only
-    sobre o mesmo `ProductActionGateway`, sem servidor público e sem autenticação
-    própria; a exposição remota continua bloqueada até existir sessão Product real
-    no Control Plane.
+  - **read-only remoto implementado:** `ProductMcpFacade` define a superfície
+    tipada sobre o mesmo `ProductActionGateway`; Cloudflare v3 já autentica JWT
+    Product, resolve grants e executa somente o catálogo read-only com auditoria.
+    A publicação em produção depende do deploy validado com JWKS assimétrico.
 
 Fase 4:
 - habilitar mutações MCP por capability;
