@@ -61,13 +61,15 @@ jobs:
         run: |
           test -n "$CONTROL_PLANE_URL" || { echo "Deploy did not expose control-plane URL"; exit 1; }
           for attempt in $(seq 1 60); do
-            if curl --fail --silent --show-error "$CONTROL_PLANE_URL/health" | grep -q 'ordax-control-plane-v3'; then
-              echo "Remote health OK: $CONTROL_PLANE_URL"
-              exit 0
+            if health="$(curl --fail --silent --show-error "$CONTROL_PLANE_URL/health")"; then
+              if python -c 'import json,sys; data=json.load(sys.stdin); raise SystemExit(0 if data.get("service") == "ordax-control-plane-v3" and data.get("product_auth_configured") is True else 1)' <<<"$health"; then
+                echo "Remote health + Product auth OK: $CONTROL_PLANE_URL"
+                exit 0
+              fi
             fi
             sleep 2
           done
-          echo "Remote health did not become ready: $CONTROL_PLANE_URL"
+          echo "Remote health/Product auth did not become ready: $CONTROL_PLANE_URL"
           exit 1
 
       - name: Verify remote Cloudflare v3 end to end
@@ -90,5 +92,5 @@ jobs:
             echo
             echo "Control plane: `$CONTROL_PLANE_URL`"
             echo
-            echo "Health, WebSocket job delivery, lease, D1 persistence and R2 round-trip passed."
+            echo "Health, Product JWT/JWKS readiness, WebSocket job delivery, lease, D1 persistence and R2 round-trip passed."
           } >> "$GITHUB_STEP_SUMMARY"

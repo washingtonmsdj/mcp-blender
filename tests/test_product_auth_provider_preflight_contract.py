@@ -32,6 +32,10 @@ class ProductAuthProviderPreflightContractTests(unittest.TestCase):
         self.assertIn("eobcxuyvhkvdmkbaihwh.supabase.co/auth/v1", self.workflow)
         self.assertIn("PRODUCT_AUTH_AUDIENCE: authenticated", self.workflow)
 
+    def test_deploy_health_requires_product_auth_ready(self):
+        self.assertIn('data.get("product_auth_configured") is True', self.workflow)
+        self.assertIn("Remote health + Product auth OK", self.workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
