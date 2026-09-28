@@ -54,6 +54,20 @@ class ComponentUpdateTests(unittest.TestCase):
         plan = plan_component_update(["ordax_dev_agent/git_actions.py"])
         self.assertEqual(plan["affected_components"], ["adapter-git"])
 
+
+    def test_shared_action_contract_is_owned_by_device_core(self):
+        plan = plan_component_update(["ordax_dev_agent/action_contracts.py"])
+        self.assertEqual(plan["affected_components"], ["device-agent-core"])
+        self.assertTrue(plan["device_agent_restart_required"])
+        self.assertEqual(plan["unknown_paths"], [])
+
+    def test_product_gateway_is_owned_by_device_mcp(self):
+        plan = plan_component_update(["ordax_dev_agent/product_gateway.py"])
+        self.assertEqual(plan["affected_components"], ["device-mcp"])
+        self.assertFalse(plan["device_agent_restart_required"])
+        self.assertEqual(plan["restart_policies"], ["mcp-client-session"])
+        self.assertEqual(plan["unknown_paths"], [])
+
     def test_packaging_change_refreshes_install_contract_without_os_reinstall(self):
         plan = plan_component_update(["pyproject.toml"])
         self.assertTrue(plan["install_refresh_required"])
