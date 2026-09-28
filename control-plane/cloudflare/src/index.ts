@@ -369,6 +369,85 @@ function publicProductGrant(row: ProductGrantRow): JsonObject {
   };
 }
 
+type ProductGrantInput = {
+  actions: string[];
+  projects: string[];
+  expiresAt: string | null;
+};
+
+function parseProductGrantInput(body: JsonObject): ProductGrantInput | null {
+  const actions = normalizedStringArray(body.actions, {
+    maxItems: 32,
+    validator: (item) => PRODUCT_ID_RE.test(item),
+    allowed: PRODUCT_READ_ONLY_ACTIONS,
+  });
+  const projects = normalizedStringArray(body.projects ?? [], {
+    maxItems: 100,
+    validator: (item) => PROJECT_SLUG_RE.test(item),
+  });
+
+  if (
+    !actions
+    || actions.length === 0
+    || !projects
+    || (actions.some((item) => PRODUCT_PROJECT_ACTIONS.has(item)) && projects.length === 0)
+  ) {
+    return null;
+  }
+
+  let expiresAt: string | null = null;
+  if (body.expires_at != null) {
+    if (typeof body.expires_at !== "string") return null;
+    const parsed = new Date(body.expires_at);
+    if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+      return null;
+    }
+    expiresAt = parsed.toISOString();
+  }
+
+  return { actions, projects, expiresAt };
+}
+
+async function persistProductGrant(
+  env: Env,
+  input: {
+    subjectId: string;
+    spaceId: string | null;
+    deviceId: string;
+    grant: ProductGrantInput;
+  },
+): Promise<JsonObject> {
+  const grantId = crypto.randomUUID();
+  const createdAt = nowIso();
+  await env.DB.prepare(
+    `INSERT INTO ordax_product_grants
+      (id, subject_id, space_id, device_id, actions_json, projects_json,
+       expires_at, created_at, revoked_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL)`,
+  ).bind(
+    grantId,
+    input.subjectId,
+    input.spaceId,
+    input.deviceId,
+    stableJson(input.grant.actions),
+    stableJson(input.grant.projects),
+    input.grant.expiresAt,
+    createdAt,
+  ).run();
+
+  return {
+    id: grantId,
+    subject_id: input.subjectId,
+    space_id: input.spaceId,
+    device_id: input.deviceId,
+    actions: input.grant.actions,
+    projects: input.grant.projects,
+    expires_at: input.grant.expiresAt,
+    created_at: createdAt,
+    revoked_at: null,
+  };
+}
+
 async function createProductGrant(request: Request, env: Env): Promise<Response> {
   if (!await operatorAuthorized(request, env)) {
     return json({ ok: false, error: "operator_unauthorized" }, 401);
