@@ -129,6 +129,71 @@ class ProductRemoteClient:
             )
         return [dict(item) for item in targets]
 
+    def claim_device_pairing(
+        self,
+        access_token: str,
+        *,
+        pairing_id: str,
+        pairing_secret: str,
+        space_id: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "pairing_id": pairing_id,
+            "pairing_secret": pairing_secret,
+        }
+        if space_id is not None:
+            payload["space_id"] = space_id
+        response = self.http.post(
+            f"{self.base_url}/v3/product/device-links",
+            headers={
+                **self._headers(access_token),
+                "content-type": "application/json",
+            },
+            json=payload,
+        )
+        body = self._body(response)
+        link = body.get("link")
+        if not isinstance(link, dict):
+            raise ProductRemoteError(
+                "product_remote_invalid_response",
+                response.status_code,
+                "Product device link payload is missing",
+            )
+        return link
+
+    def device_links(
+        self,
+        access_token: str,
+        *,
+        space_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        params = {"space_id": space_id} if space_id is not None else None
+        response = self.http.get(
+            f"{self.base_url}/v3/product/device-links",
+            headers=self._headers(access_token),
+            params=params,
+        )
+        body = self._body(response)
+        links = body.get("links")
+        if not isinstance(links, list) or not all(isinstance(item, dict) for item in links):
+            raise ProductRemoteError(
+                "product_remote_invalid_response",
+                response.status_code,
+                "Product device link catalog is invalid",
+            )
+        return [dict(item) for item in links]
+
+    def revoke_device_link(
+        self,
+        access_token: str,
+        link_id: str,
+    ) -> dict[str, Any]:
+        response = self.http.delete(
+            f"{self.base_url}/v3/product/device-links/{link_id}",
+            headers=self._headers(access_token),
+        )
+        return self._body(response)
+
     def submit_action(
         self,
         access_token: str,

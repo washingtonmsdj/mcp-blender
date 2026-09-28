@@ -432,6 +432,36 @@ class CloudflareControlPlane:
         self._terminal_outbox.acknowledge(outbox_path)
         self._jobs.pop(job.id, None)
 
+    def create_product_pairing(self) -> dict[str, Any]:
+        response = self.http.post(
+            f"{self.base_http_url}/v3/device/product-pairings",
+            json={},
+            timeout=15.0,
+        )
+        if response.status_code in {401, 403}:
+            raise DeviceAuthorizationError("DEVICE_CREDENTIAL_REJECTED")
+        if response.status_code in {408, 429} or response.status_code >= 500:
+            raise TransientDeliveryError(
+                f"cloudflare-v3 product pairing HTTP {response.status_code}"
+            )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"cloudflare-v3 product pairing HTTP {response.status_code}: "
+                f"{response.text[-2000:]}"
+            )
+        payload = response.json()
+        pairing = payload.get("pairing") if isinstance(payload, dict) else None
+        if (
+            not isinstance(pairing, dict)
+            or not isinstance(pairing.get("pairing_id"), str)
+            or not isinstance(pairing.get("pairing_secret"), str)
+            or not isinstance(pairing.get("expires_at"), str)
+        ):
+            raise RuntimeError(
+                "cloudflare-v3 product pairing returned invalid response"
+            )
+        return dict(pairing)
+
     def record_product_audit(self, event) -> None:
         body = {
             "request_id": event.request_id,
