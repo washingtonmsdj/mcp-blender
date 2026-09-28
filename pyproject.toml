@@ -25,7 +25,7 @@ ordax-product-mcp = "ordax_dev_agent.product_mcp_server:main"
 ordax-device-pair = "ordax_dev_agent.product_pair_cli:main"
 
 [tool.setuptools.packages.find]
-include = ["mcp_blender_unity*", "ordax_dev_agent*", "ordax_device_agent*"]
+include = ["mcp_blender_unity*", "ordax_core*", "ordax_dev_agent*", "ordax_device_agent*"]
 
 [tool.setuptools.package-data]
 ordax_dev_agent = ["assets/*.py", "assets/*.cs", "assets/*.json"]

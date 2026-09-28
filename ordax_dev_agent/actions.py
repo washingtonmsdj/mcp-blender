@@ -20,6 +20,7 @@ from .artifact_actions import ArtifactActions
 from .git_actions import GitActions
 from .project_text_actions import ProjectTextActions
 from .workspace_actions import WorkspaceActions
+from .memory_actions import MemoryActions
 from .component_actions import ComponentActions
 from .game_asset_catalog_actions import GameAssetCatalogActions
 from .game_asset_status_actions import GameAssetStatusActions
@@ -68,6 +69,7 @@ class ActionRegistry(
     GitActions,
     ProjectTextActions,
     WorkspaceActions,
+    MemoryActions,
     ComponentActions,
     GameAssetCatalogActions,
     GameAssetStatusActions,
@@ -106,6 +108,12 @@ class ActionRegistry(
             "projects.list": self.projects_list,
             "workspace.list_projects": self.workspace_list_projects,
             "workspace.bind_project": self.workspace_bind_project,
+            "memory.status": self.memory_status,
+            "memory.context": self.memory_context,
+            "memory.remember": self.memory_remember,
+            "memory.task_add": self.memory_task_add,
+            "memory.task_toggle": self.memory_task_toggle,
+            "memory.checkpoint": self.memory_checkpoint,
             "project.archive_to_hordax": self.project_archive_to_hordax,
             "project.observe": self.project_observe,
             "project.inventory": self.project_inventory,
@@ -275,7 +283,7 @@ class ActionRegistry(
         self._adapter_contracts = builtin_adapter_contracts()
         available = {entry.name: entry for entry in entry_points(group="ordax_dev_agent.adapters")}
         for name in config.adapters:
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets", "geo", "visual"}:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets", "geo", "visual", "memory"}:
                 raise ValueError(f"invalid or reserved adapter name: {name}")
             if name not in available:
                 raise ValueError(f"configured adapter is not installed: {name}")

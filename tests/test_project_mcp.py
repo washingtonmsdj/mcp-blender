@@ -23,7 +23,8 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
             image.write_bytes(png)
             server = StdioServerParameters(command=sys.executable,
                 args=['-m', 'ordax_dev_agent.mcp_server'],
-                env={**os.environ, 'ORDAX_AGENT_STATE_DIR': directory},
+                env={**os.environ, 'ORDAX_AGENT_STATE_DIR': directory,
+                     'ORDAX_MEMORY_DB': str(root / 'memory.db')},
                 cwd=str(Path(__file__).resolve().parents[1]))
             async with stdio_client(server) as (read, write):
                 async with ClientSession(read, write) as session:
@@ -32,9 +33,19 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn('artifact_image', names)
                     self.assertIn('blender_live_view', names)
                     self.assertIn('blender_live_multiview', names)
+                    self.assertIn('session_context', names)
+                    self.assertIn('memory_remember', names)
+                    self.assertIn('session_checkpoint', names)
                     response = await session.call_tool('projects_list', {})
                     self.assertFalse(response.isError)
                     self.assertIn('test', response.content[0].text)
+                    response = await session.call_tool('memory_remember', {'project': 'test', 'content': 'resume me'})
+                    self.assertFalse(response.isError)
+                    response = await session.call_tool('session_context', {'project': 'test'})
+                    self.assertFalse(response.isError)
+                    self.assertIn('resume me', response.content[0].text)
+                    response = await session.call_tool('session_checkpoint', {'project': 'test', 'summary': 'stdio checkpoint'})
+                    self.assertFalse(response.isError)
                     response = await session.call_tool('artifact_image', {'project': 'test', 'artifact_path': str(image)})
                     self.assertFalse(response.isError)
                     self.assertEqual(base64.b64decode(response.content[1].data), png)

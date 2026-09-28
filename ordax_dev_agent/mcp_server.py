@@ -38,6 +38,24 @@ def agent_capabilities() -> dict:
 
 
 @mcp.tool()
+def session_context(project: str) -> dict:
+    """Load persistent project memory, tasks and checkpoints before continuing work."""
+    result = registry().execute("memory.context", {"project": project})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+@mcp.tool()
+def memory_remember(project: str, content: str, kind: str = "note") -> dict:
+    """Persist an important project fact or decision for future sessions."""
+    result = registry().execute("memory.remember", {"project": project, "content": content, "kind": kind})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+@mcp.tool()
+def session_checkpoint(project: str, summary: str) -> dict:
+    """Save a resumable checkpoint including the current Git state."""
+    result = registry().execute("memory.checkpoint", {"project": project, "summary": summary})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+@mcp.tool()
 def action_execute(action: str, project: str, arguments: dict | None = None) -> dict:
     """Execute a registered action on one project. Returns ok, summary and structured evidence.
 

@@ -11,6 +11,12 @@ GitHub Runner não é requisito. Veja [fluxo, requisitos e diagnóstico](docs/DE
 
 > Nome histórico do repositório: `mcp-blender`. O produto evolui agora para **OrdaX Device Agent**. Os comandos e pacotes antigos permanecem como aliases de compatibilidade durante a migração.
 
+## ORDAX Studio — direção atual
+
+O Device Agent passa a ser também a fundação do **ORDAX Studio**: um ambiente agentic persistente que unifica memória por projeto, workspace, Git, Blender, Unity e adapters futuros no mesmo runtime. O `ORDAX Local AI` existente permanece preservado e seu banco SQLite pode ser reutilizado automaticamente pelo novo `ordax_core`.
+
+A integração com `prototipo-ordax-os` é uma fase posterior e não faz parte do gate atual. Primeiro o Studio deve ficar funcional e testado no Windows. Veja [docs/ORDAX_STUDIO_FOUNDATION.md](docs/ORDAX_STUDIO_FOUNDATION.md).
+
 ## OrdaX multi-projeto (0.3.0)
 
 O Device Agent aceita projetos locais cadastrados, companion Unity genérico, auditoria
@@ -62,6 +68,7 @@ ChatGPT / cliente MCP
                 +--> Unity companion / Editor
                 +--> Reference Contract + evidência visual
                 +--> Git / artifacts / observações
+                +--> memória / tarefas / checkpoints persistentes
                 |
                 +--> remote control plane\n                     +--> Cloudflare v3 (produção)
 
@@ -76,6 +83,9 @@ O HORDAX permanece no repositório `washingtonmsdj/HORDAX-game`.
 ## Estrutura
 
 ```text
+ordax_core/
+  memory.py
+
 mcp_blender_unity/
   config.py
   process.py
@@ -184,6 +194,12 @@ depend on PowerShell certificate services.
 - `unity_validate_project`
 - `unity_run_method`
 - `unity_capture_project`
+
+No ordax-project-mcp, continuidade persistente também fica disponível por:
+
+- `session_context` — recupera memória, tarefas e checkpoints do projeto;
+- `memory_remember` — salva decisão/fato relevante entre sessões;
+- `session_checkpoint` — registra resumo + estado Git para retomada.
 
 `unity_compile_project` abre/importa o projeto em batch mode e inspeciona o log por erros de compilação.
 
