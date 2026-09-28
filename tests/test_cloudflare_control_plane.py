@@ -10,6 +10,7 @@ import httpx
 from unittest.mock import call, patch
 from pathlib import Path
 
+from ordax_dev_agent import __version__ as dev_agent_version
 from ordax_dev_agent.cloudflare_control_plane import CloudflareControlPlane
 from ordax_dev_agent.config import AgentConfig
 from ordax_dev_agent.control_plane import build_control_plane
@@ -55,6 +56,10 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             self.assertEqual(
                 control.ws_url,
                 f"wss://control.example/v3/device/ws?device_id={DEVICE_ID}",
+            )
+            self.assertEqual(
+                control.http.headers["user-agent"],
+                f"OrdaX-Device-Agent/{dev_agent_version}",
             )
 
     def test_ws_url_preserves_control_plane_path_prefix(self) -> None:
@@ -288,15 +293,20 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             ):
                 with patch.object(
                     control,
-                    "_upload_artifact_multipart",
-                    return_value={"delivery": "cloudflare-v3-multipart"},
-                ) as multipart:
-                    result = control.upload_artifact(
+                    "_control_plane_capabilities",
+                    return_value=frozenset({"artifact_multipart_v1"}),
+                ):
+                    with patch.object(
+                        control,
+                        "_upload_artifact_multipart",
+                        return_value={"delivery": "cloudflare-v3-multipart"},
+                    ) as multipart:
+                        result = control.upload_artifact(
                         job,
                         artifact,
                         kind="test-large",
-                        metadata={"probe": True},
-                    )
+                            metadata={"probe": True},
+                        )
 
             self.assertEqual(result["delivery"], "cloudflare-v3-multipart")
             multipart.assert_called_once()
@@ -305,6 +315,78 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             self.assertEqual(kwargs["kind"], "test-large")
             self.assertEqual(kwargs["metadata"], {"probe": True})
             self.assertEqual(kwargs["digest"], hashlib.sha256(b"ab").hexdigest())
+
+    def test_large_artifact_stays_local_when_worker_lacks_multipart_capability(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            write_token(root)
+            control = CloudflareControlPlane(make_config(root))
+            job = AgentJob(
+                id="33333333-3333-4333-8333-333333333333",
+                action="agent.status",
+                payload={},
+                lease_token="66666666-6666-4666-8666-666666666666",
+            )
+            artifact = root / "large.bin"
+            artifact.write_bytes(b"ab")
+
+            with patch(
+                "ordax_dev_agent.cloudflare_control_plane.DIRECT_ARTIFACT_MAX_BYTES",
+                1,
+            ):
+                with patch.object(
+                    control,
+                    "_control_plane_capabilities",
+                    return_value=frozenset(),
+                ):
+                    with patch.object(
+                        control, "_upload_artifact_multipart"
+                    ) as multipart:
+                        result = control.upload_artifact(
+                            job, artifact, kind="test-large"
+                        )
+
+            self.assertEqual(
+                result["delivery"],
+                "local-only-v3-artifact-multipart-unavailable",
+            )
+            multipart.assert_not_called()
+
+    def test_capability_probe_accepts_pre_multipart_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            write_token(root)
+            control = CloudflareControlPlane(make_config(root))
+            response = httpx.Response(
+                200,
+                json={"ok": True, "service": "ordax-control-plane-v3"},
+            )
+            with patch.object(control.http, "get", return_value=response) as get:
+                self.assertEqual(control._control_plane_capabilities(), frozenset())
+                self.assertEqual(control._control_plane_capabilities(), frozenset())
+
+            get.assert_called_once()
+
+    def test_capability_probe_detects_multipart_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            write_token(root)
+            control = CloudflareControlPlane(make_config(root))
+            response = httpx.Response(
+                200,
+                json={
+                    "ok": True,
+                    "service": "ordax-control-plane-v3",
+                    "capabilities": [
+                        "artifact_multipart_v1",
+                        "terminal_report_recovery_v1",
+                    ],
+                },
+            )
+            with patch.object(control.http, "get", return_value=response):
+                capabilities = control._control_plane_capabilities()
+
+            self.assertIn("artifact_multipart_v1", capabilities)
 
     def test_multipart_http_retries_transient_status(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

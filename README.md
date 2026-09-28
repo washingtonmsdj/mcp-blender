@@ -18,7 +18,7 @@ espacial de cenas, inspeção/preview Blender e sequências de capturas com snap
 e imagens entregues ao modelo por MCP. Cloudflare v3 é o Control Plane remoto de produção do Device Agent, com WebSocket persistente, D1 e R2.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.22.2`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.22.3`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.

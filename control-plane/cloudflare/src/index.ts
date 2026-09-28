@@ -17,6 +17,10 @@ const GITHUB_REPOSITORY_ID = 1141624338;
 const DIRECT_ARTIFACT_MAX_BYTES = 90 * 1024 * 1024;
 const MULTIPART_ARTIFACT_MAX_BYTES = DIRECT_ARTIFACT_MAX_BYTES * 10_000;
 const MULTIPART_MAX_PARTS = 10_000;
+const CONTROL_PLANE_CAPABILITIES = [
+  "artifact_multipart_v1",
+  "terminal_report_recovery_v1",
+];
 
 const ACTION_PREFIXES = [
   "blender.", "unity.", "git.", "project.", "projects.", "artifact.",
@@ -1180,7 +1184,11 @@ export default {
     const parts = url.pathname.split("/").filter(Boolean);
 
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, service: "ordax-control-plane-v3" });
+      return json({
+        ok: true,
+        service: "ordax-control-plane-v3",
+        capabilities: CONTROL_PLANE_CAPABILITIES,
+      });
     }
 
     if (request.method === "GET" && url.pathname === "/v3/device/ws") {
