@@ -42,13 +42,16 @@ Configuração:
 
 ## Artifact integrity
 
-Uploads são enviados diretamente ao R2 com SHA-256 fornecido pelo Agent como
-checksum nativo. O backend também registra tamanho e digest em D1 e valida a
-integridade antes de publicar o artifact.
+Uploads de até 90 MiB são enviados diretamente ao R2 com SHA-256 fornecido pelo
+Agent como checksum nativo. O backend registra tamanho e digest em D1 e só
+publica o artifact depois de validar a integridade.
 
-Artifacts pequenos usam PUT direto. Arquivos acima do limite de upload direto
-continuam sujeitos ao contrato de tamanho documentado pelo Agent até existir
-suporte multipart explícito.
+Arquivos maiores usam multipart R2 com sessão idempotente em D1. Cada parte é
+autenticada e verificada por SHA-256 no Worker; na conclusão o objeto inteiro é
+relido como stream e validado por SHA-256 antes da publicação. O Agent usa partes
+de 64 MiB e até 10.000 partes, mantendo cada request abaixo do limite do Worker.
+Uploads multipart abandonados são descartados pelo lifecycle do R2 e as sessões
+D1 antigas são limpas antes de novos uploads.
 
 ## Segurança
 

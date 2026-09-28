@@ -5,6 +5,8 @@ import hashlib
 import json
 import tempfile
 import unittest
+
+import httpx
 from unittest.mock import call, patch
 from pathlib import Path
 
@@ -265,6 +267,92 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             self.assertEqual(calls[0][1], calls[1][1])
             self.assertEqual(calls[1][1], calls[2][1])
             sleep.assert_has_calls([call(1), call(2)])
+
+    def test_large_artifact_uses_multipart_transport(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            write_token(root)
+            control = CloudflareControlPlane(make_config(root))
+            job = AgentJob(
+                id="33333333-3333-4333-8333-333333333333",
+                action="agent.status",
+                payload={},
+                lease_token="66666666-6666-4666-8666-666666666666",
+            )
+            artifact = root / "large.bin"
+            artifact.write_bytes(b"ab")
+
+            with patch(
+                "ordax_dev_agent.cloudflare_control_plane.DIRECT_ARTIFACT_MAX_BYTES",
+                1,
+            ):
+                with patch.object(
+                    control,
+                    "_upload_artifact_multipart",
+                    return_value={"delivery": "cloudflare-v3-multipart"},
+                ) as multipart:
+                    result = control.upload_artifact(
+                        job,
+                        artifact,
+                        kind="test-large",
+                        metadata={"probe": True},
+                    )
+
+            self.assertEqual(result["delivery"], "cloudflare-v3-multipart")
+            multipart.assert_called_once()
+            kwargs = multipart.call_args.kwargs
+            self.assertEqual(kwargs["size"], 2)
+            self.assertEqual(kwargs["kind"], "test-large")
+            self.assertEqual(kwargs["metadata"], {"probe": True})
+            self.assertEqual(kwargs["digest"], hashlib.sha256(b"ab").hexdigest())
+
+    def test_multipart_http_retries_transient_status(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            write_token(root)
+            control = CloudflareControlPlane(make_config(root))
+            responses = [
+                httpx.Response(503, json={"ok": False}),
+                httpx.Response(200, json={"ok": True, "upload_id": "u"}),
+            ]
+            with patch.object(control.http, "request", side_effect=responses) as request:
+                with patch(
+                    "ordax_dev_agent.cloudflare_control_plane.time.sleep"
+                ) as sleep:
+                    result = control._artifact_request(
+                        "POST",
+                        "https://control.example/v3/artifacts/a/b?action=mpu-create",
+                        operation="multipart create",
+                    )
+
+            self.assertEqual(result["upload_id"], "u")
+            self.assertEqual(request.call_count, 2)
+            sleep.assert_called_once_with(1)
+
+    def test_worker_supports_integrity_checked_multipart_artifacts(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        worker = (
+            root / "control-plane" / "cloudflare" / "src" / "index.ts"
+        ).read_text(encoding="utf-8")
+        migration = (
+            root
+            / "control-plane"
+            / "cloudflare"
+            / "migrations"
+            / "0004_artifact_multipart_uploads.sql"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("createMultipartUpload", worker)
+        self.assertIn("resumeMultipartUpload", worker)
+        self.assertIn('new crypto.DigestStream("SHA-256")', worker)
+        self.assertIn('action === "mpu-create"', worker)
+        self.assertIn('action === "mpu-uploadpart"', worker)
+        self.assertIn('action === "mpu-complete"', worker)
+        self.assertIn("multipart_part_checksum_mismatch", worker)
+        self.assertIn("ordax_artifact_uploads", worker)
+        self.assertIn("CREATE TABLE IF NOT EXISTS ordax_artifact_uploads", migration)
+        self.assertIn("FOREIGN KEY(job_id)", migration)
+        self.assertIn("FOREIGN KEY(device_id)", migration)
 
     def test_job_envelope_uses_provider_neutral_digest_and_action_contract(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

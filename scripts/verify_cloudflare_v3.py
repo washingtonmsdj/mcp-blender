@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -147,6 +148,38 @@ def run(base_url: str, operator_token: str) -> None:
                     f"{bad_upload.status_code} {bad_upload.text}"
                 )
 
+            multipart_size = 6 * 1024 * 1024 + 123
+            multipart_seed = b"ordax-cloudflare-multipart-e2e\n"
+            multipart_bytes = (
+                multipart_seed
+                * ((multipart_size + len(multipart_seed) - 1) // len(multipart_seed))
+            )[:multipart_size]
+            multipart_path = root / "probe-multipart.bin"
+            multipart_path.write_bytes(multipart_bytes)
+            multipart_artifact_id = str(uuid.uuid4())
+            multipart_digest = hashlib.sha256(multipart_bytes).hexdigest()
+            multipart_artifact = control._upload_artifact_multipart(
+                job,
+                multipart_path,
+                artifact_id=multipart_artifact_id,
+                kind="ci-multipart-probe",
+                metadata={"source": "verify_cloudflare_v3", "multipart": True},
+                digest=multipart_digest,
+                size=len(multipart_bytes),
+                content_type="application/octet-stream",
+            )
+            if multipart_artifact.get("delivery") != "cloudflare-v3-multipart":
+                raise RuntimeError("multipart artifact did not use multipart transport")
+            multipart_signed_url = str(multipart_artifact.get("signed_url") or "")
+            if not multipart_signed_url:
+                raise RuntimeError("multipart artifact upload did not return signed URL")
+            multipart_download = httpx.get(multipart_signed_url, timeout=30.0)
+            multipart_download.raise_for_status()
+            if multipart_download.content != multipart_bytes:
+                raise RuntimeError("multipart artifact round-trip changed bytes")
+            if hashlib.sha256(multipart_download.content).hexdigest() != multipart_digest:
+                raise RuntimeError("multipart artifact round-trip changed digest")
+
             terminal_result = ActionResult(
                 True,
                 "cloudflare-v3 e2e complete",
@@ -264,6 +297,11 @@ def run(base_url: str, operator_token: str) -> None:
             artifacts = body.get("artifacts") or []
             if not any(item.get("id") == artifact.get("artifact_id") for item in artifacts):
                 raise RuntimeError("artifact metadata was not persisted")
+            if not any(
+                item.get("id") == multipart_artifact.get("artifact_id")
+                for item in artifacts
+            ):
+                raise RuntimeError("multipart artifact metadata was not persisted")
             if any(item.get("id") == bad_artifact_id for item in artifacts):
                 raise RuntimeError("rejected artifact checksum was persisted")
     finally:
