@@ -7,7 +7,9 @@ from ordax_dev_agent.models import ActionResult
 from ordax_dev_agent.product_gateway import (
     PRODUCT_READ_ONLY_ACTIONS,
     ProductActionGateway,
+    ProductAuditEvent,
     ProductGrant,
+    ProductRequestContext,
     product_action_catalog,
 )
 
@@ -89,10 +91,51 @@ class FakeExecutor:
         return ActionResult(True, "ok", {"payload": payload})
 
 
+class AuditSink:
+    def __init__(self, *, fail: bool = False):
+        self.fail = fail
+        self.events: list[ProductAuditEvent] = []
+
+    def record(self, event: ProductAuditEvent) -> None:
+        if self.fail:
+            raise RuntimeError("audit unavailable")
+        self.events.append(event)
+
+
 class ProductGatewayTests(unittest.TestCase):
     def setUp(self) -> None:
         self.executor = FakeExecutor()
-        self.gateway = ProductActionGateway(self.executor)
+        self.audit = AuditSink()
+        self.gateway = ProductActionGateway(
+            self.executor,
+            self.audit,
+            clock=lambda: 2_000_000_000,
+        )
+        self.context = ProductRequestContext(
+            request_id="req-1",
+            subject_id="user:123",
+            device_id="device-1",
+            space_id="space-1",
+        )
+
+    def grant(
+        self,
+        *actions: str,
+        projects: tuple[str, ...] = ("scene",),
+        subject_id: str = "user:123",
+        device_id: str | None = "device-1",
+        space_id: str | None = "space-1",
+        expires_at_unix: int | None = 2_000_000_100,
+    ) -> ProductGrant:
+        return ProductGrant(
+            grant_id="grant-1",
+            subject_id=subject_id,
+            actions=frozenset(actions),
+            projects=frozenset(projects),
+            device_id=device_id,
+            space_id=space_id,
+            expires_at_unix=expires_at_unix,
+        )
 
     def test_catalog_contains_only_explicit_read_only_surface(self) -> None:
         names = {entry["name"] for entry in product_action_catalog()}
@@ -105,36 +148,106 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertFalse(any(name.startswith("blender.") for name in names))
         self.assertFalse(any(name.startswith("unity.") for name in names))
 
-    def test_action_requires_explicit_action_grant(self) -> None:
+    def test_action_requires_explicit_action_grant_and_denial_is_audited(self) -> None:
         result = self.gateway.execute(
             "project.text_read",
             {"project": "scene", "path": "docs/README.md"},
-            grant=ProductGrant(actions=frozenset(), projects=frozenset({"scene"})),
+            context=self.context,
+            grant=self.grant(),
         )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.data["error_code"], "grant_required")
         self.assertEqual(self.executor.calls, [])
+        self.assertEqual(len(self.audit.events), 1)
+        self.assertEqual(self.audit.events[0].decision, "deny")
+        self.assertEqual(self.audit.events[0].reason, "grant_required")
 
     def test_project_scoped_action_requires_project_grant(self) -> None:
         result = self.gateway.execute(
             "git.status",
             {"project": "scene"},
-            grant=ProductGrant(actions=frozenset({"git.status"})),
+            context=self.context,
+            grant=self.grant("git.status", projects=()),
         )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.data["error_code"], "project_grant_required")
         self.assertEqual(self.executor.calls, [])
 
+    def test_subject_device_space_and_expiry_are_bound_to_verified_context(self) -> None:
+        cases = [
+            (self.grant("git.status", subject_id="user:999"), "grant_subject_mismatch"),
+            (self.grant("git.status", device_id="device-2"), "grant_device_mismatch"),
+            (self.grant("git.status", space_id="space-2"), "grant_space_mismatch"),
+            (self.grant("git.status", expires_at_unix=2_000_000_000), "grant_expired"),
+        ]
+        for grant, error_code in cases:
+            with self.subTest(error_code=error_code):
+                result = self.gateway.execute(
+                    "git.status",
+                    {"project": "scene"},
+                    context=self.context,
+                    grant=grant,
+                )
+                self.assertFalse(result.ok)
+                self.assertEqual(result.data["error_code"], error_code)
+        self.assertEqual(self.executor.calls, [])
+
+    def test_invalid_request_or_grant_provenance_fails_closed(self) -> None:
+        bad_context = ProductRequestContext(
+            request_id="bad request with spaces",
+            subject_id="user:123",
+            device_id="device-1",
+            space_id="space-1",
+        )
+        result = self.gateway.execute(
+            "git.status",
+            {"project": "scene"},
+            context=bad_context,
+            grant=self.grant("git.status"),
+        )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.data["error_code"], "invalid_request_context")
+
+        malformed_grants = [
+            ProductGrant(
+                grant_id="",
+                subject_id="user:123",
+                actions=frozenset({"git.status"}),
+                projects=frozenset({"scene"}),
+            ),
+            ProductGrant(
+                grant_id="grant-1",
+                subject_id="user:123",
+                actions=["git.status"],  # type: ignore[arg-type]
+                projects=frozenset({"scene"}),
+            ),
+            ProductGrant(
+                grant_id="grant-1",
+                subject_id="user:123",
+                actions=frozenset({"git.status"}),
+                projects=frozenset({"scene"}),
+                expires_at_unix="tomorrow",  # type: ignore[arg-type]
+            ),
+        ]
+        for bad_grant in malformed_grants:
+            result = self.gateway.execute(
+                "git.status",
+                {"project": "scene"},
+                context=self.context,
+                grant=bad_grant,
+            )
+            self.assertFalse(result.ok)
+            self.assertEqual(result.data["error_code"], "invalid_grant_provenance")
+        self.assertEqual(self.executor.calls, [])
+
     def test_unsupported_payload_field_is_rejected_before_execution(self) -> None:
         result = self.gateway.execute(
             "git.status",
             {"project": "scene", "command": "whoami"},
-            grant=ProductGrant(
-                actions=frozenset({"git.status"}),
-                projects=frozenset({"scene"}),
-            ),
+            context=self.context,
+            grant=self.grant("git.status"),
         )
 
         self.assertFalse(result.ok)
@@ -142,23 +255,69 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertEqual(self.executor.calls, [])
 
     def test_mutating_or_bulk_actions_are_not_exposed_even_if_granted(self) -> None:
-        grant = ProductGrant(
-            actions=frozenset(
-                {"project.text_write", "git.sync", "artifact.read_chunk", "blender.live_inspect"}
-            ),
-            projects=frozenset({"scene"}),
+        actions = (
+            "project.text_write",
+            "git.sync",
+            "artifact.read_chunk",
+            "blender.live_inspect",
         )
-        for action in grant.actions:
-            result = self.gateway.execute(action, {"project": "scene"}, grant=grant)
+        grant = self.grant(*actions)
+        for action in actions:
+            result = self.gateway.execute(
+                action,
+                {"project": "scene"},
+                context=self.context,
+                grant=grant,
+            )
             self.assertFalse(result.ok)
-            self.assertIn("not exposed", result.summary)
+            self.assertEqual(result.data["error_code"], "action_not_exposed")
         self.assertEqual(self.executor.calls, [])
+
+    def test_audit_must_persist_authorization_before_local_execution(self) -> None:
+        audit = AuditSink(fail=True)
+        gateway = ProductActionGateway(
+            self.executor,
+            audit,
+            clock=lambda: 2_000_000_000,
+        )
+
+        result = gateway.execute(
+            "git.status",
+            {"project": "scene"},
+            context=self.context,
+            grant=self.grant("git.status"),
+        )
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.data["error_code"], "audit_unavailable")
+        self.assertEqual(self.executor.calls, [])
+
+    def test_success_records_authorization_and_result_without_payload_contents(self) -> None:
+        payload = {"project": "scene", "path": "docs/README.md"}
+        result = self.gateway.execute(
+            "project.text_read",
+            payload,
+            context=self.context,
+            grant=self.grant("project.text_read"),
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(self.executor.calls, [("project.text_read", payload)])
+        self.assertEqual(len(self.audit.events), 2)
+        before, after = self.audit.events
+        self.assertEqual((before.phase, before.decision), ("decision", "allow"))
+        self.assertEqual((after.phase, after.result_ok), ("result", True))
+        self.assertEqual(before.payload_fields, ("path", "project"))
+        self.assertNotIn("README", repr(before))
+        self.assertEqual(before.grant_id, "grant-1")
+        self.assertEqual(before.subject_id, "user:123")
 
     def test_global_project_catalog_redacts_workstation_paths_and_private_adapter_config(self) -> None:
         result = self.gateway.execute(
             "projects.list",
             {},
-            grant=ProductGrant(actions=frozenset({"projects.list"})),
+            context=self.context,
+            grant=self.grant("projects.list", projects=()),
         )
 
         self.assertTrue(result.ok)
@@ -172,10 +331,8 @@ class ProductGatewayTests(unittest.TestCase):
         result = self.gateway.execute(
             "project.inventory",
             {"project": "scene"},
-            grant=ProductGrant(
-                actions=frozenset({"project.inventory"}),
-                projects=frozenset({"scene"}),
-            ),
+            context=self.context,
+            grant=self.grant("project.inventory"),
         )
 
         self.assertTrue(result.ok)
@@ -186,10 +343,8 @@ class ProductGatewayTests(unittest.TestCase):
         result = self.gateway.execute(
             "git.status",
             {"project": "scene"},
-            grant=ProductGrant(
-                actions=frozenset({"git.status"}),
-                projects=frozenset({"scene"}),
-            ),
+            context=self.context,
+            grant=self.grant("git.status"),
         )
 
         self.assertTrue(result.ok)
@@ -199,29 +354,13 @@ class ProductGatewayTests(unittest.TestCase):
         result = self.gateway.execute(
             "artifact.preview",
             {"project": "scene", "artifact_name": "preview.png"},
-            grant=ProductGrant(
-                actions=frozenset({"artifact.preview"}),
-                projects=frozenset({"scene"}),
-            ),
+            context=self.context,
+            grant=self.grant("artifact.preview"),
         )
 
         self.assertTrue(result.ok)
         self.assertEqual(result.data["artifact_name"], "preview.png")
         self.assertNotIn("path", result.data)
-
-    def test_granted_read_only_action_routes_to_existing_local_action(self) -> None:
-        payload = {"project": "scene", "path": "docs/README.md"}
-        result = self.gateway.execute(
-            "project.text_read",
-            payload,
-            grant=ProductGrant(
-                actions=frozenset({"project.text_read"}),
-                projects=frozenset({"scene"}),
-            ),
-        )
-
-        self.assertTrue(result.ok)
-        self.assertEqual(self.executor.calls, [("project.text_read", payload)])
 
 
 if __name__ == "__main__":

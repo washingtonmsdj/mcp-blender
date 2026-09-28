@@ -8,9 +8,10 @@ Status: foundation only. This module is **not** a public network server.
 OrdaX Product MCP and OrdaX Web clients. It reuses the Device Agent's existing
 typed actions instead of creating a second backend or a second permission model.
 
-The Control Plane remains responsible for resolving identity and persisted
-grants. The gateway receives an already-resolved `ProductGrant` and fails
-closed when no matching action/project grant is present.
+The Control Plane remains responsible for authenticating identity and resolving
+persisted grants. The gateway receives both a verified `ProductRequestContext`
+and an already-resolved `ProductGrant`; it fails closed when subject, Space,
+device, expiry, action or project scope does not match.
 
 ## Initial read-only surface
 
@@ -56,6 +57,22 @@ A Product action executes only when all of these are true:
 6. the mapped local Device Agent action is installed.
 
 There is no default grant.
+
+## Grant provenance and audit
+
+A resolved grant carries a stable grant id, authenticated subject id, explicit
+actions/projects, optional Space/device scope and optional expiry. The gateway
+validates the grant structure at runtime instead of trusting Python type hints.
+
+Execution also requires an audit sink. Before any local action runs, the gateway
+must persist an authorization event. After the local read finishes, it persists
+a result event before returning Product-facing data. If pre-execution audit
+persistence fails, the local action does not run. If result-audit persistence
+fails, the Product result is withheld.
+
+Audit events contain identifiers, action/project, decision, phase and only the
+**names** of payload fields. They do not copy text-file contents, Git diffs,
+artifact bytes or other payload values into the audit record.
 
 ## Next integration step
 
