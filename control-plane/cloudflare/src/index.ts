@@ -607,12 +607,16 @@ async function deleteDevice(request: Request, env: Env, deviceId: string): Promi
     ).bind(deviceId),
   ];
   const results = await env.DB.batch(statements);
-  const deleted = results[results.length - 1];
+  const deleteResult = results[results.length - 1];
+  const remaining = await env.DB.prepare(
+    "SELECT id FROM ordax_devices WHERE id = ?1",
+  ).bind(deviceId).first();
 
   return json({
     ok: true,
     device_id: deviceId,
-    deleted: (deleted?.meta.changes ?? 0) === 1,
+    deleted: !remaining,
+    device_delete_changes: deleteResult?.meta.changes ?? 0,
     artifacts_deleted: artifactRows.results?.length ?? 0,
     multipart_uploads_aborted: uploadRows.results?.length ?? 0,
   });
