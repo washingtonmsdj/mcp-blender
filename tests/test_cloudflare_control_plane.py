@@ -481,6 +481,7 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertIn("payload_fields_json TEXT", migration)
         self.assertNotIn("/v3/product-execute", worker)
         self.assertNotIn("/v3/product-actions", worker)
+        self.assertIn("deleted: !remaining", worker)
 
     def test_job_envelope_uses_provider_neutral_digest_and_action_contract(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
