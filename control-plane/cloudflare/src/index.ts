@@ -2155,6 +2155,9 @@ export default {
     if (request.method === "POST" && url.pathname === "/v3/product-grants") {
       return createProductGrant(request, env);
     }
+    if (request.method === "POST" && url.pathname === "/v3/product-grants/from-link") {
+      return createProductGrantFromLink(request, env);
+    }
     if (request.method === "GET" && url.pathname === "/v3/product-grants") {
       return listProductGrants(request, env);
     }
