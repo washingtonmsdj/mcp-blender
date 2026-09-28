@@ -18,7 +18,7 @@ espacial de cenas, inspeção/preview Blender e sequências de capturas com snap
 e imagens entregues ao modelo por MCP. Cloudflare v3 é o Control Plane remoto de produção do Device Agent, com WebSocket persistente, D1 e R2.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.23.0`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.23.1`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -299,6 +299,7 @@ remotely callable only when `ActionRegistry._actions` explicitly registers it.
 The visible Blender companion now exposes a richer typed perception loop:
 
 - `blender_live_view` — MCP-native one-call visual loop: captures the currently visible Blender 3D viewport and returns the actual PNG/JPEG pixels as `ImageContent`, so capable MCP clients can inspect the scene without a second artifact-fetch call.
+- `blender_live_multiview` — MCP-native deterministic visual review: captures up to six bounded orthographic views and returns every rendered view as `ImageContent` in one call, with bounds, object scope, hashes and manifest metadata.
 
 - \`blender.live_scene_snapshot\` — world-space bounds, dimensions, relations,
   materials, modifiers, constraints, mesh counts and semantic OrdaX properties.
