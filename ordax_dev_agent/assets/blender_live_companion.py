@@ -10,6 +10,7 @@ import importlib
 import importlib.util
 import json
 import math
+import os
 import re
 import runpy
 import struct
@@ -229,6 +230,7 @@ def _scene_snapshot() -> dict:
     scene = bpy.context.scene
     return {
         "project": CFG.ordax_project_slug,
+        "pid": os.getpid(),
         "timestamp": time.time(),
         "blender_version": ".".join(str(v) for v in bpy.app.version),
         "file": bpy.data.filepath or "",

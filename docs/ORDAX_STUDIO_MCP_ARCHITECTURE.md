@@ -44,6 +44,15 @@ O MCP local é a superfície mais poderosa para um cliente já autorizado na est
 
 Escrita não usa acesso irrestrito ao filesystem: caminhos precisam pertencer ao projeto registrado, extensões são limitadas e substituições existentes exigem o SHA-256 observado anteriormente.
 
+
+## Blender: descoberta e adoção
+
+Blender é uma capability do Studio e segue uma política de **uma única janela por intenção do usuário**. O add-on persistente `ordax_studio_bridge` é propositalmente mínimo: publica discovery local por PID/arquivo e só carrega o companion completo quando o arquivo aberto pertence a um projeto Blender registrado e o pedido de adoção é válido.
+
+O fluxo é `discover → match project root → adopt by PID → validate companion fingerprint → typed actions`. `blender.live_start` tenta esse fluxo antes de criar processo novo. Uma falha ambígua nunca causa spawn como fallback; somente a ausência comprovada de uma candidata permite abrir Blender. Janelas múltiplas exigem PID explícito.
+
+O bootstrap/add-on não recebe Python arbitrário, caminho de companion fornecido pelo cliente ou raiz de projeto fora do catálogo. O companion usado vem da instalação atual do ORDAX e continua sujeito ao protocolo/fingerprint existentes.
+
 ## Superfície remota
 
 O MCP remoto deve ser comparável a um conector como Desktop Commander em disponibilidade para o cliente, mas não deve copiar um shell genérico.

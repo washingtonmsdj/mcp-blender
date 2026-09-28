@@ -25,7 +25,8 @@ from .assets.blender_modeling_contracts import (
 )
 from .assets.blender_material_contracts import normalize_material_request
 from .blender_asset_sources import polyhaven_file_manifest, search_polyhaven
-from .blender_live_bridge import BlenderLiveBridge
+from .blender_adoption import BlenderAdoptionManager
+from .blender_live_bridge import BlenderLiveBridge, blender_companion_bundle_fingerprint
 from .models import ActionResult
 from .process_runner import run_command as _run
 
@@ -537,6 +538,49 @@ class BlenderActions:
             },
         )
 
+    def _blender_adoption_manager(self) -> BlenderAdoptionManager:
+        assets_root = (Path(__file__).resolve().parent / "assets").resolve()
+        try:
+            fingerprint = blender_companion_bundle_fingerprint(assets_root)
+        except (OSError, ValueError, json.JSONDecodeError):
+            fingerprint = None
+        return BlenderAdoptionManager(
+            self.config,
+            self.projects,
+            assets_root=assets_root,
+            companion_fingerprint=fingerprint,
+        )
+
+    def blender_adoption_install(self, payload: dict[str, Any]) -> ActionResult:
+        return self._blender_adoption_manager().install()
+
+    def blender_instances(self, payload: dict[str, Any]) -> ActionResult:
+        manager = self._blender_adoption_manager()
+        instances = manager.instances()
+        system_pids = manager.system_blender_pids()
+        discovered_pids = {int(item.get("pid", -1)) for item in instances}
+        unmanaged_pids = [pid for pid in system_pids if pid not in discovered_pids]
+        return ActionResult(
+            True,
+            f"Discovered {len(instances)} adoptable Blender window(s)",
+            {
+                "instances": instances,
+                "system_blender_pids": system_pids,
+                "unmanaged_blender_pids": unmanaged_pids,
+                "bootstrap_config": str(manager.config_path),
+            },
+        )
+
+    def blender_adopt(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        raw_pid = payload.get("pid")
+        pid = int(raw_pid) if raw_pid is not None else None
+        return self._blender_adoption_manager().request_adoption(
+            project,
+            pid=pid,
+            wait_seconds=float(payload.get("wait_seconds", 8.0)),
+        )
+
     def blender_live_start(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
         live = BlenderLiveBridge(self.config, project)
@@ -548,6 +592,35 @@ class BlenderActions:
                 payload.get("timeout_seconds", 60),
             )
         )
+        if not live.presence_is_fresh():
+            raw_pid = payload.get("pid")
+            pid = int(raw_pid) if raw_pid is not None else None
+            adoption_manager = self._blender_adoption_manager()
+            adoption = adoption_manager.request_adoption(
+                project,
+                pid=pid,
+                wait_seconds=min(wait_seconds, 10.0),
+            )
+            if adoption.ok:
+                data = live.status()
+                return ActionResult(True, "Existing Blender window adopted by ORDAX Studio", data)
+            if not bool(adoption.data.get("no_match")):
+                return adoption
+
+            unmanaged_pids = adoption_manager.system_blender_pids()
+            if unmanaged_pids:
+                return ActionResult(
+                    False,
+                    "Blender is already running but the ORDAX adoption bridge is not active; refusing to open a second window",
+                    {
+                        "project": project.slug,
+                        "blender_pids": unmanaged_pids,
+                        "unmanaged_blender_running": True,
+                        "install_action": "blender.adoption_install",
+                        "retryable": True,
+                    },
+                )
+
         return live.start(
             blend_file=blend_file,
             wait_seconds=wait_seconds,

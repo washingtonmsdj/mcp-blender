@@ -208,6 +208,8 @@ A superfície recomendada é o **ORDAX Studio MCP**, não a bridge histórica. E
 - `project_write` e `project_patch`, com precondição SHA-256 para evitar sobrescrita stale;
 - `git_status` e `git_diff`;
 - `project_preview_status`, `project_preview_start`, `project_preview_stop` e `project_preview_image`;
+- `install_blender_adoption`, `blender_instances` e `adopt_blender` para reutilizar uma janela Blender já aberta sem criar uma segunda instância;
+- `get_blender_status`, `get_scene_info`, `get_object_info`, `get_viewport_screenshot`, `add_primitive`, `modify_object`, `delete_object`, `set_material`, `batch_edit` e `save_blender`;
 - `session_context`, `session_resume`, `session_finish`, `memory_remember` e `session_checkpoint`;
 - `action_execute` para capabilities tipadas registradas, incluindo Blender, Unity, Unreal e pipelines de assets.
 
@@ -309,6 +311,7 @@ implementations are composed as mixins rather than accumulating in one module:
 
 - `actions.py` — composition root, explicit allow-list, locking and project resolution;
 - `blender_actions.py` — Blender/Blender Live typed actions;
+- `blender_adoption.py` — discovery, PID matching e adoção segura de janelas Blender já abertas;
 - `unity_actions.py` — Unity CLI/editor/play/capture typed actions;
 - `agent_actions.py` — agent status, self-test and managed self-update;
 - `artifact_actions.py` — bounded project artifact preview;
@@ -316,6 +319,7 @@ implementations are composed as mixins rather than accumulating in one module:
 - `references.py` — Reference Contract and reference-guided generation;
 - `observations.py` — project-scoped visual evidence;
 - `process_runner.py` — shared bounded subprocess execution.
+- `assets/ordax_studio_blender_addon.py` — add-on mínimo persistente para discovery/adoption; não expõe modelagem arbitrária.
 - `assets/blender_companion_bundle.json` — explicit fingerprinted runtime bundle for the Blender companion and its helper modules; changes to any listed helper invalidate the loaded companion.
 - `assets/blender_uv_math.py` — pure deterministic UV/triangle math extracted from the Blender runtime for ordinary unit testing, including overlap area and normalized 3D→UV shape distortion.
 - `assets/blender_spatial_math.py` — pure deterministic AABB overlap/containment math used by contact auditing, independently unit-tested outside Blender.
@@ -324,6 +328,14 @@ implementations are composed as mixins rather than accumulating in one module:
 
 Moving a method into a domain module does not add an action. An operation becomes
 remotely callable only when `ActionRegistry._actions` explicitly registers it.
+
+## Política de uma única janela Blender
+
+O ORDAX Studio instala o add-on mínimo `ordax_studio_bridge` nas preferências do Blender. Ele publica somente presença local e recebe pedidos tipados de adoção; toda inspeção e mutação continuam no companion Blender Live validado por fingerprint.
+
+Ao selecionar um projeto Blender, o Studio tenta reutilizar a janela existente. `start_blender` segue a mesma regra: **adota primeiro e só cria um novo processo quando não existe nenhuma janela correspondente**. Se mais de uma janela física apontar para o mesmo projeto, o ORDAX não escolhe aleatoriamente: `blender_instances` retorna os PIDs e `adopt_blender` exige uma seleção explícita. A presença do companion inclui PID, root do projeto, protocolo e fingerprint para impedir reaproveitamento de uma sessão stale ou errada.
+
+O add-on legado `blendmcp_addon.py` de terceiros não faz parte desse fluxo canônico. Ele pode permanecer instalado para diagnóstico/compatibilidade, mas o cliente `blendmcp` do Codex aponta para o ORDAX Studio MCP.
 
 ## Blender Live 1.7.0
 
