@@ -74,8 +74,8 @@ def parse_product_invocation(payload: dict[str, Any]) -> ProductInvocation:
         raise ValueError("product invocation grant projects are invalid")
     if grant_space is not None and not isinstance(grant_space, str):
         raise ValueError("product invocation grant space is invalid")
-    if grant_device is not None and not isinstance(grant_device, str):
-        raise ValueError("product invocation grant device is invalid")
+    if not isinstance(grant_device, str) or not grant_device:
+        raise ValueError("product invocation grant device is required")
     if expires is not None and type(expires) is not int:
         raise ValueError("product invocation grant expiry is invalid")
 

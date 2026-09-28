@@ -53,6 +53,12 @@ class ProductRemoteTests(unittest.TestCase):
     def test_product_capability_is_dedicated(self):
         self.assertEqual(PRODUCT_REMOTE_CAPABILITY, "ordax.product.read.invoke")
 
+    def test_parse_requires_device_bound_grant(self):
+        body = payload()
+        body["grant"]["device_id"] = None
+        with self.assertRaisesRegex(ValueError, "grant device is required"):
+            parse_product_invocation(body)
+
     def test_parse_rejects_extra_envelope_fields(self):
         body = payload()
         body["shell"] = "whoami"
