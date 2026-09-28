@@ -51,6 +51,7 @@ _COMPONENTS: tuple[dict[str, Any], ...] = (
         "independent_activation_ready": False,
         "paths": (
             "ordax_dev_agent/mcp_server.py",
+            "ordax_dev_agent/product_gateway.py",
             "ordax_device_agent/mcp_server.py",
         ),
     },
@@ -153,6 +154,7 @@ _COMPONENTS: tuple[dict[str, Any], ...] = (
 
 _GLOBAL_INSTALL_PATHS = ("pyproject.toml",)
 _RUNTIME_SHARED_PATHS = (
+    "ordax_dev_agent/action_contracts.py",
     "ordax_dev_agent/capability_contracts.py",
     "ordax_dev_agent/versioning.py",
 )
