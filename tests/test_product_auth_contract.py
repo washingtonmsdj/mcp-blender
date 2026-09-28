@@ -43,7 +43,7 @@ class ProductAuthContractTests(unittest.TestCase):
 
     def test_product_session_is_identity_only_not_execution(self) -> None:
         session_start = self.worker.index("async function productSession")
-        session_end = self.worker.index("async function provisionDevice", session_start)
+        session_end = self.worker.index("async function createProductAction", session_start)
         session_source = self.worker[session_start:session_end]
 
         self.assertNotIn("enqueueJob", session_source)
