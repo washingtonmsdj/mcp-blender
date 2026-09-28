@@ -58,3 +58,26 @@ Those methods are intentionally not registered as Product MCP tools.
 An active device link will become the provenance used to create/manage Product
 grants. Until that enforcement is added and validated, the existing explicit
 device-bound grant mechanism remains the execution authority.
+
+
+## Link-aware grant administration
+
+After a device link exists, operator/admin tooling can create a Product grant via:
+
+`POST /v3/product-grants/from-link`
+
+Required body fields are:
+
+- `link_id`
+- `actions`
+- `projects`
+- optional `expires_at`
+
+The endpoint rejects caller-supplied `subject_id`, `device_id` and `space_id`.
+Those fields are resolved from the active Product device link and returned as
+provenance. Grant validation/persistence is shared with the legacy administrative
+grant endpoint, so there is no second allow-list or grant format.
+
+The legacy explicit-subject/device administrative endpoint remains available for
+compatibility/diagnostics for now. Remote execution still requires an explicit
+device-bound grant.
