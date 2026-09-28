@@ -120,6 +120,77 @@ def blender_live_view(
         },
     )
 
+
+@mcp.tool()
+def blender_live_multiview(
+    project: str,
+    views: list[str] | None = None,
+    object_names: list[str] | None = None,
+    width: int = 512,
+    height: int = 512,
+    mode: str = "material",
+    timeout_seconds: float = 240.0,
+) -> list[TextContent | ImageContent]:
+    """Capture deterministic Blender views and return every image to the MCP client."""
+    requested_views = views or ["front", "right", "top", "three_quarter"]
+    if not 1 <= len(requested_views) <= 6:
+        raise ValueError("views must contain between 1 and 6 entries")
+    if not 128 <= int(width) <= 1024 or not 128 <= int(height) <= 1024:
+        raise ValueError("direct MCP multiview resolution must be between 128 and 1024")
+    normalized_mode = str(mode).strip().lower()
+    if normalized_mode not in {"material", "silhouette"}:
+        raise ValueError("mode must be material or silhouette")
+
+    timeout = max(15.0, min(float(timeout_seconds), 600.0))
+    payload: dict = {
+        "project": project,
+        "views": requested_views,
+        "width": int(width),
+        "height": int(height),
+        "mode": normalized_mode,
+        "timeout_seconds": timeout,
+    }
+    if object_names is not None:
+        payload["object_names"] = object_names
+
+    agent = registry()
+    result = agent.execute("blender.live_multiview_capture", payload)
+    if not result.ok:
+        raise RuntimeError(result.summary)
+
+    artifacts = result.data.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        raise RuntimeError("Blender multiview completed without image artifacts")
+
+    summary = {
+        "project": project,
+        "summary": result.summary,
+        "primary_artifact": result.data.get("primary_artifact"),
+        "manifest": result.data.get("manifest"),
+        "bounds": result.data.get("bounds"),
+        "objects": result.data.get("objects"),
+        "resolution": result.data.get("resolution"),
+        "projection": result.data.get("projection"),
+        "render_engine": result.data.get("render_engine"),
+        "mode": result.data.get("mode"),
+    }
+    contents: list[TextContent | ImageContent] = [
+        TextContent(type="text", text=json.dumps(summary))
+    ]
+    for item in artifacts:
+        if not isinstance(item, dict):
+            raise RuntimeError("Blender multiview returned an invalid artifact entry")
+        artifact = item.get("artifact")
+        if not isinstance(artifact, str) or not artifact.strip():
+            raise RuntimeError("Blender multiview artifact path is missing")
+        validated = _artifact_image_contents(
+            agent,
+            project,
+            artifact,
+            metadata={"view": item.get("view"), "sha256": item.get("sha256")},
+        )
+        contents.extend(validated)
+    return contents
 def main() -> None:
     mcp.run()
 
