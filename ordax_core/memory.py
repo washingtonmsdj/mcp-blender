@@ -67,6 +67,9 @@ class MemoryStore:
               git_state TEXT, created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS events(
               id INTEGER PRIMARY KEY, event TEXT NOT NULL, payload TEXT, created_at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS sessions(
+              id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL,
+              started_at TEXT NOT NULL, ended_at TEXT, resumed_from_checkpoint_id INTEGER);
             """)
 
     def _project_id(self, slug: str, path: str | Path) -> int:
@@ -81,6 +84,23 @@ class MemoryStore:
                 (slug, resolved, now()),
             )
             return int(cursor.lastrowid)
+
+    def set_active_project(self, slug: str, path: str | Path) -> dict[str, Any]:
+        project_id = self._project_id(slug, path)
+        with self._connect() as connection:
+            connection.execute("UPDATE projects SET active=0")
+            connection.execute("UPDATE projects SET active=1 WHERE id=?", (project_id,))
+            connection.execute("INSERT INTO events(event,payload,created_at) VALUES(?,?,?)",
+                ("active_project", json.dumps({"project": slug, "project_id": project_id}, ensure_ascii=False), now()))
+            row = connection.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
+        self.write_context(slug, path)
+        self.write_boot_context(slug, path)
+        return dict(row)
+
+    def active_project(self) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM projects WHERE active=1 ORDER BY id DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
 
     def remember(self, slug: str, path: str | Path, content: str, kind: str = "note") -> int:
         text = content.strip()
@@ -160,6 +180,28 @@ class MemoryStore:
         self.write_context(slug, path)
         return checkpoint_id
 
+    def start_session(self, slug: str, path: str | Path) -> dict[str, Any]:
+        project = self.set_active_project(slug, path)
+        project_id = int(project["id"])
+        with self._connect() as connection:
+            checkpoint = connection.execute("SELECT id FROM checkpoints WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
+            resumed_from = int(checkpoint["id"]) if checkpoint else None
+            cursor = connection.execute("INSERT INTO sessions(project_id,started_at,resumed_from_checkpoint_id) VALUES(?,?,?)", (project_id, now(), resumed_from))
+            session_id = int(cursor.lastrowid)
+            connection.execute("INSERT INTO events(event,payload,created_at) VALUES(?,?,?)",
+                ("session_started", json.dumps({"project": slug, "session_id": session_id}, ensure_ascii=False), now()))
+        data = self.context(slug, path)
+        data["session_id"] = session_id
+        data["resumed_from_checkpoint_id"] = resumed_from
+        data["git"] = self.git_state(path)
+        data["boot_context_path"] = str(self.write_boot_context(slug, path))
+        return data
+
+    def finish_session(self, session_id: int) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute("UPDATE sessions SET ended_at=? WHERE id=? AND ended_at IS NULL", (now(), int(session_id)))
+            return cursor.rowcount > 0
+
     def _recent(self, table: str, project_id: int, limit: int) -> list[sqlite3.Row]:
         if table not in {"memories", "tasks", "checkpoints"}:
             raise ValueError(f"unsupported memory table: {table}")
@@ -221,11 +263,16 @@ class MemoryStore:
         target.write_text(self.context_text(slug, path), encoding="utf-8")
         return target
 
+    def write_boot_context(self, slug: str, path: str | Path) -> Path:
+        target = self.db_path.parent / "BOOT_CONTEXT.md"
+        target.write_text(self.context_text(slug, path), encoding="utf-8")
+        return target
+
     def status(self) -> dict[str, Any]:
         with self._connect() as connection:
             counts = {
                 table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-                for table in ("projects", "memories", "tasks", "checkpoints", "events")
+                for table in ("projects", "memories", "tasks", "checkpoints", "events", "sessions")
             }
         return {
             "ok": True,

@@ -56,5 +56,28 @@ class OrdaxCoreMemoryTests(unittest.TestCase):
             json.dumps(status)
 
 
+    def test_session_resume_persists_active_project_and_boot_context(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            store = MemoryStore(root / "state.db")
+            store.remember("demo", project, "Keep session continuity", "decision")
+            checkpoint_id = store.checkpoint("demo", project, "Ready to resume")
+            session = store.start_session("demo", project)
+            self.assertGreater(session["session_id"], 0)
+            self.assertEqual(session["resumed_from_checkpoint_id"], checkpoint_id)
+            self.assertEqual(store.active_project()["name"], "demo")
+            boot = Path(session["boot_context_path"])
+            self.assertTrue(boot.is_file())
+            self.assertIn("Keep session continuity", boot.read_text(encoding="utf-8"))
+
+            reopened = MemoryStore(root / "state.db")
+            self.assertEqual(reopened.active_project()["name"], "demo")
+            self.assertTrue(reopened.finish_session(session["session_id"]))
+            self.assertFalse(reopened.finish_session(session["session_id"]))
+            self.assertEqual(reopened.status()["counts"]["sessions"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -114,6 +114,8 @@ class ActionRegistry(
             "memory.task_add": self.memory_task_add,
             "memory.task_toggle": self.memory_task_toggle,
             "memory.checkpoint": self.memory_checkpoint,
+            "session.resume": self.session_resume,
+            "session.finish": self.session_finish,
             "project.archive_to_hordax": self.project_archive_to_hordax,
             "project.observe": self.project_observe,
             "project.inventory": self.project_inventory,

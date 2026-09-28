@@ -44,6 +44,31 @@ def session_context(project: str) -> dict:
     return {"ok": result.ok, "summary": result.summary, "data": result.data}
 
 @mcp.tool()
+def session_resume(project: str | None = None) -> dict:
+    """Resume a persistent ORDAX Studio session using the active or configured project."""
+    agent = registry()
+    selected = project
+    if not selected:
+        active = agent._memory_store_instance().active_project()
+        active_name = str(active.get("name") or "") if active else ""
+        selected = active_name if active_name in agent.projects else None
+    if not selected and agent.config.default_project in agent.projects:
+        selected = agent.config.default_project
+    if not selected and agent.projects:
+        selected = next(iter(agent.projects))
+    if not selected:
+        raise ValueError("No registered projects are available")
+    result = agent.execute("session.resume", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def session_finish(session_id: int) -> dict:
+    """Mark an ORDAX Studio session as finished without deleting history."""
+    result = registry().execute("session.finish", {"session_id": session_id})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+@mcp.tool()
 def memory_remember(project: str, content: str, kind: str = "note") -> dict:
     """Persist an important project fact or decision for future sessions."""
     result = registry().execute("memory.remember", {"project": project, "content": content, "kind": kind})

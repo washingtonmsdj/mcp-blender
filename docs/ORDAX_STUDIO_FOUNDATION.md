@@ -91,3 +91,19 @@ Gate mínimo para iniciar a integração no OS:
 - interface desktop funcional;
 - testes de regressão do agente verdes;
 - caminho de atualização e rollback definido.
+
+## Sessao resumivel
+
+A fundacao agora trata a continuidade como contrato explicito de runtime. `session.resume`:
+
+- seleciona um projeto registrado;
+- marca esse projeto como ativo no banco persistente;
+- cria uma sessao com timestamp e referencia ao ultimo checkpoint;
+- recupera memorias, tarefas e checkpoints do projeto;
+- captura branch, HEAD e status Git atuais;
+- publica as capabilities configuradas e os grupos de acoes disponiveis;
+- atualiza `BOOT_CONTEXT.md` para compatibilidade com o ORDAX Local AI existente.
+
+O MCP local expoe `session_resume` e `session_finish`. Quando nenhum projeto e informado, a retomada tenta primeiro o projeto ativo persistido, depois `default_project` e por fim o primeiro projeto registrado.
+
+Essa camada nao depende da futura interface desktop: Blender, Unity, Git e workspace continuam capabilities do mesmo runtime e podem ser usados por qualquer cliente MCP autorizado.

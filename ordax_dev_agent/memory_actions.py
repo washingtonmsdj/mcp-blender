@@ -59,3 +59,20 @@ class MemoryActions:
             f"Checkpoint #{checkpoint_id} saved for {project.slug}",
             {"checkpoint_id": checkpoint_id},
         )
+
+
+    def session_resume(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        data = self._memory_store_instance().start_session(project.slug, project.root)
+        data["capabilities"] = {"apps": list(project.apps), "action_groups": sorted({name.split(".", 1)[0] for name in self.names})}
+        return ActionResult(True, f"Session #{data['session_id']} resumed for {project.slug}", data)
+
+    def session_finish(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            session_id = int(payload.get("session_id"))
+        except (TypeError, ValueError) as error:
+            raise ValueError("session_id must be an integer") from error
+        ended = self._memory_store_instance().finish_session(session_id)
+        if not ended:
+            return ActionResult(False, f"Open session not found: {session_id}", {"session_id": session_id})
+        return ActionResult(True, f"Session #{session_id} finished", {"session_id": session_id})
