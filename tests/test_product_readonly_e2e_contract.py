@@ -12,7 +12,7 @@ class ProductReadonlyE2EContractTests(unittest.TestCase):
 
     def test_product_action_routes_are_separate_from_operator_jobs(self):
         self.assertIn('"/v3/product/actions"', self.worker)
-        self.assertIn('"ordax.product.read.invoke"', self.worker)
+        self.assertIn("'ordax.product.read.invoke'", self.worker)
         self.assertIn("authenticateProductRequest(request, env)", self.worker)
         self.assertIn("resolveProductGrantForContext", self.worker)
 
