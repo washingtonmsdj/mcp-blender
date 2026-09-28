@@ -150,3 +150,9 @@ Essa camada e deliberadamente construida sobre o ActionRegistry, e nao sobre ace
 A aba **Capabilities** deixa de ser apenas diagnostico e passa a usar o mesmo ActionRegistry do MCP. A primeira versao oferece Git status e controles de status/inicializacao para Blender e Unity, respeitando as capabilities declaradas por projeto.
 
 Essas operacoes rodam fora da thread da interface para que inicializacao ou recuperacao de uma engine nao congele o Studio. Projetos sem a capability solicitada sao recusados pela propria UI antes da execucao.
+
+## Retomada automatica
+
+Ao abrir a shell desktop, o Studio seleciona o projeto ativo persistido quando ele ainda esta registrado; caso contrario usa `default_project` ou o primeiro projeto local disponivel. Em seguida executa uma retomada silenciosa de sessao.
+
+Isso faz com que fechar e reabrir o aplicativo nao zere o trabalho: a nova sessao reaproveita memorias, tarefas e ultimo checkpoint, captura o Git atual e encerra logicamente qualquer sessao anterior ainda aberta para o mesmo projeto.

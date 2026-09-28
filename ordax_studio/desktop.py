@@ -45,6 +45,7 @@ class StudioApp(tk.Tk):
         self._configure_style()
         self._build_ui()
         self.refresh_projects()
+        self.after(250, lambda: self.resume_session(silent=True))
 
     def _configure_style(self) -> None:
         style = ttk.Style(self)
@@ -328,15 +329,16 @@ class StudioApp(tk.Tk):
         self.workspace_sha256 = str(result.data.get("sha256") or "")
         messagebox.showinfo(APP_NAME, f"Arquivo salvo: {self.workspace_path}")
 
-    def resume_session(self) -> None:
+    def resume_session(self, silent: bool = False) -> None:
         if not self.current_project:
             return
         result = self.agent.execute("session.resume", {"project": self.current_project})
         if result.ok:
             self.current_session_id = int(result.data["session_id"])
             self.refresh_all()
-            messagebox.showinfo(APP_NAME, result.summary)
-        else:
+            if not silent:
+                messagebox.showinfo(APP_NAME, result.summary)
+        elif not silent:
             messagebox.showerror(APP_NAME, result.summary)
 
     def save_checkpoint(self) -> None:
