@@ -1553,6 +1553,10 @@ def _modeling_add_modifier(command: dict) -> None:
     try:
         _modeling_runtime_preconditions()
         plan = _modeling_plan_from_command("add_modifier", command)
+        if not plan["executable"]:
+            raise ValueError(
+                f"{plan['status']}: modifier variant is not enabled for execution"
+            )
         arguments = plan["arguments"]
         obj = _resolve_object(arguments)
 
@@ -1580,6 +1584,7 @@ def _modeling_add_modifier(command: dict) -> None:
             modifier_count=len(obj.modifiers),
             evaluated_faces=evaluated_faces,
             levels=arguments.get("levels", 1),
+            array_count=arguments.get("count", 1),
         )
         if not budget["allowed"]:
             raise ValueError("; ".join(budget["reasons"]))
@@ -1594,6 +1599,14 @@ def _modeling_add_modifier(command: dict) -> None:
             modifier.render_levels = arguments["levels"]
         elif modifier.type == "SOLIDIFY":
             modifier.thickness = arguments["thickness"]
+        elif modifier.type == "ARRAY":
+            modifier.fit_type = "FIXED_COUNT"
+            modifier.count = arguments["count"]
+            modifier.use_relative_offset = True
+            modifier.relative_offset_displace = arguments["relative_offset"]
+            modifier.use_constant_offset = "constant_offset" in arguments
+            if modifier.use_constant_offset:
+                modifier.constant_offset_displace = arguments["constant_offset"]
         else:
             axis = arguments["axis"]
             modifier.use_axis = [candidate == axis for candidate in "XYZ"]
@@ -1605,6 +1618,16 @@ def _modeling_add_modifier(command: dict) -> None:
             "Blender modifier inserted",
             operation="add_modifier",
             runtime_budget=budget,
+            array_parameters=(
+                {
+                    "count": arguments["count"],
+                    "relative_offset": arguments["relative_offset"],
+                    "constant_offset": arguments.get("constant_offset"),
+                    "offsets_combined": "constant_offset" in arguments,
+                }
+                if modifier.type == "ARRAY"
+                else None
+            ),
             before=before,
             object=_object_details(obj),
         )
@@ -2784,13 +2807,29 @@ def _quality_mesh(check: dict) -> dict:
     if obj.type != "MESH":
         raise ValueError(f"mesh_quality requires a MESH object: {obj.name}")
 
-    evaluated = bool(check.get("evaluated", True))
+    evaluated = check.get("evaluated", True)
+    if not isinstance(evaluated, bool):
+        raise ValueError("evaluated must be boolean")
     try:
-        epsilon = float(check.get("epsilon", 1e-10))
+        raw_epsilon = check.get("epsilon", 1e-10)
+        if isinstance(raw_epsilon, bool):
+            raise ValueError
+        epsilon = float(raw_epsilon)
     except (TypeError, ValueError):
         raise ValueError("epsilon must be a number")
-    if epsilon <= 0 or epsilon > 1.0:
+    if not math.isfinite(epsilon) or epsilon <= 0 or epsilon > 1.0:
         raise ValueError("epsilon must be greater than 0 and at most 1")
+    for flag in ("require_uv", "require_material", "require_manifold"):
+        if flag in check and not isinstance(check[flag], bool):
+            raise ValueError(f"{flag} must be boolean")
+    diagnostic_limit = check.get("diagnostic_limit", 8)
+    if (
+        not isinstance(diagnostic_limit, int)
+        or isinstance(diagnostic_limit, bool)
+        or diagnostic_limit < 0
+        or diagnostic_limit > 16
+    ):
+        raise ValueError("diagnostic_limit must be an integer between 0 and 16")
 
     depsgraph = bpy.context.evaluated_depsgraph_get()
     evaluated_obj = None
@@ -2818,23 +2857,236 @@ def _quality_mesh(check: dict) -> dict:
         bm.verts.ensure_lookup_table()
         bm.edges.ensure_lookup_table()
         bm.faces.ensure_lookup_table()
+        bm.verts.index_update()
+        bm.edges.index_update()
+        bm.faces.index_update()
 
         triangle_count = len(getattr(mesh, "loop_triangles", []))
         face_count = len(bm.faces)
-        triangle_faces = sum(1 for face in bm.faces if len(face.verts) == 3)
-        quad_faces = sum(1 for face in bm.faces if len(face.verts) == 4)
-        ngon_faces = sum(1 for face in bm.faces if len(face.verts) > 4)
-        quad_ratio = (quad_faces / face_count) if face_count else 0.0
 
-        boundary_edges = sum(1 for edge in bm.edges if edge.is_boundary)
-        wire_edges = sum(1 for edge in bm.edges if edge.is_wire)
-        non_manifold_edges = sum(1 for edge in bm.edges if not edge.is_manifold)
-        loose_vertices = sum(1 for vert in bm.verts if not vert.link_edges)
-        degenerate_faces = sum(1 for face in bm.faces if float(face.calc_area()) <= epsilon)
-        zero_length_edges = sum(
-            1 for edge in bm.edges
-            if float((edge.verts[0].co - edge.verts[1].co).length) <= epsilon
+        def local_coordinate(coordinate) -> list[float | None]:
+            values = []
+            for component in coordinate:
+                value = float(component)
+                values.append(round(value, 6) if math.isfinite(value) else None)
+            return values
+
+        def edge_example(edge) -> dict:
+            return {
+                "edge_index": int(edge.index),
+                "vertex_indices": [int(vertex.index) for vertex in edge.verts],
+                "local_endpoints": [
+                    local_coordinate(vertex.co) for vertex in edge.verts
+                ],
+                "linked_faces": len(edge.link_faces),
+            }
+
+        def face_example(face) -> dict:
+            vertex_indices = []
+            for vertex in face.verts:
+                if len(vertex_indices) >= 32:
+                    break
+                vertex_indices.append(int(vertex.index))
+            return {
+                "face_index": int(face.index),
+                "vertex_count": len(face.verts),
+                "vertex_indices": vertex_indices,
+                "vertex_indices_truncated": len(vertex_indices) < len(face.verts),
+                "local_center": local_coordinate(face.calc_center_median()),
+            }
+
+        diagnostic_categories = (
+            "boundary_edges",
+            "wire_edges",
+            "non_manifold_edges",
+            "loose_vertices",
+            "non_finite_vertices",
+            "connected_components",
+            "ngon_faces",
+            "degenerate_faces",
+            "zero_length_edges",
         )
+        if diagnostic_limit:
+            diagnostics = {
+                category: {"total": 0, "examples": []}
+                for category in diagnostic_categories
+            }
+        else:
+            diagnostics = {}
+
+        def record_sample(category: str, sample_factory) -> None:
+            bucket = diagnostics.get(category)
+            if bucket is None:
+                return
+            bucket["total"] += 1
+            if len(bucket["examples"]) < diagnostic_limit:
+                bucket["examples"].append(sample_factory())
+
+        boundary_edges = 0
+        wire_edges = 0
+        non_manifold_edges = 0
+        zero_length_edges = 0
+        # Union-find groups every vertex connected by an edge while keeping
+        # auxiliary memory proportional to the vertex count.
+        component_parent = [-1] * len(bm.verts)
+
+        def component_root(index: int) -> int:
+            root = index
+            while component_parent[root] >= 0:
+                root = component_parent[root]
+            while index != root:
+                parent = component_parent[index]
+                component_parent[index] = root
+                index = parent
+            return root
+
+        def join_component(first_index: int, second_index: int) -> None:
+            first_root = component_root(first_index)
+            second_root = component_root(second_index)
+            if first_root == second_root:
+                return
+            if component_parent[first_root] > component_parent[second_root]:
+                first_root, second_root = second_root, first_root
+            component_parent[first_root] += component_parent[second_root]
+            component_parent[second_root] = first_root
+
+        for edge in bm.edges:
+            join_component(edge.verts[0].index, edge.verts[1].index)
+            if edge.is_boundary:
+                boundary_edges += 1
+                record_sample("boundary_edges", lambda: edge_example(edge))
+            if edge.is_wire:
+                wire_edges += 1
+                record_sample("wire_edges", lambda: edge_example(edge))
+            if not edge.is_manifold:
+                non_manifold_edges += 1
+                record_sample("non_manifold_edges", lambda: edge_example(edge))
+            length = float((edge.verts[0].co - edge.verts[1].co).length)
+            if length <= epsilon:
+                zero_length_edges += 1
+                record_sample(
+                    "zero_length_edges",
+                    lambda: {**edge_example(edge), "length": round(length, 12)},
+                )
+
+        loose_vertices = 0
+        non_finite_vertices = 0
+        connected_component_count = sum(
+            1 for component_size in component_parent if component_size < 0
+        )
+        component_summaries = {}
+        for vertex in bm.verts:
+            if not vertex.link_edges:
+                loose_vertices += 1
+                record_sample(
+                    "loose_vertices",
+                    lambda: {
+                        "vertex_index": int(vertex.index),
+                        "local_coordinate": local_coordinate(vertex.co),
+                    },
+                )
+            if any(not math.isfinite(float(component)) for component in vertex.co):
+                non_finite_vertices += 1
+                record_sample(
+                    "non_finite_vertices",
+                    lambda: {
+                        "vertex_index": int(vertex.index),
+                        "local_coordinate": local_coordinate(vertex.co),
+                    },
+                )
+            if diagnostic_limit:
+                root = component_root(vertex.index)
+                summary = component_summaries.get(root)
+                if summary is None and len(component_summaries) < diagnostic_limit:
+                    summary = {
+                        "seed_vertex_index": int(vertex.index),
+                        "vertex_count": 0,
+                        "edge_count": 0,
+                        "face_count": 0,
+                        "boundary_edge_count": 0,
+                        "finite_bounds_vertex_count": 0,
+                        "local_min": [math.inf, math.inf, math.inf],
+                        "local_max": [-math.inf, -math.inf, -math.inf],
+                    }
+                    component_summaries[root] = summary
+                if summary is not None:
+                    summary["vertex_count"] += 1
+                    coordinates = [float(component) for component in vertex.co]
+                    if all(math.isfinite(component) for component in coordinates):
+                        summary["finite_bounds_vertex_count"] += 1
+                        for axis, coordinate in enumerate(coordinates):
+                            summary["local_min"][axis] = min(
+                                summary["local_min"][axis], coordinate
+                            )
+                            summary["local_max"][axis] = max(
+                                summary["local_max"][axis], coordinate
+                            )
+
+        if component_summaries:
+            for edge in bm.edges:
+                summary = component_summaries.get(
+                    component_root(edge.verts[0].index)
+                )
+                if summary is not None:
+                    summary["edge_count"] += 1
+                    if edge.is_boundary:
+                        summary["boundary_edge_count"] += 1
+
+            for face in bm.faces:
+                summary = component_summaries.get(
+                    component_root(face.verts[0].index)
+                )
+                if summary is not None:
+                    summary["face_count"] += 1
+
+            bucket = diagnostics.get("connected_components")
+            if bucket is not None:
+                bucket["total"] = connected_component_count
+                ordered_components = sorted(
+                    component_summaries.values(),
+                    key=lambda component: component["seed_vertex_index"],
+                )
+                for component_index, component in enumerate(ordered_components):
+                    finite_bounds_count = component.pop(
+                        "finite_bounds_vertex_count"
+                    )
+                    local_min = component.pop("local_min")
+                    local_max = component.pop("local_max")
+                    component["component_index"] = component_index
+                    component["bounds_complete"] = (
+                        finite_bounds_count == component["vertex_count"]
+                    )
+                    component["local_bounds"] = {
+                        "min": local_coordinate(local_min),
+                        "max": local_coordinate(local_max),
+                    }
+                    bucket["examples"].append(component)
+
+        triangle_faces = 0
+        quad_faces = 0
+        ngon_faces = 0
+        degenerate_faces = 0
+        for face in bm.faces:
+            vertex_count = len(face.verts)
+            if vertex_count == 3:
+                triangle_faces += 1
+            elif vertex_count == 4:
+                quad_faces += 1
+            elif vertex_count > 4:
+                ngon_faces += 1
+                record_sample("ngon_faces", lambda: face_example(face))
+            area = float(face.calc_area())
+            if area <= epsilon:
+                degenerate_faces += 1
+                record_sample(
+                    "degenerate_faces",
+                    lambda: {**face_example(face), "area": round(area, 12)},
+                )
+
+        for bucket in diagnostics.values():
+            bucket["truncated"] = bucket["total"] > len(bucket["examples"])
+
+        quad_ratio = (quad_faces / face_count) if face_count else 0.0
         uv_layers = len(getattr(mesh, "uv_layers", []))
         material_slots = len(getattr(obj, "material_slots", []))
 
@@ -2851,6 +3103,8 @@ def _quality_mesh(check: dict) -> dict:
             "wire_edges": wire_edges,
             "non_manifold_edges": non_manifold_edges,
             "loose_vertices": loose_vertices,
+            "non_finite_vertices": non_finite_vertices,
+            "connected_components": connected_component_count,
             "degenerate_faces": degenerate_faces,
             "zero_length_edges": zero_length_edges,
             "uv_layers": uv_layers,
@@ -2878,15 +3132,24 @@ def _quality_mesh(check: dict) -> dict:
         maximum("max_wire_edges", wire_edges)
         maximum("max_non_manifold_edges", non_manifold_edges)
         maximum("max_loose_vertices", loose_vertices)
+        maximum("max_non_finite_vertices", non_finite_vertices)
+        maximum("max_connected_components", connected_component_count)
         maximum("max_degenerate_faces", degenerate_faces)
         maximum("max_zero_length_edges", zero_length_edges)
 
         if "min_quad_ratio" in check and check.get("min_quad_ratio") is not None:
             try:
-                minimum_quad_ratio = float(check.get("min_quad_ratio"))
+                raw_minimum_quad_ratio = check.get("min_quad_ratio")
+                if isinstance(raw_minimum_quad_ratio, bool):
+                    raise ValueError
+                minimum_quad_ratio = float(raw_minimum_quad_ratio)
             except (TypeError, ValueError):
                 raise ValueError("min_quad_ratio must be a number")
-            if minimum_quad_ratio < 0 or minimum_quad_ratio > 1:
+            if (
+                not math.isfinite(minimum_quad_ratio)
+                or minimum_quad_ratio < 0
+                or minimum_quad_ratio > 1
+            ):
                 raise ValueError("min_quad_ratio must be between 0 and 1")
             rules.append({
                 "rule": "min_quad_ratio",
@@ -2895,7 +3158,7 @@ def _quality_mesh(check: dict) -> dict:
                 "actual": round(quad_ratio, 6),
             })
 
-        if bool(check.get("require_uv", False)):
+        if check.get("require_uv", False):
             rules.append({
                 "rule": "require_uv",
                 "passed": uv_layers > 0,
@@ -2903,7 +3166,7 @@ def _quality_mesh(check: dict) -> dict:
                 "actual": uv_layers,
             })
 
-        if bool(check.get("require_material", False)):
+        if check.get("require_material", False):
             rules.append({
                 "rule": "require_material",
                 "passed": material_slots > 0,
@@ -2911,7 +3174,7 @@ def _quality_mesh(check: dict) -> dict:
                 "actual": material_slots,
             })
 
-        if bool(check.get("require_manifold", False)):
+        if check.get("require_manifold", False):
             rules.append({
                 "rule": "require_manifold",
                 "passed": non_manifold_edges == 0,
@@ -2931,7 +3194,9 @@ def _quality_mesh(check: dict) -> dict:
             "object_name": obj.name,
             "evaluated": evaluated,
             "epsilon": epsilon,
+            "diagnostic_limit": diagnostic_limit,
             "metrics": metrics,
+            "diagnostics": diagnostics,
             "rules": rules,
             "failed_rules": len(failed),
         }

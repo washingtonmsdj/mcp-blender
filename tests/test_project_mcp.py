@@ -30,6 +30,7 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                     await session.initialize()
                     names = [tool.name for tool in (await session.list_tools()).tools]
                     self.assertIn('artifact_image', names)
+                    self.assertIn('blender_live_view', names)
                     response = await session.call_tool('projects_list', {})
                     self.assertFalse(response.isError)
                     self.assertIn('test', response.content[0].text)

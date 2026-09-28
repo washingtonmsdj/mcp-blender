@@ -53,7 +53,8 @@ weaken the Blender-side contract.
 `blender.live_create_primitive`.
 
 `add_modifier` supports BEVEL, SUBSURF, SOLIDIFY and MIRROR through
-`blender.live_add_modifier`.
+`blender.live_add_modifier`. ARRAY has a typed planning contract, but is not yet
+executable.
 
 Both use the same closed-world planner that powered the staged smoke path. The
 runtime preconditions, rollback guarantees and modifier budgets remain enforced:
@@ -77,6 +78,35 @@ insertion, duplicate modifier-name rejection, allowed runtime budget, durable
 trajectory evidence, UV positive/negative controls, multiview self-comparison
 and controlled mutation detection. The benchmark completed with return code 0
 and a durable report artifact.
+
+### Array modifier candidate (pending Blender smoke)
+
+The `ARRAY` modifier variant has a closed typed plan for fixed-count linear
+repetition. It accepts `count` (2–64), a `relative_offset` vector (default
+`[1, 0, 0]`) and an optional `constant_offset` vector. When both offsets are
+provided, Blender combines them. The planner estimates `evaluated_faces ×
+count` and caps the result at 500,000 faces.
+
+Example planning request:
+
+```json
+{
+  "operation": "add_modifier",
+  "object_name": "Rivet",
+  "name": "RivetRow",
+  "type": "ARRAY",
+  "count": 8,
+  "relative_offset": [1.25, 0, 0]
+}
+```
+
+This is a planning example only; it must not be sent to the mutation action.
+
+This variant deliberately returns `status: pending_blender_smoke` and
+`executable: false`. The host action and the Blender companion both refuse to
+execute it until the current BlenderBench proves modifier creation, evaluated
+copy count, offset behavior, budget rejection and rollback on Blender 5.x. The
+existing BEVEL, SUBSURF, SOLIDIFY and MIRROR variants remain available.
 
 ## Promotion gate
 

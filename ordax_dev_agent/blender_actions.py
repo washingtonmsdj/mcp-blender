@@ -697,6 +697,19 @@ class BlenderActions:
                     False,
                     f"quality check {index} type must be one of: {', '.join(sorted(supported))}",
                 )
+            if kind == "mesh_quality":
+                diagnostic_limit = check.get("diagnostic_limit", 8)
+                if (
+                    not isinstance(diagnostic_limit, int)
+                    or isinstance(diagnostic_limit, bool)
+                    or diagnostic_limit < 0
+                    or diagnostic_limit > 16
+                ):
+                    return ActionResult(
+                        False,
+                        f"quality check {index} diagnostic_limit must be an "
+                        "integer between 0 and 16",
+                    )
             normalized.append({**check, "type": kind})
 
         return self._blender_live(payload).request(
@@ -965,6 +978,13 @@ class BlenderActions:
             plan = plan_modeling_operation("add_modifier", payload)
         except ValueError as error:
             return ActionResult(False, str(error))
+
+        if not plan["executable"]:
+            return ActionResult(
+                False,
+                f"{plan['status']}: modifier variant is not enabled for execution",
+                {"plan": plan},
+            )
 
         return self._blender_live(payload).request(
             "add_modifier",
