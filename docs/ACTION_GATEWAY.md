@@ -104,8 +104,12 @@ allow-lists.
 
 ## Next integration step
 
-Do not expose this gateway over HTTP/public MCP until the Control Plane can
-authenticate the real Account/Space subject, resolve a live
-non-revoked/non-expired grant for that subject/device/project, and persist the
-gateway's mandatory audit events. The future authenticated MCP host should wrap
-`ProductMcpFacade` rather than re-implementing its allow-list.
+The Control Plane now has a separate JWT/JWKS Product identity probe at
+`/v3/product/session`. It proves the Product subject only; it does not resolve a
+grant or execute work.
+
+Do not expose Product action execution over HTTP/public MCP until that authenticated
+subject is bound to a live non-revoked/non-expired grant for the requested
+subject/device/project and the gateway's mandatory audit events are persisted.
+The future authenticated MCP host should wrap `ProductMcpFacade` rather than
+re-implementing its allow-list.
