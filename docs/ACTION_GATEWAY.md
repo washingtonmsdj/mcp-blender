@@ -145,3 +145,20 @@ Authenticated clients can discover their safe execution targets with
 non-revoked, device-bound grants, and returns device id/name/last-seen plus the
 exact grant action/project scopes. It does not expose device tokens, machine
 bindings, operator data, or devices belonging only to other subjects.
+
+
+## Product remote client
+
+`ordax_dev_agent.product_remote_client.ProductRemoteClient` is the reusable
+transport client for future Product MCP/Web hosts. It does not implement auth,
+grants or policy itself; it only calls the existing authenticated Control Plane
+surface:
+
+- `/v3/product/session`
+- `/v3/product/targets`
+- `/v3/product/actions`
+- `/v3/product/actions/{request_id}`
+
+The Product JWT is supplied explicitly on every call and is not stored on the
+client object. Polling is bounded and synchronous; there is no background worker
+or hidden retry loop.
