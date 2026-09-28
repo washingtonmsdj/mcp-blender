@@ -36,6 +36,13 @@ class ProductAuthProviderPreflightContractTests(unittest.TestCase):
         self.assertIn('data.get("product_auth_configured") is True', self.workflow)
         self.assertIn("Remote health + Product auth OK", self.workflow)
 
+    def test_deploy_waits_for_green_main_bridge_ci(self):
+        self.assertIn('workflows: ["Bridge CI"]', self.workflow)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", self.workflow)
+        self.assertIn("github.event.workflow_run.head_branch == 'main'", self.workflow)
+        self.assertIn("github.event.workflow_run.head_sha", self.workflow)
+
+
 
 if __name__ == "__main__":
     unittest.main()
