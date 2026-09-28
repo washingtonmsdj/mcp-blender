@@ -58,3 +58,23 @@ suporte multipart explícito.
 - API tipada e allow-list local;
 - URLs temporárias de leitura para artifacts;
 - sem shell remoto genérico.
+
+### Terminal report replay
+
+Terminal job results carry a unique `report_id` stored in D1. An identical replay
+with the same lease, execution epoch, runtime identity, status, result digest,
+canonical result JSON and error code is acknowledged as already committed. Any divergent
+replay is rejected as `terminal_report_conflict`.
+
+### Durable terminal outbox
+
+The Device Agent persists terminal reports under its local state directory before
+network delivery. Startup recovery uses `POST /v3/device/recover-report` with the
+device credential and the original execution context, before opening the device
+WebSocket. D1 accepts the report only if that execution context is still current,
+or acknowledges it if the identical terminal report was already committed.
+
+A `running` job is never re-leased automatically. It fences later jobs for that
+device until terminal recovery succeeds or an operator resolves the stalled job.
+This prevents an expired lease from becoming an implicit second execution of a
+Blender/Unity/Git mutation.
