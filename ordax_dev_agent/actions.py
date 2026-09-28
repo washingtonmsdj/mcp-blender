@@ -247,6 +247,7 @@ class ActionRegistry(
             "agent.resilience_repair": self.agent_resilience_repair,
             "agent.update": self.agent_update,
             "agent.self_test": self.agent_self_test,
+            "artifacts.list": self.artifacts_list,
             "artifact.preview": self.artifact_preview,
             "artifact.read_chunk": self.artifact_read_chunk,
             "git.status": self.git_status,

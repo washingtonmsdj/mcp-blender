@@ -51,6 +51,11 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
         description="Read a bounded Git diff for a granted project.",
     ),
     ProductMcpToolSpec(
+        name="artifacts_list",
+        action="artifacts.list",
+        description="List bounded metadata for artifacts in a granted project.",
+    ),
+    ProductMcpToolSpec(
         name="artifact_preview",
         action="artifact.preview",
         description="Read a bounded preview of a granted project artifact.",

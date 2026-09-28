@@ -87,6 +87,11 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
         local_action="project.text_read",
         allowed_fields=frozenset({"project", "path"}),
     ),
+    "artifacts.list": ProductActionSpec(
+        name="artifacts.list",
+        local_action="artifacts.list",
+        allowed_fields=frozenset({"project", "max_items"}),
+    ),
     "git.status": ProductActionSpec(
         name="git.status",
         local_action="git.status",

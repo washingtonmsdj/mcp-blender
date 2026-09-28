@@ -42,6 +42,7 @@ const PRODUCT_READ_ONLY_ACTIONS = new Set([
   "projects.list",
   "project.inventory",
   "project.text_read",
+  "artifacts.list",
   "git.status",
   "git.diff",
   "artifact.preview",
@@ -49,6 +50,7 @@ const PRODUCT_READ_ONLY_ACTIONS = new Set([
 const PRODUCT_PROJECT_ACTIONS = new Set([
   "project.inventory",
   "project.text_read",
+  "artifacts.list",
   "git.status",
   "git.diff",
   "artifact.preview",
