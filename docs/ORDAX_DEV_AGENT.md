@@ -295,3 +295,14 @@ as a JSON object.
 This exposes Scheduled Task state/action, external-bootstrap presence, current
 agent processes, local health and GitHub runner-service state without turning
 recovery diagnostics into arbitrary remote execution.
+
+## Durable terminal recovery
+
+Before a terminal result is sent, the Device Agent writes it atomically to a local
+provider-scoped outbox. Startup and the normal control loop drain that outbox before
+accepting new work. The Cloudflare Worker never automatically re-leases a job once
+it reached `running`; unresolved running work fences later jobs until the exact
+terminal context is recovered or an operator resolves it.
+
+Terminal result JSON is canonicalized before storage and replay comparison, so
+semantically identical objects do not conflict merely because their key order changed.

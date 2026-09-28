@@ -27,6 +27,7 @@ def run(base_url: str, operator_token: str) -> None:
         headers=_operator_headers(operator_token),
     )
     control: CloudflareControlPlane | None = None
+    restarted_control: CloudflareControlPlane | None = None
     device_id: str | None = None
     try:
         health = operator.get("/health")
@@ -95,6 +96,17 @@ def run(base_url: str, operator_token: str) -> None:
             )
             control.renew(job)
 
+            blocked = operator.post(
+                "/v3/jobs",
+                json={
+                    "device_id": device_id,
+                    "action": "agent.status",
+                    "payload": {"after_recovery": True},
+                },
+            )
+            blocked.raise_for_status()
+            blocked_job_id = str(blocked.json()["job_id"])
+
             artifact_path = root / "probe.txt"
             artifact_bytes = b"ordax-cloudflare-v3-e2e\n"
             artifact_path.write_bytes(artifact_bytes)
@@ -151,23 +163,87 @@ def run(base_url: str, operator_token: str) -> None:
                 "error_code": None,
             }
 
-            first_report = control._rpc("report", report, timeout=30.0)
-            if first_report.get("replayed") is not False:
-                raise RuntimeError("first terminal report was not committed normally")
+            outbox_path = control._terminal_outbox.persist(report)
+            if not outbox_path.is_file():
+                raise RuntimeError("terminal report was not persisted locally")
 
-            replay_report = control._rpc("report", report, timeout=30.0)
+            # Simulate the Agent process disappearing after local execution but
+            # before a terminal WebSocket report is accepted.
+            control._drop_socket()
+            restarted_control = CloudflareControlPlane(config)
+            if restarted_control._socket is not None:
+                raise RuntimeError("restart recovery unexpectedly opened a websocket")
+
+            recovered_count = restarted_control.recover_pending_reports()
+            if recovered_count != 1:
+                raise RuntimeError(
+                    f"expected one recovered terminal report, got {recovered_count}"
+                )
+            if restarted_control._terminal_outbox.pending():
+                raise RuntimeError("terminal outbox was not cleared after recovery")
+            if restarted_control._socket is not None:
+                raise RuntimeError("terminal recovery must happen before websocket intake")
+
+            next_job = restarted_control.claim_next_job()
+            if next_job is None or next_job.id != blocked_job_id:
+                raise RuntimeError(
+                    "device queue did not resume with the job blocked behind running work"
+                )
+            if next_job.payload != {"after_recovery": True}:
+                raise RuntimeError("post-recovery queued job payload changed")
+            third = operator.post(
+                "/v3/jobs",
+                json={
+                    "device_id": device_id,
+                    "action": "agent.status",
+                    "payload": {"after_live_recovery": True},
+                },
+            )
+            third.raise_for_status()
+            third_job_id = str(third.json()["job_id"])
+
+            second_result = ActionResult(True, "live recovery completed", {})
+            second_body, second_digest = restarted_control._canonical_result(second_result)
+            second_report = {
+                **restarted_control._execution_context(next_job),
+                "report_id": str(uuid.uuid4()),
+                "status": "succeeded",
+                "exit_code": 0,
+                "result": second_body,
+                "result_sha256": second_digest,
+                "error_code": None,
+            }
+            restarted_control._terminal_outbox.persist(second_report)
+            if restarted_control.recover_pending_reports() != 1:
+                raise RuntimeError("live terminal recovery did not clear one report")
+            if next_job.id in restarted_control._jobs:
+                raise RuntimeError("live terminal recovery left stale local job state")
+
+            third_job = restarted_control.claim_next_job()
+            if third_job is None or third_job.id != third_job_id:
+                raise RuntimeError(
+                    "terminal recovery did not wake the existing device websocket"
+                )
+            if third_job.payload != {"after_live_recovery": True}:
+                raise RuntimeError("live-recovery queued job payload changed")
+            restarted_control.complete(
+                third_job,
+                ActionResult(True, "queue wake verified", {}),
+            )
+
+            replay_report = restarted_control._recover_terminal_report(report)
             if replay_report.get("replayed") is not True:
-                raise RuntimeError("identical terminal report replay was not acknowledged")
+                raise RuntimeError("identical recovered report replay was not acknowledged")
 
             conflict = dict(report)
             conflict["result_sha256"] = "0" * 64
             try:
-                control._rpc("report", conflict, timeout=30.0)
+                restarted_control._recover_terminal_report(conflict)
             except RuntimeError as error:
                 if "terminal_report_conflict" not in str(error):
                     raise
             else:
-                raise RuntimeError("conflicting terminal report replay was accepted")
+                raise RuntimeError("conflicting recovered terminal report was accepted")
 
             control._jobs.pop(job.id, None)
 
@@ -195,6 +271,9 @@ def run(base_url: str, operator_token: str) -> None:
         if control is not None:
             control._drop_socket()
             control.http.close()
+        if restarted_control is not None:
+            restarted_control._drop_socket()
+            restarted_control.http.close()
 
         cleanup_error: Exception | None = None
         if device_id:

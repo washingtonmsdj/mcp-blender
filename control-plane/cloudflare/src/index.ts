@@ -70,6 +70,31 @@ function isRecord(value: unknown): value is JsonObject {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function canonicalJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => canonicalJsonValue(item));
+  if (isRecord(value)) {
+    const normalized: JsonObject = {};
+    for (const key of Object.keys(value).sort()) {
+      normalized[key] = canonicalJsonValue(value[key]);
+    }
+    return normalized;
+  }
+  return value;
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(canonicalJsonValue(value));
+}
+
+function canonicalStoredJson(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    return stableJson(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
 function actionAllowed(value: string): boolean {
   return value === "ordax.dev.adapter.invoke"
     || ACTION_PREFIXES.some((prefix) => value.startsWith(prefix));
@@ -102,6 +127,24 @@ async function authenticateDevice(
   if (!row) return { ok: false, error: "invalid_device_token" };
   if (row.revoked_at) return { ok: false, error: "device_revoked" };
   return { ok: true };
+}
+
+async function wakeDeviceSession(
+  env: Env,
+  deviceId: string,
+  targetAgentInstanceId?: string,
+  targetBootId?: string,
+): Promise<void> {
+  const id = env.DEVICE_SESSIONS.idFromName(deviceId);
+  const headers = new Headers({ "X-Ordax-Device-Id": deviceId });
+  if (targetAgentInstanceId && targetBootId) {
+    headers.set("X-Ordax-Target-Agent-Instance", targetAgentInstanceId);
+    headers.set("X-Ordax-Target-Boot-Id", targetBootId);
+  }
+  await env.DEVICE_SESSIONS.get(id).fetch("https://device.internal/wake", {
+    method: "POST",
+    headers,
+  });
 }
 
 async function parseSmallJson(request: Request, maxBytes = 128 * 1024): Promise<JsonObject | null> {
@@ -352,11 +395,7 @@ async function enqueueJob(request: Request, env: Env): Promise<Response> {
      VALUES (?1, ?2, ?3, ?4, ?5, 'queued', ?6, 0, ?7)`,
   ).bind(jobId, deviceId, action, payloadB64, payloadSha256, effectId, createdAt).run();
 
-  const id = env.DEVICE_SESSIONS.idFromName(deviceId);
-  await env.DEVICE_SESSIONS.get(id).fetch("https://device.internal/wake", {
-    method: "POST",
-    headers: { "X-Ordax-Device-Id": deviceId },
-  });
+  await wakeDeviceSession(env, deviceId);
 
   return json({ ok: true, job_id: jobId, effect_id: effectId, status: "queued" }, 201);
 }
@@ -396,6 +435,136 @@ async function getJob(request: Request, env: Env, jobId: string): Promise<Respon
     events: events.results ?? [],
     artifacts: artifacts.results ?? [],
   });
+}
+
+async function recoverTerminalReport(request: Request, env: Env): Promise<Response> {
+  const deviceId = request.headers.get("X-Ordax-Device-Id") ?? "";
+  const token = request.headers.get("X-Ordax-Device-Token") ?? "";
+  const auth = await authenticateDevice(env, deviceId, token);
+  if (!auth.ok) return json({ ok: false, error: auth.error }, 401);
+
+  const body = await parseSmallJson(request, 640 * 1024);
+  if (!body) return json({ ok: false, error: "report_invalid" }, 400);
+
+  const recoveryAgentInstanceId = request.headers.get(
+    "X-Ordax-Recovery-Agent-Instance",
+  ) ?? "";
+  const recoveryBootId = request.headers.get("X-Ordax-Recovery-Boot-Id") ?? "";
+  if (!UUID_RE.test(recoveryAgentInstanceId) || !UUID_RE.test(recoveryBootId)) {
+    return json({ ok: false, error: "recovery_runtime_identity_required" }, 400);
+  }
+
+  const jobId = typeof body.job_id === "string" ? body.job_id : "";
+  const effectId = typeof body.effect_id === "string" ? body.effect_id : "";
+  const attemptId = typeof body.attempt_id === "string" ? body.attempt_id : "";
+  const leaseId = typeof body.lease_id === "string" ? body.lease_id : "";
+  const agentInstanceId = typeof body.agent_instance_id === "string"
+    ? body.agent_instance_id
+    : "";
+  const bootId = typeof body.boot_id === "string" ? body.boot_id : "";
+  const reportId = typeof body.report_id === "string" ? body.report_id : "";
+  const executionEpoch = Number.isSafeInteger(body.execution_epoch)
+    ? Number(body.execution_epoch)
+    : 0;
+  const status = typeof body.status === "string" ? body.status : "";
+  const resultSha256 = typeof body.result_sha256 === "string"
+    ? body.result_sha256.toLowerCase()
+    : "";
+  const errorCode = typeof body.error_code === "string" ? body.error_code : null;
+  const resultValue = isRecord(body.result) ? body.result : {};
+  const resultJson = stableJson(resultValue);
+
+  if (
+    !UUID_RE.test(jobId)
+    || !UUID_RE.test(effectId)
+    || !UUID_RE.test(attemptId)
+    || !UUID_RE.test(leaseId)
+    || !UUID_RE.test(agentInstanceId)
+    || !UUID_RE.test(bootId)
+    || !UUID_RE.test(reportId)
+    || executionEpoch < 1
+    || !["succeeded", "failed", "cancelled"].includes(status)
+    || !HEX64_RE.test(resultSha256)
+    || new TextEncoder().encode(resultJson).byteLength > 512 * 1024
+  ) {
+    return json({ ok: false, error: "report_invalid" }, 400);
+  }
+
+  const row = await env.DB.prepare(
+    `SELECT status, effect_id, attempt_id, lease_id, execution_epoch,
+            agent_instance_id, boot_id, report_id, result_json,
+            result_sha256, error_code
+     FROM ordax_jobs WHERE id = ?1 AND device_id = ?2`,
+  ).bind(jobId, deviceId).first<{
+    status: string;
+    effect_id: string;
+    attempt_id: string | null;
+    lease_id: string | null;
+    execution_epoch: number;
+    agent_instance_id: string | null;
+    boot_id: string | null;
+    report_id: string | null;
+    result_json: string | null;
+    result_sha256: string | null;
+    error_code: string | null;
+  }>();
+  if (!row) return json({ ok: false, error: "job_not_found" }, 404);
+
+  const contextMatches = (
+    row.effect_id === effectId
+    && row.attempt_id === attemptId
+    && row.lease_id === leaseId
+    && Number(row.execution_epoch) === executionEpoch
+    && row.agent_instance_id === agentInstanceId
+    && row.boot_id === bootId
+  );
+
+  if (["succeeded", "failed", "cancelled"].includes(row.status)) {
+    const replayMatches = (
+      contextMatches
+      && row.report_id === reportId
+      && row.status === status
+      && canonicalStoredJson(row.result_json) === resultJson
+      && (row.result_sha256 ?? "").toLowerCase() === resultSha256
+      && row.error_code === errorCode
+    );
+    if (!replayMatches) {
+      return json({ ok: false, error: "terminal_report_conflict" }, 409);
+    }
+    await wakeDeviceSession(
+      env, deviceId, recoveryAgentInstanceId, recoveryBootId,
+    );
+    return json({ ok: true, status, replayed: true });
+  }
+
+  if (!contextMatches) {
+    return json({ ok: false, error: "execution_context_superseded" }, 409);
+  }
+  if (!["leased", "running"].includes(row.status)) {
+    return json({ ok: false, error: "job_not_recoverable" }, 409);
+  }
+
+  const finishedAt = nowIso();
+  const update = await env.DB.prepare(
+    `UPDATE ordax_jobs SET
+       status = ?1, report_id = ?2, result_json = ?3, result_sha256 = ?4,
+       error_code = ?5, finished_at = ?6, lease_expires_at = NULL
+     WHERE id = ?7 AND device_id = ?8
+       AND effect_id = ?9 AND attempt_id = ?10 AND lease_id = ?11
+       AND execution_epoch = ?12 AND agent_instance_id = ?13 AND boot_id = ?14
+       AND status IN ('leased','running') AND report_id IS NULL`,
+  ).bind(
+    status, reportId, resultJson, resultSha256, errorCode, finishedAt,
+    jobId, deviceId, effectId, attemptId, leaseId, executionEpoch,
+    agentInstanceId, bootId,
+  ).run();
+  if ((update.meta.changes ?? 0) !== 1) {
+    return json({ ok: false, error: "terminal_recovery_race" }, 409);
+  }
+  await wakeDeviceSession(
+    env, deviceId, recoveryAgentInstanceId, recoveryBootId,
+  );
+  return json({ ok: true, status, recovered: true, replayed: false });
 }
 
 async function uploadArtifact(request: Request, env: Env, parts: string[]): Promise<Response> {
@@ -544,6 +713,9 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/v3/device/setup") {
       return deviceSetup(request, env);
+    }
+    if (request.method === "POST" && url.pathname === "/v3/device/recover-report") {
+      return recoverTerminalReport(request, env);
     }
     if (request.method === "POST" && url.pathname === "/v3/devices") {
       return provisionDevice(request, env);
@@ -709,11 +881,23 @@ export class DeviceSession extends DurableObject<Env> {
 
   private async deliverNextJob(ws: WebSocket, deviceId: string): Promise<void> {
     const now = nowIso();
+
+    // One device executes one remote job at a time. A running action may already
+    // have mutated local state, and an unexpired lease belongs to another active
+    // delivery attempt. Either condition fences every later queued job.
+    const activeExecution = await this.env.DB.prepare(
+      `SELECT id FROM ordax_jobs
+       WHERE device_id = ?1
+         AND (status = 'running' OR (status = 'leased' AND lease_expires_at >= ?2))
+       LIMIT 1`,
+    ).bind(deviceId, now).first();
+    if (activeExecution) return;
+
     const candidate = await this.env.DB.prepare(
       `SELECT id, capability, payload_canonical_b64, payload_sha256, effect_id, execution_epoch
        FROM ordax_jobs
        WHERE device_id = ?1
-         AND (status = 'queued' OR (status IN ('leased','running') AND lease_expires_at < ?2))
+         AND (status = 'queued' OR (status = 'leased' AND lease_expires_at < ?2))
        ORDER BY created_at ASC
        LIMIT 1`,
     ).bind(deviceId, now).first<{
@@ -743,7 +927,7 @@ export class DeviceSession extends DurableObject<Env> {
          boot_id = ?5,
          lease_expires_at = ?6
        WHERE id = ?7 AND device_id = ?8
-         AND (status = 'queued' OR lease_expires_at < ?9)`,
+         AND (status = 'queued' OR (status = 'leased' AND lease_expires_at < ?9))`,
     ).bind(
       attemptId, leaseId, nextEpoch, attachment.agentInstanceId,
       attachment.bootId, leaseExpiresAt, candidate.id, deviceId, now,
@@ -801,10 +985,30 @@ export class DeviceSession extends DurableObject<Env> {
     }
 
     if (url.pathname === "/wake" && request.method === "POST") {
+      const targetAgentInstanceId =
+        request.headers.get("X-Ordax-Target-Agent-Instance") ?? "";
+      const targetBootId = request.headers.get("X-Ordax-Target-Boot-Id") ?? "";
+      const targeted = Boolean(targetAgentInstanceId || targetBootId);
+      if (
+        targeted
+        && (!UUID_RE.test(targetAgentInstanceId) || !UUID_RE.test(targetBootId))
+      ) {
+        return json({ ok: false, error: "wake_target_invalid" }, 400);
+      }
+
       for (const ws of this.ctx.getWebSockets()) {
-        if (this.attachment(ws)?.deviceId === deviceId) {
-          await this.deliverNextJob(ws, deviceId);
+        const attachment = this.attachment(ws);
+        if (!attachment || attachment.deviceId !== deviceId) continue;
+        if (
+          targeted
+          && (
+            attachment.agentInstanceId !== targetAgentInstanceId
+            || attachment.bootId !== targetBootId
+          )
+        ) {
+          continue;
         }
+        await this.deliverNextJob(ws, deviceId);
       }
       return json({ ok: true });
     }
@@ -842,10 +1046,18 @@ export class DeviceSession extends DurableObject<Env> {
     }
 
     const jobId = typeof message.job_id === "string" ? message.job_id : "";
+    const effectId = typeof message.effect_id === "string" ? message.effect_id : "";
+    const attemptId = typeof message.attempt_id === "string" ? message.attempt_id : "";
     const leaseId = typeof message.lease_id === "string" ? message.lease_id : "";
     const executionEpoch = Number.isSafeInteger(message.execution_epoch)
       ? Number(message.execution_epoch) : 0;
-    if (!UUID_RE.test(jobId) || !UUID_RE.test(leaseId) || executionEpoch < 1) {
+    if (
+      !UUID_RE.test(jobId)
+      || !UUID_RE.test(effectId)
+      || !UUID_RE.test(attemptId)
+      || !UUID_RE.test(leaseId)
+      || executionEpoch < 1
+    ) {
       this.ack(ws, requestId, false, { error: "execution_context_invalid" });
       return;
     }
@@ -857,7 +1069,7 @@ export class DeviceSession extends DurableObject<Env> {
         ? message.result_sha256.toLowerCase()
         : "";
       const resultValue = isRecord(message.result) ? message.result : {};
-      const resultJson = JSON.stringify(resultValue);
+      const resultJson = stableJson(resultValue);
       const errorCode = typeof message.error_code === "string" ? message.error_code : null;
 
       if (
@@ -874,13 +1086,16 @@ export class DeviceSession extends DurableObject<Env> {
       }
 
       const terminal = await this.env.DB.prepare(
-        `SELECT status, report_id, result_json, result_sha256, error_code,
-                lease_id, execution_epoch, agent_instance_id, boot_id
+        `SELECT status, effect_id, attempt_id, report_id, result_json,
+                result_sha256, error_code, lease_id, execution_epoch,
+                agent_instance_id, boot_id
          FROM ordax_jobs
          WHERE id = ?1 AND device_id = ?2
            AND status IN ('succeeded','failed','cancelled')`,
       ).bind(jobId, deviceId).first<{
         status: string;
+        effect_id: string;
+        attempt_id: string | null;
         report_id: string | null;
         result_json: string | null;
         result_sha256: string | null;
@@ -893,9 +1108,11 @@ export class DeviceSession extends DurableObject<Env> {
 
       if (terminal) {
         const replayMatches = (
-          terminal.report_id === reportId
+          terminal.effect_id === effectId
+          && terminal.attempt_id === attemptId
+          && terminal.report_id === reportId
           && terminal.status === status
-          && terminal.result_json === resultJson
+          && canonicalStoredJson(terminal.result_json) === resultJson
           && (terminal.result_sha256 ?? "").toLowerCase() === resultSha256
           && terminal.error_code === errorCode
           && terminal.lease_id === leaseId
@@ -917,11 +1134,12 @@ export class DeviceSession extends DurableObject<Env> {
 
     const active = await this.env.DB.prepare(
       `SELECT id FROM ordax_jobs
-       WHERE id = ?1 AND device_id = ?2 AND lease_id = ?3 AND execution_epoch = ?4
-         AND agent_instance_id = ?5 AND boot_id = ?6
+       WHERE id = ?1 AND device_id = ?2 AND effect_id = ?3 AND attempt_id = ?4
+         AND lease_id = ?5 AND execution_epoch = ?6
+         AND agent_instance_id = ?7 AND boot_id = ?8
          AND status IN ('leased','running')`,
     ).bind(
-      jobId, deviceId, leaseId, executionEpoch,
+      jobId, deviceId, effectId, attemptId, leaseId, executionEpoch,
       attachment.agentInstanceId, attachment.bootId,
     ).first();
     if (!active) {
@@ -933,19 +1151,38 @@ export class DeviceSession extends DurableObject<Env> {
       const startedAt = nowIso();
       const result = await this.env.DB.prepare(
         `UPDATE ordax_jobs SET status = 'running', started_at = COALESCE(started_at, ?1)
-         WHERE id = ?2 AND device_id = ?3 AND lease_id = ?4 AND execution_epoch = ?5`,
-      ).bind(startedAt, jobId, deviceId, leaseId, executionEpoch).run();
-      this.ack(ws, requestId, (result.meta.changes ?? 0) === 1);
+         WHERE id = ?2 AND device_id = ?3 AND effect_id = ?4 AND attempt_id = ?5
+           AND lease_id = ?6 AND execution_epoch = ?7
+           AND agent_instance_id = ?8 AND boot_id = ?9
+           AND status IN ('leased','running') AND report_id IS NULL`,
+      ).bind(
+        startedAt, jobId, deviceId, effectId, attemptId, leaseId, executionEpoch,
+        attachment.agentInstanceId, attachment.bootId,
+      ).run();
+      const ok = (result.meta.changes ?? 0) === 1;
+      this.ack(ws, requestId, ok, ok ? { started: true } : { error: "start_rejected" });
       return;
     }
 
     if (type === "lease_heartbeat") {
       const leasedUntil = new Date(Date.now() + 120_000).toISOString();
-      await this.env.DB.prepare(
+      const result = await this.env.DB.prepare(
         `UPDATE ordax_jobs SET lease_expires_at = ?1
-         WHERE id = ?2 AND device_id = ?3 AND lease_id = ?4 AND execution_epoch = ?5`,
-      ).bind(leasedUntil, jobId, deviceId, leaseId, executionEpoch).run();
-      this.ack(ws, requestId, true, { leased_until: leasedUntil });
+         WHERE id = ?2 AND device_id = ?3 AND effect_id = ?4 AND attempt_id = ?5
+           AND lease_id = ?6 AND execution_epoch = ?7
+           AND agent_instance_id = ?8 AND boot_id = ?9
+           AND status IN ('leased','running') AND report_id IS NULL`,
+      ).bind(
+        leasedUntil, jobId, deviceId, effectId, attemptId, leaseId, executionEpoch,
+        attachment.agentInstanceId, attachment.bootId,
+      ).run();
+      const ok = (result.meta.changes ?? 0) === 1;
+      this.ack(
+        ws,
+        requestId,
+        ok,
+        ok ? { leased_until: leasedUntil } : { error: "lease_not_active" },
+      );
       return;
     }
 
@@ -969,7 +1206,7 @@ export class DeviceSession extends DurableObject<Env> {
       const status = String(message.status);
       const resultSha256 = String(message.result_sha256).toLowerCase();
       const resultValue = isRecord(message.result) ? message.result : {};
-      const resultJson = JSON.stringify(resultValue);
+      const resultJson = stableJson(resultValue);
       const errorCode = typeof message.error_code === "string" ? message.error_code : null;
       const finishedAt = nowIso();
 
@@ -977,11 +1214,14 @@ export class DeviceSession extends DurableObject<Env> {
         `UPDATE ordax_jobs SET
            status = ?1, report_id = ?2, result_json = ?3, result_sha256 = ?4,
            error_code = ?5, finished_at = ?6, lease_expires_at = NULL
-         WHERE id = ?7 AND device_id = ?8 AND lease_id = ?9 AND execution_epoch = ?10
+         WHERE id = ?7 AND device_id = ?8 AND effect_id = ?9 AND attempt_id = ?10
+           AND lease_id = ?11 AND execution_epoch = ?12
+           AND agent_instance_id = ?13 AND boot_id = ?14
            AND status IN ('leased','running') AND report_id IS NULL`,
       ).bind(
         status, reportId, resultJson, resultSha256, errorCode,
-        finishedAt, jobId, deviceId, leaseId, executionEpoch,
+        finishedAt, jobId, deviceId, effectId, attemptId, leaseId,
+        executionEpoch, attachment.agentInstanceId, attachment.bootId,
       ).run();
       const ok = (update.meta.changes ?? 0) === 1;
       this.ack(ws, requestId, ok, ok ? { status, replayed: false } : { error: "report_rejected" });
