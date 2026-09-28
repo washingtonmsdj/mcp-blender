@@ -20,6 +20,13 @@ class ProductReadonlyE2EContractTests(unittest.TestCase):
         self.assertIn('"artifacts.list"', self.worker)
         self.assertNotIn('"artifact.read_chunk",\n]);\nconst PRODUCT_PROJECT_ACTIONS', self.worker)
 
+    def test_product_grants_and_targets_are_device_bound(self):
+        self.assertIn('!UUID_RE.test(deviceId)', self.worker)
+        self.assertIn('AND device_id = ?3', self.worker)
+        self.assertIn('"/v3/product/targets"', self.worker)
+        self.assertIn('g.device_id IS NOT NULL', self.worker)
+        self.assertIn('g.subject_id = ?1', self.worker)
+
     def test_product_poll_is_subject_scoped(self):
         self.assertIn("r.subject_id = ?2", self.worker)
         self.assertIn("product_action_not_found", self.worker)
