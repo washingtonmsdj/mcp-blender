@@ -80,9 +80,15 @@ Cloudflare v3 now has the administrative persistence foundation for this
 contract: D1 stores Product grants and the audit schema, and the Worker can
 create/list/revoke only the same explicit read-only action set.
 
+The Control Plane also has a shared grant-resolution primitive that evaluates
+subject, optional Space/device scope, action, project, expiry and revocation.
+Its current HTTP surface is operator-only diagnostic plumbing; the resolver is
+intended to be reused after real Product authentication is added.
+
 This is deliberately **not** Product authentication or Product execution. The
-operator credential administers grants but never becomes the authenticated
-Product subject, and there is no Product action execution endpoint.
+operator credential administers/diagnoses grants but never becomes the
+authenticated Product subject, and there is no Product action execution
+endpoint.
 
 ## Next integration step
 
