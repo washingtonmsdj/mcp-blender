@@ -55,21 +55,70 @@ Use artifact_image for managed reference/model PNG/JPEG evidence returned by act
     return {"ok": result.ok, "summary": result.summary, "data": result.data}
 
 
-@mcp.tool()
-def artifact_image(project: str, artifact_path: str) -> list[TextContent | ImageContent]:
-    """Return actual PNG/JPEG pixels to the model, not just a local file path (max 10 MiB)."""
-    agent = registry()
+def _artifact_image_contents(
+    agent: ActionRegistry,
+    project: str,
+    artifact_path: str,
+    *,
+    metadata: dict | None = None,
+) -> list[TextContent | ImageContent]:
     selected = agent._project({"project": project})
     root = (agent.config.state_dir / "artifacts" / selected.slug).resolve()
     path = Path(artifact_path).resolve()
     if not path.is_relative_to(root) or path.suffix.lower() not in (".png", ".jpg", ".jpeg"):
         raise ValueError("Image must be an artifact belonging to the selected project")
+    if not path.is_file():
+        raise FileNotFoundError(f"Image artifact not found: {path}")
     if path.stat().st_size > 10 * 1024 * 1024:
         raise ValueError("Image exceeds 10 MiB; request a lower resolution")
-    return [TextContent(type="text", text=json.dumps({"project": project, "artifact": str(path)})),
-            ImageContent(type="image", mimeType="image/png" if path.suffix.lower() == ".png" else "image/jpeg",
-                         data=base64.b64encode(path.read_bytes()).decode("ascii"))]
 
+    details = {"project": project, "artifact": str(path), **(metadata or {})}
+    mime_type = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+    return [
+        TextContent(type="text", text=json.dumps(details)),
+        ImageContent(
+            type="image",
+            mimeType=mime_type,
+            data=base64.b64encode(path.read_bytes()).decode("ascii"),
+        ),
+    ]
+
+
+@mcp.tool()
+def artifact_image(project: str, artifact_path: str) -> list[TextContent | ImageContent]:
+    """Return actual PNG/JPEG pixels to the model, not just a local file path (max 10 MiB)."""
+    return _artifact_image_contents(registry(), project, artifact_path)
+
+
+@mcp.tool()
+def blender_live_view(
+    project: str,
+    timeout_seconds: float = 120.0,
+) -> list[TextContent | ImageContent]:
+    """Capture the visible Blender viewport and return its pixels in the same MCP call."""
+    timeout = max(5.0, min(float(timeout_seconds), 300.0))
+    agent = registry()
+    result = agent.execute(
+        "blender.live_capture",
+        {"project": project, "timeout_seconds": timeout},
+    )
+    if not result.ok:
+        raise RuntimeError(result.summary)
+
+    artifact = result.data.get("artifact")
+    if not isinstance(artifact, str) or not artifact.strip():
+        raise RuntimeError("Blender live capture completed without an image artifact")
+    return _artifact_image_contents(
+        agent,
+        project,
+        artifact,
+        metadata={
+            "summary": result.summary,
+            "sha256": result.data.get("sha256"),
+            "snapshot_path": result.data.get("snapshot_path"),
+            "transport": result.data.get("transport"),
+        },
+    )
 
 def main() -> None:
     mcp.run()
