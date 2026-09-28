@@ -200,6 +200,8 @@ Fase 1 — agora:
 
 Fase 2:
 - extrair interfaces genéricas de projeto, device, action e adapter;
+  - **em andamento:** o dispatch remoto já usa um contrato de actions/capabilities
+    transport-neutral em `action_contracts.py`, sem ampliar permissões;
 - mover Blender e Unity para contratos claramente identificados como adapters;
 - adicionar contratos de Product MCP e Action Gateway;
 - ligar identidade/grants do Control Plane sem misturar credenciais de
