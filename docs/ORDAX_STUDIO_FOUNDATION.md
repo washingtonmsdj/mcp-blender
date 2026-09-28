@@ -107,3 +107,18 @@ A fundacao agora trata a continuidade como contrato explicito de runtime. `sessi
 O MCP local expoe `session_resume` e `session_finish`. Quando nenhum projeto e informado, a retomada tenta primeiro o projeto ativo persistido, depois `default_project` e por fim o primeiro projeto registrado.
 
 Essa camada nao depende da futura interface desktop: Blender, Unity, Git e workspace continuam capabilities do mesmo runtime e podem ser usados por qualquer cliente MCP autorizado.
+
+## Runtime de produto
+
+O pacote `ordax_studio` adiciona o primeiro entrypoint de produto sem duplicar o Device Agent:
+
+```powershell
+ordax-studio status
+ordax-studio resume [projeto]
+ordax-studio context [projeto]
+ordax-studio checkpoint <projeto> "resumo"
+ordax-studio finish <session_id>
+ordax-studio mcp
+```
+
+`ordax-studio-mcp` permanece disponivel como alias direto para o MCP local. O CLI usa o mesmo `AgentConfig`, `ActionRegistry`, projetos cadastrados e banco persistente do Studio.
