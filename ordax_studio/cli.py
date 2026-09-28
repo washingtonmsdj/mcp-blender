@@ -13,23 +13,7 @@ def registry() -> ActionRegistry:
 
 
 def select_project(agent: ActionRegistry, requested: str | None = None) -> str:
-    if requested:
-        if requested not in agent.projects:
-            raise ValueError(f"project not registered: {requested}")
-        return requested
-    active = agent._memory_store_instance().active_project()
-    if active:
-        active_name = str(active.get("name") or "")
-        if active_name in agent.projects and agent.projects[active_name].root.is_dir():
-            return active_name
-    default = agent.config.default_project
-    if default in agent.projects and agent.projects[default].root.is_dir():
-        return default
-    for slug, project in agent.projects.items():
-        if project.root.is_dir():
-            return slug
-    raise ValueError("no registered project directories are available")
-
+    return agent.select_available_project(requested)
 
 def emit(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))

@@ -251,6 +251,7 @@ class ActionRegistry(
             "unity.spatial_audit": self.unity_spatial_audit,
             "unity.benchmark_islands_generate": self.unity_benchmark_islands_generate,
             "agent.status": self.agent_status,
+            "agent.project_health": self.agent_project_health,
             "agent.component_catalog": self.agent_component_catalog,
             "agent.component_update_plan": self.agent_component_update_plan,
             "agent.resilience_status": self.agent_resilience_status,
@@ -304,6 +305,30 @@ class ActionRegistry(
     @property
     def adapter_contracts(self) -> dict[str, Any]:
         return adapter_contract_catalog(self._adapter_contracts)
+
+    def select_available_project(self, requested: str | None = None) -> str:
+        """Resolve one usable project consistently across CLI, MCP and desktop clients."""
+        if requested:
+            if requested not in self.projects:
+                raise ValueError(f"project not registered: {requested}")
+            project = self.projects[requested]
+            if not project.root.is_dir():
+                raise FileNotFoundError(f"Project directory not found: {project.root}")
+            return requested
+
+        active = self._memory_store_instance().active_project()
+        active_name = str(active.get("name") or "") if active else ""
+        if active_name in self.projects and self.projects[active_name].root.is_dir():
+            return active_name
+
+        default = self.config.default_project
+        if default in self.projects and self.projects[default].root.is_dir():
+            return default
+
+        for slug, project in self.projects.items():
+            if project.root.is_dir():
+                return slug
+        raise ValueError("no registered project directories are available")
 
     def execute(self, action: str, payload: dict[str, Any]) -> ActionResult:
         handler = self._actions.get(action)

@@ -187,7 +187,8 @@ class StudioApp(tk.Tk):
         wrap.pack(fill="both", expand=True, padx=18, pady=18)
         bar = tk.Frame(wrap, bg="#080F19")
         bar.pack(fill="x", pady=(0, 10))
-        for label, action in (("Git status", self.show_git_status),
+        for label, action in (("Resumo", self.show_project_health),
+                              ("Git status", self.show_git_status),
                               ("Blender status", self.show_blender_status),
                               ("Abrir Blender", self.start_blender),
                               ("Unity status", self.show_unity_status),
@@ -212,23 +213,18 @@ class StudioApp(tk.Tk):
         active = self.store.active_project()
         active_name = str(active.get("name") or "") if active else ""
 
+        try:
+            preferred = self.agent.select_available_project()
+        except (ValueError, FileNotFoundError):
+            preferred = None
         selected_index = None
         for index, slug in enumerate(self.project_slugs):
             project = self.agent.projects[slug]
             marker = "●" if slug == active_name else " "
             availability = "" if project.root.is_dir() else " [indisponível]"
             self.project_list.insert("end", f"{marker} {slug}{availability}")
-            if slug == active_name and project.root.is_dir():
+            if slug == preferred:
                 selected_index = index
-        default = self.agent.config.default_project
-        if (selected_index is None and default in self.project_slugs
-                and self.agent.projects[default].root.is_dir()):
-            selected_index = self.project_slugs.index(default)
-        if selected_index is None:
-            selected_index = next(
-                (index for index, slug in enumerate(self.project_slugs) if self.agent.projects[slug].root.is_dir()),
-                0 if self.project_slugs else None,
-            )
         if selected_index is not None:
             self.project_list.selection_set(selected_index)
             self.project_list.activate(selected_index)
@@ -242,6 +238,10 @@ class StudioApp(tk.Tk):
             return
         self.current_project = self.project_slugs[selection[0]]
         project = self.agent.projects[self.current_project]
+        if not project.root.is_dir():
+            messagebox.showerror(APP_NAME, f"Projeto indisponível: {project.root}")
+            self.refresh_projects()
+            return
         self.store.set_active_project(project.slug, project.root)
         self.refresh_all()
         self.refresh_workspace()
@@ -407,6 +407,9 @@ class StudioApp(tk.Tk):
     def _show_capability_result(self, text: str) -> None:
         self.capabilities_box.delete("1.0", "end")
         self.capabilities_box.insert("1.0", text)
+
+    def show_project_health(self) -> None:
+        self._run_capability("agent.project_health")
 
     def show_git_status(self) -> None:
         self._run_capability("git.status")

@@ -156,3 +156,11 @@ Essas operacoes rodam fora da thread da interface para que inicializacao ou recu
 Ao abrir a shell desktop, o Studio seleciona o projeto ativo persistido quando ele ainda esta registrado; caso contrario usa `default_project` ou o primeiro projeto local disponivel. Em seguida executa uma retomada silenciosa de sessao.
 
 Isso faz com que fechar e reabrir o aplicativo nao zere o trabalho: a nova sessao reaproveita memorias, tarefas e ultimo checkpoint, captura o Git atual e encerra logicamente qualquer sessao global anterior ainda aberta.
+
+## Health unificado do projeto
+
+O Studio expõe `agent.project_health` no ActionRegistry e `project_health` no MCP. A leitura é observacional: não inicia, recupera nem modifica Blender ou Unity.
+
+O diagnóstico agrega memória persistente, estado Git e adapters habilitados. Cada adapter informa estados como `ready`, `update_required`, `stale`, `offline` ou `disabled`; o projeto passa a `attention` quando uma integração habilitada requer intervenção.
+
+CLI, desktop e MCP usam a mesma regra `select_available_project`: projeto explícito válido, projeto ativo persistido, default disponível e, por fim, primeiro projeto registrado cuja pasta exista. Isso evita que uma pasta removida impeça a retomada de uma sessão futura.

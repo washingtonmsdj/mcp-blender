@@ -38,6 +38,15 @@ def agent_capabilities() -> dict:
 
 
 @mcp.tool()
+def project_health(project: str | None = None) -> dict:
+    """Read project memory, Git and Blender/Unity health without mutating applications."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("agent.project_health", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
 def session_context(project: str) -> dict:
     """Load persistent project memory, tasks and checkpoints before continuing work."""
     result = registry().execute("memory.context", {"project": project})
@@ -47,17 +56,7 @@ def session_context(project: str) -> dict:
 def session_resume(project: str | None = None) -> dict:
     """Resume a persistent ORDAX Studio session using the active or configured project."""
     agent = registry()
-    selected = project
-    if not selected:
-        active = agent._memory_store_instance().active_project()
-        active_name = str(active.get("name") or "") if active else ""
-        selected = active_name if active_name in agent.projects else None
-    if not selected and agent.config.default_project in agent.projects:
-        selected = agent.config.default_project
-    if not selected and agent.projects:
-        selected = next(iter(agent.projects))
-    if not selected:
-        raise ValueError("No registered projects are available")
+    selected = agent.select_available_project(project)
     result = agent.execute("session.resume", {"project": selected})
     return {"ok": result.ok, "summary": result.summary, "data": result.data}
 
