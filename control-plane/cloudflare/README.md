@@ -7,7 +7,7 @@ Este diretório contém o Control Plane remoto de produção do OrdaX Device Age
 - **Worker**: autenticação de dispositivo, API administrativa e gateway HTTP de artifacts.
 - **Durable Object por dispositivo**: WebSocket persistente, entrega serializada de jobs,
   leases, progresso e terminal reports.
-- **D1**: dispositivos, jobs, eventos e metadados de artifacts.
+- **D1**: dispositivos, jobs, eventos, metadados de artifacts e contratos persistidos de Product grants/auditoria.
 - **R2**: bytes de screenshots, snapshots e exports.
 
 O `ActionRegistry` local continua sendo a autoridade final. O backend não
@@ -58,9 +58,29 @@ quando o Worker anuncia `artifact_multipart_v1`; contra um Worker anterior ele
 mantém artifacts grandes localmente em vez de tentar uma API incompatível. Isso
 permite rollout seguro na ordem Worker primeiro, Agent depois.
 
+## Product grants (administração somente)
+
+A migration `0005_product_grants_audit.sql` adiciona o armazenamento durável de
+grants e o schema da trilha de auditoria do futuro Product MCP/OrdaX Web.
+
+O Worker expõe somente administração autenticada pelo token de operador:
+
+- `POST /v3/product-grants`: cria um grant explicitamente read-only;
+- `GET /v3/product-grants`: lista grants para operação/diagnóstico;
+- `DELETE /v3/product-grants/{id}`: revoga logicamente sem apagar histórico.
+
+Os grants aceitam apenas a superfície read-only já definida pelo Action Gateway.
+Não existe rota Product para enfileirar/executar uma ação nesta etapa.
+
+O token de operador **não é identidade do usuário Product**, não cria uma sessão
+Product e não pode ser reutilizado pelo futuro Product MCP para agir em nome de
+um usuário. A futura autenticação de Conta/Space deverá resolver um grant ativo
+e não expirado e então usar o mesmo `ProductActionGateway`, incluindo a
+persistência obrigatória de auditoria.
+
 ## Segurança
 
-- token administrativo separado do token do dispositivo;
+- token administrativo separado do token do dispositivo e da futura identidade Product;
 - token do dispositivo armazenado somente como SHA-256 no D1;
 - binding máquina/dispositivo;
 - API tipada e allow-list local;

@@ -436,6 +436,53 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertIn("FOREIGN KEY(job_id)", migration)
         self.assertIn("FOREIGN KEY(device_id)", migration)
 
+    def test_worker_product_grant_store_is_admin_only_and_read_only_scoped(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        worker = (
+            root / "control-plane" / "cloudflare" / "src" / "index.ts"
+        ).read_text(encoding="utf-8")
+        migration = (
+            root
+            / "control-plane"
+            / "cloudflare"
+            / "migrations"
+            / "0005_product_grants_audit.sql"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"product_grant_store_v1"', worker)
+        self.assertIn("createProductGrant", worker)
+        self.assertIn("listProductGrants", worker)
+        self.assertIn("revokeProductGrant", worker)
+        product_block = worker.split(
+            "const PRODUCT_READ_ONLY_ACTIONS = new Set([", 1
+        )[1].split("]);", 1)[0]
+        for action in (
+            "projects.list",
+            "project.inventory",
+            "project.text_read",
+            "git.status",
+            "git.diff",
+            "artifact.preview",
+        ):
+            self.assertIn(f'"{action}"', product_block)
+        for mutation in (
+            "project.text_write",
+            "project.text_patch",
+            "git.sync",
+            "artifact.read_chunk",
+            "blender.live_run_script",
+            "unity.run_method",
+        ):
+            self.assertNotIn(f'"{mutation}"', product_block)
+
+        self.assertIn("CREATE TABLE IF NOT EXISTS ordax_product_grants", migration)
+        self.assertIn("CREATE TABLE IF NOT EXISTS ordax_product_audit", migration)
+        self.assertIn("revoked_at TEXT", migration)
+        self.assertIn("payload_fields_json TEXT", migration)
+        self.assertNotIn("/v3/product-execute", worker)
+        self.assertNotIn("/v3/product-actions", worker)
+        self.assertIn("deleted: !remaining", worker)
+
     def test_job_envelope_uses_provider_neutral_digest_and_action_contract(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)

@@ -20,12 +20,31 @@ const MULTIPART_MAX_PARTS = 10_000;
 const CONTROL_PLANE_CAPABILITIES = [
   "artifact_multipart_v1",
   "terminal_report_recovery_v1",
+  "product_grant_store_v1",
 ];
 
 const ACTION_PREFIXES = [
   "blender.", "unity.", "git.", "project.", "projects.", "artifact.",
   "observation.", "game_assets.", "geo.", "visual.", "agent.",
 ];
+
+const PRODUCT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
+const PROJECT_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const PRODUCT_READ_ONLY_ACTIONS = new Set([
+  "projects.list",
+  "project.inventory",
+  "project.text_read",
+  "git.status",
+  "git.diff",
+  "artifact.preview",
+]);
+const PRODUCT_PROJECT_ACTIONS = new Set([
+  "project.inventory",
+  "project.text_read",
+  "git.status",
+  "git.diff",
+  "artifact.preview",
+]);
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -285,6 +304,229 @@ async function deviceSetup(request: Request, env: Env): Promise<Response> {
   });
 }
 
+
+type ProductGrantRow = {
+  id: string;
+  subject_id: string;
+  space_id: string | null;
+  device_id: string | null;
+  actions_json: string;
+  projects_json: string;
+  expires_at: string | null;
+  created_at: string;
+  revoked_at: string | null;
+};
+
+function normalizedStringArray(
+  value: unknown,
+  options: {
+    maxItems: number;
+    validator: (item: string) => boolean;
+    allowed?: Set<string>;
+  },
+): string[] | null {
+  const { maxItems, validator, allowed } = options;
+  if (!Array.isArray(value) || value.length > maxItems) return null;
+  const result = new Set<string>();
+  for (const item of value) {
+    if (
+      typeof item !== "string"
+      || !validator(item)
+      || (allowed && !allowed.has(item))
+    ) {
+      return null;
+    }
+    result.add(item);
+  }
+  return [...result].sort();
+}
+
+function publicProductGrant(row: ProductGrantRow): JsonObject {
+  let actions: unknown = [];
+  let projects: unknown = [];
+  try { actions = JSON.parse(row.actions_json); } catch { actions = []; }
+  try { projects = JSON.parse(row.projects_json); } catch { projects = []; }
+  return {
+    id: row.id,
+    subject_id: row.subject_id,
+    space_id: row.space_id,
+    device_id: row.device_id,
+    actions: Array.isArray(actions) ? actions : [],
+    projects: Array.isArray(projects) ? projects : [],
+    expires_at: row.expires_at,
+    created_at: row.created_at,
+    revoked_at: row.revoked_at,
+  };
+}
+
+async function createProductGrant(request: Request, env: Env): Promise<Response> {
+  if (!await operatorAuthorized(request, env)) {
+    return json({ ok: false, error: "operator_unauthorized" }, 401);
+  }
+  const body = await parseSmallJson(request, 32 * 1024);
+  if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const subjectId = typeof body.subject_id === "string" ? body.subject_id : "";
+  const spaceId = body.space_id == null
+    ? null
+    : typeof body.space_id === "string" ? body.space_id : "";
+  const deviceId = body.device_id == null
+    ? null
+    : typeof body.device_id === "string" ? body.device_id : "";
+
+  const actions = normalizedStringArray(body.actions, {
+    maxItems: 32,
+    validator: (item) => PRODUCT_ID_RE.test(item),
+    allowed: PRODUCT_READ_ONLY_ACTIONS,
+  });
+  const projects = normalizedStringArray(body.projects ?? [], {
+    maxItems: 100,
+    validator: (item) => PROJECT_SLUG_RE.test(item),
+  });
+
+  if (
+    !PRODUCT_ID_RE.test(subjectId)
+    || (spaceId !== null && !PRODUCT_ID_RE.test(spaceId))
+    || (deviceId !== null && !UUID_RE.test(deviceId))
+    || !actions
+    || actions.length === 0
+    || !projects
+    || (actions.some((item) => PRODUCT_PROJECT_ACTIONS.has(item)) && projects.length === 0)
+  ) {
+    return json({ ok: false, error: "product_grant_invalid" }, 400);
+  }
+
+  let expiresAt: string | null = null;
+  if (body.expires_at != null) {
+    if (typeof body.expires_at !== "string") {
+      return json({ ok: false, error: "product_grant_invalid" }, 400);
+    }
+    const parsed = new Date(body.expires_at);
+    if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+      return json({ ok: false, error: "product_grant_expiry_invalid" }, 400);
+    }
+    expiresAt = parsed.toISOString();
+  }
+
+  if (deviceId) {
+    const device = await env.DB.prepare(
+      "SELECT id FROM ordax_devices WHERE id = ?1 AND revoked_at IS NULL",
+    ).bind(deviceId).first();
+    if (!device) return json({ ok: false, error: "device_not_found" }, 404);
+  }
+
+  const grantId = crypto.randomUUID();
+  const createdAt = nowIso();
+  await env.DB.prepare(
+    `INSERT INTO ordax_product_grants
+      (id, subject_id, space_id, device_id, actions_json, projects_json,
+       expires_at, created_at, revoked_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL)`,
+  ).bind(
+    grantId,
+    subjectId,
+    spaceId,
+    deviceId,
+    stableJson(actions),
+    stableJson(projects),
+    expiresAt,
+    createdAt,
+  ).run();
+
+  return json({
+    ok: true,
+    grant: {
+      id: grantId,
+      subject_id: subjectId,
+      space_id: spaceId,
+      device_id: deviceId,
+      actions,
+      projects,
+      expires_at: expiresAt,
+      created_at: createdAt,
+      revoked_at: null,
+    },
+  }, 201);
+}
+
+async function listProductGrants(request: Request, env: Env): Promise<Response> {
+  if (!await operatorAuthorized(request, env)) {
+    return json({ ok: false, error: "operator_unauthorized" }, 401);
+  }
+
+  const url = new URL(request.url);
+  const subjectId = url.searchParams.get("subject_id");
+  const deviceId = url.searchParams.get("device_id");
+  if (subjectId !== null && !PRODUCT_ID_RE.test(subjectId)) {
+    return json({ ok: false, error: "subject_id_invalid" }, 400);
+  }
+  if (deviceId !== null && !UUID_RE.test(deviceId)) {
+    return json({ ok: false, error: "device_id_invalid" }, 400);
+  }
+
+  const where: string[] = [];
+  const values: string[] = [];
+  if (subjectId !== null) {
+    values.push(subjectId);
+    where.push(`subject_id = ?${values.length}`);
+  }
+  if (deviceId !== null) {
+    values.push(deviceId);
+    where.push(`device_id = ?${values.length}`);
+  }
+  const condition = where.length ? " WHERE " + where.join(" AND ") : "";
+  const query =
+    `SELECT id, subject_id, space_id, device_id, actions_json, projects_json,
+            expires_at, created_at, revoked_at
+     FROM ordax_product_grants${condition}
+     ORDER BY created_at DESC LIMIT 200`;
+
+  const rows = await env.DB.prepare(query).bind(...values).all<ProductGrantRow>();
+  return json({
+    ok: true,
+    grants: (rows.results ?? []).map((row) => publicProductGrant(row)),
+  });
+}
+
+async function revokeProductGrant(
+  request: Request,
+  env: Env,
+  grantId: string,
+): Promise<Response> {
+  if (!await operatorAuthorized(request, env)) {
+    return json({ ok: false, error: "operator_unauthorized" }, 401);
+  }
+  if (!UUID_RE.test(grantId)) {
+    return json({ ok: false, error: "product_grant_id_invalid" }, 400);
+  }
+
+  const existing = await env.DB.prepare(
+    `SELECT id, subject_id, space_id, device_id, actions_json, projects_json,
+            expires_at, created_at, revoked_at
+     FROM ordax_product_grants WHERE id = ?1`,
+  ).bind(grantId).first<ProductGrantRow>();
+  if (!existing) return json({ ok: false, error: "product_grant_not_found" }, 404);
+
+  if (existing.revoked_at) {
+    return json({
+      ok: true,
+      revoked: false,
+      already_revoked: true,
+      grant: publicProductGrant(existing),
+    });
+  }
+
+  const revokedAt = nowIso();
+  await env.DB.prepare(
+    "UPDATE ordax_product_grants SET revoked_at = ?1 WHERE id = ?2 AND revoked_at IS NULL",
+  ).bind(revokedAt, grantId).run();
+  return json({
+    ok: true,
+    revoked: true,
+    grant: publicProductGrant({ ...existing, revoked_at: revokedAt }),
+  });
+}
+
 async function provisionDevice(request: Request, env: Env): Promise<Response> {
   if (!await operatorAuthorized(request, env)) return json({ ok: false, error: "operator_unauthorized" }, 401);
   const body = await parseSmallJson(request, 16 * 1024);
@@ -365,12 +607,16 @@ async function deleteDevice(request: Request, env: Env, deviceId: string): Promi
     ).bind(deviceId),
   ];
   const results = await env.DB.batch(statements);
-  const deleted = results[results.length - 1];
+  const deleteResult = results[results.length - 1];
+  const remaining = await env.DB.prepare(
+    "SELECT id FROM ordax_devices WHERE id = ?1",
+  ).bind(deviceId).first();
 
   return json({
     ok: true,
     device_id: deviceId,
-    deleted: (deleted?.meta.changes ?? 0) === 1,
+    deleted: !remaining,
+    device_delete_changes: deleteResult?.meta.changes ?? 0,
     artifacts_deleted: artifactRows.results?.length ?? 0,
     multipart_uploads_aborted: uploadRows.results?.length ?? 0,
   });
@@ -1221,6 +1467,20 @@ export default {
     }
     if (request.method === "DELETE" && parts[0] === "v3" && parts[1] === "devices" && parts.length === 3) {
       return deleteDevice(request, env, parts[2]);
+    }
+    if (request.method === "POST" && url.pathname === "/v3/product-grants") {
+      return createProductGrant(request, env);
+    }
+    if (request.method === "GET" && url.pathname === "/v3/product-grants") {
+      return listProductGrants(request, env);
+    }
+    if (
+      request.method === "DELETE"
+      && parts[0] === "v3"
+      && parts[1] === "product-grants"
+      && parts.length === 3
+    ) {
+      return revokeProductGrant(request, env, parts[2]);
     }
     if (request.method === "POST" && url.pathname === "/v3/jobs") {
       return enqueueJob(request, env);

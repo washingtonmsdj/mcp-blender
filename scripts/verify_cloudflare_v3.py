@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -40,14 +41,82 @@ def run(base_url: str, operator_token: str) -> None:
         if (
             not isinstance(capabilities, list)
             or "artifact_multipart_v1" not in capabilities
+            or "product_grant_store_v1" not in capabilities
         ):
-            raise RuntimeError("control-plane multipart capability is missing")
+            raise RuntimeError("control-plane required capabilities are missing")
 
         provision = operator.post("/v3/devices", json={"name": "ci-e2e-device"})
         provision.raise_for_status()
         provisioned = provision.json()
         device_id = str(provisioned["device_id"])
         device_token = str(provisioned["device_token"])
+
+        unauthorized_grant = httpx.post(
+            f"{base_url}/v3/product-grants",
+            json={
+                "subject_id": "ci:user",
+                "device_id": device_id,
+                "actions": ["projects.list"],
+                "projects": [],
+            },
+            timeout=20.0,
+        )
+        if unauthorized_grant.status_code != 401:
+            raise RuntimeError("Product grant admin API accepted missing operator auth")
+
+        grant_expiry = (
+            datetime.now(timezone.utc) + timedelta(hours=1)
+        ).isoformat()
+        created_grant = operator.post(
+            "/v3/product-grants",
+            json={
+                "subject_id": "ci:user",
+                "space_id": "ci:space",
+                "device_id": device_id,
+                "actions": ["git.status", "projects.list"],
+                "projects": ["scene"],
+                "expires_at": grant_expiry,
+            },
+        )
+        created_grant.raise_for_status()
+        created_grant_payload = created_grant.json()
+        grant = created_grant_payload.get("grant") or {}
+        grant_id = str(grant.get("id") or "")
+        if not grant_id or grant.get("subject_id") != "ci:user":
+            raise RuntimeError("Product grant creation returned invalid provenance")
+        if grant.get("actions") != ["git.status", "projects.list"]:
+            raise RuntimeError("Product grant actions were not canonicalized")
+        if grant.get("projects") != ["scene"]:
+            raise RuntimeError("Product grant projects were not persisted")
+
+        mutation_grant = operator.post(
+            "/v3/product-grants",
+            json={
+                "subject_id": "ci:user",
+                "device_id": device_id,
+                "actions": ["git.sync"],
+                "projects": ["scene"],
+            },
+        )
+        if mutation_grant.status_code != 400:
+            raise RuntimeError("Product grant store accepted mutating action")
+
+        listed_grants = operator.get(
+            "/v3/product-grants",
+            params={"subject_id": "ci:user", "device_id": device_id},
+        )
+        listed_grants.raise_for_status()
+        listed = listed_grants.json().get("grants") or []
+        if not any(item.get("id") == grant_id for item in listed):
+            raise RuntimeError("Product grant was not returned by filtered listing")
+
+        revoked_grant = operator.delete(f"/v3/product-grants/{grant_id}")
+        revoked_grant.raise_for_status()
+        revoked_payload = revoked_grant.json()
+        if revoked_payload.get("revoked") is not True:
+            raise RuntimeError("Product grant revocation was not confirmed")
+        if not (revoked_payload.get("grant") or {}).get("revoked_at"):
+            raise RuntimeError("Product grant revocation timestamp was not persisted")
 
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
