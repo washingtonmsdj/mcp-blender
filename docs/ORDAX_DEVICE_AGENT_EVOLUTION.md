@@ -216,8 +216,10 @@ Fase 2:
 - ligar identidade/grants do Control Plane sem misturar credenciais de
   desenvolvimento com credenciais do produto;
   - **em andamento:** Cloudflare v3 persiste Product grants e o schema de
-    auditoria em D1; o token de operador administra grants, mas não é aceito como
-    identidade Product e ainda não existe endpoint remoto de execução Product.
+    auditoria em D1 e já resolve grants ativos por subject/Space/device/action/
+    project; o token de operador administra/diagnostica grants, mas não é aceito
+    como identidade Product e ainda não existe endpoint remoto de execução
+    Product.
 
 Fase 3:
 - integrar Device Agent ao app Projetos do OrdaX;
