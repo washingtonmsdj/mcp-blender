@@ -497,7 +497,13 @@ async function createProductGrantFromLink(
 
   const linkId = typeof body.link_id === "string" ? body.link_id : "";
   const grantInput = parseProductGrantInput(body);
-  if (!UUID_RE.test(linkId) || !grantInput) {
+  if (
+    !UUID_RE.test(linkId)
+    || !grantInput
+    || body.subject_id != null
+    || body.device_id != null
+    || body.space_id != null
+  ) {
     return json({ ok: false, error: "product_grant_invalid" }, 400);
   }
 
