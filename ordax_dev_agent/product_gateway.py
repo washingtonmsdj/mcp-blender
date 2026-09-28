@@ -268,7 +268,24 @@ class ProductActionGateway:
                 error_code="invalid_request_context",
             )
 
-        if not (_valid_id(grant.grant_id) and _valid_id(grant.subject_id)):
+        grant_structure_valid = (
+            _valid_id(grant.grant_id)
+            and _valid_id(grant.subject_id)
+            and isinstance(grant.actions, frozenset)
+            and all(_valid_id(item) for item in grant.actions)
+            and isinstance(grant.projects, frozenset)
+            and all(_valid_id(item) for item in grant.projects)
+            and (grant.device_id is None or _valid_id(grant.device_id))
+            and (grant.space_id is None or _valid_id(grant.space_id))
+            and (
+                grant.expires_at_unix is None
+                or (
+                    type(grant.expires_at_unix) is int
+                    and grant.expires_at_unix > 0
+                )
+            )
+        )
+        if not grant_structure_valid:
             return self._deny(
                 context=context,
                 grant=grant,
