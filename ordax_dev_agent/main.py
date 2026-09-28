@@ -397,7 +397,15 @@ def main() -> int:
 
                 try:
                     try:
-                        result = registry.execute(job.action, job.action_payload())
+                        if job.action == "ordax.product.read.invoke":
+                            from .product_remote import execute_product_invocation
+                            result = execute_product_invocation(
+                                registry,
+                                control,
+                                job.action_payload(),
+                            )
+                        else:
+                            result = registry.execute(job.action, job.action_payload())
                     except Exception as error:
                         result = ActionResult(False, f"{type(error).__name__}: {error}")
                     runtime["job_timings"]["execution_seconds"] = round(time.monotonic() - job_started, 3)
