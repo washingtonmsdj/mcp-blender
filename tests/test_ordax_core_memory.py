@@ -80,6 +80,20 @@ class OrdaxCoreMemoryTests(unittest.TestCase):
             self.assertTrue(reopened.finish_session(second["session_id"]))
             self.assertEqual(reopened.status()["counts"]["sessions"], 2)
 
+    def test_start_session_closes_previous_project_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first_project = root / "first"
+            second_project = root / "second"
+            first_project.mkdir()
+            second_project.mkdir()
+            store = MemoryStore(root / "state.db")
+            first = store.start_session("first", first_project)
+            second = store.start_session("second", second_project)
+            self.assertFalse(store.finish_session(first["session_id"]))
+            self.assertTrue(store.finish_session(second["session_id"]))
+            self.assertEqual(store.active_project()["name"], "second")
+
 
 if __name__ == "__main__":
     unittest.main()

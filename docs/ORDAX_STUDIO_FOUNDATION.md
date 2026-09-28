@@ -127,7 +127,7 @@ ordax-studio mcp
 
 `ordax-studio-desktop` abre a primeira interface desktop do produto. Ela usa o mesmo runtime do Device Agent e nao cria uma segunda implementacao de Blender/Unity/Git.
 
-A shell inicial oferece projetos registrados, contexto persistente, memorias, tarefas, capabilities e terminal no diretorio do projeto. O botao **Retomar sessao** cria uma sessao persistente ligada ao ultimo checkpoint e ao estado Git atual; uma nova retomada do mesmo projeto encerra logicamente a sessao aberta anterior sem apagar seu historico.
+A shell inicial oferece projetos registrados, contexto persistente, memorias, tarefas, capabilities e terminal no diretorio do projeto. O botao **Retomar sessao** cria uma sessao persistente ligada ao ultimo checkpoint e ao estado Git atual; uma nova retomada encerra logicamente a sessao ativa anterior sem apagar seu historico, mantendo apenas uma sessao global aberta no Studio.
 
 Para validacao sem abrir janela:
 
@@ -155,4 +155,4 @@ Essas operacoes rodam fora da thread da interface para que inicializacao ou recu
 
 Ao abrir a shell desktop, o Studio seleciona o projeto ativo persistido quando ele ainda esta registrado; caso contrario usa `default_project` ou o primeiro projeto local disponivel. Em seguida executa uma retomada silenciosa de sessao.
 
-Isso faz com que fechar e reabrir o aplicativo nao zere o trabalho: a nova sessao reaproveita memorias, tarefas e ultimo checkpoint, captura o Git atual e encerra logicamente qualquer sessao anterior ainda aberta para o mesmo projeto.
+Isso faz com que fechar e reabrir o aplicativo nao zere o trabalho: a nova sessao reaproveita memorias, tarefas e ultimo checkpoint, captura o Git atual e encerra logicamente qualquer sessao global anterior ainda aberta.

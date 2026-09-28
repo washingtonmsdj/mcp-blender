@@ -185,8 +185,8 @@ class MemoryStore:
         project_id = int(project["id"])
         with self._connect() as connection:
             connection.execute(
-                "UPDATE sessions SET ended_at=? WHERE project_id=? AND ended_at IS NULL",
-                (now(), project_id),
+                "UPDATE sessions SET ended_at=? WHERE ended_at IS NULL",
+                (now(),),
             )
             checkpoint = connection.execute("SELECT id FROM checkpoints WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
             resumed_from = int(checkpoint["id"]) if checkpoint else None
