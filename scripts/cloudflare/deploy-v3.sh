@@ -20,6 +20,14 @@ trap cleanup EXIT
 : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
 : "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
 : "${ORDAX_OPERATOR_TOKEN:?ORDAX_OPERATOR_TOKEN is required}"
+: "${PRODUCT_AUTH_ISSUER:?PRODUCT_AUTH_ISSUER is required}"
+: "${PRODUCT_AUTH_AUDIENCE:?PRODUCT_AUTH_AUDIENCE is required}"
+: "${PRODUCT_AUTH_JWKS_URL:?PRODUCT_AUTH_JWKS_URL is required}"
+
+python "$ROOT/scripts/cloudflare/verify_product_auth_provider.py" \
+  "$PRODUCT_AUTH_ISSUER" \
+  "$PRODUCT_AUTH_AUDIENCE" \
+  "$PRODUCT_AUTH_JWKS_URL"
 
 wrangler() {
   npx --yes "wrangler@${WRANGLER_VERSION}" "$@"
