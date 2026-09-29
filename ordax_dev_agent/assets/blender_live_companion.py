@@ -178,6 +178,9 @@ CAPABILITIES = [
     "boolean_cut_commit",
     "boolean_cut_cancel",
     "mesh_cleanup",
+    "degenerate_repair_preview",
+    "degenerate_repair_commit",
+    "degenerate_repair_cancel",
     "material_apply",
     "create_camera",
     "create_light",
@@ -2115,6 +2118,80 @@ def _modeling_boolean_cut_cancel(command: dict) -> None:
         _response(command_id, False, str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}", operation="boolean_cut_cancel")
 
 
+def _degenerate_issue_counts(mesh, threshold: float) -> dict:
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(mesh)
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+        zero_length_edges = sum(
+            1
+            for edge in bm.edges
+            if float((edge.verts[0].co - edge.verts[1].co).length) <= threshold
+        )
+        degenerate_faces = sum(
+            1 for face in bm.faces if float(face.calc_area()) <= threshold
+        )
+        return {
+            "vertices": len(bm.verts),
+            "edges": len(bm.edges),
+            "faces": len(bm.faces),
+            "zero_length_edges": zero_length_edges,
+            "degenerate_faces": degenerate_faces,
+        }
+    finally:
+        bm.free()
+
+
+def _degenerate_preview_backups(preview_id: str) -> list:
+    return [
+        obj
+        for obj in bpy.data.objects
+        if str(obj.get("ordax_degenerate_preview_id") or "") == preview_id
+        and bool(obj.get("ordax_degenerate_backup"))
+    ]
+
+
+def _degenerate_preview_target(preview_id: str):
+    backups = _degenerate_preview_backups(preview_id)
+    if len(backups) != 1:
+        raise ValueError("degenerate repair preview was not found or is inconsistent")
+    backup = backups[0]
+    target_name = str(backup.get("ordax_degenerate_target") or "")
+    target = bpy.context.scene.objects.get(target_name)
+    if target is None:
+        raise ValueError("degenerate repair preview target no longer exists")
+    if str(target.get("ordax_degenerate_preview_id") or "") != preview_id:
+        raise ValueError("degenerate repair preview target metadata is inconsistent")
+    return target, backup
+
+
+def _clear_degenerate_preview_metadata(target) -> None:
+    for key in (
+        "ordax_degenerate_preview_id",
+        "ordax_degenerate_preview_state",
+        "ordax_degenerate_original_sha256",
+        "ordax_degenerate_candidate_sha256",
+        "ordax_degenerate_backup_object",
+    ):
+        try:
+            del target[key]
+        except Exception:
+            pass
+
+
+def _remove_degenerate_backup(backup) -> None:
+    collections = list(backup.users_collection)
+    bpy.data.objects.remove(backup, do_unlink=True)
+    for collection in collections:
+        try:
+            if len(collection.objects) == 0 and len(collection.children) == 0:
+                bpy.data.collections.remove(collection)
+        except Exception:
+            pass
+
+
 def _modeling_mesh_cleanup(command: dict) -> None:
     command_id = command["id"]
     obj = None
@@ -2226,6 +2303,266 @@ def _modeling_mesh_cleanup(command: dict) -> None:
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
             operation="mesh_cleanup",
             before=before,
+        )
+
+
+def _modeling_degenerate_repair_preview(command: dict) -> None:
+    command_id = command["id"]
+    obj = None
+    original_mesh = None
+    candidate_mesh = None
+    backup = None
+    collection = None
+    before = None
+    try:
+        _modeling_runtime_preconditions()
+        plan = _modeling_plan_from_command("degenerate_repair_preview", command)
+        if not plan["executable"]:
+            raise ValueError(
+                f"{plan['status']}: degenerate repair preview is not enabled for execution"
+            )
+        arguments = plan["arguments"]
+        obj = _resolve_object(arguments)
+        if (
+            obj.type != "MESH"
+            or obj.library is not None
+            or obj.override_library is not None
+            or getattr(obj.data, "library", None) is not None
+        ):
+            raise ValueError("degenerate repair target must be an existing local, non-linked mesh object")
+        if obj.animation_data is not None or len(obj.constraints) > 0:
+            raise ValueError("animated or constrained repair targets require a dedicated workflow")
+        if getattr(obj.data, "users", 0) != 1:
+            raise ValueError("degenerate repair preview requires single-user mesh data")
+        if getattr(obj.data, "shape_keys", None) is not None:
+            raise ValueError("degenerate repair preview does not support shape keys")
+        if len(obj.modifiers) > 0:
+            raise ValueError("degenerate repair preview requires a target without modifiers")
+        if str(obj.get("ordax_degenerate_preview_id") or ""):
+            raise ValueError("target already has an active degenerate repair preview")
+        if any(
+            str(item.get("ordax_degenerate_target") or "") == obj.name
+            for item in bpy.data.objects
+            if bool(item.get("ordax_degenerate_backup"))
+        ):
+            raise ValueError("target already has an active degenerate repair backup")
+
+        max_faces = int(getattr(_MODELING_CONTRACTS, "MAX_EVALUATED_FACES", 200000))
+        if len(obj.data.polygons) > max_faces:
+            raise ValueError("degenerate repair target exceeds interactive face budget")
+        current_sha256, current_mesh_counts = _mesh_fingerprint(obj, evaluated=False)
+        if current_sha256 != arguments["expected_base_geometry_sha256"]:
+            raise ValueError("stale degenerate repair preview refused: base geometry fingerprint changed")
+        before_issues = _degenerate_issue_counts(obj.data, arguments["threshold"])
+        if before_issues["zero_length_edges"] != arguments["expected_zero_length_edges"]:
+            raise ValueError("stale degenerate repair preview refused: zero-length edge count changed")
+        if before_issues["degenerate_faces"] != arguments["expected_degenerate_faces"]:
+            raise ValueError("stale degenerate repair preview refused: degenerate face count changed")
+        if before_issues["zero_length_edges"] + before_issues["degenerate_faces"] <= 0:
+            raise ValueError("degenerate repair preview found no diagnosed degenerate geometry")
+
+        before = _object_details(obj)
+        original_mesh = obj.data
+        candidate_mesh = original_mesh.copy()
+        candidate_mesh.name = f"__ordax_degenerate_candidate_{str(command_id)[:12]}"
+        work = bmesh.new()
+        try:
+            work.from_mesh(candidate_mesh)
+            bmesh.ops.dissolve_degenerate(
+                work,
+                dist=float(arguments["threshold"]),
+                edges=list(work.edges),
+            )
+            work.to_mesh(candidate_mesh)
+            candidate_mesh.update()
+        finally:
+            work.free()
+        after_issues = _degenerate_issue_counts(candidate_mesh, arguments["threshold"])
+        before_total = before_issues["zero_length_edges"] + before_issues["degenerate_faces"]
+        after_total = after_issues["zero_length_edges"] + after_issues["degenerate_faces"]
+        if after_total >= before_total:
+            raise ValueError("degenerate repair preview did not reduce diagnosed degenerate geometry")
+        if (
+            after_issues["zero_length_edges"] > before_issues["zero_length_edges"]
+            or after_issues["degenerate_faces"] > before_issues["degenerate_faces"]
+        ):
+            raise ValueError("degenerate repair preview increased a diagnosed defect category")
+
+        preview_id = str(command_id)
+        collection = bpy.data.collections.new(f"__ORDAX_DEGENERATE_PREVIEW_{preview_id[:12]}")
+        bpy.context.scene.collection.children.link(collection)
+        backup = bpy.data.objects.new(f"__ordax_degenerate_backup_{preview_id[:12]}", original_mesh)
+        collection.objects.link(backup)
+        backup.hide_render = True
+        backup.hide_set(True)
+        backup["ordax_degenerate_preview_id"] = preview_id
+        backup["ordax_degenerate_backup"] = True
+        backup["ordax_degenerate_target"] = obj.name
+        backup["ordax_degenerate_original_sha256"] = current_sha256
+
+        obj.data = candidate_mesh
+        bpy.context.view_layer.update()
+        candidate_sha256, candidate_counts = _mesh_fingerprint(obj, evaluated=False)
+        obj["ordax_degenerate_preview_id"] = preview_id
+        obj["ordax_degenerate_preview_state"] = "preview"
+        obj["ordax_degenerate_original_sha256"] = current_sha256
+        obj["ordax_degenerate_candidate_sha256"] = candidate_sha256
+        obj["ordax_degenerate_backup_object"] = backup.name
+        _response(
+            command_id,
+            True,
+            "Blender degenerate repair preview created on a candidate mesh",
+            operation="degenerate_repair_preview",
+            preview_id=preview_id,
+            state="preview",
+            threshold=arguments["threshold"],
+            before_geometry_sha256=current_sha256,
+            candidate_geometry_sha256=candidate_sha256,
+            before_mesh=current_mesh_counts,
+            candidate_mesh=candidate_counts,
+            before_issues=before_issues,
+            candidate_issues=after_issues,
+            before=before,
+            object=_object_details(obj),
+        )
+    except Exception as error:
+        if obj is not None and original_mesh is not None and candidate_mesh is not None:
+            try:
+                if obj.data == candidate_mesh:
+                    obj.data = original_mesh
+                    bpy.context.view_layer.update()
+            except Exception:
+                pass
+        if obj is not None:
+            _clear_degenerate_preview_metadata(obj)
+        if backup is not None:
+            try:
+                _remove_degenerate_backup(backup)
+            except Exception:
+                pass
+        elif collection is not None:
+            try:
+                if len(collection.objects) == 0 and len(collection.children) == 0:
+                    bpy.data.collections.remove(collection)
+            except Exception:
+                pass
+        if candidate_mesh is not None and getattr(candidate_mesh, "users", 0) == 0:
+            try:
+                bpy.data.meshes.remove(candidate_mesh)
+            except Exception:
+                pass
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="degenerate_repair_preview",
+            before=before,
+        )
+
+
+def _modeling_degenerate_repair_commit(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        _modeling_runtime_preconditions()
+        preview_id = _normalize_preview_id(command)
+        target, backup = _degenerate_preview_target(preview_id)
+        if str(target.get("ordax_degenerate_preview_state") or "") != "preview":
+            raise ValueError("degenerate repair preview state is invalid")
+        stored_candidate_sha256 = str(target.get("ordax_degenerate_candidate_sha256") or "")
+        stored_original_sha256 = str(target.get("ordax_degenerate_original_sha256") or "")
+        current_candidate_sha256, candidate_counts = _mesh_fingerprint(target, evaluated=False)
+        original_sha256, original_counts = _mesh_fingerprint(backup, evaluated=False)
+        if current_candidate_sha256 != stored_candidate_sha256:
+            raise ValueError("degenerate repair candidate changed after preview; start a new preview")
+        if original_sha256 != stored_original_sha256:
+            raise ValueError("degenerate repair original backup changed after preview")
+        candidate_mesh = target.data
+        original_mesh = backup.data
+        original_name = original_mesh.name
+        _remove_degenerate_backup(backup)
+        if getattr(original_mesh, "users", 0) == 0:
+            try:
+                bpy.data.meshes.remove(original_mesh)
+            except Exception:
+                pass
+        try:
+            candidate_mesh.name = original_name
+        except Exception:
+            pass
+        _clear_degenerate_preview_metadata(target)
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender degenerate repair preview committed",
+            operation="degenerate_repair_commit",
+            preview_id=preview_id,
+            state="committed",
+            original_geometry_sha256=stored_original_sha256,
+            committed_geometry_sha256=current_candidate_sha256,
+            original_mesh=original_counts,
+            committed_mesh=candidate_counts,
+            object=_object_details(target),
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="degenerate_repair_commit",
+        )
+
+
+def _modeling_degenerate_repair_cancel(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        _modeling_runtime_preconditions()
+        preview_id = _normalize_preview_id(command)
+        target, backup = _degenerate_preview_target(preview_id)
+        if str(target.get("ordax_degenerate_preview_state") or "") != "preview":
+            raise ValueError("degenerate repair preview state is invalid")
+        stored_original_sha256 = str(target.get("ordax_degenerate_original_sha256") or "")
+        original_mesh = backup.data
+        original_sha256, original_counts = _mesh_fingerprint(backup, evaluated=False)
+        if original_sha256 != stored_original_sha256:
+            raise ValueError("degenerate repair original backup changed after preview")
+        candidate_mesh = target.data
+        discarded_sha256, candidate_counts = _mesh_fingerprint(target, evaluated=False)
+        target.data = original_mesh
+        bpy.context.view_layer.update()
+        restored_sha256, restored_counts = _mesh_fingerprint(target, evaluated=False)
+        if restored_sha256 != stored_original_sha256:
+            target.data = candidate_mesh
+            bpy.context.view_layer.update()
+            raise RuntimeError("degenerate repair cancel could not restore the original geometry fingerprint")
+        _clear_degenerate_preview_metadata(target)
+        _remove_degenerate_backup(backup)
+        if candidate_mesh is not original_mesh and getattr(candidate_mesh, "users", 0) == 0:
+            try:
+                bpy.data.meshes.remove(candidate_mesh)
+            except Exception:
+                pass
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender degenerate repair preview cancelled and original mesh restored",
+            operation="degenerate_repair_cancel",
+            preview_id=preview_id,
+            state="cancelled",
+            restored_geometry_sha256=restored_sha256,
+            discarded_candidate_sha256=discarded_sha256,
+            original_mesh=original_counts,
+            discarded_candidate_mesh=candidate_counts,
+            restored_mesh=restored_counts,
+            object=_object_details(target),
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="degenerate_repair_cancel",
         )
 
 
@@ -3714,6 +4051,17 @@ def _quality_mesh(check: dict) -> dict:
         if not base_geometry_sha256:
             automatic_repair_blockers.append("base_geometry_fingerprint_unavailable")
         repair_hints = []
+        degenerate_preview_blockers = list(automatic_repair_blockers)
+        max_repair_distance = float(
+            getattr(_MODELING_CONTRACTS, "MAX_DEGENERATE_REPAIR_DISTANCE", 0.001)
+        )
+        max_repair_elements = int(
+            getattr(_MODELING_CONTRACTS, "MAX_DEGENERATE_REPAIR_ELEMENTS", 10000)
+        )
+        if epsilon > max_repair_distance:
+            degenerate_preview_blockers.append("diagnostic_epsilon_exceeds_preview_limit")
+        if zero_length_edges + degenerate_faces > max_repair_elements:
+            degenerate_preview_blockers.append("diagnostic_element_limit_exceeded")
 
         def add_repair_hint(
             code: str,
@@ -3778,6 +4126,32 @@ def _quality_mesh(check: dict) -> dict:
             "warning",
             "Degenerate faces need local topology review; automatic dissolve may change neighboring surfaces.",
         )
+        if zero_length_edges or degenerate_faces:
+            preview_hint = {
+                "code": "preview_degenerate_dissolve",
+                "category": "degenerate_geometry",
+                "count": int(zero_length_edges + degenerate_faces),
+                "severity": "warning",
+                "recommendation": (
+                    "Preview Blender Degenerate Dissolve on a candidate mesh copy, inspect the resulting topology, "
+                    "then commit or cancel explicitly."
+                ),
+                "automatic": False,
+                "preview_available": not degenerate_preview_blockers,
+                "preview_blockers": list(degenerate_preview_blockers),
+            }
+            if not degenerate_preview_blockers:
+                preview_hint["preview_fix"] = {
+                    "action": "blender.live_degenerate_repair_preview",
+                    "arguments": {
+                        "object_name": obj.name,
+                        "expected_base_geometry_sha256": base_geometry_sha256,
+                        "expected_zero_length_edges": int(zero_length_edges),
+                        "expected_degenerate_faces": int(degenerate_faces),
+                        "threshold": float(epsilon),
+                    },
+                }
+            repair_hints.append(preview_hint)
         add_repair_hint(
             "review_wire_edges",
             "wire_edges",
@@ -5639,6 +6013,12 @@ def _process(path: Path) -> None:
             _modeling_boolean_cut_cancel(command)
         elif operation == "mesh_cleanup":
             _modeling_mesh_cleanup(command)
+        elif operation == "degenerate_repair_preview":
+            _modeling_degenerate_repair_preview(command)
+        elif operation == "degenerate_repair_commit":
+            _modeling_degenerate_repair_commit(command)
+        elif operation == "degenerate_repair_cancel":
+            _modeling_degenerate_repair_cancel(command)
         elif operation == "material_apply":
             _material_apply(command)
         elif operation == "create_camera":
@@ -5758,17 +6138,28 @@ def _run_modeling_smoke_fixture() -> dict:
         "cleanup_diag": "smoke-model-cleanup-diagnostic",
         "cleanup": "smoke-model-cleanup",
         "cleanup_stale": "smoke-model-cleanup-stale",
+        "degenerate_diag": "smoke-model-degenerate-diagnostic",
+        "degenerate_preview": "smoke-model-degenerate-preview",
+        "degenerate_cancel": "smoke-model-degenerate-cancel",
+        "degenerate_preview_commit": "smoke-model-degenerate-preview-commit",
+        "degenerate_commit": "smoke-model-degenerate-commit",
+        "degenerate_stale": "smoke-model-degenerate-stale",
     }
     result_paths = {
         key: RESULTS / f"{identifier}.json"
         for key, identifier in smoke_ids.items()
     }
     temporary_name = "SmokePrimitive"
+    degenerate_name = "SmokeDegenerate"
     summaries = {}
 
     if bpy.context.scene.objects.get(temporary_name) is not None:
         raise RuntimeError(
             f"modeling smoke temporary object already exists: {temporary_name}"
+        )
+    if bpy.context.scene.objects.get(degenerate_name) is not None:
+        raise RuntimeError(
+            f"modeling smoke degenerate object already exists: {degenerate_name}"
         )
 
     try:
@@ -6068,6 +6459,124 @@ def _run_modeling_smoke_fixture() -> dict:
         )
         _process(invalid_scatter_path)
 
+        degenerate_mesh = bpy.data.meshes.new(degenerate_name + "Mesh")
+        degenerate_mesh.from_pydata(
+            [
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
+                (1.0, 0.0, 0.0),
+                (0.0, 1.0, 0.0),
+                (2.0, 0.0, 0.0),
+                (3.0, 0.0, 0.0),
+                (4.0, 0.0, 0.0),
+            ],
+            [
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 0),
+                (4, 5),
+                (5, 6),
+                (6, 4),
+            ],
+            [(0, 1, 2, 3), (4, 5, 6)],
+        )
+        degenerate_mesh.update()
+        degenerate_object = bpy.data.objects.new(degenerate_name, degenerate_mesh)
+        bpy.context.scene.collection.objects.link(degenerate_object)
+        bpy.context.view_layer.update()
+
+        degenerate_diag_path = INBOX / f"{smoke_ids['degenerate_diag']}.json"
+        _write_json_atomic(
+            degenerate_diag_path,
+            {
+                "id": smoke_ids["degenerate_diag"],
+                "operation": "quality_gate",
+                "checks": [
+                    {
+                        "type": "mesh_quality",
+                        "object_name": degenerate_name,
+                        "evaluated": False,
+                        "epsilon": 1e-10,
+                        "diagnostic_limit": 8,
+                        "max_zero_length_edges": 0,
+                        "max_degenerate_faces": 0,
+                    }
+                ],
+            },
+        )
+        _process(degenerate_diag_path)
+        degenerate_diag = json.loads(
+            result_paths["degenerate_diag"].read_text(encoding="utf-8-sig")
+        )
+        degenerate_check = (degenerate_diag.get("checks") or [{}])[0]
+        degenerate_hint = next(
+            (
+                hint for hint in (degenerate_check.get("repair_hints") or [])
+                if hint.get("code") == "preview_degenerate_dissolve"
+            ),
+            None,
+        )
+        if not degenerate_hint or not degenerate_hint.get("preview_available"):
+            raise RuntimeError("mesh quality did not expose the bounded degenerate repair preview")
+        degenerate_arguments = (degenerate_hint.get("preview_fix") or {}).get("arguments") or {}
+        original_degenerate_sha = str(degenerate_arguments.get("expected_base_geometry_sha256") or "")
+
+        degenerate_preview_path = INBOX / f"{smoke_ids['degenerate_preview']}.json"
+        _write_json_atomic(
+            degenerate_preview_path,
+            {
+                "id": smoke_ids["degenerate_preview"],
+                "operation": "degenerate_repair_preview",
+                **degenerate_arguments,
+            },
+        )
+        _process(degenerate_preview_path)
+
+        degenerate_cancel_path = INBOX / f"{smoke_ids['degenerate_cancel']}.json"
+        _write_json_atomic(
+            degenerate_cancel_path,
+            {
+                "id": smoke_ids["degenerate_cancel"],
+                "operation": "degenerate_repair_cancel",
+                "preview_id": smoke_ids["degenerate_preview"],
+            },
+        )
+        _process(degenerate_cancel_path)
+
+        degenerate_preview_commit_path = INBOX / f"{smoke_ids['degenerate_preview_commit']}.json"
+        _write_json_atomic(
+            degenerate_preview_commit_path,
+            {
+                "id": smoke_ids["degenerate_preview_commit"],
+                "operation": "degenerate_repair_preview",
+                **degenerate_arguments,
+            },
+        )
+        _process(degenerate_preview_commit_path)
+
+        degenerate_commit_path = INBOX / f"{smoke_ids['degenerate_commit']}.json"
+        _write_json_atomic(
+            degenerate_commit_path,
+            {
+                "id": smoke_ids["degenerate_commit"],
+                "operation": "degenerate_repair_commit",
+                "preview_id": smoke_ids["degenerate_preview_commit"],
+            },
+        )
+        _process(degenerate_commit_path)
+
+        degenerate_stale_path = INBOX / f"{smoke_ids['degenerate_stale']}.json"
+        _write_json_atomic(
+            degenerate_stale_path,
+            {
+                "id": smoke_ids["degenerate_stale"],
+                "operation": "degenerate_repair_preview",
+                **degenerate_arguments,
+            },
+        )
+        _process(degenerate_stale_path)
+
         for key, result_path in result_paths.items():
             if not result_path.is_file():
                 raise RuntimeError(
@@ -6292,6 +6801,65 @@ def _run_modeling_smoke_fixture() -> dict:
         if "fingerprint changed" not in str(cleanup_stale.get("summary") or ""):
             raise RuntimeError("stale mesh cleanup rejection did not report fingerprint mismatch")
 
+        degenerate_diag = summaries["degenerate_diag"]
+        if bool(degenerate_diag.get("ok")):
+            raise RuntimeError("degenerate repair diagnostic unexpectedly passed")
+        degenerate_check = (degenerate_diag.get("checks") or [{}])[0]
+        degenerate_metrics = degenerate_check.get("metrics") or {}
+        if int(degenerate_metrics.get("zero_length_edges") or 0) != 1:
+            raise RuntimeError("degenerate repair diagnostic did not measure one zero-length edge")
+        if int(degenerate_metrics.get("degenerate_faces") or 0) != 1:
+            raise RuntimeError("degenerate repair diagnostic did not measure one degenerate face")
+        preview_hint = next(
+            (
+                hint for hint in (degenerate_check.get("repair_hints") or [])
+                if hint.get("code") == "preview_degenerate_dissolve"
+            ),
+            None,
+        )
+        if not preview_hint or not preview_hint.get("preview_available"):
+            raise RuntimeError("degenerate repair diagnostic did not expose preview evidence")
+
+        degenerate_preview = summaries["degenerate_preview"]
+        if not bool(degenerate_preview.get("ok")) or degenerate_preview.get("state") != "preview":
+            raise RuntimeError("degenerate repair preview smoke failed")
+        preview_before = degenerate_preview.get("before_issues") or {}
+        preview_after = degenerate_preview.get("candidate_issues") or {}
+        if int(preview_before.get("zero_length_edges") or 0) != 1 or int(preview_before.get("degenerate_faces") or 0) != 1:
+            raise RuntimeError("degenerate repair preview lost diagnosed pre-state")
+        if int(preview_after.get("zero_length_edges") or 0) != 0 or int(preview_after.get("degenerate_faces") or 0) != 0:
+            raise RuntimeError("degenerate repair candidate did not clear both diagnosed categories")
+
+        degenerate_cancel = summaries["degenerate_cancel"]
+        if not bool(degenerate_cancel.get("ok")) or degenerate_cancel.get("state") != "cancelled":
+            raise RuntimeError("degenerate repair cancel smoke failed")
+        if degenerate_cancel.get("restored_geometry_sha256") != original_degenerate_sha:
+            raise RuntimeError("degenerate repair cancel did not restore the exact original fingerprint")
+        if _degenerate_preview_backups(smoke_ids["degenerate_preview"]):
+            raise RuntimeError("degenerate repair cancel left its hidden backup in the scene")
+
+        degenerate_preview_commit = summaries["degenerate_preview_commit"]
+        if not bool(degenerate_preview_commit.get("ok")):
+            raise RuntimeError("second degenerate repair preview for commit failed")
+        degenerate_commit = summaries["degenerate_commit"]
+        if not bool(degenerate_commit.get("ok")) or degenerate_commit.get("state") != "committed":
+            raise RuntimeError("degenerate repair commit smoke failed")
+        if degenerate_commit.get("committed_geometry_sha256") == original_degenerate_sha:
+            raise RuntimeError("degenerate repair commit did not preserve the candidate geometry")
+        if _degenerate_preview_backups(smoke_ids["degenerate_preview_commit"]):
+            raise RuntimeError("degenerate repair commit left its hidden backup in the scene")
+        degenerate_stale = summaries["degenerate_stale"]
+        if bool(degenerate_stale.get("ok")):
+            raise RuntimeError("stale degenerate repair preview was incorrectly accepted")
+        if "fingerprint changed" not in str(degenerate_stale.get("summary") or ""):
+            raise RuntimeError("stale degenerate repair preview did not report fingerprint mismatch")
+        degenerate_object = bpy.context.scene.objects.get(degenerate_name)
+        if degenerate_object is None:
+            raise RuntimeError("degenerate repair target disappeared after commit")
+        committed_issues = _degenerate_issue_counts(degenerate_object.data, 1e-10)
+        if committed_issues["zero_length_edges"] or committed_issues["degenerate_faces"]:
+            raise RuntimeError("degenerate repair commit left diagnosed degenerate geometry")
+
         trajectory_ids = set()
         if TRAJECTORY.is_file():
             for line in TRAJECTORY.read_text(encoding="utf-8-sig").splitlines():
@@ -6336,6 +6904,13 @@ def _run_modeling_smoke_fixture() -> dict:
             "cleanup_positive": True,
             "cleanup_stale_guard": True,
             "cleanup_removed_vertices": int(summaries["cleanup"].get("removed_vertices") or 0),
+            "degenerate_diagnostic_positive": True,
+            "degenerate_preview_positive": True,
+            "degenerate_cancel_rollback": True,
+            "degenerate_commit_positive": True,
+            "degenerate_stale_guard": True,
+            "degenerate_before_issues": preview_before,
+            "degenerate_candidate_issues": preview_after,
             "dispatcher_journaled": True,
             "object_name": object_name,
             "location": current.get("location"),
@@ -6358,6 +6933,30 @@ def _run_modeling_smoke_fixture() -> dict:
                 bpy.data.node_groups.remove(scatter_group)
             except Exception:
                 pass
+        for backup in list(bpy.data.objects):
+            if (
+                bool(backup.get("ordax_degenerate_backup"))
+                and str(backup.get("ordax_degenerate_target") or "") == degenerate_name
+            ):
+                backup_mesh = backup.data if backup.type == "MESH" else None
+                try:
+                    _remove_degenerate_backup(backup)
+                except Exception:
+                    try:
+                        bpy.data.objects.remove(backup, do_unlink=True)
+                    except Exception:
+                        pass
+                if backup_mesh is not None and getattr(backup_mesh, "users", 0) == 0:
+                    try:
+                        bpy.data.meshes.remove(backup_mesh)
+                    except Exception:
+                        pass
+        degenerate_object = bpy.context.scene.objects.get(degenerate_name)
+        if degenerate_object is not None:
+            mesh = degenerate_object.data if degenerate_object.type == "MESH" else None
+            bpy.data.objects.remove(degenerate_object, do_unlink=True)
+            if mesh is not None and getattr(mesh, "users", 0) == 0:
+                bpy.data.meshes.remove(mesh)
         temporary = bpy.context.scene.objects.get(temporary_name)
         if temporary is not None:
             mesh = temporary.data if temporary.type == "MESH" else None

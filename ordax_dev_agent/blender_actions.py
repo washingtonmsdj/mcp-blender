@@ -804,6 +804,7 @@ class BlenderActions:
                     "surface_scatter": modeling_schemas()["surface_scatter"]["status"],
                     "boolean_cut_preview": modeling_schemas()["boolean_cut_preview"]["status"],
                     "mesh_cleanup": modeling_schemas()["mesh_cleanup"]["status"],
+                    "degenerate_repair_preview": modeling_schemas()["degenerate_repair_preview"]["status"],
                     "add_modifier": "available",
                 },
             },
@@ -1139,6 +1140,43 @@ class BlenderActions:
             timeout_seconds=float(payload.get("timeout_seconds", 60)),
         )
 
+    def blender_live_degenerate_repair_preview(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            plan = plan_modeling_operation("degenerate_repair_preview", payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        if not plan["executable"]:
+            return ActionResult(
+                False,
+                f"{plan['status']}: degenerate repair preview is not enabled for execution",
+                {"plan": plan},
+            )
+        return self._blender_live(payload).request(
+            "degenerate_repair_preview",
+            plan["arguments"],
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+
+    def _degenerate_repair_transition(self, payload: dict[str, Any], operation: str) -> ActionResult:
+        supported = {"project", "timeout_seconds", "preview_id"}
+        unsupported = sorted(set(payload) - supported)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+        preview_id = str(payload.get("preview_id") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", preview_id):
+            return ActionResult(False, "preview_id must be a bounded identifier")
+        return self._blender_live(payload).request(
+            operation,
+            {"preview_id": preview_id},
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_degenerate_repair_commit(self, payload: dict[str, Any]) -> ActionResult:
+        return self._degenerate_repair_transition(payload, "degenerate_repair_commit")
+
+    def blender_live_degenerate_repair_cancel(self, payload: dict[str, Any]) -> ActionResult:
+        return self._degenerate_repair_transition(payload, "degenerate_repair_cancel")
+
     def blender_live_material_apply(self, payload: dict[str, Any]) -> ActionResult:
         try:
             arguments = normalize_material_request(payload)
@@ -1365,6 +1403,9 @@ class BlenderActions:
             "boolean_cut_commit": self.blender_live_boolean_cut_commit,
             "boolean_cut_cancel": self.blender_live_boolean_cut_cancel,
             "mesh_cleanup": self.blender_live_mesh_cleanup,
+            "degenerate_repair_preview": self.blender_live_degenerate_repair_preview,
+            "degenerate_repair_commit": self.blender_live_degenerate_repair_commit,
+            "degenerate_repair_cancel": self.blender_live_degenerate_repair_cancel,
             "material_apply": self.blender_live_material_apply,
             "create_camera": self.blender_live_create_camera,
             "create_light": self.blender_live_create_light,

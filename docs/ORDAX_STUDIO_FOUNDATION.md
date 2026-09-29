@@ -82,10 +82,12 @@ Projetos Blender na shell WebView2 carregam `blender.live_modeling_schema` no
 bootstrap do workspace. A visão **MCP / Capacidades** renderiza diretamente as
 operações tipadas publicadas pelo `ActionRegistry`, incluindo ARRAY, Geometry
 Nodes surface scatter, o workflow Boolean não destrutivo `preview → commit →
-cancel` e `mesh_cleanup`. O quality gate também publica repair hints de topologia;
-quando um hint é realmente seguro, ele referencia a mesma action revision-guarded
-que aparece no MCP. O Studio não mantém uma segunda lista de capacidades: status,
-ações e workflow vêm do mesmo contrato consumido pelos clientes MCP e pelo companion.
+cancel`, `mesh_cleanup` e o workflow `degenerate_repair_preview → commit/cancel`.
+O quality gate também publica repair hints de topologia: fixes realmente seguros
+podem apontar para uma action revision-guarded, enquanto zero-length edges e faces
+degeneradas apontam apenas para o preview reversível. O Studio não mantém uma
+segunda lista de capacidades: status, ações e workflow vêm do mesmo contrato
+consumido pelos clientes MCP e pelo companion.
 
 ### Fase 4 — autonomia controlada
 

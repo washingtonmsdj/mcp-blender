@@ -185,6 +185,35 @@ one vertex, restored the expected eight-vertex base mesh and rejected a repeated
 cleanup using the now-stale pre-repair fingerprint. The source `.blend` remained
 byte-for-byte unchanged on disk.
 
+### Degenerate repair preview workflow
+
+Zero-length edges and zero-area faces remain ambiguous enough that ORDAX never
+marks them as an automatic cleanup. When a base-mesh `mesh_quality` diagnostic
+finds either category and all safety requirements are satisfied, it emits a
+`preview_degenerate_dissolve` hint that points to
+`blender.live_degenerate_repair_preview`. The workflow uses Blender's Degenerate
+Dissolve on a copied candidate mesh with a bounded threshold; the original mesh is
+held by a hidden ORDAX backup until the caller chooses `commit` or `cancel`.
+
+The preview requires local single-user mesh data, no shape keys, no modifiers,
+Object Mode, no render job, no animation/constraints, a matching base-geometry
+SHA-256 and exact diagnosed issue counts. The threshold is capped at `0.001`, the
+combined diagnosed zero-length/degenerate element count is capped at `10,000`, and
+the target is capped at `200,000` faces. Preview creation fails unless the candidate
+strictly reduces the diagnosed defects without increasing either category.
+
+`blender.live_degenerate_repair_commit` refuses a candidate whose fingerprint
+changed after preview and then discards the original backup. Conversely,
+`blender.live_degenerate_repair_cancel` swaps the exact original datablock back,
+verifies its stored SHA-256 before deleting the candidate and only then closes the
+workflow. No degenerate repair is auto-applied.
+
+BlenderBench on Blender 5.2.2 validated a fixture with exactly one zero-length edge
+and one zero-area face. The candidate reduced both counts from `1 + 1` to `0 + 0`;
+cancel restored the exact original geometry fingerprint; a second preview was
+committed explicitly; and replaying the old diagnostic fingerprint was rejected as
+stale. The source `.blend` on disk remained unchanged.
+
 ## Promotion gate
 
 A disabled mutation can become available only after all of the following are
@@ -201,15 +230,18 @@ true:
 7. the normal Bridge CI remains green.
 
 The promotion gate has now been satisfied for `create_primitive`, `add_modifier`,
-`surface_scatter`, `boolean_cut_preview` (including commit/cancel transitions) and
-`mesh_cleanup` (`remove_loose_vertices`).
+`surface_scatter`, `boolean_cut_preview` (including commit/cancel transitions),
+`mesh_cleanup` (`remove_loose_vertices`) and `degenerate_repair_preview`
+(including explicit commit/cancel transitions).
 Future modeling mutations must still follow the same fail-closed
 process before registration.
 
 ## Current real-smoke coverage
 
 `scripts/blender_benchmark.py` continues to exercise the production typed
-modeling mutations, the Boolean preview/commit/cancel workflow and revision-guarded
-mesh cleanup through the real companion dispatcher on every BlenderBench run. It keeps positive/negative controls, durable trajectory evidence, temporary
-object cleanup and source `.blend` hash protection so later changes cannot
-silently weaken the validated behavior.
+modeling mutations, the Boolean preview/commit/cancel workflow, revision-guarded
+mesh cleanup and the reversible degenerate-repair preview/commit/cancel workflow
+through the real companion dispatcher on every BlenderBench run. It keeps
+positive/negative controls, exact rollback fingerprints, durable trajectory
+evidence, temporary object cleanup and source `.blend` hash protection so later
+changes cannot silently weaken the validated behavior.

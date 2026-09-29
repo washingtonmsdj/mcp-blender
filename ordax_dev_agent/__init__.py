@@ -1,3 +1,3 @@
 """OrdaX local development agent."""
 
-__version__ = "1.27.0"
+__version__ = "1.28.0"

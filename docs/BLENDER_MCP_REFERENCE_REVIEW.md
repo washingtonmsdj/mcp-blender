@@ -79,6 +79,12 @@ these categories. Hints are descriptive by default; only truly isolated loose
 vertices diagnosed on the base mesh may expose an automatic fix. That fix points
 to `blender.live_mesh_cleanup`, carries the base-geometry SHA-256 and expected
 loose-vertex count, and is refused if the mesh changed before execution.
+Zero-length edges and degenerate faces remain non-automatic: when the base mesh
+passes the stricter safety blockers, `mesh_quality` instead emits a
+`preview_degenerate_dissolve` hint pointing to the reversible
+`blender.live_degenerate_repair_preview` workflow. The candidate must be reviewed
+and then explicitly committed or cancelled; cancel restores the exact original
+geometry fingerprint.
 
 Example request to inspect the source mesh and sample up to four issues per
 category:

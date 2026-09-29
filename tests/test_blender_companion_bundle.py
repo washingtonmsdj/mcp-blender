@@ -421,6 +421,63 @@ class BlenderModelingContractTests(unittest.TestCase):
                 },
             )
 
+    def test_degenerate_repair_preview_plan_is_executable_after_blenderbench_promotion(self) -> None:
+        digest = "e" * 64
+        plan = plan_modeling_operation(
+            "degenerate_repair_preview",
+            {
+                "object_name": "Body",
+                "expected_base_geometry_sha256": digest,
+                "expected_zero_length_edges": 2,
+                "expected_degenerate_faces": 1,
+                "threshold": 1e-8,
+            },
+        )
+        self.assertTrue(plan["executable"])
+        self.assertEqual("available", plan["status"])
+        self.assertEqual("blender.live_degenerate_repair_preview", plan["action"])
+        self.assertFalse(plan["requires_real_blender_smoke"])
+        self.assertEqual(2, plan["arguments"]["expected_zero_length_edges"])
+        self.assertEqual(1, plan["arguments"]["expected_degenerate_faces"])
+        self.assertEqual(1e-8, plan["arguments"]["threshold"])
+        self.assertEqual(
+            "blender.live_degenerate_repair_commit",
+            plan["workflow_actions"]["commit"],
+        )
+        self.assertEqual(
+            "blender.live_degenerate_repair_cancel",
+            plan["workflow_actions"]["cancel"],
+        )
+        self.assertEqual(0.001, plan["runtime_guards"]["max_repair_distance"])
+
+    def test_degenerate_repair_preview_rejects_empty_or_unbounded_diagnostics(self) -> None:
+        base = {
+            "object_name": "Body",
+            "expected_base_geometry_sha256": "f" * 64,
+            "expected_zero_length_edges": 0,
+            "expected_degenerate_faces": 0,
+        }
+        with self.assertRaisesRegex(ValueError, "at least one diagnosed"):
+            plan_modeling_operation("degenerate_repair_preview", base)
+        with self.assertRaisesRegex(ValueError, "threshold must be between"):
+            plan_modeling_operation(
+                "degenerate_repair_preview",
+                {
+                    **base,
+                    "expected_zero_length_edges": 1,
+                    "threshold": 0.01,
+                },
+            )
+        with self.assertRaisesRegex(ValueError, "diagnosed degenerate elements"):
+            plan_modeling_operation(
+                "degenerate_repair_preview",
+                {
+                    **base,
+                    "expected_zero_length_edges": 6000,
+                    "expected_degenerate_faces": 5000,
+                },
+            )
+
     def test_transform_plan_is_executable_and_closed_to_unknown_fields(self) -> None:
         plan = plan_modeling_operation(
             "object_transform",

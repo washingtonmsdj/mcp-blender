@@ -46,7 +46,9 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                         'get_blender_status', 'start_blender', 'get_scene_info',
                         'get_object_info', 'get_viewport_screenshot', 'add_primitive',
                         'modify_object', 'scatter_on_surface', 'preview_boolean_cut',
-                        'commit_boolean_cut', 'cancel_boolean_cut', 'cleanup_mesh', 'delete_object', 'set_material', 'batch_edit',
+                        'commit_boolean_cut', 'cancel_boolean_cut', 'cleanup_mesh',
+                        'preview_degenerate_repair', 'commit_degenerate_repair', 'cancel_degenerate_repair',
+                        'delete_object', 'set_material', 'batch_edit',
                         'save_blender', 'run_blender_project_script',
                     ):
                         self.assertIn(blender_tool, names)

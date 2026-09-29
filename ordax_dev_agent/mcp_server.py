@@ -435,6 +435,39 @@ def cleanup_mesh(
 
 
 @mcp.tool()
+def preview_degenerate_repair(
+    project: str | None = None,
+    object_name: str = "",
+    ordax_object_id: str = "",
+    expected_base_geometry_sha256: str = "",
+    expected_zero_length_edges: int = 0,
+    expected_degenerate_faces: int = 0,
+    threshold: float = 1e-10,
+) -> dict:
+    """Preview Degenerate Dissolve on a reversible candidate mesh copy."""
+    args: dict = {
+        "expected_base_geometry_sha256": expected_base_geometry_sha256,
+        "expected_zero_length_edges": expected_zero_length_edges,
+        "expected_degenerate_faces": expected_degenerate_faces,
+        "threshold": threshold,
+    }
+    args.update({"object_name": object_name} if object_name else {"ordax_object_id": ordax_object_id})
+    return _blender_action("blender.live_degenerate_repair_preview", project, args)
+
+
+@mcp.tool()
+def commit_degenerate_repair(project: str | None = None, preview_id: str = "") -> dict:
+    """Commit a reviewed degenerate-repair candidate mesh."""
+    return _blender_action("blender.live_degenerate_repair_commit", project, {"preview_id": preview_id})
+
+
+@mcp.tool()
+def cancel_degenerate_repair(project: str | None = None, preview_id: str = "") -> dict:
+    """Cancel a degenerate-repair preview and restore the exact original mesh."""
+    return _blender_action("blender.live_degenerate_repair_cancel", project, {"preview_id": preview_id})
+
+
+@mcp.tool()
 def delete_object(project: str | None = None, object_name: str = "", missing_ok: bool = False) -> dict:
     """Remove one named Blender object through the bounded live mutation contract."""
     return _blender_action("blender.live_object_remove", project, {"object_names": [object_name], "missing_ok": missing_ok})

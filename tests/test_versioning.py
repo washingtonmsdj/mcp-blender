@@ -80,6 +80,9 @@ class ComponentVersioningTests(unittest.TestCase):
                 "blender.live_boolean_cut_commit",
                 "blender.live_boolean_cut_preview",
                 "blender.live_create_primitive",
+                "blender.live_degenerate_repair_cancel",
+                "blender.live_degenerate_repair_commit",
+                "blender.live_degenerate_repair_preview",
                 "blender.live_mesh_cleanup",
                 "blender.live_object_transform",
                 "blender.live_surface_scatter",
@@ -104,6 +107,14 @@ class ComponentVersioningTests(unittest.TestCase):
         )
         self.assertEqual("available", modeling["operations"]["mesh_cleanup"]["status"])
         self.assertEqual("blender.live_mesh_cleanup", modeling["operations"]["mesh_cleanup"]["action"])
+        self.assertEqual(
+            "available",
+            modeling["operations"]["degenerate_repair_preview"]["status"],
+        )
+        self.assertEqual(
+            {"commit": "blender.live_degenerate_repair_commit", "cancel": "blender.live_degenerate_repair_cancel"},
+            modeling["operations"]["degenerate_repair_preview"]["workflow_actions"],
+        )
         self.assertEqual(
             8,
             modeling["operations"]["add_modifier"]["runtime_guards"][

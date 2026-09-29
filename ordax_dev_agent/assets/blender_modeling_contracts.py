@@ -23,6 +23,8 @@ MAX_CUTTER_PROFILES = 8
 MAX_CUTTER_SEGMENTS = 64
 MAX_CUTTER_POLYGON_POINTS = 16
 MAX_CUTTER_GENERATED_FACES = 12000
+MAX_DEGENERATE_REPAIR_DISTANCE = 0.001
+MAX_DEGENERATE_REPAIR_ELEMENTS = 10000
 
 
 MODELING_SCHEMAS = {
@@ -187,6 +189,54 @@ MODELING_SCHEMAS = {
             "repair": {"enum": ["remove_loose_vertices"]},
             "expected_base_geometry_sha256": {"type": "sha256"},
             "expected_loose_vertices": {"type": "integer", "minimum": 1, "maximum": 1000000},
+        },
+    },
+    "degenerate_repair_preview": {
+        "status": "available",
+        "action": "blender.live_degenerate_repair_preview",
+        "workflow_actions": {
+            "commit": "blender.live_degenerate_repair_commit",
+            "cancel": "blender.live_degenerate_repair_cancel",
+        },
+        "runtime_requirements": [
+            "object_mode",
+            "no_render_job",
+            "local_nonlinked_mesh_target",
+            "single_user_mesh_data",
+            "no_shape_keys",
+            "no_modifiers",
+            "expected_base_geometry_sha256_matches",
+            "no_active_repair_preview_on_target",
+            "animated_or_constrained_target_requires_dedicated_workflow",
+        ],
+        "failure_policy": [
+            "mutate_candidate_mesh_copy_only",
+            "preserve_original_mesh_in_hidden_backup",
+            "restore_original_mesh_on_cancel_or_preview_failure",
+            "commit_only_explicitly",
+        ],
+        "runtime_guards": {
+            "max_target_faces": MAX_EVALUATED_FACES,
+            "max_repair_distance": MAX_DEGENERATE_REPAIR_DISTANCE,
+            "max_diagnostic_elements": MAX_DEGENERATE_REPAIR_ELEMENTS,
+        },
+        "description": (
+            "Preview-only Degenerate Dissolve workflow for diagnosed zero-length edges and "
+            "zero-area faces, validated by BlenderBench on Blender 5.2.2. The visible target "
+            "uses a candidate mesh copy until explicit commit; cancel restores the "
+            "fingerprint-identical original mesh."
+        ),
+        "required": [
+            "expected_base_geometry_sha256",
+            "expected_zero_length_edges",
+            "expected_degenerate_faces",
+        ],
+        "selectors": ["object_name", "ordax_object_id"],
+        "properties": {
+            "expected_base_geometry_sha256": {"type": "sha256"},
+            "expected_zero_length_edges": {"type": "integer", "minimum": 0, "maximum": MAX_DEGENERATE_REPAIR_ELEMENTS},
+            "expected_degenerate_faces": {"type": "integer", "minimum": 0, "maximum": MAX_DEGENERATE_REPAIR_ELEMENTS},
+            "threshold": {"type": "number", "minimum": 1e-12, "maximum": MAX_DEGENERATE_REPAIR_DISTANCE},
         },
     },
     "add_modifier": {
@@ -759,6 +809,64 @@ def _plan_mesh_cleanup(payload: dict[str, Any]) -> dict[str, Any]:
     return arguments
 
 
+def _plan_degenerate_repair_preview(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "object_name",
+        "ordax_object_id",
+        "expected_base_geometry_sha256",
+        "expected_zero_length_edges",
+        "expected_degenerate_faces",
+        "threshold",
+    }
+    _reject_unknown_fields(payload, allowed)
+    selector = normalize_object_selector(payload)
+    expected_sha256 = _sha256(
+        payload.get("expected_base_geometry_sha256"),
+        "expected_base_geometry_sha256",
+    )
+    zero_edges = int(
+        _bounded_number(
+            payload.get("expected_zero_length_edges"),
+            "expected_zero_length_edges",
+            0,
+            MAX_DEGENERATE_REPAIR_ELEMENTS,
+            integer=True,
+        )
+    )
+    degenerate_faces = int(
+        _bounded_number(
+            payload.get("expected_degenerate_faces"),
+            "expected_degenerate_faces",
+            0,
+            MAX_DEGENERATE_REPAIR_ELEMENTS,
+            integer=True,
+        )
+    )
+    if zero_edges + degenerate_faces <= 0:
+        raise ValueError(
+            "degenerate repair preview requires at least one diagnosed zero-length edge or degenerate face"
+        )
+    if zero_edges + degenerate_faces > MAX_DEGENERATE_REPAIR_ELEMENTS:
+        raise ValueError(
+            f"diagnosed degenerate elements must not exceed {MAX_DEGENERATE_REPAIR_ELEMENTS}"
+        )
+    threshold = float(
+        _bounded_number(
+            payload.get("threshold", 1e-10),
+            "threshold",
+            1e-12,
+            MAX_DEGENERATE_REPAIR_DISTANCE,
+        )
+    )
+    return {
+        **selector,
+        "expected_base_geometry_sha256": expected_sha256,
+        "expected_zero_length_edges": zero_edges,
+        "expected_degenerate_faces": degenerate_faces,
+        "threshold": threshold,
+    }
+
+
 def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "object_name",
@@ -1001,7 +1109,7 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
     normalized_operation = str(operation or "").strip().lower()
     if normalized_operation not in MODELING_SCHEMAS:
         raise ValueError(
-            "operation must be create_primitive, object_transform, surface_scatter, boolean_cut_preview, mesh_cleanup, or add_modifier"
+            "operation must be create_primitive, object_transform, surface_scatter, boolean_cut_preview, mesh_cleanup, degenerate_repair_preview, or add_modifier"
         )
 
     if normalized_operation == "create_primitive":
@@ -1014,6 +1122,8 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         arguments = _plan_boolean_cut_preview(payload)
     elif normalized_operation == "mesh_cleanup":
         arguments = _plan_mesh_cleanup(payload)
+    elif normalized_operation == "degenerate_repair_preview":
+        arguments = _plan_degenerate_repair_preview(payload)
     else:
         arguments = _plan_modifier(payload)
 

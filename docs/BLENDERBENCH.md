@@ -55,11 +55,21 @@ Acceptance requires all of the following:
 26. `mesh_cleanup` removes exactly that one loose vertex from a working mesh copy
     and restores the expected eight-vertex base topology;
 27. reusing the pre-repair geometry SHA after cleanup is rejected as stale;
-28. broader topology findings remain descriptive hints rather than implicit edits;
-29. all modeling, cutter and cleanup command IDs are present in `trajectory.jsonl`;
-30. temporary smoke geometry, scatter modifier/node-group state and cutter preview
-    objects are cleaned before multiview capture;
-31. despite all in-memory modeling operations, the source `.blend` remains
+28. a base-mesh degenerate fixture diagnoses exactly one zero-length edge and one
+    zero-area face, then exposes a preview-only repair hint rather than auto-fix;
+29. `degenerate_repair_preview` creates a candidate mesh that reduces the issue
+    counts from `1 + 1` to `0 + 0` while retaining the original in an ORDAX backup;
+30. `degenerate_repair_cancel` restores the exact original geometry fingerprint
+    and removes the candidate/backup state;
+31. a second preview can be explicitly committed, after which the candidate becomes
+    the production mesh and the hidden original backup is removed;
+32. replaying the old diagnostic fingerprint after commit is rejected as stale;
+33. broader topology findings remain descriptive hints rather than implicit edits;
+34. all modeling, cutter, cleanup and degenerate-preview command IDs are present in
+    `trajectory.jsonl`;
+35. temporary smoke geometry, scatter modifier/node-group state, cutter preview and
+    degenerate backup objects are cleaned before multiview capture;
+36. despite all in-memory modeling operations, the source `.blend` remains
     byte-for-byte unchanged on disk.
 
 The benchmark intentionally uses a primitive rather than a production asset.
@@ -115,9 +125,10 @@ before it is allowed to touch the managed OrdaX agent.
 The modeling fixture validates the production typed mutation paths
 `object_transform`, `create_primitive`, `add_modifier` (including fixed-count
 `ARRAY`) and `surface_scatter`, plus the non-destructive `boolean_cut_preview` â†’
-`boolean_cut_commit` â†’ `boolean_cut_cancel` workflow and revision-guarded
-`mesh_cleanup`. The same normal dispatcher operations and runtime guards used by
-live sessions are exercised in the benchmark.
+`boolean_cut_commit` â†’ `boolean_cut_cancel` workflow, revision-guarded
+`mesh_cleanup`, and the reversible `degenerate_repair_preview` â†’ commit/cancel
+workflow. The same normal dispatcher operations and runtime guards used by live
+sessions are exercised in the benchmark.
 
 The September 20, 2026 benchmark job
 `53b9b1ef-81de-406f-966e-576599c257e2` passed on Blender 5.2.2 LTS and was
@@ -131,7 +142,11 @@ overflow rejection, non-destructive commit and complete cancel rollback. Later o
 September 28, 2026, BlenderBench also promoted `mesh_cleanup` after a base-mesh
 quality check first proved that modifiers block auto-fix, then emitted a
 fingerprint-bound isolated-vertex repair after those modifiers were removed; the
-companion removed exactly one vertex, a repeated stale fingerprint was rejected, every command
-was journaled and the source `.blend` stayed unchanged. A benchmark failure continues
+companion removed exactly one vertex and rejected the stale pre-repair fingerprint.
+On September 29, 2026, BlenderBench promoted the degenerate-repair workflow using
+a fixture with one zero-length edge and one zero-area face: preview reduced both
+counts to zero, cancel restored the exact original SHA-256, explicit commit retained
+the candidate, and the old diagnostic hash was rejected as stale. Every command was
+journaled and the source `.blend` stayed unchanged. A benchmark failure continues
 to block recovery/update of the managed agent instead of allowing an unverified
 Blender control layer onto the workstation.

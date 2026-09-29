@@ -101,8 +101,10 @@ base-geometry SHA-256 plus the expected loose-vertex count; Blender rechecks bot
 works on a copied mesh datablock, swaps only after success and rejects stale
 geometry, multi-user mesh data, shape keys, animation or constraints. BlenderBench
 on Blender 5.2.2 validated one isolated-vertex removal plus stale-fingerprint
-rejection while preserving the source `.blend` on disk. Broader topology repair
-remains review-only until an equally bounded preview/rollback contract exists.
+rejection while preserving the source `.blend` on disk. Zero-length edges and
+zero-area faces now have that bounded contract: `degenerate_repair_preview` edits a
+candidate copy, retains the exact original as an ORDAX backup and requires an
+explicit commit or cancel. Other broader topology repairs remain review-only.
 
 Sources: [surface-conforming modeling question](https://www.reddit.com/r/blenderhelp/comments/1iqqfnw/what_are_some_more_efficient_workflow_for_modeling_along_a_surface/),
 [iterative topology/editability feedback on Blender MCP](https://www.reddit.com/r/OpenAI/comments/1we95z2/blender_mcp_is_impressive_but_not_that_useable_yet/),
@@ -117,21 +119,24 @@ automatically declaring every disconnected island or non-quad a defect.
 
 ## Suggested delivery sequence
 
-1. **ConcluÃ­do:** fixed-count linear `ARRAY` promovido apÃ³s contratos positivos/
+1. **Concluído:** fixed-count linear `ARRAY` promovido após contratos positivos/
    negativos e BlenderBench real no Blender 5.2.2, mantendo limites de contagem,
    faces projetadas, nomes duplicados, rollback e integridade do `.blend`.
-2. **ConcluÃ­do:** `surface_scatter` com Geometry Nodes promovido apÃ³s BlenderBench
-   real, seed determinÃ­stico, contagem efetiva, hard cap de instÃ¢ncias, orÃ§amento
+2. **Concluído:** `surface_scatter` com Geometry Nodes promovido após BlenderBench
+   real, seed determinístico, contagem efetiva, hard cap de instâncias, orçamento
    de geometria projetada e rollback do modifier/node group.
-3. **ConcluÃ­do:** cutters Boolean tipados (`box`, `circle`, `slot`, `polygon`,
-   `vent`) com Preview â†’ Commit â†’ Cancel nÃ£o destrutivo, limites de geometria,
-   rollback de uma operaÃ§Ã£o, BlenderBench real e exposiÃ§Ã£o no ORDAX Studio.
-4. **ConcluÃ­do:** repair hints component-aware no `mesh_quality` e primeiro
-   `mesh_cleanup` revision-guarded para vÃ©rtices realmente isolados, com cÃ³pia de
-   datablock, hash stale guard, BlenderBench real e exposiÃ§Ã£o no ORDAX Studio.
-5. **PrÃ³ximo:** estudar previews estritamente tipados para correÃ§Ãµes mais ambÃ­guas
-   (zero-length edges e faces degeneradas) antes de qualquer auto-apply ou
-   retopologia automÃ¡tica.
+3. **Concluído:** cutters Boolean tipados (`box`, `circle`, `slot`, `polygon`,
+   `vent`) com Preview → Commit → Cancel não destrutivo, limites de geometria,
+   rollback de uma operação, BlenderBench real e exposição no ORDAX Studio.
+4. **Concluído:** repair hints component-aware no `mesh_quality` e primeiro
+   `mesh_cleanup` revision-guarded para vértices realmente isolados, com cópia de
+   datablock, hash stale guard, BlenderBench real e exposição no ORDAX Studio.
+5. **Concluído:** `degenerate_repair_preview` para zero-length edges e faces de
+   área zero, usando candidate mesh + backup oculto, Preview → Commit → Cancel,
+   fingerprints stale/candidate guards e BlenderBench real no Blender 5.2.2.
+6. **Próximo:** estudar reparos localizados ainda mais ambíguos, como merge por
+   distância com seleção explícita ou pequenos hole-fill, sempre com preview,
+   limites de região e rollback antes de qualquer commit.
 
 Each mutation should stay small in the MCP surface: one composable typed action,
 strict schemas, clear failure evidence, and visual/geometry inspection after

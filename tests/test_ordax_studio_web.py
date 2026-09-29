@@ -83,6 +83,18 @@ class OrdaxStudioWebTests(unittest.TestCase):
         self.assertEqual("blender.live_mesh_cleanup", tools["mesh_cleanup"]["action"])
         self.assertIn("expected_base_geometry_sha256_matches", tools["mesh_cleanup"]["runtime_requirements"])
         self.assertIn("no_modifiers", tools["mesh_cleanup"]["runtime_requirements"])
+        self.assertEqual("available", tools["degenerate_repair_preview"]["status"])
+        self.assertEqual(
+            "blender.live_degenerate_repair_preview",
+            tools["degenerate_repair_preview"]["action"],
+        )
+        self.assertEqual(
+            {
+                "commit": "blender.live_degenerate_repair_commit",
+                "cancel": "blender.live_degenerate_repair_cancel",
+            },
+            tools["degenerate_repair_preview"]["workflow_actions"],
+        )
         self.assertEqual(
             {"commit": "blender.live_boolean_cut_commit", "cancel": "blender.live_boolean_cut_cancel"},
             tools["boolean_cut_preview"]["workflow_actions"],

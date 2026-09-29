@@ -196,6 +196,12 @@ def _run_companion_smoke(
     modeling_cleanup_diag_path = control_root / "results" / "smoke-model-cleanup-diagnostic.json"
     modeling_cleanup_path = control_root / "results" / "smoke-model-cleanup.json"
     modeling_cleanup_stale_path = control_root / "results" / "smoke-model-cleanup-stale.json"
+    modeling_degenerate_diag_path = control_root / "results" / "smoke-model-degenerate-diagnostic.json"
+    modeling_degenerate_preview_path = control_root / "results" / "smoke-model-degenerate-preview.json"
+    modeling_degenerate_cancel_path = control_root / "results" / "smoke-model-degenerate-cancel.json"
+    modeling_degenerate_preview_commit_path = control_root / "results" / "smoke-model-degenerate-preview-commit.json"
+    modeling_degenerate_commit_path = control_root / "results" / "smoke-model-degenerate-commit.json"
+    modeling_degenerate_stale_path = control_root / "results" / "smoke-model-degenerate-stale.json"
     if not all(
         path.is_file()
         for path in (
@@ -217,6 +223,12 @@ def _run_companion_smoke(
             modeling_cleanup_diag_path,
             modeling_cleanup_path,
             modeling_cleanup_stale_path,
+            modeling_degenerate_diag_path,
+            modeling_degenerate_preview_path,
+            modeling_degenerate_cancel_path,
+            modeling_degenerate_preview_commit_path,
+            modeling_degenerate_commit_path,
+            modeling_degenerate_stale_path,
         )
     ):
         raise RuntimeError(
@@ -260,6 +272,12 @@ def _run_companion_smoke(
     modeling_cleanup_diag = json.loads(modeling_cleanup_diag_path.read_text(encoding="utf-8-sig"))
     modeling_cleanup = json.loads(modeling_cleanup_path.read_text(encoding="utf-8-sig"))
     modeling_cleanup_stale = json.loads(modeling_cleanup_stale_path.read_text(encoding="utf-8-sig"))
+    modeling_degenerate_diag = json.loads(modeling_degenerate_diag_path.read_text(encoding="utf-8-sig"))
+    modeling_degenerate_preview = json.loads(modeling_degenerate_preview_path.read_text(encoding="utf-8-sig"))
+    modeling_degenerate_cancel = json.loads(modeling_degenerate_cancel_path.read_text(encoding="utf-8-sig"))
+    modeling_degenerate_preview_commit = json.loads(modeling_degenerate_preview_commit_path.read_text(encoding="utf-8-sig"))
+    modeling_degenerate_commit = json.loads(modeling_degenerate_commit_path.read_text(encoding="utf-8-sig"))
+    modeling_degenerate_stale = json.loads(modeling_degenerate_stale_path.read_text(encoding="utf-8-sig"))
     if not modeling_valid.get("ok"):
         raise RuntimeError(
             "modeling positive control failed: "
@@ -344,6 +362,44 @@ def _run_companion_smoke(
         raise RuntimeError("stale mesh cleanup fingerprint was incorrectly accepted")
     if "fingerprint changed" not in str(modeling_cleanup_stale.get("summary") or ""):
         raise RuntimeError("stale mesh cleanup rejection did not expose fingerprint mismatch")
+
+    if modeling_degenerate_diag.get("ok"):
+        raise RuntimeError("degenerate repair diagnostic unexpectedly passed")
+    degenerate_check = (modeling_degenerate_diag.get("checks") or [{}])[0]
+    degenerate_metrics = degenerate_check.get("metrics") or {}
+    if int(degenerate_metrics.get("zero_length_edges") or 0) != 1:
+        raise RuntimeError("degenerate repair diagnostic did not measure one zero-length edge")
+    if int(degenerate_metrics.get("degenerate_faces") or 0) != 1:
+        raise RuntimeError("degenerate repair diagnostic did not measure one degenerate face")
+    degenerate_hint = next(
+        (
+            hint for hint in (degenerate_check.get("repair_hints") or [])
+            if hint.get("code") == "preview_degenerate_dissolve"
+        ),
+        None,
+    )
+    if not degenerate_hint or not degenerate_hint.get("preview_available"):
+        raise RuntimeError("degenerate repair diagnostic did not expose a preview fix")
+    if not modeling_degenerate_preview.get("ok") or modeling_degenerate_preview.get("state") != "preview":
+        raise RuntimeError("degenerate repair preview smoke failed")
+    degenerate_before = modeling_degenerate_preview.get("before_issues") or {}
+    degenerate_after = modeling_degenerate_preview.get("candidate_issues") or {}
+    if int(degenerate_before.get("zero_length_edges") or 0) != 1 or int(degenerate_before.get("degenerate_faces") or 0) != 1:
+        raise RuntimeError("degenerate repair preview lost diagnosed pre-state")
+    if int(degenerate_after.get("zero_length_edges") or 0) != 0 or int(degenerate_after.get("degenerate_faces") or 0) != 0:
+        raise RuntimeError("degenerate repair candidate did not clear both diagnosed categories")
+    if not modeling_degenerate_cancel.get("ok") or modeling_degenerate_cancel.get("state") != "cancelled":
+        raise RuntimeError("degenerate repair cancel smoke failed")
+    if modeling_degenerate_cancel.get("restored_geometry_sha256") != modeling_degenerate_preview.get("before_geometry_sha256"):
+        raise RuntimeError("degenerate repair cancel did not restore the original geometry fingerprint")
+    if not modeling_degenerate_preview_commit.get("ok"):
+        raise RuntimeError("degenerate repair second preview failed")
+    if not modeling_degenerate_commit.get("ok") or modeling_degenerate_commit.get("state") != "committed":
+        raise RuntimeError("degenerate repair commit smoke failed")
+    if modeling_degenerate_stale.get("ok"):
+        raise RuntimeError("stale degenerate repair preview was incorrectly accepted")
+    if "fingerprint changed" not in str(modeling_degenerate_stale.get("summary") or ""):
+        raise RuntimeError("stale degenerate repair rejection did not expose fingerprint mismatch")
 
     created_object = modeling_create.get("object") or {}
     if (created_object.get("mesh") or {}).get("vertices") != 8:
@@ -446,6 +502,12 @@ def _run_companion_smoke(
         "smoke-model-cleanup-diagnostic",
         "smoke-model-cleanup",
         "smoke-model-cleanup-stale",
+        "smoke-model-degenerate-diagnostic",
+        "smoke-model-degenerate-preview",
+        "smoke-model-degenerate-cancel",
+        "smoke-model-degenerate-preview-commit",
+        "smoke-model-degenerate-commit",
+        "smoke-model-degenerate-stale",
     }.issubset(trajectory_ids):
         raise RuntimeError(
             "modeling fixture commands are missing from trajectory evidence"
@@ -470,6 +532,11 @@ def _run_companion_smoke(
         "cleanup_diagnostic_positive": True,
         "cleanup_positive": True,
         "cleanup_stale_guard": True,
+        "degenerate_diagnostic_positive": True,
+        "degenerate_preview_positive": True,
+        "degenerate_cancel_rollback": True,
+        "degenerate_commit_positive": True,
+        "degenerate_stale_guard": True,
         "dispatcher_journaled": True,
         "valid": modeling_valid,
         "invalid": modeling_invalid,
@@ -489,6 +556,12 @@ def _run_companion_smoke(
         "cleanup_diag": modeling_cleanup_diag,
         "cleanup": modeling_cleanup,
         "cleanup_stale": modeling_cleanup_stale,
+        "degenerate_diag": modeling_degenerate_diag,
+        "degenerate_preview": modeling_degenerate_preview,
+        "degenerate_cancel": modeling_degenerate_cancel,
+        "degenerate_preview_commit": modeling_degenerate_preview_commit,
+        "degenerate_commit": modeling_degenerate_commit,
+        "degenerate_stale": modeling_degenerate_stale,
     }
 
     after = hashlib.sha256(scene.read_bytes()).hexdigest()
@@ -633,6 +706,14 @@ def run(root: Path) -> dict:
             "cleanup_stale_guard": baseline["modeling"]["cleanup_stale_guard"],
             "cleanup_removed_vertices": baseline["modeling"]["cleanup"].get("removed_vertices"),
             "cleanup_repair_hints": (baseline["modeling"]["cleanup_diag"].get("checks") or [{}])[0].get("repair_hints"),
+            "degenerate_diagnostic_positive": baseline["modeling"]["degenerate_diagnostic_positive"],
+            "degenerate_preview_positive": baseline["modeling"]["degenerate_preview_positive"],
+            "degenerate_cancel_rollback": baseline["modeling"]["degenerate_cancel_rollback"],
+            "degenerate_commit_positive": baseline["modeling"]["degenerate_commit_positive"],
+            "degenerate_stale_guard": baseline["modeling"]["degenerate_stale_guard"],
+            "degenerate_before_issues": baseline["modeling"]["degenerate_preview"].get("before_issues"),
+            "degenerate_candidate_issues": baseline["modeling"]["degenerate_preview"].get("candidate_issues"),
+            "degenerate_repair_hints": (baseline["modeling"]["degenerate_diag"].get("checks") or [{}])[0].get("repair_hints"),
             "dispatcher_journaled": baseline["modeling"]["dispatcher_journaled"],
             "location": (
                 (baseline["modeling"]["valid"].get("object") or {}).get("location")

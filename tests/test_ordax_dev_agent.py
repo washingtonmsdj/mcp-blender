@@ -103,6 +103,9 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_boolean_cut_commit", result.data["actions"])
             self.assertIn("blender.live_boolean_cut_cancel", result.data["actions"])
             self.assertIn("blender.live_mesh_cleanup", result.data["actions"])
+            self.assertIn("blender.live_degenerate_repair_preview", result.data["actions"])
+            self.assertIn("blender.live_degenerate_repair_commit", result.data["actions"])
+            self.assertIn("blender.live_degenerate_repair_cancel", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
@@ -272,6 +275,18 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertEqual("blender.live_mesh_cleanup", tools["mesh_cleanup"]["action"])
             self.assertIn("no_shape_keys", tools["mesh_cleanup"]["runtime_requirements"])
             self.assertIn("no_modifiers", tools["mesh_cleanup"]["runtime_requirements"])
+            self.assertEqual("available", tools["degenerate_repair_preview"]["status"])
+            self.assertEqual(
+                "blender.live_degenerate_repair_preview",
+                tools["degenerate_repair_preview"]["action"],
+            )
+            self.assertEqual(
+                {
+                    "commit": "blender.live_degenerate_repair_commit",
+                    "cancel": "blender.live_degenerate_repair_cancel",
+                },
+                tools["degenerate_repair_preview"]["workflow_actions"],
+            )
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["create_primitive"],
@@ -291,6 +306,10 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["mesh_cleanup"],
+            )
+            self.assertEqual(
+                "available",
+                result.data["mutation_policy"]["degenerate_repair_preview"],
             )
 
     def test_create_primitive_normalizes_and_dispatches(self) -> None:
@@ -480,6 +499,47 @@ class AgentActionRegistryTests(unittest.TestCase):
             },
             result.data["payload"],
         )
+
+    def test_degenerate_repair_preview_and_transitions_dispatch_after_promotion(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={"operation": operation, "payload": payload, "timeout_seconds": timeout_seconds},
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                preview = registry.execute(
+                    "blender.live_degenerate_repair_preview",
+                    {
+                        "object_name": "Body",
+                        "expected_base_geometry_sha256": "a" * 64,
+                        "expected_zero_length_edges": 1,
+                        "expected_degenerate_faces": 1,
+                        "threshold": 1e-10,
+                    },
+                )
+                commit = registry.execute(
+                    "blender.live_degenerate_repair_commit",
+                    {"preview_id": "preview-456"},
+                )
+                cancel = registry.execute(
+                    "blender.live_degenerate_repair_cancel",
+                    {"preview_id": "preview-456"},
+                )
+
+        self.assertTrue(preview.ok)
+        self.assertEqual("degenerate_repair_preview", preview.data["operation"])
+        self.assertEqual(1, preview.data["payload"]["expected_zero_length_edges"])
+        self.assertEqual(1, preview.data["payload"]["expected_degenerate_faces"])
+        self.assertEqual("degenerate_repair_commit", commit.data["operation"])
+        self.assertEqual({"preview_id": "preview-456"}, commit.data["payload"])
+        self.assertEqual("degenerate_repair_cancel", cancel.data["operation"])
+        self.assertEqual({"preview_id": "preview-456"}, cancel.data["payload"])
 
     def test_boolean_cut_preview_rejects_unknown_profile_fields_before_ipc(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
