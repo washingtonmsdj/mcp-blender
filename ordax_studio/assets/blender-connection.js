@@ -4,6 +4,7 @@
   let refreshTimer=null;
 
   const el=id=>document.getElementById(id);
+  const activeProject=()=>typeof state==='object'&&state?state.project:null;
   const api=async(name,...args)=>{
     const fn=window.pywebview?.api?.[name];
     if(typeof fn!=='function')return{ok:false,summary:`API indisponível: ${name}`};
@@ -84,6 +85,7 @@
 
   async function onAction(event){
     if(busy)return;
+    const projectAtStart=activeProject();
     const action=event.currentTarget.dataset.action;
     busy=true;
     event.currentTarget.disabled=true;
@@ -93,13 +95,15 @@
         else await api('preview_capture');
       }else if(action==='install'){
         const result=await api('blender_install_bridge');
-        render(result?.data?.connection,result?.summary);
+        if(activeProject()===projectAtStart)render(result?.data?.connection,result?.summary);
       }else if(action==='adopt'){
         const result=await api('blender_adopt',Number(event.currentTarget.dataset.pid));
+        if(activeProject()!==projectAtStart)return;
         render(result?.data,result?.summary);
         if(result?.ok&&typeof window.refreshPreview==='function')await window.refreshPreview(true);
       }else if(action==='start'){
         const result=await api('blender_start');
+        if(activeProject()!==projectAtStart)return;
         render(result?.data,result?.summary);
         if(result?.ok&&typeof window.refreshPreview==='function')await window.refreshPreview(true);
       }else{
@@ -116,11 +120,17 @@
       if(!blenderMode())render(null);
       return;
     }
+    const projectAtStart=activeProject();
     busy=true;
+    let stale=false;
     try{
       const result=await api('blender_prepare');
-      render(result?.data,result?.summary);
-    }finally{busy=false}
+      stale=activeProject()!==projectAtStart;
+      if(!stale)render(result?.data,result?.summary);
+    }finally{
+      busy=false;
+      if(stale)schedule(0);
+    }
   }
 
   function schedule(delay=120){
