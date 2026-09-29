@@ -12,7 +12,7 @@ from .project_text_actions import (
 )
 
 
-def _verify_current_sha(path, expected: str, *, label: str) -> tuple[bool, str]:
+def _verify_current_sha(path, expected: str) -> tuple[bool, str]:
     """Recheck a file immediately before mutation to narrow the stale-write window."""
     current = _sha256(path.read_bytes())
     return current == expected, current
@@ -84,7 +84,7 @@ class ProjectFileActions:
             )
 
         destination.parent.mkdir(parents=True, exist_ok=True)
-        still_current, final_sha = _verify_current_sha(source, expected, label="source")
+        still_current, final_sha = _verify_current_sha(source, expected)
         if not still_current:
             return ActionResult(
                 False,
@@ -170,7 +170,7 @@ class ProjectFileActions:
                 },
             )
 
-        still_current, final_sha = _verify_current_sha(path, expected, label="path")
+        still_current, final_sha = _verify_current_sha(path, expected)
         if not still_current:
             return ActionResult(
                 False,
