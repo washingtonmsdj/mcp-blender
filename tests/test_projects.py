@@ -213,6 +213,15 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(entries["example"]["global_actions"], [])
         self.assertTrue(registry.execute("example.observe", {}).ok)
 
+    def test_quick_git_status_is_bounded_and_ignores_untracked_files(self):
+        registry = ActionRegistry(self.config)
+        with patch("ordax_dev_agent.git_actions._run", return_value=ActionResult(True, "ok", {"stdout": " M tracked.py\n"})) as run:
+            result = registry.execute("git.quick_status", {"project": "model"})
+        self.assertTrue(result.ok)
+        command = run.call_args.args[0]
+        self.assertIn("--untracked-files=no", command)
+        self.assertEqual(3, run.call_args.kwargs["timeout"])
+
     def test_latest_preview_never_crosses_projects(self):
         registry = ActionRegistry(self.config)
         output = registry._capture_output({})

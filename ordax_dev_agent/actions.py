@@ -276,6 +276,7 @@ class ActionRegistry(
             "artifact.preview": self.artifact_preview,
             "artifact.read_chunk": self.artifact_read_chunk,
             "git.repository_info": self.git_repository_info,
+            "git.quick_status": self.git_quick_status,
             "git.status": self.git_status,
             "git.diff": self.git_diff,
             "git.sync": self.git_sync,
@@ -357,6 +358,7 @@ class ActionRegistry(
             "projects.list",
             "workspace.repository_catalog",
             "project.preview_status",
+            "git.quick_status",
         ):
             return handler(payload)
         if not self._execution_lock.acquire(blocking=False):

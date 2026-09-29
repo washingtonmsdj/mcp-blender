@@ -38,7 +38,7 @@ class OrdaxProjectHealthTests(unittest.TestCase):
                 })
                 git = ActionResult(True, "command completed", {"stdout": " M scene.blend\n"})
                 with patch.object(registry, "blender_live_status", return_value=blender), \
-                     patch.object(registry, "git_status", return_value=git):
+                     patch.object(registry, "git_quick_status", return_value=git):
                     result = registry.execute("agent.project_health", {"project": "demo"})
 
             self.assertTrue(result.ok)

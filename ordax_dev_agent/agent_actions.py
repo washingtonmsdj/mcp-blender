@@ -75,7 +75,7 @@ class AgentActions:
 
         git_enabled = (project.root / ".git").exists()
         if git_enabled:
-            git_result = self.git_status(project_payload)
+            git_result = self.git_quick_status(project_payload)
             git_stdout = str(git_result.data.get("stdout") or "") if isinstance(git_result.data, dict) else ""
             git = {
                 "enabled": True,
@@ -167,7 +167,7 @@ class AgentActions:
             return ActionResult(False, "unsupported field(s): " + ", ".join(sorted(unsupported)))
         project = self._project(payload)
         scoped = {"project": project.slug}
-        repository = self.git_repository_info(scoped)
+        repository = self.git_repository_info({**scoped, "include_status": False})
         health = self.agent_project_health(scoped)
         preview = self.project_preview_status(scoped)
         inventory = self.project_inventory({"project": project.slug, "max_depth": 2, "max_entries": 180})
@@ -188,9 +188,10 @@ class AgentActions:
 
         attention: list[str] = []
         repo_data = repository.data if repository.ok else {}
-        if repo_data.get("dirty"):
-            attention.append(f"Git has {repo_data.get('changed_entries') or 0} changed entrie(s)")
         health_data = health.data if health.ok else {}
+        health_git = health_data.get("git") or {}
+        if health_git.get("dirty"):
+            attention.append(f"Git has {health_git.get('changed_entries') or 0} tracked changed entrie(s)")
         if health_data.get("state") not in {None, "ready"}:
             attention.append(f"Project health: {health_data.get('state')}")
         for name, item in (health_data.get("adapters") or {}).items():

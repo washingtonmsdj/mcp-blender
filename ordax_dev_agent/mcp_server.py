@@ -130,6 +130,15 @@ def project_patch(
 
 
 @mcp.tool()
+def git_quick_status(project: str | None = None) -> dict:
+    """Read a bounded tracked-file Git status for responsive UI/health checks."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    result = agent.execute("git.quick_status", {"project": selected})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
 def git_status(project: str | None = None) -> dict:
     """Read bounded Git status for one ORDAX Studio project."""
     agent = registry()

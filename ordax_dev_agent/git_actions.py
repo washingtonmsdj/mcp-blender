@@ -55,6 +55,16 @@ class GitActions:
             "status_available": status_available,
         })
 
+    def git_quick_status(self, payload: dict[str, Any]) -> ActionResult:
+        """Bounded tracked-file status for responsive Studio health surfaces."""
+        project = self._project_path(payload)
+        result = _run([
+            "git", "-C", str(project), "status", "--short", "--untracked-files=no",
+        ], timeout=3)
+        if result.ok:
+            result.summary = "quick Git status ready"
+        return result
+
     def git_status(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project_path(payload)
         return _run(["git", "-C", str(project), "status", "--short"], timeout=60)
