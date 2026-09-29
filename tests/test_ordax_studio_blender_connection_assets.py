@@ -16,7 +16,7 @@ class OrdaxStudioBlenderConnectionAssetTests(unittest.TestCase):
     def test_connection_controller_exposes_all_actionable_states(self):
         root = Path(__file__).resolve().parents[1] / "ordax_studio" / "assets"
         script = (root / "blender-connection.js").read_text(encoding="utf-8")
-        for state in ("connected", "adopted", "restart_required", "ambiguous"):
+        for state in ("connected", "adopted", "restart_required", "ambiguous", "error"):
             self.assertIn(state, script)
         for api in (
             "blender_prepare",
@@ -28,6 +28,8 @@ class OrdaxStudioBlenderConnectionAssetTests(unittest.TestCase):
         self.assertIn("Adotar PID", script)
         self.assertIn("Instalar bridge", script)
         self.assertIn("Abrir Blender", script)
+        self.assertIn("Conexão Blender indisponível", script)
+        self.assertIn("renderApiResult", script)
 
     def test_connection_controller_rejects_stale_project_responses(self):
         root = Path(__file__).resolve().parents[1] / "ordax_studio" / "assets"
