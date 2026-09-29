@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import threading
 import time
@@ -75,6 +76,25 @@ class BlenderAdoptionTests(unittest.TestCase):
         self.assertEqual(config["version"], 1)
         self.assertEqual(config["projects"]["demo"]["root"], str(self.project_root.resolve()))
         self.assertEqual(config["companion_fingerprint"], "fingerprint-1")
+
+    def test_enable_timeout_is_recovered_when_probe_confirms_addon_enabled(self):
+        self.manager.enable_addon = True
+        timeout = subprocess.TimeoutExpired(cmd=["blender"], timeout=60)
+        probe = SimpleNamespace(
+            returncode=0,
+            stdout="ORDAX_STUDIO_ADDON_PRESENT=True\n",
+        )
+        with patch(
+            "ordax_dev_agent.blender_adoption.find_blender",
+            return_value=Path("C:/Blender/blender.exe"),
+        ), patch(
+            "ordax_dev_agent.blender_adoption.subprocess.run",
+            side_effect=[timeout, probe],
+        ) as run:
+            result = self.manager._enable_installed_addon()
+        self.assertTrue(result["enabled"])
+        self.assertTrue(result["enable_timed_out"])
+        self.assertEqual(2, run.call_count)
 
     def test_instances_ignore_stale_and_match_project_root(self):
         self._discovery(101)

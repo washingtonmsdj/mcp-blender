@@ -143,18 +143,49 @@ class BlenderAdoptionManager:
             "bpy.ops.wm.save_userpref(); "
             "print('ORDAX_STUDIO_ADDON_ENABLED='+str(r))"
         )
-        completed = subprocess.run(
-            [str(blender), "--background", "--python-expr", expression],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-            check=False,
-            env=env,
-        )
+        command = [str(blender), "--background", "--python-expr", expression]
+        try:
+            completed = subprocess.run(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=60,
+                check=False,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as timeout_error:
+            probe_expression = (
+                "import bpy; "
+                f"print('ORDAX_STUDIO_ADDON_PRESENT='+str('{ADDON_MODULE}' in bpy.context.preferences.addons))"
+            )
+            probe = subprocess.run(
+                [str(blender), "--background", "--python-expr", probe_expression],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=45,
+                check=False,
+                env=env,
+            )
+            probe_output = probe.stdout[-12000:]
+            if probe.returncode == 0 and "ORDAX_STUDIO_ADDON_PRESENT=True" in probe_output:
+                return {
+                    "enabled": True,
+                    "blender": str(blender),
+                    "enable_timed_out": True,
+                    "timeout_seconds": float(timeout_error.timeout or 60),
+                    "probe_output_tail": probe_output[-2000:],
+                }
+            raise RuntimeError(
+                f"Blender addon enable timed out and verification failed: {probe_output[-2000:]}"
+            )
         output = completed.stdout[-12000:]
         if completed.returncode != 0 or "ORDAX_STUDIO_ADDON_ENABLED" not in output:
             raise RuntimeError(f"Blender could not enable {ADDON_MODULE}: {output[-2000:]}")
