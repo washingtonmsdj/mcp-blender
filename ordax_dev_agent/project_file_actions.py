@@ -12,6 +12,12 @@ from .project_text_actions import (
 )
 
 
+def _verify_current_sha(path, expected: str, *, label: str) -> tuple[bool, str]:
+    """Recheck a file immediately before mutation to narrow the stale-write window."""
+    current = _sha256(path.read_bytes())
+    return current == expected, current
+
+
 class ProjectFileActions:
     def project_text_move(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
@@ -78,16 +84,34 @@ class ProjectFileActions:
             )
 
         destination.parent.mkdir(parents=True, exist_ok=True)
+        still_current, final_sha = _verify_current_sha(source, expected, label="source")
+        if not still_current:
+            return ActionResult(
+                False,
+                "source file changed immediately before move; refusing mutation",
+                {
+                    "source": source_relative.as_posix(),
+                    "expected_sha256": expected,
+                    "current_sha256": final_sha,
+                },
+            )
+        if destination.exists():
+            return ActionResult(
+                False,
+                "destination appeared before move; refusing implicit overwrite",
+                {"destination": destination_relative.as_posix()},
+            )
+
         source.replace(destination)
         if source.exists() or not destination.is_file():
             return ActionResult(False, "file move verification failed")
         after = destination.read_bytes()
         after_sha = _sha256(after)
-        if after_sha != current_sha:
+        if after_sha != expected:
             return ActionResult(
                 False,
                 "file move changed content unexpectedly",
-                {"before_sha256": current_sha, "after_sha256": after_sha},
+                {"before_sha256": expected, "after_sha256": after_sha},
             )
 
         return ActionResult(
@@ -146,6 +170,18 @@ class ProjectFileActions:
                 },
             )
 
+        still_current, final_sha = _verify_current_sha(path, expected, label="path")
+        if not still_current:
+            return ActionResult(
+                False,
+                "text file changed immediately before delete; refusing mutation",
+                {
+                    "path": relative.as_posix(),
+                    "expected_sha256": expected,
+                    "current_sha256": final_sha,
+                },
+            )
+
         path.unlink()
         if path.exists():
             return ActionResult(False, "file delete verification failed")
@@ -155,7 +191,7 @@ class ProjectFileActions:
             {
                 "project": project.slug,
                 "path": relative.as_posix(),
-                "deleted_sha256": current_sha,
+                "deleted_sha256": expected,
                 "size_bytes": len(before),
             },
         )
