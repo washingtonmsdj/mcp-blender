@@ -25,6 +25,8 @@ MAX_CUTTER_POLYGON_POINTS = 16
 MAX_CUTTER_GENERATED_FACES = 12000
 MAX_DEGENERATE_REPAIR_DISTANCE = 0.001
 MAX_DEGENERATE_REPAIR_ELEMENTS = 10000
+MAX_MERGE_BY_DISTANCE = 0.001
+MAX_MERGE_SELECTED_VERTICES = 64
 
 
 MODELING_SCHEMAS = {
@@ -239,6 +241,49 @@ MODELING_SCHEMAS = {
             "threshold": {"type": "number", "minimum": 1e-12, "maximum": MAX_DEGENERATE_REPAIR_DISTANCE},
         },
     },
+    "merge_by_distance_preview": {
+        "status": "available",
+        "action": "blender.live_merge_by_distance_preview",
+        "workflow_actions": {
+            "commit": "blender.live_merge_by_distance_commit",
+            "cancel": "blender.live_merge_by_distance_cancel",
+        },
+        "runtime_requirements": [
+            "object_mode",
+            "no_render_job",
+            "local_nonlinked_mesh_target",
+            "single_user_mesh_data",
+            "no_shape_keys",
+            "no_modifiers",
+            "expected_base_geometry_sha256_matches",
+            "explicit_vertex_selection_only",
+            "no_active_repair_preview_on_target",
+            "animated_or_constrained_target_requires_dedicated_workflow",
+        ],
+        "failure_policy": [
+            "mutate_candidate_mesh_copy_only",
+            "preserve_original_mesh_in_hidden_backup",
+            "restore_original_mesh_on_cancel_or_preview_failure",
+            "commit_only_explicitly",
+        ],
+        "runtime_guards": {
+            "max_target_faces": MAX_EVALUATED_FACES,
+            "max_distance": MAX_MERGE_BY_DISTANCE,
+            "max_selected_vertices": MAX_MERGE_SELECTED_VERTICES,
+        },
+        "description": (
+            "BlenderBench-validated Merge by Distance preview limited to explicitly selected base-mesh vertex indices. "
+            "The Blender 5.2.2 runtime verifies original identity for every unselected vertex before exposing the "
+            "candidate. Commit is explicit and cancel restores the fingerprint-identical original mesh."
+        ),
+        "required": ["expected_base_geometry_sha256", "vertex_indices"],
+        "selectors": ["object_name", "ordax_object_id"],
+        "properties": {
+            "expected_base_geometry_sha256": {"type": "sha256"},
+            "vertex_indices": {"type": "integer_array", "minimum_items": 2, "maximum_items": MAX_MERGE_SELECTED_VERTICES},
+            "distance": {"type": "number", "minimum": 1e-12, "maximum": MAX_MERGE_BY_DISTANCE},
+        },
+    },
     "add_modifier": {
         "status": "available",
         "action": "blender.live_add_modifier",
@@ -363,6 +408,23 @@ def _sha256(value: Any, field: str) -> str:
     if len(result) != 64 or any(character not in "0123456789abcdef" for character in result):
         raise ValueError(f"{field} must be a 64-character SHA-256 hex digest")
     return result
+
+
+def _vertex_index_list(value: Any, field: str) -> list[int]:
+    if not isinstance(value, list):
+        raise ValueError(f"{field} must be a list of vertex indices")
+    if len(value) < 2 or len(value) > MAX_MERGE_SELECTED_VERTICES:
+        raise ValueError(
+            f"{field} must contain between 2 and {MAX_MERGE_SELECTED_VERTICES} vertex indices"
+        )
+    normalized: list[int] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, int) or item < 0 or item > 2147483647:
+            raise ValueError(f"{field} must contain only non-negative integer vertex indices")
+        normalized.append(int(item))
+    if len(set(normalized)) != len(normalized):
+        raise ValueError(f"{field} must not contain duplicate vertex indices")
+    return sorted(normalized)
 
 
 def _vector3(
@@ -867,6 +929,37 @@ def _plan_degenerate_repair_preview(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _plan_merge_by_distance_preview(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "object_name",
+        "ordax_object_id",
+        "expected_base_geometry_sha256",
+        "vertex_indices",
+        "distance",
+    }
+    _reject_unknown_fields(payload, allowed)
+    selector = normalize_object_selector(payload)
+    expected_sha256 = _sha256(
+        payload.get("expected_base_geometry_sha256"),
+        "expected_base_geometry_sha256",
+    )
+    vertex_indices = _vertex_index_list(payload.get("vertex_indices"), "vertex_indices")
+    distance = float(
+        _bounded_number(
+            payload.get("distance", 1e-5),
+            "distance",
+            1e-12,
+            MAX_MERGE_BY_DISTANCE,
+        )
+    )
+    return {
+        **selector,
+        "expected_base_geometry_sha256": expected_sha256,
+        "vertex_indices": vertex_indices,
+        "distance": distance,
+    }
+
+
 def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "object_name",
@@ -1109,7 +1202,7 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
     normalized_operation = str(operation or "").strip().lower()
     if normalized_operation not in MODELING_SCHEMAS:
         raise ValueError(
-            "operation must be create_primitive, object_transform, surface_scatter, boolean_cut_preview, mesh_cleanup, degenerate_repair_preview, or add_modifier"
+            "operation must be create_primitive, object_transform, surface_scatter, boolean_cut_preview, mesh_cleanup, degenerate_repair_preview, merge_by_distance_preview, or add_modifier"
         )
 
     if normalized_operation == "create_primitive":
@@ -1124,6 +1217,8 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         arguments = _plan_mesh_cleanup(payload)
     elif normalized_operation == "degenerate_repair_preview":
         arguments = _plan_degenerate_repair_preview(payload)
+    elif normalized_operation == "merge_by_distance_preview":
+        arguments = _plan_merge_by_distance_preview(payload)
     else:
         arguments = _plan_modifier(payload)
 

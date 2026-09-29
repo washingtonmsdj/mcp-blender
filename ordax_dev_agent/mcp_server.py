@@ -468,6 +468,37 @@ def cancel_degenerate_repair(project: str | None = None, preview_id: str = "") -
 
 
 @mcp.tool()
+def preview_merge_by_distance(
+    project: str | None = None,
+    object_name: str = "",
+    ordax_object_id: str = "",
+    expected_base_geometry_sha256: str = "",
+    vertex_indices: list[int] | None = None,
+    distance: float = 1e-5,
+) -> dict:
+    """Preview Merge by Distance on explicit base-mesh vertex indices only."""
+    args: dict = {
+        "expected_base_geometry_sha256": expected_base_geometry_sha256,
+        "vertex_indices": list(vertex_indices or []),
+        "distance": distance,
+    }
+    args.update({"object_name": object_name} if object_name else {"ordax_object_id": ordax_object_id})
+    return _blender_action("blender.live_merge_by_distance_preview", project, args)
+
+
+@mcp.tool()
+def commit_merge_by_distance(project: str | None = None, preview_id: str = "") -> dict:
+    """Commit a reviewed explicit-selection Merge by Distance candidate."""
+    return _blender_action("blender.live_merge_by_distance_commit", project, {"preview_id": preview_id})
+
+
+@mcp.tool()
+def cancel_merge_by_distance(project: str | None = None, preview_id: str = "") -> dict:
+    """Cancel a Merge by Distance preview and restore the exact original mesh."""
+    return _blender_action("blender.live_merge_by_distance_cancel", project, {"preview_id": preview_id})
+
+
+@mcp.tool()
 def delete_object(project: str | None = None, object_name: str = "", missing_ok: bool = False) -> dict:
     """Remove one named Blender object through the bounded live mutation contract."""
     return _blender_action("blender.live_object_remove", project, {"object_names": [object_name], "missing_ok": missing_ok})

@@ -48,6 +48,7 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                         'modify_object', 'scatter_on_surface', 'preview_boolean_cut',
                         'commit_boolean_cut', 'cancel_boolean_cut', 'cleanup_mesh',
                         'preview_degenerate_repair', 'commit_degenerate_repair', 'cancel_degenerate_repair',
+                        'preview_merge_by_distance', 'commit_merge_by_distance', 'cancel_merge_by_distance',
                         'delete_object', 'set_material', 'batch_edit',
                         'save_blender', 'run_blender_project_script',
                     ):

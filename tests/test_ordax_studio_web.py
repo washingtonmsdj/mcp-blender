@@ -95,6 +95,14 @@ class OrdaxStudioWebTests(unittest.TestCase):
             },
             tools["degenerate_repair_preview"]["workflow_actions"],
         )
+        self.assertEqual("available", tools["merge_by_distance_preview"]["status"])
+        self.assertEqual(
+            {
+                "commit": "blender.live_merge_by_distance_commit",
+                "cancel": "blender.live_merge_by_distance_cancel",
+            },
+            tools["merge_by_distance_preview"]["workflow_actions"],
+        )
         self.assertEqual(
             {"commit": "blender.live_boolean_cut_commit", "cancel": "blender.live_boolean_cut_cancel"},
             tools["boolean_cut_preview"]["workflow_actions"],

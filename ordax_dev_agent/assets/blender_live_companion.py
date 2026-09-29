@@ -181,6 +181,9 @@ CAPABILITIES = [
     "degenerate_repair_preview",
     "degenerate_repair_commit",
     "degenerate_repair_cancel",
+    "merge_by_distance_preview",
+    "merge_by_distance_commit",
+    "merge_by_distance_cancel",
     "material_apply",
     "create_camera",
     "create_light",
@@ -2144,44 +2147,46 @@ def _degenerate_issue_counts(mesh, threshold: float) -> dict:
         bm.free()
 
 
-def _degenerate_preview_backups(preview_id: str) -> list:
+def _mesh_repair_preview_backups(kind: str, preview_id: str) -> list:
+    preview_key = f"ordax_{kind}_preview_id"
+    backup_key = f"ordax_{kind}_backup"
     return [
         obj
         for obj in bpy.data.objects
-        if str(obj.get("ordax_degenerate_preview_id") or "") == preview_id
-        and bool(obj.get("ordax_degenerate_backup"))
+        if str(obj.get(preview_key) or "") == preview_id
+        and bool(obj.get(backup_key))
     ]
 
 
-def _degenerate_preview_target(preview_id: str):
-    backups = _degenerate_preview_backups(preview_id)
+def _mesh_repair_preview_target(kind: str, preview_id: str):
+    backups = _mesh_repair_preview_backups(kind, preview_id)
     if len(backups) != 1:
-        raise ValueError("degenerate repair preview was not found or is inconsistent")
+        raise ValueError(f"{kind} repair preview was not found or is inconsistent")
     backup = backups[0]
-    target_name = str(backup.get("ordax_degenerate_target") or "")
+    target_name = str(backup.get(f"ordax_{kind}_target") or "")
     target = bpy.context.scene.objects.get(target_name)
     if target is None:
-        raise ValueError("degenerate repair preview target no longer exists")
-    if str(target.get("ordax_degenerate_preview_id") or "") != preview_id:
-        raise ValueError("degenerate repair preview target metadata is inconsistent")
+        raise ValueError(f"{kind} repair preview target no longer exists")
+    if str(target.get(f"ordax_{kind}_preview_id") or "") != preview_id:
+        raise ValueError(f"{kind} repair preview target metadata is inconsistent")
     return target, backup
 
 
-def _clear_degenerate_preview_metadata(target) -> None:
-    for key in (
-        "ordax_degenerate_preview_id",
-        "ordax_degenerate_preview_state",
-        "ordax_degenerate_original_sha256",
-        "ordax_degenerate_candidate_sha256",
-        "ordax_degenerate_backup_object",
+def _clear_mesh_repair_preview_metadata(target, kind: str) -> None:
+    for suffix in (
+        "preview_id",
+        "preview_state",
+        "original_sha256",
+        "candidate_sha256",
+        "backup_object",
     ):
         try:
-            del target[key]
+            del target[f"ordax_{kind}_{suffix}"]
         except Exception:
             pass
 
 
-def _remove_degenerate_backup(backup) -> None:
+def _remove_mesh_repair_backup(backup) -> None:
     collections = list(backup.users_collection)
     bpy.data.objects.remove(backup, do_unlink=True)
     for collection in collections:
@@ -2190,6 +2195,22 @@ def _remove_degenerate_backup(backup) -> None:
                 bpy.data.collections.remove(collection)
         except Exception:
             pass
+
+
+def _degenerate_preview_backups(preview_id: str) -> list:
+    return _mesh_repair_preview_backups("degenerate", preview_id)
+
+
+def _degenerate_preview_target(preview_id: str):
+    return _mesh_repair_preview_target("degenerate", preview_id)
+
+
+def _clear_degenerate_preview_metadata(target) -> None:
+    _clear_mesh_repair_preview_metadata(target, "degenerate")
+
+
+def _remove_degenerate_backup(backup) -> None:
+    _remove_mesh_repair_backup(backup)
 
 
 def _modeling_mesh_cleanup(command: dict) -> None:
@@ -2338,14 +2359,14 @@ def _modeling_degenerate_repair_preview(command: dict) -> None:
             raise ValueError("degenerate repair preview does not support shape keys")
         if len(obj.modifiers) > 0:
             raise ValueError("degenerate repair preview requires a target without modifiers")
-        if str(obj.get("ordax_degenerate_preview_id") or ""):
-            raise ValueError("target already has an active degenerate repair preview")
+        if str(obj.get("ordax_degenerate_preview_id") or "") or str(obj.get("ordax_merge_preview_id") or ""):
+            raise ValueError("target already has an active mesh-repair preview")
         if any(
-            str(item.get("ordax_degenerate_target") or "") == obj.name
+            str(item.get("ordax_degenerate_target") or item.get("ordax_merge_target") or "") == obj.name
             for item in bpy.data.objects
-            if bool(item.get("ordax_degenerate_backup"))
+            if bool(item.get("ordax_degenerate_backup")) or bool(item.get("ordax_merge_backup"))
         ):
-            raise ValueError("target already has an active degenerate repair backup")
+            raise ValueError("target already has an active mesh-repair backup")
 
         max_faces = int(getattr(_MODELING_CONTRACTS, "MAX_EVALUATED_FACES", 200000))
         if len(obj.data.polygons) > max_faces:
@@ -2563,6 +2584,292 @@ def _modeling_degenerate_repair_cancel(command: dict) -> None:
             False,
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
             operation="degenerate_repair_cancel",
+        )
+
+
+def _modeling_merge_by_distance_preview(command: dict) -> None:
+    command_id = command["id"]
+    obj = None
+    original_mesh = None
+    candidate_mesh = None
+    backup = None
+    collection = None
+    before = None
+    try:
+        _modeling_runtime_preconditions()
+        plan = _modeling_plan_from_command("merge_by_distance_preview", command)
+        if not plan["executable"]:
+            raise ValueError(
+                f"{plan['status']}: merge-by-distance preview is not enabled for execution"
+            )
+        arguments = plan["arguments"]
+        obj = _resolve_object(arguments)
+        if (
+            obj.type != "MESH"
+            or obj.library is not None
+            or obj.override_library is not None
+            or getattr(obj.data, "library", None) is not None
+        ):
+            raise ValueError("merge-by-distance target must be an existing local, non-linked mesh object")
+        if obj.animation_data is not None or len(obj.constraints) > 0:
+            raise ValueError("animated or constrained merge targets require a dedicated workflow")
+        if getattr(obj.data, "users", 0) != 1:
+            raise ValueError("merge-by-distance preview requires single-user mesh data")
+        if getattr(obj.data, "shape_keys", None) is not None:
+            raise ValueError("merge-by-distance preview does not support shape keys")
+        if len(obj.modifiers) > 0:
+            raise ValueError("merge-by-distance preview requires a target without modifiers")
+        if str(obj.get("ordax_merge_preview_id") or "") or str(obj.get("ordax_degenerate_preview_id") or ""):
+            raise ValueError("target already has an active mesh-repair preview")
+        if any(
+            str(item.get("ordax_merge_target") or item.get("ordax_degenerate_target") or "") == obj.name
+            for item in bpy.data.objects
+            if bool(item.get("ordax_merge_backup")) or bool(item.get("ordax_degenerate_backup"))
+        ):
+            raise ValueError("target already has an active mesh-repair backup")
+
+        max_faces = int(getattr(_MODELING_CONTRACTS, "MAX_EVALUATED_FACES", 200000))
+        if len(obj.data.polygons) > max_faces:
+            raise ValueError("merge-by-distance target exceeds interactive face budget")
+        current_sha256, current_mesh_counts = _mesh_fingerprint(obj, evaluated=False)
+        if current_sha256 != arguments["expected_base_geometry_sha256"]:
+            raise ValueError("stale merge-by-distance preview refused: base geometry fingerprint changed")
+        vertex_indices = list(arguments["vertex_indices"])
+        vertex_count = len(obj.data.vertices)
+        if not vertex_indices or vertex_indices[-1] >= vertex_count:
+            raise ValueError("merge-by-distance vertex index is outside the current base mesh")
+        selected_before = [
+            {
+                "vertex_index": int(index),
+                "local_coordinate": [round(float(value), 12) for value in obj.data.vertices[index].co],
+            }
+            for index in vertex_indices
+        ]
+
+        before = _object_details(obj)
+        original_mesh = obj.data
+        candidate_mesh = original_mesh.copy()
+        candidate_mesh.name = f"__ordax_merge_candidate_{str(command_id)[:12]}"
+        work = bmesh.new()
+        unselected_vertices_verified = 0
+        try:
+            work.from_mesh(candidate_mesh)
+            work.verts.ensure_lookup_table()
+            original_index_layer = work.verts.layers.int.new("__ordax_original_index")
+            for vertex in work.verts:
+                vertex[original_index_layer] = int(vertex.index) + 1
+            selected_set = set(vertex_indices)
+            selected = [work.verts[index] for index in vertex_indices]
+            bmesh.ops.remove_doubles(
+                work,
+                verts=selected,
+                dist=float(arguments["distance"]),
+            )
+            remaining_original_ids = {
+                int(vertex[original_index_layer])
+                for vertex in work.verts
+                if int(vertex[original_index_layer]) > 0
+            }
+            missing_unselected = [
+                index
+                for index in range(vertex_count)
+                if index not in selected_set and (index + 1) not in remaining_original_ids
+            ]
+            if missing_unselected:
+                raise RuntimeError(
+                    "merge-by-distance preview changed unselected vertex identity: "
+                    + ", ".join(str(index) for index in missing_unselected[:16])
+                )
+            unselected_vertices_verified = vertex_count - len(vertex_indices)
+            work.verts.layers.int.remove(original_index_layer)
+            work.to_mesh(candidate_mesh)
+            candidate_mesh.update()
+        finally:
+            work.free()
+        merged_vertices = int(current_mesh_counts.get("vertices", 0)) - len(candidate_mesh.vertices)
+        if merged_vertices <= 0:
+            raise ValueError("merge-by-distance preview selected vertices produced no merge")
+        if merged_vertices >= len(vertex_indices):
+            raise RuntimeError("merge-by-distance preview removed more selected vertices than allowed")
+
+        preview_id = str(command_id)
+        collection = bpy.data.collections.new(f"__ORDAX_MERGE_PREVIEW_{preview_id[:12]}")
+        bpy.context.scene.collection.children.link(collection)
+        backup = bpy.data.objects.new(f"__ordax_merge_backup_{preview_id[:12]}", original_mesh)
+        collection.objects.link(backup)
+        backup.hide_render = True
+        backup.hide_set(True)
+        backup["ordax_merge_preview_id"] = preview_id
+        backup["ordax_merge_backup"] = True
+        backup["ordax_merge_target"] = obj.name
+        backup["ordax_merge_original_sha256"] = current_sha256
+
+        obj.data = candidate_mesh
+        bpy.context.view_layer.update()
+        candidate_sha256, candidate_counts = _mesh_fingerprint(obj, evaluated=False)
+        obj["ordax_merge_preview_id"] = preview_id
+        obj["ordax_merge_preview_state"] = "preview"
+        obj["ordax_merge_original_sha256"] = current_sha256
+        obj["ordax_merge_candidate_sha256"] = candidate_sha256
+        obj["ordax_merge_backup_object"] = backup.name
+        _response(
+            command_id,
+            True,
+            "Blender merge-by-distance preview created on explicitly selected vertices",
+            operation="merge_by_distance_preview",
+            preview_id=preview_id,
+            state="preview",
+            distance=arguments["distance"],
+            selected_vertex_indices=vertex_indices,
+            selected_vertices_before=selected_before,
+            merged_vertices=merged_vertices,
+            unselected_vertices_preserved=True,
+            unselected_vertices_verified=unselected_vertices_verified,
+            before_geometry_sha256=current_sha256,
+            candidate_geometry_sha256=candidate_sha256,
+            before_mesh=current_mesh_counts,
+            candidate_mesh=candidate_counts,
+            before=before,
+            object=_object_details(obj),
+        )
+    except Exception as error:
+        if obj is not None and original_mesh is not None and candidate_mesh is not None:
+            try:
+                if obj.data == candidate_mesh:
+                    obj.data = original_mesh
+                    bpy.context.view_layer.update()
+            except Exception:
+                pass
+        if obj is not None:
+            _clear_mesh_repair_preview_metadata(obj, "merge")
+        if backup is not None:
+            try:
+                _remove_mesh_repair_backup(backup)
+            except Exception:
+                pass
+        elif collection is not None:
+            try:
+                if len(collection.objects) == 0 and len(collection.children) == 0:
+                    bpy.data.collections.remove(collection)
+            except Exception:
+                pass
+        if candidate_mesh is not None and getattr(candidate_mesh, "users", 0) == 0:
+            try:
+                bpy.data.meshes.remove(candidate_mesh)
+            except Exception:
+                pass
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="merge_by_distance_preview",
+            before=before,
+        )
+
+
+def _modeling_merge_by_distance_commit(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        _modeling_runtime_preconditions()
+        preview_id = _normalize_preview_id(command)
+        target, backup = _mesh_repair_preview_target("merge", preview_id)
+        if str(target.get("ordax_merge_preview_state") or "") != "preview":
+            raise ValueError("merge-by-distance preview state is invalid")
+        stored_candidate_sha256 = str(target.get("ordax_merge_candidate_sha256") or "")
+        stored_original_sha256 = str(target.get("ordax_merge_original_sha256") or "")
+        current_candidate_sha256, candidate_counts = _mesh_fingerprint(target, evaluated=False)
+        original_sha256, original_counts = _mesh_fingerprint(backup, evaluated=False)
+        if current_candidate_sha256 != stored_candidate_sha256:
+            raise ValueError("merge-by-distance candidate changed after preview; start a new preview")
+        if original_sha256 != stored_original_sha256:
+            raise ValueError("merge-by-distance original backup changed after preview")
+        candidate_mesh = target.data
+        original_mesh = backup.data
+        original_name = original_mesh.name
+        _remove_mesh_repair_backup(backup)
+        if getattr(original_mesh, "users", 0) == 0:
+            try:
+                bpy.data.meshes.remove(original_mesh)
+            except Exception:
+                pass
+        try:
+            candidate_mesh.name = original_name
+        except Exception:
+            pass
+        _clear_mesh_repair_preview_metadata(target, "merge")
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender merge-by-distance preview committed",
+            operation="merge_by_distance_commit",
+            preview_id=preview_id,
+            state="committed",
+            original_geometry_sha256=stored_original_sha256,
+            committed_geometry_sha256=current_candidate_sha256,
+            original_mesh=original_counts,
+            committed_mesh=candidate_counts,
+            object=_object_details(target),
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="merge_by_distance_commit",
+        )
+
+
+def _modeling_merge_by_distance_cancel(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        _modeling_runtime_preconditions()
+        preview_id = _normalize_preview_id(command)
+        target, backup = _mesh_repair_preview_target("merge", preview_id)
+        if str(target.get("ordax_merge_preview_state") or "") != "preview":
+            raise ValueError("merge-by-distance preview state is invalid")
+        stored_original_sha256 = str(target.get("ordax_merge_original_sha256") or "")
+        original_mesh = backup.data
+        original_sha256, original_counts = _mesh_fingerprint(backup, evaluated=False)
+        if original_sha256 != stored_original_sha256:
+            raise ValueError("merge-by-distance original backup changed after preview")
+        candidate_mesh = target.data
+        discarded_sha256, candidate_counts = _mesh_fingerprint(target, evaluated=False)
+        target.data = original_mesh
+        bpy.context.view_layer.update()
+        restored_sha256, restored_counts = _mesh_fingerprint(target, evaluated=False)
+        if restored_sha256 != stored_original_sha256:
+            target.data = candidate_mesh
+            bpy.context.view_layer.update()
+            raise RuntimeError("merge-by-distance cancel could not restore the original geometry fingerprint")
+        _clear_mesh_repair_preview_metadata(target, "merge")
+        _remove_mesh_repair_backup(backup)
+        if candidate_mesh is not original_mesh and getattr(candidate_mesh, "users", 0) == 0:
+            try:
+                bpy.data.meshes.remove(candidate_mesh)
+            except Exception:
+                pass
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender merge-by-distance preview cancelled and original mesh restored",
+            operation="merge_by_distance_cancel",
+            preview_id=preview_id,
+            state="cancelled",
+            restored_geometry_sha256=restored_sha256,
+            discarded_candidate_sha256=discarded_sha256,
+            original_mesh=original_counts,
+            discarded_candidate_mesh=candidate_counts,
+            restored_mesh=restored_counts,
+            object=_object_details(target),
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="merge_by_distance_cancel",
         )
 
 
@@ -6019,6 +6326,12 @@ def _process(path: Path) -> None:
             _modeling_degenerate_repair_commit(command)
         elif operation == "degenerate_repair_cancel":
             _modeling_degenerate_repair_cancel(command)
+        elif operation == "merge_by_distance_preview":
+            _modeling_merge_by_distance_preview(command)
+        elif operation == "merge_by_distance_commit":
+            _modeling_merge_by_distance_commit(command)
+        elif operation == "merge_by_distance_cancel":
+            _modeling_merge_by_distance_cancel(command)
         elif operation == "material_apply":
             _material_apply(command)
         elif operation == "create_camera":
@@ -6144,6 +6457,12 @@ def _run_modeling_smoke_fixture() -> dict:
         "degenerate_preview_commit": "smoke-model-degenerate-preview-commit",
         "degenerate_commit": "smoke-model-degenerate-commit",
         "degenerate_stale": "smoke-model-degenerate-stale",
+        "merge_preview": "smoke-model-merge-preview",
+        "merge_cancel": "smoke-model-merge-cancel",
+        "merge_preview_commit": "smoke-model-merge-preview-commit",
+        "merge_commit": "smoke-model-merge-commit",
+        "merge_stale": "smoke-model-merge-stale",
+        "merge_noop": "smoke-model-merge-noop",
     }
     result_paths = {
         key: RESULTS / f"{identifier}.json"
@@ -6151,6 +6470,7 @@ def _run_modeling_smoke_fixture() -> dict:
     }
     temporary_name = "SmokePrimitive"
     degenerate_name = "SmokeDegenerate"
+    merge_name = "SmokeMergeSelection"
     summaries = {}
 
     if bpy.context.scene.objects.get(temporary_name) is not None:
@@ -6160,6 +6480,10 @@ def _run_modeling_smoke_fixture() -> dict:
     if bpy.context.scene.objects.get(degenerate_name) is not None:
         raise RuntimeError(
             f"modeling smoke degenerate object already exists: {degenerate_name}"
+        )
+    if bpy.context.scene.objects.get(merge_name) is not None:
+        raise RuntimeError(
+            f"modeling smoke merge object already exists: {merge_name}"
         )
 
     try:
@@ -6577,6 +6901,114 @@ def _run_modeling_smoke_fixture() -> dict:
         )
         _process(degenerate_stale_path)
 
+        merge_mesh = bpy.data.meshes.new(merge_name + "Mesh")
+        merge_mesh.from_pydata(
+            [
+                (0.0, 0.0, 0.0),
+                (0.00005, 0.0, 0.0),
+                (0.00004, 0.0, 0.0),
+                (1.0, 0.0, 0.0),
+                (0.0, 1.0, 0.0),
+                (1.0, 1.0, 0.0),
+            ],
+            [(0, 3), (1, 3), (2, 3), (0, 4), (3, 5), (4, 5)],
+            [(0, 3, 5, 4)],
+        )
+        merge_mesh.update()
+        merge_object = bpy.data.objects.new(merge_name, merge_mesh)
+        bpy.context.scene.collection.objects.link(merge_object)
+        bpy.context.view_layer.update()
+        merge_original_sha, merge_original_counts = _mesh_fingerprint(merge_object, evaluated=False)
+        merge_arguments = {
+            "object_name": merge_name,
+            "expected_base_geometry_sha256": merge_original_sha,
+            "vertex_indices": [0, 1],
+            "distance": 0.0001,
+        }
+
+        merge_preview_path = INBOX / f"{smoke_ids['merge_preview']}.json"
+        _write_json_atomic(
+            merge_preview_path,
+            {
+                "id": smoke_ids["merge_preview"],
+                "operation": "merge_by_distance_preview",
+                **merge_arguments,
+            },
+        )
+        _process(merge_preview_path)
+        merge_preview_result = json.loads(
+            result_paths["merge_preview"].read_text(encoding="utf-8-sig")
+        )
+        merge_unselected_survived_preview = bool(
+            merge_preview_result.get("unselected_vertices_preserved")
+            and int(merge_preview_result.get("unselected_vertices_verified") or 0) == 4
+        )
+
+        merge_cancel_path = INBOX / f"{smoke_ids['merge_cancel']}.json"
+        _write_json_atomic(
+            merge_cancel_path,
+            {
+                "id": smoke_ids["merge_cancel"],
+                "operation": "merge_by_distance_cancel",
+                "preview_id": smoke_ids["merge_preview"],
+            },
+        )
+        _process(merge_cancel_path)
+
+        merge_noop_path = INBOX / f"{smoke_ids['merge_noop']}.json"
+        _write_json_atomic(
+            merge_noop_path,
+            {
+                "id": smoke_ids["merge_noop"],
+                "operation": "merge_by_distance_preview",
+                "object_name": merge_name,
+                "expected_base_geometry_sha256": merge_original_sha,
+                "vertex_indices": [3, 4],
+                "distance": 0.0001,
+            },
+        )
+        _process(merge_noop_path)
+
+        merge_preview_commit_path = INBOX / f"{smoke_ids['merge_preview_commit']}.json"
+        _write_json_atomic(
+            merge_preview_commit_path,
+            {
+                "id": smoke_ids["merge_preview_commit"],
+                "operation": "merge_by_distance_preview",
+                **merge_arguments,
+            },
+        )
+        _process(merge_preview_commit_path)
+        merge_preview_commit_result = json.loads(
+            result_paths["merge_preview_commit"].read_text(encoding="utf-8-sig")
+        )
+        merge_unselected_survived_commit = bool(
+            merge_preview_commit_result.get("unselected_vertices_preserved")
+            and int(merge_preview_commit_result.get("unselected_vertices_verified") or 0) == 4
+        )
+
+        merge_commit_path = INBOX / f"{smoke_ids['merge_commit']}.json"
+        _write_json_atomic(
+            merge_commit_path,
+            {
+                "id": smoke_ids["merge_commit"],
+                "operation": "merge_by_distance_commit",
+                "preview_id": smoke_ids["merge_preview_commit"],
+            },
+        )
+        _process(merge_commit_path)
+
+        merge_stale_path = INBOX / f"{smoke_ids['merge_stale']}.json"
+        _write_json_atomic(
+            merge_stale_path,
+            {
+                "id": smoke_ids["merge_stale"],
+                "operation": "merge_by_distance_preview",
+                **merge_arguments,
+            },
+        )
+        _process(merge_stale_path)
+
         for key, result_path in result_paths.items():
             if not result_path.is_file():
                 raise RuntimeError(
@@ -6860,6 +7292,57 @@ def _run_modeling_smoke_fixture() -> dict:
         if committed_issues["zero_length_edges"] or committed_issues["degenerate_faces"]:
             raise RuntimeError("degenerate repair commit left diagnosed degenerate geometry")
 
+        merge_preview = summaries["merge_preview"]
+        if not bool(merge_preview.get("ok")) or merge_preview.get("state") != "preview":
+            raise RuntimeError("merge-by-distance preview smoke failed")
+        if merge_preview.get("selected_vertex_indices") != [0, 1]:
+            raise RuntimeError("merge-by-distance preview did not preserve the explicit selection")
+        if int(merge_preview.get("merged_vertices") or 0) != 1:
+            raise RuntimeError("merge-by-distance preview did not merge exactly one selected vertex")
+        if int((merge_preview.get("before_mesh") or {}).get("vertices") or 0) != 6:
+            raise RuntimeError("merge-by-distance preview did not report the expected six-vertex pre-state")
+        if int((merge_preview.get("candidate_mesh") or {}).get("vertices") or 0) != 5:
+            raise RuntimeError("merge-by-distance preview did not report the expected five-vertex candidate")
+        if not merge_unselected_survived_preview:
+            raise RuntimeError("merge-by-distance preview incorrectly merged an unselected nearby vertex")
+
+        merge_cancel = summaries["merge_cancel"]
+        if not bool(merge_cancel.get("ok")) or merge_cancel.get("state") != "cancelled":
+            raise RuntimeError("merge-by-distance cancel smoke failed")
+        if merge_cancel.get("restored_geometry_sha256") != merge_original_sha:
+            raise RuntimeError("merge-by-distance cancel did not restore the exact original fingerprint")
+        if _mesh_repair_preview_backups("merge", smoke_ids["merge_preview"]):
+            raise RuntimeError("merge-by-distance cancel left its hidden backup in the scene")
+
+        merge_noop = summaries["merge_noop"]
+        if bool(merge_noop.get("ok")):
+            raise RuntimeError("merge-by-distance no-op selection was incorrectly accepted")
+        if "produced no merge" not in str(merge_noop.get("summary") or ""):
+            raise RuntimeError("merge-by-distance no-op rejection did not report that no merge occurred")
+
+        merge_preview_commit = summaries["merge_preview_commit"]
+        if not bool(merge_preview_commit.get("ok")):
+            raise RuntimeError("second merge-by-distance preview for commit failed")
+        merge_commit = summaries["merge_commit"]
+        if not bool(merge_commit.get("ok")) or merge_commit.get("state") != "committed":
+            raise RuntimeError("merge-by-distance commit smoke failed")
+        if merge_commit.get("committed_geometry_sha256") == merge_original_sha:
+            raise RuntimeError("merge-by-distance commit did not preserve the candidate geometry")
+        if merge_commit.get("committed_geometry_sha256") != merge_preview_commit.get("candidate_geometry_sha256"):
+            raise RuntimeError("merge-by-distance commit changed the reviewed candidate fingerprint")
+        if int((merge_commit.get("committed_mesh") or {}).get("vertices") or 0) != 5:
+            raise RuntimeError("merge-by-distance commit did not preserve the five-vertex candidate")
+        if not merge_unselected_survived_commit:
+            raise RuntimeError("merge-by-distance commit incorrectly removed an unselected nearby vertex")
+        if _mesh_repair_preview_backups("merge", smoke_ids["merge_preview_commit"]):
+            raise RuntimeError("merge-by-distance commit left its hidden backup in the scene")
+
+        merge_stale = summaries["merge_stale"]
+        if bool(merge_stale.get("ok")):
+            raise RuntimeError("stale merge-by-distance preview was incorrectly accepted")
+        if "fingerprint changed" not in str(merge_stale.get("summary") or ""):
+            raise RuntimeError("stale merge-by-distance preview did not report fingerprint mismatch")
+
         trajectory_ids = set()
         if TRAJECTORY.is_file():
             for line in TRAJECTORY.read_text(encoding="utf-8-sig").splitlines():
@@ -6911,6 +7394,16 @@ def _run_modeling_smoke_fixture() -> dict:
             "degenerate_stale_guard": True,
             "degenerate_before_issues": preview_before,
             "degenerate_candidate_issues": preview_after,
+            "merge_preview_positive": True,
+            "merge_cancel_rollback": True,
+            "merge_commit_positive": True,
+            "merge_stale_guard": True,
+            "merge_noop_guard": True,
+            "merge_explicit_selection_preserved": True,
+            "merge_unselected_survived_preview": merge_unselected_survived_preview,
+            "merge_unselected_survived_commit": merge_unselected_survived_commit,
+            "merge_original_vertices": int(merge_original_counts.get("vertices") or 0),
+            "merge_candidate_vertices": int((merge_preview.get("candidate_mesh") or {}).get("vertices") or 0),
             "dispatcher_journaled": True,
             "object_name": object_name,
             "location": current.get("location"),
@@ -6955,6 +7448,30 @@ def _run_modeling_smoke_fixture() -> dict:
         if degenerate_object is not None:
             mesh = degenerate_object.data if degenerate_object.type == "MESH" else None
             bpy.data.objects.remove(degenerate_object, do_unlink=True)
+            if mesh is not None and getattr(mesh, "users", 0) == 0:
+                bpy.data.meshes.remove(mesh)
+        for backup in list(bpy.data.objects):
+            if (
+                bool(backup.get("ordax_merge_backup"))
+                and str(backup.get("ordax_merge_target") or "") == merge_name
+            ):
+                backup_mesh = backup.data if backup.type == "MESH" else None
+                try:
+                    _remove_mesh_repair_backup(backup)
+                except Exception:
+                    try:
+                        bpy.data.objects.remove(backup, do_unlink=True)
+                    except Exception:
+                        pass
+                if backup_mesh is not None and getattr(backup_mesh, "users", 0) == 0:
+                    try:
+                        bpy.data.meshes.remove(backup_mesh)
+                    except Exception:
+                        pass
+        merge_object = bpy.context.scene.objects.get(merge_name)
+        if merge_object is not None:
+            mesh = merge_object.data if merge_object.type == "MESH" else None
+            bpy.data.objects.remove(merge_object, do_unlink=True)
             if mesh is not None and getattr(mesh, "users", 0) == 0:
                 bpy.data.meshes.remove(mesh)
         temporary = bpy.context.scene.objects.get(temporary_name)

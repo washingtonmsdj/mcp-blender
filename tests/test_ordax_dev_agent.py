@@ -106,6 +106,9 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_degenerate_repair_preview", result.data["actions"])
             self.assertIn("blender.live_degenerate_repair_commit", result.data["actions"])
             self.assertIn("blender.live_degenerate_repair_cancel", result.data["actions"])
+            self.assertIn("blender.live_merge_by_distance_preview", result.data["actions"])
+            self.assertIn("blender.live_merge_by_distance_commit", result.data["actions"])
+            self.assertIn("blender.live_merge_by_distance_cancel", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
@@ -287,6 +290,18 @@ class AgentActionRegistryTests(unittest.TestCase):
                 },
                 tools["degenerate_repair_preview"]["workflow_actions"],
             )
+            self.assertEqual("available", tools["merge_by_distance_preview"]["status"])
+            self.assertEqual(
+                "blender.live_merge_by_distance_preview",
+                tools["merge_by_distance_preview"]["action"],
+            )
+            self.assertEqual(
+                {
+                    "commit": "blender.live_merge_by_distance_commit",
+                    "cancel": "blender.live_merge_by_distance_cancel",
+                },
+                tools["merge_by_distance_preview"]["workflow_actions"],
+            )
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["create_primitive"],
@@ -310,6 +325,10 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["degenerate_repair_preview"],
+            )
+            self.assertEqual(
+                "available",
+                result.data["mutation_policy"]["merge_by_distance_preview"],
             )
 
     def test_create_primitive_normalizes_and_dispatches(self) -> None:
@@ -540,6 +559,45 @@ class AgentActionRegistryTests(unittest.TestCase):
         self.assertEqual({"preview_id": "preview-456"}, commit.data["payload"])
         self.assertEqual("degenerate_repair_cancel", cancel.data["operation"])
         self.assertEqual({"preview_id": "preview-456"}, cancel.data["payload"])
+
+    def test_merge_by_distance_preview_and_transitions_dispatch_after_promotion(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={"operation": operation, "payload": payload, "timeout_seconds": timeout_seconds},
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                preview = registry.execute(
+                    "blender.live_merge_by_distance_preview",
+                    {
+                        "object_name": "Body",
+                        "expected_base_geometry_sha256": "b" * 64,
+                        "vertex_indices": [2, 1],
+                        "distance": 0.0001,
+                    },
+                )
+                commit = registry.execute(
+                    "blender.live_merge_by_distance_commit",
+                    {"preview_id": "preview-789"},
+                )
+                cancel = registry.execute(
+                    "blender.live_merge_by_distance_cancel",
+                    {"preview_id": "preview-789"},
+                )
+        self.assertTrue(preview.ok)
+        self.assertEqual("merge_by_distance_preview", preview.data["operation"])
+        self.assertEqual([1, 2], preview.data["payload"]["vertex_indices"])
+        self.assertEqual(0.0001, preview.data["payload"]["distance"])
+        self.assertEqual("merge_by_distance_commit", commit.data["operation"])
+        self.assertEqual({"preview_id": "preview-789"}, commit.data["payload"])
+        self.assertEqual("merge_by_distance_cancel", cancel.data["operation"])
+        self.assertEqual({"preview_id": "preview-789"}, cancel.data["payload"])
 
     def test_boolean_cut_preview_rejects_unknown_profile_fields_before_ipc(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

@@ -805,6 +805,7 @@ class BlenderActions:
                     "boolean_cut_preview": modeling_schemas()["boolean_cut_preview"]["status"],
                     "mesh_cleanup": modeling_schemas()["mesh_cleanup"]["status"],
                     "degenerate_repair_preview": modeling_schemas()["degenerate_repair_preview"]["status"],
+                    "merge_by_distance_preview": modeling_schemas()["merge_by_distance_preview"]["status"],
                     "add_modifier": "available",
                 },
             },
@@ -1157,7 +1158,7 @@ class BlenderActions:
             timeout_seconds=float(payload.get("timeout_seconds", 60)),
         )
 
-    def _degenerate_repair_transition(self, payload: dict[str, Any], operation: str) -> ActionResult:
+    def _mesh_repair_transition(self, payload: dict[str, Any], operation: str) -> ActionResult:
         supported = {"project", "timeout_seconds", "preview_id"}
         unsupported = sorted(set(payload) - supported)
         if unsupported:
@@ -1172,10 +1173,33 @@ class BlenderActions:
         )
 
     def blender_live_degenerate_repair_commit(self, payload: dict[str, Any]) -> ActionResult:
-        return self._degenerate_repair_transition(payload, "degenerate_repair_commit")
+        return self._mesh_repair_transition(payload, "degenerate_repair_commit")
 
     def blender_live_degenerate_repair_cancel(self, payload: dict[str, Any]) -> ActionResult:
-        return self._degenerate_repair_transition(payload, "degenerate_repair_cancel")
+        return self._mesh_repair_transition(payload, "degenerate_repair_cancel")
+
+    def blender_live_merge_by_distance_preview(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            plan = plan_modeling_operation("merge_by_distance_preview", payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        if not plan["executable"]:
+            return ActionResult(
+                False,
+                f"{plan['status']}: merge-by-distance preview is not enabled for execution",
+                {"plan": plan},
+            )
+        return self._blender_live(payload).request(
+            "merge_by_distance_preview",
+            plan["arguments"],
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+
+    def blender_live_merge_by_distance_commit(self, payload: dict[str, Any]) -> ActionResult:
+        return self._mesh_repair_transition(payload, "merge_by_distance_commit")
+
+    def blender_live_merge_by_distance_cancel(self, payload: dict[str, Any]) -> ActionResult:
+        return self._mesh_repair_transition(payload, "merge_by_distance_cancel")
 
     def blender_live_material_apply(self, payload: dict[str, Any]) -> ActionResult:
         try:
@@ -1406,6 +1430,9 @@ class BlenderActions:
             "degenerate_repair_preview": self.blender_live_degenerate_repair_preview,
             "degenerate_repair_commit": self.blender_live_degenerate_repair_commit,
             "degenerate_repair_cancel": self.blender_live_degenerate_repair_cancel,
+            "merge_by_distance_preview": self.blender_live_merge_by_distance_preview,
+            "merge_by_distance_commit": self.blender_live_merge_by_distance_commit,
+            "merge_by_distance_cancel": self.blender_live_merge_by_distance_cancel,
             "material_apply": self.blender_live_material_apply,
             "create_camera": self.blender_live_create_camera,
             "create_light": self.blender_live_create_light,

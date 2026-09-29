@@ -478,6 +478,61 @@ class BlenderModelingContractTests(unittest.TestCase):
                 },
             )
 
+    def test_merge_by_distance_preview_plan_is_executable_after_blenderbench_promotion(self) -> None:
+        digest = "9" * 64
+        plan = plan_modeling_operation(
+            "merge_by_distance_preview",
+            {
+                "object_name": "Body",
+                "expected_base_geometry_sha256": digest,
+                "vertex_indices": [7, 2, 5],
+                "distance": 0.0001,
+            },
+        )
+        self.assertTrue(plan["executable"])
+        self.assertEqual("available", plan["status"])
+        self.assertEqual("blender.live_merge_by_distance_preview", plan["action"])
+        self.assertFalse(plan["requires_real_blender_smoke"])
+        self.assertEqual([2, 5, 7], plan["arguments"]["vertex_indices"])
+        self.assertEqual(0.0001, plan["arguments"]["distance"])
+        self.assertEqual(64, plan["runtime_guards"]["max_selected_vertices"])
+        self.assertEqual(0.001, plan["runtime_guards"]["max_distance"])
+        self.assertEqual(
+            "blender.live_merge_by_distance_commit",
+            plan["workflow_actions"]["commit"],
+        )
+        self.assertEqual(
+            "blender.live_merge_by_distance_cancel",
+            plan["workflow_actions"]["cancel"],
+        )
+
+    def test_merge_by_distance_preview_rejects_unsafe_selection_contracts(self) -> None:
+        base = {
+            "object_name": "Body",
+            "expected_base_geometry_sha256": "8" * 64,
+            "distance": 1e-5,
+        }
+        with self.assertRaisesRegex(ValueError, "between 2 and 64"):
+            plan_modeling_operation(
+                "merge_by_distance_preview",
+                {**base, "vertex_indices": [1]},
+            )
+        with self.assertRaisesRegex(ValueError, "duplicate vertex indices"):
+            plan_modeling_operation(
+                "merge_by_distance_preview",
+                {**base, "vertex_indices": [1, 1]},
+            )
+        with self.assertRaisesRegex(ValueError, "distance must be between"):
+            plan_modeling_operation(
+                "merge_by_distance_preview",
+                {**base, "vertex_indices": [1, 2], "distance": 0.01},
+            )
+        with self.assertRaisesRegex(ValueError, "between 2 and 64"):
+            plan_modeling_operation(
+                "merge_by_distance_preview",
+                {**base, "vertex_indices": list(range(65))},
+            )
+
     def test_transform_plan_is_executable_and_closed_to_unknown_fields(self) -> None:
         plan = plan_modeling_operation(
             "object_transform",

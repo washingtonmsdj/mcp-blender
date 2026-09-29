@@ -83,6 +83,9 @@ class ComponentVersioningTests(unittest.TestCase):
                 "blender.live_degenerate_repair_cancel",
                 "blender.live_degenerate_repair_commit",
                 "blender.live_degenerate_repair_preview",
+                "blender.live_merge_by_distance_cancel",
+                "blender.live_merge_by_distance_commit",
+                "blender.live_merge_by_distance_preview",
                 "blender.live_mesh_cleanup",
                 "blender.live_object_transform",
                 "blender.live_surface_scatter",
@@ -114,6 +117,14 @@ class ComponentVersioningTests(unittest.TestCase):
         self.assertEqual(
             {"commit": "blender.live_degenerate_repair_commit", "cancel": "blender.live_degenerate_repair_cancel"},
             modeling["operations"]["degenerate_repair_preview"]["workflow_actions"],
+        )
+        self.assertEqual(
+            "available",
+            modeling["operations"]["merge_by_distance_preview"]["status"],
+        )
+        self.assertEqual(
+            {"commit": "blender.live_merge_by_distance_commit", "cancel": "blender.live_merge_by_distance_cancel"},
+            modeling["operations"]["merge_by_distance_preview"]["workflow_actions"],
         )
         self.assertEqual(
             8,

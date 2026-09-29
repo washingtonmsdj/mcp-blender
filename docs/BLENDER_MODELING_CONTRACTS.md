@@ -214,6 +214,22 @@ cancel restored the exact original geometry fingerprint; a second preview was
 committed explicitly; and replaying the old diagnostic fingerprint was rejected as
 stale. The source `.blend` on disk remained unchanged.
 
+### Explicit-selection Merge by Distance workflow
+
+`merge_by_distance_preview` never scans the whole mesh. The caller supplies 2â€“64
+base-mesh vertex indices plus a distance capped at `0.001`. The companion verifies
+the base SHA-256, local/single-user mesh state, no shape keys or modifiers, and a
+200,000-face target budget before copying the mesh. Blender `remove_doubles` is then
+restricted to the selected BMesh vertices only. A temporary original-index layer
+proves every unselected vertex identity survives before the candidate is exposed.
+
+A no-op selection is rejected instead of creating a misleading preview. Commit
+rechecks the reviewed candidate fingerprint; cancel restores the exact original
+fingerprint. BlenderBench on Blender 5.2.2 validated `[0,1]` merging exactly one
+vertex (`6 â†’ 5`) while all four unselected vertices survived both preview and the
+committed candidate, plus no-op rejection, exact cancel rollback and stale-SHA
+rejection. The source `.blend` remained byte-for-byte unchanged.
+
 ## Promotion gate
 
 A disabled mutation can become available only after all of the following are
@@ -231,8 +247,8 @@ true:
 
 The promotion gate has now been satisfied for `create_primitive`, `add_modifier`,
 `surface_scatter`, `boolean_cut_preview` (including commit/cancel transitions),
-`mesh_cleanup` (`remove_loose_vertices`) and `degenerate_repair_preview`
-(including explicit commit/cancel transitions).
+`mesh_cleanup` (`remove_loose_vertices`), `degenerate_repair_preview` and
+`merge_by_distance_preview` (both including explicit commit/cancel transitions).
 Future modeling mutations must still follow the same fail-closed
 process before registration.
 
@@ -240,8 +256,8 @@ process before registration.
 
 `scripts/blender_benchmark.py` continues to exercise the production typed
 modeling mutations, the Boolean preview/commit/cancel workflow, revision-guarded
-mesh cleanup and the reversible degenerate-repair preview/commit/cancel workflow
-through the real companion dispatcher on every BlenderBench run. It keeps
+mesh cleanup, the reversible degenerate-repair workflow and explicit-selection
+Merge by Distance preview/commit/cancel through the real companion dispatcher on every BlenderBench run. It keeps
 positive/negative controls, exact rollback fingerprints, durable trajectory
 evidence, temporary object cleanup and source `.blend` hash protection so later
 changes cannot silently weaken the validated behavior.

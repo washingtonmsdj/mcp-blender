@@ -146,7 +146,6 @@ def _run_companion_smoke(
     data = json.loads(result_path.read_text(encoding="utf-8-sig"))
     if not data.get("ok"):
         raise RuntimeError(json.dumps(data, indent=2))
-
     valid_quality_path = control_root / "results" / "smoke-quality-valid.json"
     invalid_quality_path = control_root / "results" / "smoke-quality-invalid.json"
     if not valid_quality_path.is_file() or not invalid_quality_path.is_file():
@@ -202,6 +201,12 @@ def _run_companion_smoke(
     modeling_degenerate_preview_commit_path = control_root / "results" / "smoke-model-degenerate-preview-commit.json"
     modeling_degenerate_commit_path = control_root / "results" / "smoke-model-degenerate-commit.json"
     modeling_degenerate_stale_path = control_root / "results" / "smoke-model-degenerate-stale.json"
+    modeling_merge_preview_path = control_root / "results" / "smoke-model-merge-preview.json"
+    modeling_merge_cancel_path = control_root / "results" / "smoke-model-merge-cancel.json"
+    modeling_merge_preview_commit_path = control_root / "results" / "smoke-model-merge-preview-commit.json"
+    modeling_merge_commit_path = control_root / "results" / "smoke-model-merge-commit.json"
+    modeling_merge_stale_path = control_root / "results" / "smoke-model-merge-stale.json"
+    modeling_merge_noop_path = control_root / "results" / "smoke-model-merge-noop.json"
     if not all(
         path.is_file()
         for path in (
@@ -229,6 +234,12 @@ def _run_companion_smoke(
             modeling_degenerate_preview_commit_path,
             modeling_degenerate_commit_path,
             modeling_degenerate_stale_path,
+            modeling_merge_preview_path,
+            modeling_merge_cancel_path,
+            modeling_merge_preview_commit_path,
+            modeling_merge_commit_path,
+            modeling_merge_stale_path,
+            modeling_merge_noop_path,
         )
     ):
         raise RuntimeError(
@@ -278,6 +289,12 @@ def _run_companion_smoke(
     modeling_degenerate_preview_commit = json.loads(modeling_degenerate_preview_commit_path.read_text(encoding="utf-8-sig"))
     modeling_degenerate_commit = json.loads(modeling_degenerate_commit_path.read_text(encoding="utf-8-sig"))
     modeling_degenerate_stale = json.loads(modeling_degenerate_stale_path.read_text(encoding="utf-8-sig"))
+    modeling_merge_preview = json.loads(modeling_merge_preview_path.read_text(encoding="utf-8-sig"))
+    modeling_merge_cancel = json.loads(modeling_merge_cancel_path.read_text(encoding="utf-8-sig"))
+    modeling_merge_preview_commit = json.loads(modeling_merge_preview_commit_path.read_text(encoding="utf-8-sig"))
+    modeling_merge_commit = json.loads(modeling_merge_commit_path.read_text(encoding="utf-8-sig"))
+    modeling_merge_stale = json.loads(modeling_merge_stale_path.read_text(encoding="utf-8-sig"))
+    modeling_merge_noop = json.loads(modeling_merge_noop_path.read_text(encoding="utf-8-sig"))
     if not modeling_valid.get("ok"):
         raise RuntimeError(
             "modeling positive control failed: "
@@ -401,6 +418,43 @@ def _run_companion_smoke(
     if "fingerprint changed" not in str(modeling_degenerate_stale.get("summary") or ""):
         raise RuntimeError("stale degenerate repair rejection did not expose fingerprint mismatch")
 
+    if not modeling_merge_preview.get("ok") or modeling_merge_preview.get("state") != "preview":
+        raise RuntimeError("merge-by-distance preview smoke failed")
+    if modeling_merge_preview.get("selected_vertex_indices") != [0, 1]:
+        raise RuntimeError("merge-by-distance preview lost explicit selection")
+    if int(modeling_merge_preview.get("merged_vertices") or 0) != 1:
+        raise RuntimeError("merge-by-distance preview did not merge exactly one selected vertex")
+    if int((modeling_merge_preview.get("before_mesh") or {}).get("vertices") or 0) != 6:
+        raise RuntimeError("merge-by-distance preview pre-state did not contain six vertices")
+    if int((modeling_merge_preview.get("candidate_mesh") or {}).get("vertices") or 0) != 5:
+        raise RuntimeError("merge-by-distance candidate did not contain five vertices")
+    if not modeling_merge_cancel.get("ok") or modeling_merge_cancel.get("state") != "cancelled":
+        raise RuntimeError("merge-by-distance cancel smoke failed")
+    if modeling_merge_cancel.get("restored_geometry_sha256") != modeling_merge_preview.get("before_geometry_sha256"):
+        raise RuntimeError("merge-by-distance cancel did not restore the original fingerprint")
+    if modeling_merge_noop.get("ok"):
+        raise RuntimeError("merge-by-distance no-op selection was incorrectly accepted")
+    if "produced no merge" not in str(modeling_merge_noop.get("summary") or ""):
+        raise RuntimeError("merge-by-distance no-op rejection did not report no merge")
+    if not modeling_merge_preview.get("unselected_vertices_preserved"):
+        raise RuntimeError("merge-by-distance preview touched an unselected vertex")
+    if int(modeling_merge_preview.get("unselected_vertices_verified") or 0) != 4:
+        raise RuntimeError("merge-by-distance preview did not verify all four unselected vertices")
+    if not modeling_merge_preview_commit.get("ok"):
+        raise RuntimeError("merge-by-distance second preview failed")
+    if not modeling_merge_preview_commit.get("unselected_vertices_preserved"):
+        raise RuntimeError("merge-by-distance second preview touched an unselected vertex")
+    if int(modeling_merge_preview_commit.get("unselected_vertices_verified") or 0) != 4:
+        raise RuntimeError("merge-by-distance second preview did not verify all four unselected vertices")
+    if not modeling_merge_commit.get("ok") or modeling_merge_commit.get("state") != "committed":
+        raise RuntimeError("merge-by-distance commit smoke failed")
+    if modeling_merge_commit.get("committed_geometry_sha256") != modeling_merge_preview_commit.get("candidate_geometry_sha256"):
+        raise RuntimeError("merge-by-distance commit changed the reviewed candidate fingerprint")
+    if modeling_merge_stale.get("ok"):
+        raise RuntimeError("stale merge-by-distance preview was incorrectly accepted")
+    if "fingerprint changed" not in str(modeling_merge_stale.get("summary") or ""):
+        raise RuntimeError("stale merge-by-distance rejection did not expose fingerprint mismatch")
+
     created_object = modeling_create.get("object") or {}
     if (created_object.get("mesh") or {}).get("vertices") != 8:
         raise RuntimeError(
@@ -508,6 +562,12 @@ def _run_companion_smoke(
         "smoke-model-degenerate-preview-commit",
         "smoke-model-degenerate-commit",
         "smoke-model-degenerate-stale",
+        "smoke-model-merge-preview",
+        "smoke-model-merge-cancel",
+        "smoke-model-merge-preview-commit",
+        "smoke-model-merge-commit",
+        "smoke-model-merge-stale",
+        "smoke-model-merge-noop",
     }.issubset(trajectory_ids):
         raise RuntimeError(
             "modeling fixture commands are missing from trajectory evidence"
@@ -537,6 +597,14 @@ def _run_companion_smoke(
         "degenerate_cancel_rollback": True,
         "degenerate_commit_positive": True,
         "degenerate_stale_guard": True,
+        "merge_preview_positive": True,
+        "merge_cancel_rollback": True,
+        "merge_commit_positive": True,
+        "merge_stale_guard": True,
+        "merge_noop_guard": True,
+        "merge_explicit_selection_preserved": True,
+        "merge_unselected_survived_preview": bool(modeling_merge_preview.get("unselected_vertices_preserved")),
+        "merge_unselected_survived_commit": bool(modeling_merge_preview_commit.get("unselected_vertices_preserved")),
         "dispatcher_journaled": True,
         "valid": modeling_valid,
         "invalid": modeling_invalid,
@@ -562,6 +630,12 @@ def _run_companion_smoke(
         "degenerate_preview_commit": modeling_degenerate_preview_commit,
         "degenerate_commit": modeling_degenerate_commit,
         "degenerate_stale": modeling_degenerate_stale,
+        "merge_preview": modeling_merge_preview,
+        "merge_cancel": modeling_merge_cancel,
+        "merge_preview_commit": modeling_merge_preview_commit,
+        "merge_commit": modeling_merge_commit,
+        "merge_stale": modeling_merge_stale,
+        "merge_noop": modeling_merge_noop,
     }
 
     after = hashlib.sha256(scene.read_bytes()).hexdigest()
@@ -714,6 +788,18 @@ def run(root: Path) -> dict:
             "degenerate_before_issues": baseline["modeling"]["degenerate_preview"].get("before_issues"),
             "degenerate_candidate_issues": baseline["modeling"]["degenerate_preview"].get("candidate_issues"),
             "degenerate_repair_hints": (baseline["modeling"]["degenerate_diag"].get("checks") or [{}])[0].get("repair_hints"),
+            "merge_preview_positive": baseline["modeling"]["merge_preview_positive"],
+            "merge_cancel_rollback": baseline["modeling"]["merge_cancel_rollback"],
+            "merge_commit_positive": baseline["modeling"]["merge_commit_positive"],
+            "merge_stale_guard": baseline["modeling"]["merge_stale_guard"],
+            "merge_noop_guard": baseline["modeling"]["merge_noop_guard"],
+            "merge_explicit_selection_preserved": baseline["modeling"]["merge_explicit_selection_preserved"],
+            "merge_unselected_survived_preview": baseline["modeling"]["merge_unselected_survived_preview"],
+            "merge_unselected_survived_commit": baseline["modeling"]["merge_unselected_survived_commit"],
+            "merge_selected_vertex_indices": baseline["modeling"]["merge_preview"].get("selected_vertex_indices"),
+            "merge_merged_vertices": baseline["modeling"]["merge_preview"].get("merged_vertices"),
+            "merge_before_mesh": baseline["modeling"]["merge_preview"].get("before_mesh"),
+            "merge_candidate_mesh": baseline["modeling"]["merge_preview"].get("candidate_mesh"),
             "dispatcher_journaled": baseline["modeling"]["dispatcher_journaled"],
             "location": (
                 (baseline["modeling"]["valid"].get("object") or {}).get("location")

@@ -104,7 +104,7 @@ on Blender 5.2.2 validated one isolated-vertex removal plus stale-fingerprint
 rejection while preserving the source `.blend` on disk. Zero-length edges and
 zero-area faces now have that bounded contract: `degenerate_repair_preview` edits a
 candidate copy, retains the exact original as an ORDAX backup and requires an
-explicit commit or cancel. Other broader topology repairs remain review-only.
+explicit commit or cancel. Explicit-selection Merge by Distance is now also available as a bounded preview workflow: callers must provide 2â€“64 base-mesh vertex indices, distance is capped at 0.001, unselected vertex identity is verified before the candidate is exposed, and commit/cancel use the same fingerprint guards. Other broader topology repairs remain review-only.
 
 Sources: [surface-conforming modeling question](https://www.reddit.com/r/blenderhelp/comments/1iqqfnw/what_are_some_more_efficient_workflow_for_modeling_along_a_surface/),
 [iterative topology/editability feedback on Blender MCP](https://www.reddit.com/r/OpenAI/comments/1we95z2/blender_mcp_is_impressive_but_not_that_useable_yet/),
