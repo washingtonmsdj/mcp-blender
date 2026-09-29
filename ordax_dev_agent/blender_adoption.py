@@ -578,6 +578,7 @@ class BlenderAdoptionManager:
                 if (
                     0 <= age <= DISCOVERY_MAX_AGE_SECONDS
                     and int(data.get("pid", -1)) == selected_pid
+                    and data.get("project") == project.slug
                     and data.get("companion_fingerprint") == self.companion_fingerprint
                 ):
                     try:
