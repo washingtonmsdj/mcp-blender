@@ -121,7 +121,16 @@ class StudioApi:
     def blender_prepare(self) -> dict[str, Any]:
         project = self.agent.projects[self.project]
         if "blender" not in project.apps:
-            return {"ok": True, "data": {"state": "not_blender", "project": self.project}}
+            return {
+                "ok": True,
+                "data": {
+                    "state": "not_blender",
+                    "project": self.project,
+                    "can_start": False,
+                    "can_capture": False,
+                    "requires_restart": False,
+                },
+            }
 
         status = self.agent.execute("blender.live_status", {"project": self.project})
         if status.ok:
@@ -134,6 +143,9 @@ class StudioApi:
                     "project": self.project,
                     "pid": presence.get("pid"),
                     "file": presence.get("file"),
+                    "can_start": False,
+                    "can_capture": True,
+                    "requires_restart": False,
                 },
             }
 
@@ -150,6 +162,9 @@ class StudioApi:
                     "project": self.project,
                     "pid": adopted.data.get("pid"),
                     "file": (adopted.data.get("presence") or {}).get("file"),
+                    "can_start": False,
+                    "can_capture": True,
+                    "requires_restart": False,
                 },
             }
         if adopted.data.get("no_match"):
@@ -165,12 +180,22 @@ class StudioApi:
                             "project": self.project,
                             "blender_pids": unmanaged,
                             "install_action": "blender.adoption_install",
+                            "bridge_installable": True,
+                            "can_start": False,
+                            "can_capture": False,
+                            "requires_restart": True,
                         },
                     }
             return {
                 "ok": True,
                 "summary": "Nenhuma janela Blender aberta para este projeto",
-                "data": {"state": "idle", "project": self.project},
+                "data": {
+                    "state": "idle",
+                    "project": self.project,
+                    "can_start": True,
+                    "can_capture": False,
+                    "requires_restart": False,
+                },
             }
         if adopted.data.get("ambiguous"):
             return {
@@ -180,9 +205,86 @@ class StudioApi:
                     "state": "ambiguous",
                     "project": self.project,
                     "instances": adopted.data.get("instances", []),
+                    "requires_pid": True,
+                    "can_start": False,
+                    "can_capture": False,
+                    "requires_restart": False,
                 },
             }
         return self._result(adopted)
+
+    def blender_install_bridge(self) -> dict[str, Any]:
+        project = self.agent.projects[self.project]
+        if "blender" not in project.apps:
+            return {"ok": False, "summary": "Blender não está habilitado neste projeto"}
+        installed = self.agent.execute("blender.adoption_install", {})
+        if not installed.ok:
+            return self._result(installed)
+        connection = self.blender_prepare()
+        return {
+            "ok": True,
+            "summary": installed.summary,
+            "data": {
+                "installation": installed.data,
+                "connection": connection.get("data", {}),
+            },
+        }
+
+    def blender_instances(self) -> dict[str, Any]:
+        return self._result(self.agent.execute("blender.instances", {}))
+
+    def blender_adopt(self, pid: int) -> dict[str, Any]:
+        try:
+            selected_pid = int(pid)
+        except (TypeError, ValueError):
+            return {"ok": False, "summary": "PID do Blender inválido"}
+        if selected_pid <= 0:
+            return {"ok": False, "summary": "PID do Blender inválido"}
+        adopted = self.agent.execute(
+            "blender.adopt",
+            {"project": self.project, "pid": selected_pid, "wait_seconds": 8.0},
+        )
+        if not adopted.ok:
+            return self._result(adopted)
+        presence = adopted.data.get("presence") or {}
+        return {
+            "ok": True,
+            "summary": adopted.summary,
+            "data": {
+                "state": "adopted",
+                "project": self.project,
+                "pid": selected_pid,
+                "file": presence.get("file"),
+                "can_start": False,
+                "can_capture": True,
+                "requires_restart": False,
+            },
+        }
+
+    def blender_start(self) -> dict[str, Any]:
+        started = self.agent.execute(
+            "blender.live_start",
+            {"project": self.project, "wait_seconds": 60.0},
+        )
+        if not started.ok:
+            return self._result(started)
+        status = self.agent.execute("blender.live_status", {"project": self.project})
+        if status.ok:
+            presence = status.data.get("presence") or {}
+            return {
+                "ok": True,
+                "summary": started.summary,
+                "data": {
+                    "state": "connected",
+                    "project": self.project,
+                    "pid": presence.get("pid") or started.data.get("pid"),
+                    "file": presence.get("file"),
+                    "can_start": False,
+                    "can_capture": True,
+                    "requires_restart": False,
+                },
+            }
+        return self._result(started)
 
     def preview_start(self) -> dict[str, Any]:
         return self._result(self.agent.execute("project.preview_start", {"project": self.project}))
