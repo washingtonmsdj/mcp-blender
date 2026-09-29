@@ -78,6 +78,19 @@ class BlenderAdoptionTests(unittest.TestCase):
         )
         return path
 
+    def _presence(self, pid: int, *, project: str = "demo") -> Path:
+        presence = self.state / "blender-live" / "demo" / "presence.json"
+        presence.parent.mkdir(parents=True, exist_ok=True)
+        presence.write_text(
+            json.dumps({
+                "pid": pid,
+                "project": project,
+                "companion_fingerprint": "fingerprint-1",
+            }),
+            encoding="utf-8",
+        )
+        return presence
+
     def test_install_writes_config_and_version_startup_script(self):
         result = self.manager.install()
         self.assertTrue(result.ok, result.summary)
@@ -163,16 +176,7 @@ class BlenderAdoptionTests(unittest.TestCase):
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline and not request.is_file():
                 time.sleep(0.01)
-            presence = self.state / "blender-live" / "demo" / "presence.json"
-            presence.parent.mkdir(parents=True, exist_ok=True)
-            presence.write_text(
-                json.dumps({
-                    "pid": pid,
-                    "project": "demo",
-                    "companion_fingerprint": "fingerprint-1",
-                }),
-                encoding="utf-8",
-            )
+            self._presence(pid)
 
         thread = threading.Thread(target=companion_reply, daemon=True)
         thread.start()
@@ -181,6 +185,26 @@ class BlenderAdoptionTests(unittest.TestCase):
         self.assertTrue(result.ok, result.summary)
         self.assertEqual(result.data["pid"], pid)
         self.assertEqual(result.data["presence"]["project"], "demo")
+        self.assertFalse((self.state / "blender-adoption" / f"{pid}.json").exists())
+
+    def test_request_adoption_rejects_presence_from_other_project(self):
+        pid = 302
+        self._discovery(pid)
+
+        def wrong_companion_reply():
+            request = self.state / "blender-adoption" / f"{pid}.json"
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline and not request.is_file():
+                time.sleep(0.01)
+            self._presence(pid, project="different-project")
+
+        thread = threading.Thread(target=wrong_companion_reply, daemon=True)
+        thread.start()
+        result = self.manager.request_adoption(self.project, pid=pid, wait_seconds=0.5)
+        thread.join(timeout=1.0)
+        self.assertFalse(result.ok)
+        self.assertIn("timed out", result.summary.lower())
+        self.assertFalse((self.state / "blender-adoption" / f"{pid}.json").exists())
 
     def _reply_to_adoption(self, pid: int, project: str = "demo") -> threading.Thread:
         def companion_reply():
