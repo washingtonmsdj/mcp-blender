@@ -52,7 +52,14 @@ class BlenderAdoptionTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def _discovery(self, pid: int, *, age: float = 0.0, file: Path | None = None):
+    def _discovery(
+        self,
+        pid: int,
+        *,
+        age: float = 0.0,
+        file: Path | None = None,
+        attached_project: str | None = None,
+    ):
         path = self.state / "blender-discovery" / f"{pid}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -61,7 +68,7 @@ class BlenderAdoptionTests(unittest.TestCase):
                 "timestamp": time.time() - age,
                 "file": str(file or self.blend),
                 "blender_version": "5.2.2",
-                "attached_project": None,
+                "attached_project": attached_project,
             }),
             encoding="utf-8",
         )
@@ -93,10 +100,7 @@ class BlenderAdoptionTests(unittest.TestCase):
     def test_enable_timeout_is_recovered_when_probe_confirms_addon_enabled(self):
         self.manager.enable_addon = True
         timeout = subprocess.TimeoutExpired(cmd=["blender"], timeout=60)
-        probe = SimpleNamespace(
-            returncode=0,
-            stdout="ORDAX_STUDIO_ADDON_PRESENT=True\n",
-        )
+        probe = SimpleNamespace(returncode=0, stdout="ORDAX_STUDIO_ADDON_PRESENT=True\n")
         with patch(
             "ordax_dev_agent.blender_adoption.find_blender",
             return_value=Path("C:/Blender/blender.exe"),
@@ -137,6 +141,16 @@ class BlenderAdoptionTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertTrue(result.data["ambiguous"])
         self.assertEqual({item["pid"] for item in result.data["instances"]}, {201, 202})
+
+    def test_attached_other_project_is_explicit_conflict(self):
+        pid = 211
+        self._discovery(pid, attached_project="other-project")
+        result = self.manager.request_adoption(self.project, pid=pid, wait_seconds=0.5)
+        self.assertFalse(result.ok)
+        self.assertTrue(result.data["attachment_conflict"])
+        self.assertEqual(result.data["attached_project"], "other-project")
+        self.assertEqual(result.data["project"], "demo")
+        self.assertFalse((self.state / "blender-adoption" / f"{pid}.json").exists())
 
     def test_request_adoption_waits_for_matching_presence_pid(self):
         pid = 301
@@ -223,6 +237,12 @@ class BlenderStartAdoptionTests(unittest.TestCase):
     def test_live_start_does_not_spawn_when_adoption_is_ambiguous(self):
         result, live = self._run_start(ActionResult(False, "ambiguous", {"ambiguous": True}))
         self.assertFalse(result.ok)
+        live.start.assert_not_called()
+
+    def test_live_start_does_not_spawn_on_attachment_conflict(self):
+        result, live = self._run_start(ActionResult(False, "conflict", {"attachment_conflict": True}))
+        self.assertFalse(result.ok)
+        self.assertTrue(result.data["attachment_conflict"])
         live.start.assert_not_called()
 
     def test_live_start_spawns_only_when_no_candidate_matches(self):
