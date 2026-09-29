@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import time
 import uuid
@@ -72,6 +73,34 @@ def blender_companion_bundle_fingerprint(asset_root: Path) -> str:
     return digest.hexdigest()
 
 
+def _process_is_running(pid: int) -> bool:
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            process_query_limited_information = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(
+                process_query_limited_information, False, pid
+            )
+            if not handle:
+                return False
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        except (AttributeError, OSError):
+            return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
 class BlenderLiveBridge:
     """File-protocol bridge to one visible Blender session per registered project."""
 
@@ -113,8 +142,15 @@ class BlenderLiveBridge:
     def presence_is_fresh(self, max_age_seconds: float = 5.0) -> bool:
         try:
             age = time.time() - self.presence.stat().st_mtime
-            return 0 <= age <= max_age_seconds
-        except OSError:
+            if not 0 <= age <= max_age_seconds:
+                return False
+            presence = self._read_presence()
+            pid = presence.get("pid")
+            if pid is None:
+                return True
+            numeric_pid = int(pid)
+            return _process_is_running(numeric_pid)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
             return False
 
     def _read_json_object_retry(
@@ -231,6 +267,10 @@ class BlenderLiveBridge:
             )
 
         self._ensure_dirs()
+        try:
+            self.presence.unlink(missing_ok=True)
+        except OSError:
+            pass
         for folder in (self.inbox, self.inflight):
             for stale in folder.glob("*.json"):
                 try:

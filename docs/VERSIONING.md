@@ -10,7 +10,7 @@ meanings, so each one owns a separate version.
 | Component | Version | Meaning |
 | --- | --- | --- |
 | `mcp-blender-unity` distribution / bridge | `0.3.0` | Python package and local Blender/Unity bridge release line |
-| OrdaX Device Agent | `1.23.1` | Product/Cloudflare runtime plus richer Blender agent loop: typed array modeling, actionable mesh diagnostics, one-call viewport pixels and bounded native multiview image delivery over MCP |
+| OrdaX Device Agent | `1.23.2` | Product/Cloudflare runtime plus self-healing Blender visual tools: viewport/multiview calls can safely start or adopt an explicitly requested `.blend` scene and reject stale process presence |
 | Blender Live protocol | `9` | IPC compatibility contract between host bridge and visible Blender companion |
 | Blender companion bundle format | `1` | Manifest/fingerprint format for the multi-file Blender runtime bundle |
 | Reference Contract | `1` | Project-local visual-reference manifest schema |

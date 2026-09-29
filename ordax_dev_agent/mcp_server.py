@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -508,14 +509,79 @@ def artifact_image(project: str, artifact_path: str) -> list[TextContent | Image
     return _artifact_image_contents(registry(), project, artifact_path)
 
 
+def _ensure_blender_live(
+    agent: ActionRegistry,
+    project: str,
+    *,
+    blend_file: str | None,
+    wait_seconds: float,
+) -> dict:
+    """Ensure a current visible Blender companion without risking dirty-session loss."""
+    status = agent.execute("blender.live_status", {"project": project})
+    data = status.data if isinstance(status.data, dict) else {}
+    current = (
+        status.ok
+        and data.get("presence_fresh") is True
+        and data.get("protocol_compatible") is True
+        and data.get("companion_current") is True
+    )
+    if current:
+        presence = data.get("presence") if isinstance(data.get("presence"), dict) else {}
+        if not blend_file:
+            return {"auto_started": False, "status": data}
+        selected = agent._project({"project": project})
+        requested = selected.path(blend_file).resolve()
+        loaded_raw = str(presence.get("file") or "").strip()
+        loaded = Path(loaded_raw).resolve() if loaded_raw else None
+        if loaded == requested:
+            return {"auto_started": False, "status": data}
+        if bool(presence.get("is_dirty")):
+            raise RuntimeError(
+                "A different Blender scene is open with unsaved changes; save it before switching scenes"
+            )
+        stopped = agent.execute("blender.live_stop", {"project": project})
+        if not stopped.ok:
+            raise RuntimeError(stopped.summary)
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
+            probe = agent.execute("blender.live_status", {"project": project})
+            probe_data = probe.data if isinstance(probe.data, dict) else {}
+            if not probe.ok or probe_data.get("presence_fresh") is not True:
+                break
+            time.sleep(0.1)
+
+    if not blend_file:
+        raise RuntimeError(
+            "Visible Blender live session is unavailable or outdated; "
+            "pass blend_file to let this MCP tool start or adopt the correct scene safely"
+        )
+
+    started = agent.execute(
+        "blender.live_start",
+        {
+            "project": project,
+            "blend_file": blend_file,
+            "wait_seconds": max(3.0, min(float(wait_seconds), 600.0)),
+        },
+    )
+    if not started.ok:
+        raise RuntimeError(started.summary)
+    started_data = started.data if isinstance(started.data, dict) else {}
+    return {"auto_started": True, "status": started_data}
+
+
 @mcp.tool()
 def blender_live_view(
     project: str,
+    blend_file: str | None = None,
     timeout_seconds: float = 120.0,
 ) -> list[TextContent | ImageContent]:
-    """Capture the visible Blender viewport and return its pixels in the same MCP call."""
-    timeout = max(5.0, min(float(timeout_seconds), 300.0))
+    """Capture the visible Blender viewport, recovering the requested scene when needed."""
+    timeout = max(5.0, min(float(timeout_seconds), 600.0))
     agent = registry()
+    session = _ensure_blender_live(
+        agent, project, blend_file=blend_file, wait_seconds=timeout
+    )
     result = agent.execute(
         "blender.live_capture",
         {"project": project, "timeout_seconds": timeout},
@@ -535,6 +601,7 @@ def blender_live_view(
             "sha256": result.data.get("sha256"),
             "snapshot_path": result.data.get("snapshot_path"),
             "transport": result.data.get("transport"),
+            "session": session,
         },
     )
 
@@ -543,6 +610,7 @@ def blender_live_view(
 def blender_live_multiview(
     project: str,
     views: list[str] | None = None,
+    blend_file: str | None = None,
     object_names: list[str] | None = None,
     width: int = 512,
     height: int = 512,
@@ -572,6 +640,9 @@ def blender_live_multiview(
         payload["object_names"] = object_names
 
     agent = registry()
+    session = _ensure_blender_live(
+        agent, project, blend_file=blend_file, wait_seconds=timeout
+    )
     result = agent.execute("blender.live_multiview_capture", payload)
     if not result.ok:
         raise RuntimeError(result.summary)
@@ -591,6 +662,7 @@ def blender_live_multiview(
         "projection": result.data.get("projection"),
         "render_engine": result.data.get("render_engine"),
         "mode": result.data.get("mode"),
+        "session": session,
     }
     contents: list[TextContent | ImageContent] = [
         TextContent(type="text", text=json.dumps(summary))

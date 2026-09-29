@@ -31,7 +31,9 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                 async with ClientSession(read, write) as session:
                     initialized = await session.initialize()
                     self.assertEqual('ordax-studio', initialized.serverInfo.name)
-                    names = [tool.name for tool in (await session.list_tools()).tools]
+                    tools = (await session.list_tools()).tools
+                    names = [tool.name for tool in tools]
+                    schemas = {tool.name: tool.inputSchema for tool in tools}
                     self.assertIn('studio_status', names)
                     self.assertIn('workspace_discover', names)
                     self.assertIn('project_inventory', names)
@@ -50,6 +52,8 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn('artifact_image', names)
                     self.assertIn('blender_live_view', names)
                     self.assertIn('blender_live_multiview', names)
+                    self.assertIn('blend_file', schemas['blender_live_view']['properties'])
+                    self.assertIn('blend_file', schemas['blender_live_multiview']['properties'])
                     self.assertIn('repository_catalog', names)
                     self.assertIn('session_context', names)
                     self.assertIn('project_health', names)

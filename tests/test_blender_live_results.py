@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 import uuid
@@ -79,6 +80,17 @@ class BlenderLiveResultTests(unittest.TestCase):
             self.assertTrue(result.data["retryable"])
             self.assertTrue(result.data["in_progress"])
 
+    def test_presence_fresh_accepts_live_pid_and_rejects_dead_pid(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            bridge = self.make_bridge(Path(raw))
+            bridge._ensure_dirs()
+            bridge.presence.write_text(json.dumps({"pid": os.getpid()}), encoding="utf-8")
+            with patch("ordax_dev_agent.blender_live_bridge._process_is_running", return_value=True):
+                self.assertTrue(bridge.presence_is_fresh())
+
+            with patch("ordax_dev_agent.blender_live_bridge._process_is_running", return_value=False):
+                self.assertFalse(bridge.presence_is_fresh())
+
     def test_status_retries_transient_presence_permission_error(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             bridge = self.make_bridge(Path(raw))
@@ -106,7 +118,7 @@ class BlenderLiveResultTests(unittest.TestCase):
             with patch.object(Path, "read_text", flaky_read_text):
                 status = bridge.status()
 
-            self.assertEqual(3, calls["count"])
+            self.assertGreaterEqual(calls["count"], 3)
             self.assertTrue(status["protocol_compatible"])
             self.assertNotIn("presence_error", status)
 
