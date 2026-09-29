@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import time
 import uuid
@@ -25,6 +26,7 @@ LEGACY_STARTUP_FILENAME = "ordax_studio_bootstrap.py"
 BOOTSTRAP_CONFIG_NAME = "blender-bootstrap.json"
 DISCOVERY_MAX_AGE_SECONDS = 4.0
 ADOPTION_REQUEST_MAX_AGE_SECONDS = 30.0
+LEGACY_BRIDGE_RESPONSE_LIMIT = 1024 * 1024
 
 
 def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
@@ -314,6 +316,144 @@ class BlenderAdoptionManager:
         except (OSError, subprocess.TimeoutExpired):
             return []
 
+    @staticmethod
+    def _legacy_bridge_port(project: Project) -> int | None:
+        raw = project.blender.get("legacy_blendmcp_port")
+        if raw is None or raw == "":
+            return None
+        if isinstance(raw, bool):
+            raise ValueError("legacy_blendmcp_port must be an integer port")
+        try:
+            port = int(raw)
+        except (TypeError, ValueError) as error:
+            raise ValueError("legacy_blendmcp_port must be an integer port") from error
+        if not 1024 <= port <= 65535:
+            raise ValueError("legacy_blendmcp_port must be between 1024 and 65535")
+        return port
+
+    @staticmethod
+    def _legacy_bridge_rpc(port: int, payload: dict[str, Any], *, timeout_seconds: float = 5.0) -> dict[str, Any]:
+        encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=max(0.5, min(timeout_seconds, 10.0))) as client:
+            client.settimeout(max(0.5, min(timeout_seconds, 10.0)))
+            client.sendall(encoded)
+            response = client.recv(LEGACY_BRIDGE_RESPONSE_LIMIT + 1)
+        if not response:
+            raise RuntimeError("legacy BlendMCP bridge closed without a response")
+        if len(response) > LEGACY_BRIDGE_RESPONSE_LIMIT:
+            raise RuntimeError("legacy BlendMCP response exceeded 1 MiB")
+        decoded = json.loads(response.decode("utf-8"))
+        if not isinstance(decoded, dict):
+            raise RuntimeError("legacy BlendMCP response must be a JSON object")
+        return decoded
+
+    def _presence_for_pid(self, project: Project, pid: int) -> dict[str, Any] | None:
+        path = (self.config.state_dir / "blender-live" / project.slug / "presence.json").resolve()
+        try:
+            data = _read_json_object(path)
+            age = time.time() - path.stat().st_mtime
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return None
+        if not 0 <= age <= DISCOVERY_MAX_AGE_SECONDS:
+            return None
+        if int(data.get("pid", -1)) != int(pid):
+            return None
+        if data.get("project") != project.slug:
+            return None
+        if data.get("companion_fingerprint") != self.companion_fingerprint:
+            return None
+        return data
+
+    def _try_legacy_bridge_adoption(
+        self,
+        project: Project,
+        *,
+        requested_pid: int | None,
+        wait_seconds: float,
+    ) -> ActionResult | None:
+        port = self._legacy_bridge_port(project)
+        if port is None:
+            return None
+        pids = self.system_blender_pids()
+        if requested_pid is not None:
+            if int(requested_pid) not in pids:
+                return ActionResult(
+                    False,
+                    "Requested Blender PID is not running",
+                    {"project": project.slug, "pid": int(requested_pid), "legacy_bridge_port": port, "no_match": True},
+                )
+            selected_pid = int(requested_pid)
+        elif len(pids) == 1:
+            selected_pid = pids[0]
+        elif len(pids) > 1:
+            return ActionResult(
+                False,
+                "Multiple unmanaged Blender windows are running; choose a PID explicitly before legacy migration",
+                {"project": project.slug, "blender_pids": pids, "legacy_bridge_port": port, "ambiguous": True},
+            )
+        else:
+            return None
+
+        try:
+            probe = self._legacy_bridge_rpc(port, {"type": "get_addon_version", "params": {}}, timeout_seconds=3.0)
+            if probe.get("status") != "success":
+                raise RuntimeError("legacy bridge probe did not identify a healthy BlendMCP server")
+            migrated = self._legacy_bridge_rpc(
+                port,
+                {
+                    "type": "execute_code",
+                    "params": {
+                        "code": "import ordax_studio_bridge; ordax_studio_bridge.register(); print('ORDAX_ADOPTION_REGISTERED')",
+                    },
+                },
+                timeout_seconds=5.0,
+            )
+            result = migrated.get("result")
+            if migrated.get("status") != "success" or not isinstance(result, dict) or not bool(result.get("executed")):
+                raise RuntimeError("legacy bridge refused the ORDAX adoption bootstrap")
+        except (OSError, TimeoutError, ValueError, RuntimeError, json.JSONDecodeError) as error:
+            return ActionResult(
+                False,
+                f"Legacy Blender bridge migration failed: {error}",
+                {
+                    "project": project.slug,
+                    "pid": selected_pid,
+                    "legacy_bridge_port": port,
+                    "legacy_bridge_migration": True,
+                    "retryable": True,
+                    "no_match": True,
+                },
+            )
+
+        deadline = time.monotonic() + max(0.5, min(float(wait_seconds), 15.0))
+        while time.monotonic() < deadline:
+            presence = self._presence_for_pid(project, selected_pid)
+            if presence is not None:
+                return ActionResult(
+                    True,
+                    "Existing legacy Blender window migrated to ORDAX Studio",
+                    {
+                        "project": project.slug,
+                        "pid": selected_pid,
+                        "legacy_bridge_port": port,
+                        "legacy_bridge_migration": True,
+                        "presence": presence,
+                    },
+                )
+            time.sleep(0.05)
+        return ActionResult(
+            False,
+            "Legacy Blender bridge accepted migration but ORDAX companion did not become ready",
+            {
+                "project": project.slug,
+                "pid": selected_pid,
+                "legacy_bridge_port": port,
+                "legacy_bridge_migration": True,
+                "retryable": True,
+                "no_match": True,
+            },
+        )
+
     def _request_path(self, pid: int) -> Path:
         return (self.adoption_root / f"{int(pid)}.json").resolve()
 
@@ -335,6 +475,16 @@ class BlenderAdoptionManager:
         if pid is not None:
             candidates = [item for item in candidates if int(item.get("pid", -1)) == int(pid)]
         if not candidates:
+            try:
+                legacy = self._try_legacy_bridge_adoption(
+                    project,
+                    requested_pid=pid,
+                    wait_seconds=wait_seconds,
+                )
+            except ValueError as error:
+                return ActionResult(False, f"Invalid Blender legacy bridge configuration: {error}")
+            if legacy is not None:
+                return legacy
             return ActionResult(
                 False,
                 "No adoptable Blender window matches this project",
