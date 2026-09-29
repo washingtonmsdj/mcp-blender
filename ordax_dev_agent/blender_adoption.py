@@ -506,12 +506,15 @@ class BlenderAdoptionManager:
         if attached_project and attached_project != project.slug:
             return ActionResult(
                 False,
-                "Blender window is already attached to another ORDAX project",
+                "Blender window matches the requested file tree but is attached to another ORDAX project",
                 {
                     "project": project.slug,
                     "pid": selected_pid,
                     "attached_project": attached_project,
                     "conflict": True,
+                    "attachment_conflict": True,
+                    "instance": selected,
+                    "retryable": False,
                 },
             )
 
