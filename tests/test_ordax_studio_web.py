@@ -58,6 +58,32 @@ class OrdaxStudioWebTests(unittest.TestCase):
                     updated["data"]["continuity"]["open_tasks"][-1]["title"],
                 )
 
+    def test_blender_bootstrap_exposes_typed_modeling_capabilities(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            (root / "agent-settings.json").write_text(json.dumps({
+                "default_project": "demo",
+                "projects": {"demo": {"path": str(project), "apps": ["blender"], "blender": {}}},
+            }), encoding="utf-8")
+            env = {
+                "ORDAX_AGENT_STATE_DIR": str(root),
+                "ORDAX_MEMORY_DB": str(root / "memory.db"),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                boot = StudioApi().bootstrap()
+
+        modeling = boot["modeling"]
+        self.assertTrue(modeling["ok"])
+        tools = modeling["data"]["tools"]
+        self.assertEqual("available", tools["surface_scatter"]["status"])
+        self.assertEqual("available", tools["boolean_cut_preview"]["status"])
+        self.assertEqual(
+            {"commit": "blender.live_boolean_cut_commit", "cancel": "blender.live_boolean_cut_cancel"},
+            tools["boolean_cut_preview"]["workflow_actions"],
+        )
+
     def test_blender_prepare_adopts_existing_window_without_starting_blender(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -182,6 +208,9 @@ class OrdaxStudioWebTests(unittest.TestCase):
         self.assertIn("openProject", script)
         self.assertIn("prepareProjectPreview", script)
         self.assertIn("blender_prepare", script)
+        self.assertIn("MODELAGEM BLENDER TIPADA", script)
+        self.assertIn("workflow_actions", script)
+        self.assertIn("state.bootstrap?.modeling", script)
         self.assertIn("adotado", script)
         self.assertIn("preview_start", script)
         self.assertIn("preview_capture", script)

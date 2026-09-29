@@ -17,6 +17,7 @@ def capability_contracts() -> dict[str, Any]:
             "runtime_requirements": list(schema.get("runtime_requirements", [])),
             "runtime_guards": dict(schema.get("runtime_guards", {})),
             "failure_policy": list(schema.get("failure_policy", [])),
+            "workflow_actions": dict(schema.get("workflow_actions", {})),
         }
 
     return {
@@ -36,11 +37,13 @@ def capability_contracts() -> dict[str, Any]:
                 for name, schema in schemas.items()
                 if schema.get("pending_types")
             },
-            "available_actions": sorted(
-                item["action"]
+            "available_actions": sorted({
+                action
                 for item in modeling.values()
-                if item.get("status") == "available" and item.get("action")
-            ),
+                if item.get("status") == "available"
+                for action in ([item.get("action")] + list((item.get("workflow_actions") or {}).values()))
+                if action
+            }),
             "pending_operations": sorted(
                 name
                 for name, item in modeling.items()

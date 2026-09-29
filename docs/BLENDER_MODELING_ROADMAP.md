@@ -60,14 +60,26 @@ Sources: [randomized fastener workflow](https://www.reddit.com/r/blenderhelp/com
 
 ### 3. More expressive non-destructive cutters
 
-The current box-cutout action handles rectangular openings well. Community
-hard-surface tool discussions repeatedly show demand for circular/slot/vent
-profiles, panel grooves, in-draw bevels and a preview before committing a cut.
-The next step should be a small set of typed cutter profiles with exact
-dimensions and explicit cut/slice modes, using temporary cutter objects and
-clean rollback. Do not add a generic `bpy.ops` or remote `eval` endpoint for this:
-cutters need bounded inputs, deterministic names, evaluated-geometry budgets and
-before/after evidence just like the existing actions.
+This opportunity is now implemented as a typed, non-destructive Boolean workflow.
+`boolean_cut_preview` accepts bounded `box`, `circle`, `slot`, convex `polygon` and
+`vent` profiles in target-local coordinates. A preview creates temporary cutter
+objects plus Exact Difference Boolean modifiers without applying them to the base
+mesh. `blender.live_boolean_cut_commit` keeps those modifiers live and hides the
+cutters; `blender.live_boolean_cut_cancel` removes the workflow and restores the
+original modifier stack in one operation.
+
+The contract caps the expanded workflow at eight cutter objects, 64 profile
+segments, 16 polygon points, 200,000 target faces and 12,000 generated cutter
+faces. Unknown/type-inapplicable fields and non-convex polygons are rejected
+before IPC. BlenderBench on Blender 5.2.2 validated all five profile families,
+a seven-cutter preview, an expansion-overflow negative control, non-destructive
+commit, full cancel/rollback, trajectory evidence and unchanged source `.blend`
+hashes. The legacy destructive box-cutout action remains only for compatibility;
+new work should use the preview/commit/cancel workflow.
+
+The same capability schema is surfaced inside ORDAX Studio's MCP / Capacidades
+view so the desktop workspace and MCP clients discover the exact same modeling
+contract and workflow actions from the central `ActionRegistry`.
 
 Sources: [Hardflow workflow discussion](https://www.reddit.com/r/blender/comments/1ulu4nn/i_built_hardflow_a_free_opensource_hardsurface/),
 [HardCuts parametric boolean workflow](https://www.reddit.com/r/blender/comments/1rufkb6/i_released_the_alpha_of_my_hard_surface_modeling/).
@@ -100,16 +112,17 @@ automatically declaring every disconnected island or non-quad a defect.
 
 ## Suggested delivery sequence
 
-1. **Concluído:** fixed-count linear `ARRAY` promovido após contratos positivos/
+1. **ConcluÃ­do:** fixed-count linear `ARRAY` promovido apÃ³s contratos positivos/
    negativos e BlenderBench real no Blender 5.2.2, mantendo limites de contagem,
    faces projetadas, nomes duplicados, rollback e integridade do `.blend`.
-2. **ConcluÃ­do:** surface scatter com Geometry Nodes promovido apÃ³s BlenderBench
+2. **ConcluÃ­do:** `surface_scatter` com Geometry Nodes promovido apÃ³s BlenderBench
    real, seed determinÃ­stico, contagem efetiva, hard cap de instÃ¢ncias, orÃ§amento
    de geometria projetada e rollback do modifier/node group.
-3. Expand box cutouts into a constrained library of slot, circle, polygon and
-   vent cutters; retain live boolean previews and one-operation rollback.
-4. Add component-aware repair hints and small corrective operations to the
-   read-only mesh diagnostics before attempting automated topology changes.
+3. **ConcluÃ­do:** cutters Boolean tipados (`box`, `circle`, `slot`, `polygon`,
+   `vent`) com Preview â†’ Commit â†’ Cancel nÃ£o destrutivo, limites de geometria,
+   rollback de uma operaÃ§Ã£o, BlenderBench real e exposiÃ§Ã£o no ORDAX Studio.
+4. **PrÃ³ximo:** component-aware repair hints e pequenas operaÃ§Ãµes corretivas nos
+   diagnÃ³sticos de malha antes de qualquer tentativa de retopologia automÃ¡tica.
 
 Each mutation should stay small in the MCP surface: one composable typed action,
 strict schemas, clear failure evidence, and visual/geometry inspection after

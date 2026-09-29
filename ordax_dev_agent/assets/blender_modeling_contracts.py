@@ -19,6 +19,10 @@ MAX_SCATTER_INSTANCES = 5000
 MAX_SCATTER_DENSITY = 1000.0
 MAX_SCATTER_SOURCE_FACES = 100000
 MAX_PROJECTED_SCATTER_FACES = 2000000
+MAX_CUTTER_PROFILES = 8
+MAX_CUTTER_SEGMENTS = 64
+MAX_CUTTER_POLYGON_POINTS = 16
+MAX_CUTTER_GENERATED_FACES = 12000
 
 
 MODELING_SCHEMAS = {
@@ -111,6 +115,47 @@ MODELING_SCHEMAS = {
             "scale_max": {"type": "number", "minimum": 0.001, "maximum": 100},
             "align_to_normal": {"type": "boolean"},
             "keep_surface": {"type": "boolean"},
+        },
+    },
+    "boolean_cut_preview": {
+        "status": "available",
+        "action": "blender.live_boolean_cut_preview",
+        "workflow_actions": {
+            "commit": "blender.live_boolean_cut_commit",
+            "cancel": "blender.live_boolean_cut_cancel",
+        },
+        "runtime_requirements": [
+            "object_mode",
+            "no_render_job",
+            "local_nonlinked_mesh_target",
+            "animated_or_constrained_target_requires_dedicated_workflow",
+            "bounded_exact_boolean_profiles",
+        ],
+        "failure_policy": [
+            "remove_preview_modifiers_on_failure",
+            "remove_preview_cutters_on_failure",
+            "preserve_target_mesh",
+            "preserve_existing_modifier_stack",
+        ],
+        "runtime_guards": {
+            "max_modifier_stack": MAX_MODIFIER_STACK,
+            "max_target_faces": MAX_EVALUATED_FACES,
+            "max_profiles": MAX_CUTTER_PROFILES,
+            "max_segments": MAX_CUTTER_SEGMENTS,
+            "max_polygon_points": MAX_CUTTER_POLYGON_POINTS,
+            "max_generated_cutter_faces": MAX_CUTTER_GENERATED_FACES,
+        },
+        "description": (
+            "Non-destructive exact-boolean preview with bounded box, circle, slot, "
+            "convex polygon and vent profiles. Commit keeps modifiers live and hides "
+            "cutters; cancel removes the whole preview in one operation. Validated by "
+            "BlenderBench on Blender 5.2.2 across box/circle/slot/polygon/vent profiles."
+        ),
+        "required": ["name", "profiles"],
+        "selectors": ["object_name", "ordax_object_id"],
+        "properties": {
+            "name": {"type": "string", "max_utf8_bytes": 63},
+            "profiles": {"type": "array", "minimum_items": 1, "maximum_items": MAX_CUTTER_PROFILES},
         },
     },
     "add_modifier": {
@@ -509,6 +554,138 @@ def evaluate_surface_scatter_runtime_budget(
     }
 
 
+def _plan_boolean_cut_preview(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {"object_name", "ordax_object_id", "name", "profiles"}
+    _reject_unknown_fields(payload, allowed)
+    selector = normalize_object_selector(payload)
+    name = _bounded_string(payload.get("name"), "name")
+    raw_profiles = payload.get("profiles")
+    if not isinstance(raw_profiles, list) or not (1 <= len(raw_profiles) <= MAX_CUTTER_PROFILES):
+        raise ValueError(f"profiles must contain 1 to {MAX_CUTTER_PROFILES} entries")
+
+    profiles: list[dict[str, Any]] = []
+    expanded_cutters = 0
+    generated_faces = 0
+    for index, raw in enumerate(raw_profiles):
+        if not isinstance(raw, dict):
+            raise ValueError(f"profiles[{index}] must be an object")
+        kind = str(raw.get("type") or "").strip().lower()
+        if kind not in {"box", "circle", "slot", "polygon", "vent"}:
+            raise ValueError(f"profiles[{index}].type must be box, circle, slot, polygon, or vent")
+        common = {"type", "offset", "rotation_euler"}
+        type_fields = {
+            "box": {"dimensions"},
+            "circle": {"radius", "depth", "segments"},
+            "slot": {"length", "width", "depth", "segments"},
+            "polygon": {"points", "depth"},
+            "vent": {"length", "width", "depth", "segments", "count", "spacing", "axis"},
+        }[kind]
+        unknown = sorted(set(raw) - common - type_fields)
+        if unknown:
+            raise ValueError(f"profiles[{index}] unsupported field(s): " + ", ".join(unknown))
+        offset = _vector3(raw.get("offset", [0, 0, 0]), f"profiles[{index}].offset", -10000.0, 10000.0)
+        rotation = _vector3(raw.get("rotation_euler", [0, 0, 0]), f"profiles[{index}].rotation_euler", -100000.0, 100000.0)
+        item: dict[str, Any] = {"type": kind, "offset": offset, "rotation_euler": rotation}
+        if kind == "box":
+            item["dimensions"] = _vector3(raw.get("dimensions"), f"profiles[{index}].dimensions", 0.001, 1000.0)
+            expanded = 1
+            faces = 6
+        elif kind == "circle":
+            item["radius"] = float(_bounded_number(raw.get("radius"), f"profiles[{index}].radius", 0.0005, 1000.0))
+            item["depth"] = float(_bounded_number(raw.get("depth"), f"profiles[{index}].depth", 0.001, 1000.0))
+            item["segments"] = int(_bounded_number(raw.get("segments", 32), f"profiles[{index}].segments", 8, MAX_CUTTER_SEGMENTS, integer=True))
+            expanded = 1
+            faces = item["segments"] + 2
+        elif kind == "slot":
+            item["length"] = float(_bounded_number(raw.get("length"), f"profiles[{index}].length", 0.001, 1000.0))
+            item["width"] = float(_bounded_number(raw.get("width"), f"profiles[{index}].width", 0.001, 1000.0))
+            if item["length"] < item["width"]:
+                raise ValueError(f"profiles[{index}].length must be greater than or equal to width")
+            item["depth"] = float(_bounded_number(raw.get("depth"), f"profiles[{index}].depth", 0.001, 1000.0))
+            item["segments"] = int(_bounded_number(raw.get("segments", 24), f"profiles[{index}].segments", 8, MAX_CUTTER_SEGMENTS, integer=True))
+            expanded = 1
+            faces = item["segments"] + 2
+        elif kind == "polygon":
+            points = raw.get("points")
+            if not isinstance(points, list) or not (3 <= len(points) <= MAX_CUTTER_POLYGON_POINTS):
+                raise ValueError(f"profiles[{index}].points must contain 3 to {MAX_CUTTER_POLYGON_POINTS} points")
+            normalized_points: list[list[float]] = []
+            for point_index, point in enumerate(points):
+                if not isinstance(point, list) or len(point) != 2:
+                    raise ValueError(f"profiles[{index}].points[{point_index}] must contain two numbers")
+                normalized_points.append([
+                    float(_bounded_number(point[0], f"profiles[{index}].points[{point_index}]", -1000.0, 1000.0)),
+                    float(_bounded_number(point[1], f"profiles[{index}].points[{point_index}]", -1000.0, 1000.0)),
+                ])
+            signs = []
+            for point_index in range(len(normalized_points)):
+                a, b, c = normalized_points[point_index - 2], normalized_points[point_index - 1], normalized_points[point_index]
+                cross = (b[0]-a[0])*(c[1]-b[1]) - (b[1]-a[1])*(c[0]-b[0])
+                if abs(cross) > 1e-9:
+                    signs.append(1 if cross > 0 else -1)
+            if not signs or min(signs) != max(signs):
+                raise ValueError(f"profiles[{index}].points must form a non-degenerate convex polygon")
+            item["points"] = normalized_points
+            item["depth"] = float(_bounded_number(raw.get("depth"), f"profiles[{index}].depth", 0.001, 1000.0))
+            expanded = 1
+            faces = len(normalized_points) + 2
+        else:
+            item["length"] = float(_bounded_number(raw.get("length"), f"profiles[{index}].length", 0.001, 1000.0))
+            item["width"] = float(_bounded_number(raw.get("width"), f"profiles[{index}].width", 0.001, 1000.0))
+            if item["length"] < item["width"]:
+                raise ValueError(f"profiles[{index}].length must be greater than or equal to width")
+            item["depth"] = float(_bounded_number(raw.get("depth"), f"profiles[{index}].depth", 0.001, 1000.0))
+            item["segments"] = int(_bounded_number(raw.get("segments", 24), f"profiles[{index}].segments", 8, MAX_CUTTER_SEGMENTS, integer=True))
+            item["count"] = int(_bounded_number(raw.get("count", 3), f"profiles[{index}].count", 2, MAX_CUTTER_PROFILES, integer=True))
+            item["spacing"] = float(_bounded_number(raw.get("spacing"), f"profiles[{index}].spacing", 0.001, 1000.0))
+            axis = str(raw.get("axis", "Y")).strip().upper()
+            if axis not in {"X", "Y"}:
+                raise ValueError(f"profiles[{index}].axis must be X or Y")
+            item["axis"] = axis
+            expanded = item["count"]
+            faces = expanded * (item["segments"] + 2)
+        expanded_cutters += expanded
+        generated_faces += faces
+        if expanded_cutters > MAX_CUTTER_PROFILES:
+            raise ValueError(f"profiles expand to more than {MAX_CUTTER_PROFILES} cutter objects")
+        profiles.append(item)
+    return {
+        **selector,
+        "name": name,
+        "profiles": profiles,
+        "expanded_cutters": expanded_cutters,
+        "estimated_cutter_faces": generated_faces,
+    }
+
+
+def evaluate_boolean_cut_runtime_budget(*, modifier_count: Any, target_faces: Any, expanded_cutters: Any, generated_cutter_faces: Any) -> dict[str, Any]:
+    stack = int(_bounded_number(modifier_count, "modifier_count", 0, MAX_MODIFIER_STACK, integer=True))
+    target = int(_bounded_number(target_faces, "target_faces", 0, 1000000000, integer=True))
+    cutters = int(_bounded_number(expanded_cutters, "expanded_cutters", 1, MAX_CUTTER_PROFILES, integer=True))
+    faces = int(_bounded_number(generated_cutter_faces, "generated_cutter_faces", 1, 1000000000, integer=True))
+    reasons: list[str] = []
+    if stack + cutters > MAX_MODIFIER_STACK:
+        reasons.append("boolean preview would exceed modifier stack limit")
+    if target > MAX_EVALUATED_FACES:
+        reasons.append("boolean target exceeds interactive face budget")
+    if faces > MAX_CUTTER_GENERATED_FACES:
+        reasons.append("generated cutter geometry exceeds interactive face budget")
+    return {
+        "allowed": not reasons,
+        "modifier_count": stack,
+        "target_faces": target,
+        "expanded_cutters": cutters,
+        "generated_cutter_faces": faces,
+        "limits": {
+            "max_modifier_stack": MAX_MODIFIER_STACK,
+            "max_target_faces": MAX_EVALUATED_FACES,
+            "max_profiles": MAX_CUTTER_PROFILES,
+            "max_generated_cutter_faces": MAX_CUTTER_GENERATED_FACES,
+        },
+        "reasons": reasons,
+    }
+
+
 def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "object_name",
@@ -751,7 +928,7 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
     normalized_operation = str(operation or "").strip().lower()
     if normalized_operation not in MODELING_SCHEMAS:
         raise ValueError(
-            "operation must be create_primitive, object_transform, surface_scatter, or add_modifier"
+            "operation must be create_primitive, object_transform, surface_scatter, boolean_cut_preview, or add_modifier"
         )
 
     if normalized_operation == "create_primitive":
@@ -760,6 +937,8 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         arguments = normalize_transform_request(payload)
     elif normalized_operation == "surface_scatter":
         arguments = _plan_surface_scatter(payload)
+    elif normalized_operation == "boolean_cut_preview":
+        arguments = _plan_boolean_cut_preview(payload)
     else:
         arguments = _plan_modifier(payload)
 
@@ -783,6 +962,7 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         "runtime_requirements",
         "runtime_guards",
         "failure_policy",
+        "workflow_actions",
     ):
         metadata_source = type_override if type_override else schema
         if metadata_key in metadata_source:

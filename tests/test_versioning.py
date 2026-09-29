@@ -76,6 +76,9 @@ class ComponentVersioningTests(unittest.TestCase):
         self.assertEqual(
             [
                 "blender.live_add_modifier",
+                "blender.live_boolean_cut_cancel",
+                "blender.live_boolean_cut_commit",
+                "blender.live_boolean_cut_preview",
                 "blender.live_create_primitive",
                 "blender.live_object_transform",
                 "blender.live_surface_scatter",
@@ -93,6 +96,10 @@ class ComponentVersioningTests(unittest.TestCase):
         self.assertEqual(
             "available",
             modeling["operations"]["add_modifier"]["status"],
+        )
+        self.assertEqual(
+            {"commit": "blender.live_boolean_cut_commit", "cancel": "blender.live_boolean_cut_cancel"},
+            modeling["operations"]["boolean_cut_preview"]["workflow_actions"],
         )
         self.assertEqual(
             8,

@@ -802,6 +802,7 @@ class BlenderActions:
                     "object_transform": "available",
                     "create_primitive": "available",
                     "surface_scatter": modeling_schemas()["surface_scatter"]["status"],
+                    "boolean_cut_preview": modeling_schemas()["boolean_cut_preview"]["status"],
                     "add_modifier": "available",
                 },
             },
@@ -1083,6 +1084,43 @@ class BlenderActions:
             timeout_seconds=float(payload.get("timeout_seconds", 60)),
         )
 
+    def blender_live_boolean_cut_preview(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            plan = plan_modeling_operation("boolean_cut_preview", payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        if not plan["executable"]:
+            return ActionResult(
+                False,
+                f"{plan['status']}: boolean cutter preview is not enabled for execution",
+                {"plan": plan},
+            )
+        return self._blender_live(payload).request(
+            "boolean_cut_preview",
+            plan["arguments"],
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+
+    def _boolean_cut_transition(self, payload: dict[str, Any], operation: str) -> ActionResult:
+        supported = {"project", "timeout_seconds", "preview_id"}
+        unsupported = sorted(set(payload) - supported)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+        preview_id = str(payload.get("preview_id") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", preview_id):
+            return ActionResult(False, "preview_id must be a bounded identifier")
+        return self._blender_live(payload).request(
+            operation,
+            {"preview_id": preview_id},
+            timeout_seconds=float(payload.get("timeout_seconds", 30)),
+        )
+
+    def blender_live_boolean_cut_commit(self, payload: dict[str, Any]) -> ActionResult:
+        return self._boolean_cut_transition(payload, "boolean_cut_commit")
+
+    def blender_live_boolean_cut_cancel(self, payload: dict[str, Any]) -> ActionResult:
+        return self._boolean_cut_transition(payload, "boolean_cut_cancel")
+
     def blender_live_material_apply(self, payload: dict[str, Any]) -> ActionResult:
         try:
             arguments = normalize_material_request(payload)
@@ -1305,6 +1343,9 @@ class BlenderActions:
             "create_box_with_cutouts": self.blender_live_create_box_with_cutouts,
             "add_modifier": self.blender_live_add_modifier,
             "surface_scatter": self.blender_live_surface_scatter,
+            "boolean_cut_preview": self.blender_live_boolean_cut_preview,
+            "boolean_cut_commit": self.blender_live_boolean_cut_commit,
+            "boolean_cut_cancel": self.blender_live_boolean_cut_cancel,
             "material_apply": self.blender_live_material_apply,
             "create_camera": self.blender_live_create_camera,
             "create_light": self.blender_live_create_light,

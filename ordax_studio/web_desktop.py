@@ -71,6 +71,11 @@ class StudioApi:
         context = self.store.context(project.slug, project.root)
         preview = self.agent.execute("project.preview_status", {"project": self.project})
         health = self.agent.execute("agent.project_health", {"project": self.project})
+        modeling = (
+            self.agent.execute("blender.live_modeling_schema", {"project": self.project})
+            if "blender" in project.apps
+            else None
+        )
         return {
             "product": APP_NAME,
             "project": self._project_card(project),
@@ -83,6 +88,7 @@ class StudioApi:
             },
             "preview": self._result(preview),
             "health": self._result(health),
+            "modeling": self._result(modeling) if modeling is not None else {"ok": True, "data": None},
         }
 
     def select_project(self, slug: str) -> dict[str, Any]:

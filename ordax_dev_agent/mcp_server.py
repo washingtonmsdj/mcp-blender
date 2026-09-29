@@ -389,6 +389,32 @@ def scatter_on_surface(
 
 
 @mcp.tool()
+def preview_boolean_cut(
+    project: str | None = None,
+    object_name: str = "",
+    ordax_object_id: str = "",
+    name: str = "BooleanCut",
+    profiles: list[dict] | None = None,
+) -> dict:
+    """Create a bounded non-destructive exact-boolean cutter preview on a mesh target."""
+    args: dict = {"name": name, "profiles": profiles or []}
+    args.update({"object_name": object_name} if object_name else {"ordax_object_id": ordax_object_id})
+    return _blender_action("blender.live_boolean_cut_preview", project, args)
+
+
+@mcp.tool()
+def commit_boolean_cut(project: str | None = None, preview_id: str = "") -> dict:
+    """Commit an ORDAX boolean preview non-destructively by keeping live modifiers and hiding cutters."""
+    return _blender_action("blender.live_boolean_cut_commit", project, {"preview_id": preview_id})
+
+
+@mcp.tool()
+def cancel_boolean_cut(project: str | None = None, preview_id: str = "") -> dict:
+    """Rollback an ORDAX boolean preview or committed cutter workflow in one operation."""
+    return _blender_action("blender.live_boolean_cut_cancel", project, {"preview_id": preview_id})
+
+
+@mcp.tool()
 def delete_object(project: str | None = None, object_name: str = "", missing_ok: bool = False) -> dict:
     """Remove one named Blender object through the bounded live mutation contract."""
     return _blender_action("blender.live_object_remove", project, {"object_names": [object_name], "missing_ok": missing_ok})

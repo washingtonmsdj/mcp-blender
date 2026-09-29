@@ -8,6 +8,7 @@ from ordax_dev_agent.blender_live_bridge import (
     blender_companion_bundle_fingerprint,
 )
 from ordax_dev_agent.assets.blender_modeling_contracts import (
+    evaluate_boolean_cut_runtime_budget,
     evaluate_modifier_runtime_budget,
     evaluate_surface_scatter_runtime_budget,
     modeling_schemas,
@@ -310,6 +311,62 @@ class BlenderModelingContractTests(unittest.TestCase):
             "projected scatter geometry exceeds interactive face budget",
             rejected["reasons"],
         )
+
+    def test_boolean_cut_preview_plan_is_executable_after_blenderbench_promotion(self) -> None:
+        plan = plan_modeling_operation(
+            "boolean_cut_preview",
+            {
+                "object_name": "Panel",
+                "name": "VentPass",
+                "profiles": [
+                    {"type": "circle", "radius": 0.5, "depth": 2.0},
+                    {"type": "slot", "length": 2.0, "width": 0.5, "depth": 2.0},
+                    {"type": "polygon", "points": [[-1,-1],[1,-1],[1,1],[-1,1]], "depth": 2.0},
+                    {"type": "vent", "length": 2.0, "width": 0.4, "depth": 2.0, "count": 3, "spacing": 0.75},
+                ],
+            },
+        )
+        self.assertTrue(plan["executable"])
+        self.assertEqual("available", plan["status"])
+        self.assertFalse(plan["requires_real_blender_smoke"])
+        self.assertEqual("blender.live_boolean_cut_preview", plan["action"])
+        self.assertEqual(6, plan["arguments"]["expanded_cutters"])
+        self.assertEqual("blender.live_boolean_cut_commit", plan["workflow_actions"]["commit"])
+        self.assertEqual("blender.live_boolean_cut_cancel", plan["workflow_actions"]["cancel"])
+
+    def test_boolean_cut_preview_rejects_nonconvex_and_expansion_overflow(self) -> None:
+        with self.assertRaisesRegex(ValueError, "convex polygon"):
+            plan_modeling_operation(
+                "boolean_cut_preview",
+                {
+                    "object_name": "Panel",
+                    "name": "BadPolygon",
+                    "profiles": [{"type": "polygon", "points": [[0,0],[2,0],[1,0.5],[2,2],[0,2]], "depth": 1.0}],
+                },
+            )
+        with self.assertRaisesRegex(ValueError, "expand to more than"):
+            plan_modeling_operation(
+                "boolean_cut_preview",
+                {
+                    "object_name": "Panel",
+                    "name": "TooMany",
+                    "profiles": [
+                        {"type": "vent", "length": 2.0, "width": 0.4, "depth": 1.0, "count": 8, "spacing": 0.5},
+                        {"type": "circle", "radius": 0.25, "depth": 1.0},
+                    ],
+                },
+            )
+
+    def test_boolean_cut_budget_accounts_for_existing_modifier_stack(self) -> None:
+        accepted = evaluate_boolean_cut_runtime_budget(
+            modifier_count=2, target_faces=1000, expanded_cutters=6, generated_cutter_faces=500
+        )
+        self.assertTrue(accepted["allowed"])
+        rejected = evaluate_boolean_cut_runtime_budget(
+            modifier_count=3, target_faces=1000, expanded_cutters=6, generated_cutter_faces=500
+        )
+        self.assertFalse(rejected["allowed"])
+        self.assertIn("boolean preview would exceed modifier stack limit", rejected["reasons"])
 
     def test_transform_plan_is_executable_and_closed_to_unknown_fields(self) -> None:
         plan = plan_modeling_operation(

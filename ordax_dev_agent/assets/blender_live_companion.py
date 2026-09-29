@@ -20,7 +20,7 @@ from pathlib import Path
 
 import bpy
 import bmesh
-from mathutils import Vector
+from mathutils import Euler, Matrix, Vector
 from mathutils.bvhtree import BVHTree
 
 
@@ -135,6 +135,7 @@ _normalize_transform_request = _MODELING_CONTRACTS.normalize_transform_request
 _plan_modeling_operation = _MODELING_CONTRACTS.plan_modeling_operation
 _evaluate_modifier_runtime_budget = _MODELING_CONTRACTS.evaluate_modifier_runtime_budget
 _evaluate_surface_scatter_runtime_budget = _MODELING_CONTRACTS.evaluate_surface_scatter_runtime_budget
+_evaluate_boolean_cut_runtime_budget = _MODELING_CONTRACTS.evaluate_boolean_cut_runtime_budget
 
 _MATERIAL_CONTRACTS = _load_companion_asset_module(
     "blender_material_contracts.py",
@@ -173,6 +174,9 @@ CAPABILITIES = [
     "create_box_with_cutouts",
     "add_modifier",
     "surface_scatter",
+    "boolean_cut_preview",
+    "boolean_cut_commit",
+    "boolean_cut_cancel",
     "material_apply",
     "create_camera",
     "create_light",
@@ -1813,6 +1817,311 @@ def _modeling_surface_scatter(command: dict) -> None:
             operation="surface_scatter",
             before=before,
         )
+
+
+def _boolean_cut_preview_items(preview_id: str) -> list:
+    return [
+        obj for obj in bpy.context.scene.objects
+        if str(obj.get("ordax_cut_preview_id") or "") == preview_id
+    ]
+
+
+def _boolean_cut_target(preview_id: str):
+    cutters = _boolean_cut_preview_items(preview_id)
+    if not cutters:
+        raise ValueError("boolean cut preview was not found")
+    names = {str(obj.get("ordax_cut_target") or "") for obj in cutters}
+    names.discard("")
+    if len(names) != 1:
+        raise ValueError("boolean cut preview target metadata is inconsistent")
+    target = bpy.context.scene.objects.get(next(iter(names)))
+    if target is None:
+        raise ValueError("boolean cut preview target no longer exists")
+    return target, cutters
+
+
+def _boolean_cut_matrix(target, offset, rotation):
+    local = Matrix.Translation(Vector(offset)) @ Euler(tuple(rotation), "XYZ").to_matrix().to_4x4()
+    return target.matrix_world @ local
+
+
+def _create_extruded_cutter(*, name: str, points: list, depth: float, target, offset: list, rotation: list, collection, preview_id: str, workflow_name: str):
+    if len(points) < 3:
+        raise ValueError("cutter profile requires at least three points")
+    half = float(depth) * 0.5
+    vertices = [(float(x), float(y), -half) for x, y in points]
+    vertices += [(float(x), float(y), half) for x, y in points]
+    count = len(points)
+    faces = [tuple(reversed(range(count))), tuple(range(count, count * 2))]
+    for index in range(count):
+        nxt = (index + 1) % count
+        faces.append((index, nxt, nxt + count, index + count))
+    mesh = bpy.data.meshes.new(name + "Mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    collection.objects.link(obj)
+    obj.matrix_world = _boolean_cut_matrix(target, offset, rotation)
+    obj.display_type = "WIRE"
+    obj.hide_render = True
+    obj.show_in_front = True
+    obj["ordax_cut_preview_id"] = preview_id
+    obj["ordax_cut_target"] = target.name
+    obj["ordax_cut_name"] = workflow_name
+    obj["ordax_cut_state"] = "preview"
+    return obj
+
+
+def _slot_profile_points(length: float, width: float, segments: int) -> list[tuple[float, float]]:
+    radius = float(width) * 0.5
+    straight = max(0.0, float(length) - float(width)) * 0.5
+    per_arc = max(4, int(segments) // 2)
+    points = []
+    for index in range(per_arc):
+        angle = -math.pi * 0.5 + math.pi * index / (per_arc - 1)
+        points.append((straight + math.cos(angle) * radius, math.sin(angle) * radius))
+    for index in range(per_arc):
+        angle = math.pi * 0.5 + math.pi * index / (per_arc - 1)
+        points.append((-straight + math.cos(angle) * radius, math.sin(angle) * radius))
+    return points
+
+
+def _profile_cutters(arguments: dict, target, collection, preview_id: str) -> list:
+    created = []
+    serial = 0
+    for profile in arguments["profiles"]:
+        kind = profile["type"]
+        base_offset = list(profile["offset"])
+        rotation = profile["rotation_euler"]
+        expanded = [base_offset]
+        if kind == "vent":
+            count = profile["count"]
+            span = (count - 1) * profile["spacing"]
+            expanded = []
+            for index in range(count):
+                offset = list(base_offset)
+                delta = index * profile["spacing"] - span * 0.5
+                offset[0 if profile["axis"] == "X" else 1] += delta
+                expanded.append(offset)
+        for offset in expanded:
+            cutter_name = f"__ordax_cut_{preview_id[:8]}_{serial}"
+            if kind == "box":
+                width, height, depth = profile["dimensions"]
+                points = [(-width/2, -height/2), (width/2, -height/2), (width/2, height/2), (-width/2, height/2)]
+            elif kind == "circle":
+                depth = profile["depth"]
+                points = [
+                    (math.cos(2 * math.pi * i / profile["segments"]) * profile["radius"],
+                     math.sin(2 * math.pi * i / profile["segments"]) * profile["radius"])
+                    for i in range(profile["segments"])
+                ]
+            elif kind in {"slot", "vent"}:
+                depth = profile["depth"]
+                points = _slot_profile_points(profile["length"], profile["width"], profile["segments"])
+            else:
+                depth = profile["depth"]
+                points = [tuple(point) for point in profile["points"]]
+            cutter = _create_extruded_cutter(
+                name=cutter_name,
+                points=points,
+                depth=depth,
+                target=target,
+                offset=offset,
+                rotation=rotation,
+                collection=collection,
+                preview_id=preview_id,
+                workflow_name=arguments["name"],
+            )
+            created.append(cutter)
+            serial += 1
+    return created
+
+
+def _modeling_boolean_cut_preview(command: dict) -> None:
+    command_id = command["id"]
+    target = None
+    collection = None
+    created = []
+    modifiers = []
+    before = None
+    try:
+        _modeling_runtime_preconditions()
+        plan = _modeling_plan_from_command("boolean_cut_preview", command)
+        smoke_allowed = (
+            bool(CFG.ordax_smoke_modeling_fixture)
+            and str(command_id).startswith("smoke-model-cut")
+            and plan.get("status") == "pending_blender_smoke"
+        )
+        if not plan["executable"] and not smoke_allowed:
+            raise ValueError(f"{plan['status']}: boolean cutter preview is not enabled for execution")
+        arguments = plan["arguments"]
+        target = _resolve_object(arguments)
+        if (
+            target.type != "MESH"
+            or target.library is not None
+            or target.override_library is not None
+            or getattr(target.data, "library", None) is not None
+        ):
+            raise ValueError("boolean cut target must be an existing local, non-linked mesh object")
+        if target.animation_data is not None or len(target.constraints) > 0:
+            raise ValueError("animated or constrained boolean targets require a dedicated workflow")
+        for obj in bpy.context.scene.objects:
+            if (
+                str(obj.get("ordax_cut_target") or "") == target.name
+                and str(obj.get("ordax_cut_name") or "") == arguments["name"]
+            ):
+                raise ValueError("an active boolean cut workflow already uses this target/name")
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        evaluated = target.evaluated_get(depsgraph)
+        budget = _evaluate_boolean_cut_runtime_budget(
+            modifier_count=len(target.modifiers),
+            target_faces=len(evaluated.data.polygons),
+            expanded_cutters=arguments["expanded_cutters"],
+            generated_cutter_faces=arguments["estimated_cutter_faces"],
+        )
+        if not budget["allowed"]:
+            raise ValueError("; ".join(budget["reasons"]))
+        before = _object_details(target)
+        preview_id = str(command_id)
+        collection_name = f"__ORDAX_CUT_PREVIEW_{preview_id[:12]}"
+        collection = bpy.data.collections.new(collection_name)
+        bpy.context.scene.collection.children.link(collection)
+        collection["ordax_cut_preview_id"] = preview_id
+        collection["ordax_cut_target"] = target.name
+        collection["ordax_cut_name"] = arguments["name"]
+        created = _profile_cutters(arguments, target, collection, preview_id)
+        for index, cutter in enumerate(created):
+            modifier = target.modifiers.new(f"__ORDAX_CUT_{preview_id[:8]}_{index}", "BOOLEAN")
+            modifier.operation = "DIFFERENCE"
+            modifier.solver = "EXACT"
+            modifier.object = cutter
+            cutter["ordax_cut_modifier"] = modifier.name
+            modifiers.append(modifier)
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender boolean cutter preview created",
+            operation="boolean_cut_preview",
+            preview_id=preview_id,
+            workflow_name=arguments["name"],
+            state="preview",
+            runtime_budget=budget,
+            profiles=arguments["profiles"],
+            cutters=[obj.name for obj in created],
+            before=before,
+            object=_object_details(target),
+        )
+    except Exception as error:
+        if target is not None:
+            for modifier in list(modifiers):
+                try:
+                    target.modifiers.remove(modifier)
+                except Exception:
+                    pass
+        for obj in list(created):
+            try:
+                mesh = obj.data if obj.type == "MESH" else None
+                bpy.data.objects.remove(obj, do_unlink=True)
+                if mesh is not None and mesh.users == 0:
+                    bpy.data.meshes.remove(mesh)
+            except Exception:
+                pass
+        if collection is not None:
+            try:
+                if collection.users == 0 or (len(collection.objects) == 0 and len(collection.children) == 0):
+                    bpy.data.collections.remove(collection)
+            except Exception:
+                pass
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="boolean_cut_preview",
+            before=before,
+        )
+
+
+def _normalize_preview_id(command: dict) -> str:
+    allowed = {"id", "operation", "preview_id"}
+    unknown = sorted(set(command) - allowed)
+    if unknown:
+        raise ValueError("unsupported field(s): " + ", ".join(unknown))
+    preview_id = str(command.get("preview_id") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", preview_id):
+        raise ValueError("preview_id must be a bounded identifier")
+    return preview_id
+
+
+def _modeling_boolean_cut_commit(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        _modeling_runtime_preconditions()
+        preview_id = _normalize_preview_id(command)
+        target, cutters = _boolean_cut_target(preview_id)
+        for cutter in cutters:
+            if str(cutter.get("ordax_cut_state") or "") not in {"preview", "committed"}:
+                raise ValueError("boolean cut preview state is invalid")
+        for cutter in cutters:
+            cutter["ordax_cut_state"] = "committed"
+            cutter.hide_render = True
+            cutter.hide_set(True)
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender boolean cutter preview committed non-destructively",
+            operation="boolean_cut_commit",
+            preview_id=preview_id,
+            state="committed",
+            cutters=[obj.name for obj in cutters],
+            object=_object_details(target),
+        )
+    except Exception as error:
+        _response(command_id, False, str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}", operation="boolean_cut_commit")
+
+
+def _modeling_boolean_cut_cancel(command: dict) -> None:
+    command_id = command["id"]
+    target = None
+    try:
+        _modeling_runtime_preconditions()
+        preview_id = _normalize_preview_id(command)
+        target, cutters = _boolean_cut_target(preview_id)
+        before = _object_details(target)
+        removed_modifiers = []
+        removed_cutters = []
+        collections = set()
+        for cutter in cutters:
+            collections.update(cutter.users_collection)
+            modifier_name = str(cutter.get("ordax_cut_modifier") or "")
+            modifier = target.modifiers.get(modifier_name) if modifier_name else None
+            if modifier is not None:
+                removed_modifiers.append(modifier.name)
+                target.modifiers.remove(modifier)
+            removed_cutters.append(cutter.name)
+            mesh = cutter.data if cutter.type == "MESH" else None
+            bpy.data.objects.remove(cutter, do_unlink=True)
+            if mesh is not None and mesh.users == 0:
+                bpy.data.meshes.remove(mesh)
+        for collection in collections:
+            if len(collection.objects) == 0 and len(collection.children) == 0:
+                bpy.data.collections.remove(collection)
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender boolean cutter workflow cancelled and rolled back",
+            operation="boolean_cut_cancel",
+            preview_id=preview_id,
+            state="cancelled",
+            removed_modifiers=removed_modifiers,
+            removed_cutters=removed_cutters,
+            before=before,
+            object=_object_details(target),
+        )
+    except Exception as error:
+        _response(command_id, False, str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}", operation="boolean_cut_cancel")
 
 
 def _material_apply(command: dict) -> None:
@@ -5086,6 +5395,12 @@ def _process(path: Path) -> None:
             _modeling_add_modifier(command)
         elif operation == "surface_scatter":
             _modeling_surface_scatter(command)
+        elif operation == "boolean_cut_preview":
+            _modeling_boolean_cut_preview(command)
+        elif operation == "boolean_cut_commit":
+            _modeling_boolean_cut_commit(command)
+        elif operation == "boolean_cut_cancel":
+            _modeling_boolean_cut_cancel(command)
         elif operation == "material_apply":
             _material_apply(command)
         elif operation == "create_camera":
@@ -5197,6 +5512,10 @@ def _run_modeling_smoke_fixture() -> dict:
         "array_invalid": "smoke-model-array-invalid",
         "scatter": "smoke-model-scatter",
         "scatter_invalid": "smoke-model-scatter-invalid",
+        "cut_preview": "smoke-model-cut-preview",
+        "cut_invalid": "smoke-model-cut-invalid",
+        "cut_commit": "smoke-model-cut-commit",
+        "cut_cancel": "smoke-model-cut-cancel",
     }
     result_paths = {
         key: RESULTS / f"{identifier}.json"
@@ -5324,6 +5643,63 @@ def _run_modeling_smoke_fixture() -> dict:
         )
         _process(invalid_array_path)
 
+        cut_preview_path = INBOX / f"{smoke_ids['cut_preview']}.json"
+        _write_json_atomic(
+            cut_preview_path,
+            {
+                "id": smoke_ids["cut_preview"],
+                "operation": "boolean_cut_preview",
+                "object_name": object_name,
+                "name": "SmokeCutters",
+                "profiles": [
+                    {"type": "box", "offset": [0.0, 0.0, 0.0], "dimensions": [0.25, 0.25, 3.0]},
+                    {"type": "circle", "offset": [0.6, 0.0, 0.0], "radius": 0.2, "depth": 3.0, "segments": 16},
+                    {"type": "slot", "offset": [-0.6, 0.0, 0.0], "length": 0.8, "width": 0.25, "depth": 3.0, "segments": 16},
+                    {"type": "polygon", "offset": [0.0, 0.6, 0.0], "points": [[-0.2, -0.2], [0.2, -0.2], [0.0, 0.25]], "depth": 3.0},
+                    {"type": "vent", "offset": [0.0, -0.6, 0.0], "length": 0.6, "width": 0.12, "depth": 3.0, "segments": 16, "count": 3, "spacing": 0.25, "axis": "X"},
+                ],
+            },
+        )
+        _process(cut_preview_path)
+
+        cut_invalid_path = INBOX / f"{smoke_ids['cut_invalid']}.json"
+        _write_json_atomic(
+            cut_invalid_path,
+            {
+                "id": smoke_ids["cut_invalid"],
+                "operation": "boolean_cut_preview",
+                "object_name": object_name,
+                "name": "SmokeCuttersTooMany",
+                "profiles": [
+                    {"type": "vent", "length": 0.6, "width": 0.12, "depth": 3.0, "count": 8, "spacing": 0.25},
+                    {"type": "circle", "radius": 0.2, "depth": 3.0},
+                ],
+            },
+        )
+        _process(cut_invalid_path)
+
+        cut_commit_path = INBOX / f"{smoke_ids['cut_commit']}.json"
+        _write_json_atomic(
+            cut_commit_path,
+            {
+                "id": smoke_ids["cut_commit"],
+                "operation": "boolean_cut_commit",
+                "preview_id": smoke_ids["cut_preview"],
+            },
+        )
+        _process(cut_commit_path)
+
+        cut_cancel_path = INBOX / f"{smoke_ids['cut_cancel']}.json"
+        _write_json_atomic(
+            cut_cancel_path,
+            {
+                "id": smoke_ids["cut_cancel"],
+                "operation": "boolean_cut_cancel",
+                "preview_id": smoke_ids["cut_preview"],
+            },
+        )
+        _process(cut_cancel_path)
+
         scatter_path = INBOX / f"{smoke_ids['scatter']}.json"
         _write_json_atomic(
             scatter_path,
@@ -5414,6 +5790,23 @@ def _run_modeling_smoke_fixture() -> dict:
             raise RuntimeError(
                 "surface scatter instance cap overflow was incorrectly accepted"
             )
+        if not bool(summaries["cut_preview"].get("ok")):
+            raise RuntimeError(
+                "boolean cutter preview smoke failed: "
+                + str(summaries["cut_preview"].get("summary") or "unknown failure")
+            )
+        if bool(summaries["cut_invalid"].get("ok")):
+            raise RuntimeError("boolean cutter expansion overflow was incorrectly accepted")
+        if not bool(summaries["cut_commit"].get("ok")):
+            raise RuntimeError(
+                "boolean cutter commit smoke failed: "
+                + str(summaries["cut_commit"].get("summary") or "unknown failure")
+            )
+        if not bool(summaries["cut_cancel"].get("ok")):
+            raise RuntimeError(
+                "boolean cutter cancel smoke failed: "
+                + str(summaries["cut_cancel"].get("summary") or "unknown failure")
+            )
 
         transformed = summaries["transform"].get("object") or {}
         if transformed.get("location") != expected_location:
@@ -5491,6 +5884,33 @@ def _run_modeling_smoke_fixture() -> dict:
         if int(scatter_parameters.get("seed") or -1) != 37:
             raise RuntimeError("smoke surface scatter did not preserve seed=37")
 
+        cut_preview = summaries["cut_preview"]
+        if cut_preview.get("state") != "preview":
+            raise RuntimeError("boolean cutter preview did not report preview state")
+        if len(cut_preview.get("cutters") or []) != 7:
+            raise RuntimeError("boolean cutter preview did not create exactly 7 bounded cutters")
+        if not bool((cut_preview.get("runtime_budget") or {}).get("allowed")):
+            raise RuntimeError("boolean cutter preview unexpectedly exceeded runtime budget")
+        profile_types = {item.get("type") for item in (cut_preview.get("profiles") or [])}
+        if profile_types != {"box", "circle", "slot", "polygon", "vent"}:
+            raise RuntimeError("boolean cutter preview did not preserve all typed profile variants")
+        if summaries["cut_commit"].get("state") != "committed":
+            raise RuntimeError("boolean cutter commit did not report committed state")
+        if len(summaries["cut_commit"].get("cutters") or []) != 7:
+            raise RuntimeError("boolean cutter commit lost cutter membership")
+        if summaries["cut_cancel"].get("state") != "cancelled":
+            raise RuntimeError("boolean cutter cancel did not report cancelled state")
+        if len(summaries["cut_cancel"].get("removed_cutters") or []) != 7:
+            raise RuntimeError("boolean cutter cancel did not remove all cutters")
+        if len(summaries["cut_cancel"].get("removed_modifiers") or []) != 7:
+            raise RuntimeError("boolean cutter cancel did not remove all preview modifiers")
+        before_names = [item.get("name") for item in ((cut_preview.get("before") or {}).get("modifiers") or [])]
+        after_names = [item.get("name") for item in ((summaries["cut_cancel"].get("object") or {}).get("modifiers") or [])]
+        if before_names != after_names:
+            raise RuntimeError("boolean cutter cancel did not restore the original modifier stack")
+        if _boolean_cut_preview_items(smoke_ids["cut_preview"]):
+            raise RuntimeError("boolean cutter cancel left preview cutter objects in the scene")
+
         trajectory_ids = set()
         if TRAJECTORY.is_file():
             for line in TRAJECTORY.read_text(encoding="utf-8-sig").splitlines():
@@ -5524,6 +5944,12 @@ def _run_modeling_smoke_fixture() -> dict:
             "scatter_limit_detected": True,
             "scatter_instance_count": int(summaries["scatter"].get("instance_count") or 0),
             "scatter_seed": int((summaries["scatter"].get("scatter_parameters") or {}).get("seed") or 0),
+            "cut_preview_positive": True,
+            "cut_limit_detected": True,
+            "cut_commit_positive": True,
+            "cut_cancel_rollback": True,
+            "cut_profile_types": sorted(profile_types),
+            "cutters_created": len(cut_preview.get("cutters") or []),
             "dispatcher_journaled": True,
             "object_name": object_name,
             "location": current.get("location"),

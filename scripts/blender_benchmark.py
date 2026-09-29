@@ -188,6 +188,10 @@ def _run_companion_smoke(
     modeling_array_invalid_path = control_root / "results" / "smoke-model-array-invalid.json"
     modeling_scatter_path = control_root / "results" / "smoke-model-scatter.json"
     modeling_scatter_invalid_path = control_root / "results" / "smoke-model-scatter-invalid.json"
+    modeling_cut_preview_path = control_root / "results" / "smoke-model-cut-preview.json"
+    modeling_cut_invalid_path = control_root / "results" / "smoke-model-cut-invalid.json"
+    modeling_cut_commit_path = control_root / "results" / "smoke-model-cut-commit.json"
+    modeling_cut_cancel_path = control_root / "results" / "smoke-model-cut-cancel.json"
     if not all(
         path.is_file()
         for path in (
@@ -201,6 +205,10 @@ def _run_companion_smoke(
             modeling_array_invalid_path,
             modeling_scatter_path,
             modeling_scatter_invalid_path,
+            modeling_cut_preview_path,
+            modeling_cut_invalid_path,
+            modeling_cut_commit_path,
+            modeling_cut_cancel_path,
         )
     ):
         raise RuntimeError(
@@ -236,6 +244,10 @@ def _run_companion_smoke(
     modeling_scatter_invalid = json.loads(
         modeling_scatter_invalid_path.read_text(encoding="utf-8-sig")
     )
+    modeling_cut_preview = json.loads(modeling_cut_preview_path.read_text(encoding="utf-8-sig"))
+    modeling_cut_invalid = json.loads(modeling_cut_invalid_path.read_text(encoding="utf-8-sig"))
+    modeling_cut_commit = json.loads(modeling_cut_commit_path.read_text(encoding="utf-8-sig"))
+    modeling_cut_cancel = json.loads(modeling_cut_cancel_path.read_text(encoding="utf-8-sig"))
     if not modeling_valid.get("ok"):
         raise RuntimeError(
             "modeling positive control failed: "
@@ -280,6 +292,14 @@ def _run_companion_smoke(
         raise RuntimeError(
             "surface scatter instance cap overflow was incorrectly accepted"
         )
+    if not modeling_cut_preview.get("ok"):
+        raise RuntimeError("boolean cutter preview smoke failed: " + json.dumps(modeling_cut_preview, indent=2))
+    if modeling_cut_invalid.get("ok"):
+        raise RuntimeError("boolean cutter expansion overflow was incorrectly accepted")
+    if not modeling_cut_commit.get("ok") or modeling_cut_commit.get("state") != "committed":
+        raise RuntimeError("boolean cutter commit smoke failed")
+    if not modeling_cut_cancel.get("ok") or modeling_cut_cancel.get("state") != "cancelled":
+        raise RuntimeError("boolean cutter cancel smoke failed")
 
     created_object = modeling_create.get("object") or {}
     if (created_object.get("mesh") or {}).get("vertices") != 8:
@@ -320,6 +340,24 @@ def _run_companion_smoke(
     if int((modeling_scatter.get("scatter_parameters") or {}).get("seed") or -1) != 37:
         raise RuntimeError("smoke surface scatter did not preserve seed=37")
 
+    if modeling_cut_preview.get("state") != "preview":
+        raise RuntimeError("smoke boolean cutter preview did not report preview state")
+    if len(modeling_cut_preview.get("cutters") or []) != 7:
+        raise RuntimeError("smoke boolean cutter preview did not create 7 cutters")
+    if not (modeling_cut_preview.get("runtime_budget") or {}).get("allowed"):
+        raise RuntimeError("smoke boolean cutter preview exceeded runtime budget")
+    cut_types = {item.get("type") for item in (modeling_cut_preview.get("profiles") or [])}
+    if cut_types != {"box", "circle", "slot", "polygon", "vent"}:
+        raise RuntimeError("smoke boolean cutter preview lost typed profile variants")
+    if len(modeling_cut_cancel.get("removed_modifiers") or []) != 7:
+        raise RuntimeError("smoke boolean cutter cancel did not remove 7 modifiers")
+    if len(modeling_cut_cancel.get("removed_cutters") or []) != 7:
+        raise RuntimeError("smoke boolean cutter cancel did not remove 7 cutters")
+    before_modifier_names = [item.get("name") for item in ((modeling_cut_preview.get("before") or {}).get("modifiers") or [])]
+    after_modifier_names = [item.get("name") for item in ((modeling_cut_cancel.get("object") or {}).get("modifiers") or [])]
+    if before_modifier_names != after_modifier_names:
+        raise RuntimeError("smoke boolean cutter cancel did not restore modifier stack")
+
     modeled_object = modeling_valid.get("object") or {}
     if modeled_object.get("location") != [1.25, -0.5, 0.75]:
         raise RuntimeError(
@@ -356,6 +394,10 @@ def _run_companion_smoke(
         "smoke-model-array-invalid",
         "smoke-model-scatter",
         "smoke-model-scatter-invalid",
+        "smoke-model-cut-preview",
+        "smoke-model-cut-invalid",
+        "smoke-model-cut-commit",
+        "smoke-model-cut-cancel",
     }.issubset(trajectory_ids):
         raise RuntimeError(
             "modeling fixture commands are missing from trajectory evidence"
@@ -372,6 +414,10 @@ def _run_companion_smoke(
         "array_limit_detected": True,
         "scatter_positive": True,
         "scatter_limit_detected": True,
+        "cut_preview_positive": True,
+        "cut_limit_detected": True,
+        "cut_commit_positive": True,
+        "cut_cancel_rollback": True,
         "dispatcher_journaled": True,
         "valid": modeling_valid,
         "invalid": modeling_invalid,
@@ -383,6 +429,10 @@ def _run_companion_smoke(
         "array_invalid": modeling_array_invalid,
         "scatter": modeling_scatter,
         "scatter_invalid": modeling_scatter_invalid,
+        "cut_preview": modeling_cut_preview,
+        "cut_invalid": modeling_cut_invalid,
+        "cut_commit": modeling_cut_commit,
+        "cut_cancel": modeling_cut_cancel,
     }
 
     after = hashlib.sha256(scene.read_bytes()).hexdigest()
@@ -514,6 +564,12 @@ def run(root: Path) -> dict:
             "scatter_limit_detected": baseline["modeling"]["scatter_limit_detected"],
             "scatter_instance_count": baseline["modeling"]["scatter"].get("instance_count"),
             "scatter_seed": (baseline["modeling"]["scatter"].get("scatter_parameters") or {}).get("seed"),
+            "cut_preview_positive": baseline["modeling"]["cut_preview_positive"],
+            "cut_limit_detected": baseline["modeling"]["cut_limit_detected"],
+            "cut_commit_positive": baseline["modeling"]["cut_commit_positive"],
+            "cut_cancel_rollback": baseline["modeling"]["cut_cancel_rollback"],
+            "cut_profile_types": sorted(item.get("type") for item in (baseline["modeling"]["cut_preview"].get("profiles") or [])),
+            "cutters_created": len(baseline["modeling"]["cut_preview"].get("cutters") or []),
             "dispatcher_journaled": baseline["modeling"]["dispatcher_journaled"],
             "location": (
                 (baseline["modeling"]["valid"].get("object") or {}).get("location")
@@ -527,6 +583,7 @@ def run(root: Path) -> dict:
             "modifier_runtime_budget": baseline["modeling"]["modifier"].get("runtime_budget"),
             "array_runtime_budget": baseline["modeling"]["array"].get("runtime_budget"),
             "scatter_runtime_budget": baseline["modeling"]["scatter"].get("runtime_budget"),
+            "cut_runtime_budget": baseline["modeling"]["cut_preview"].get("runtime_budget"),
         },
         "self_comparison": {
             "passed": identical.data.get("comparison_passed"),

@@ -129,6 +129,32 @@ BlenderBench on Blender 5.2.2 validated fixed seed `37`, an exact 25-instance ca
 overflow rejection, allowed projected geometry budget, durable trajectory evidence
 and unchanged source `.blend` hashes. Instances remain non-realized by default.
 
+### Non-destructive Boolean cutter workflow
+
+`boolean_cut_preview` is available through `blender.live_boolean_cut_preview`.
+It accepts one target selector plus a workflow `name` and one to eight bounded
+profiles. Supported profiles are `box`, `circle`, `slot`, convex `polygon` and
+`vent`; vents expand deterministically into repeated slot cutters. Offsets and
+rotations are target-local, while the companion creates the cutter objects in a
+dedicated preview collection and attaches Exact Difference Boolean modifiers.
+No modifier is applied to the target mesh during preview or commit.
+
+The returned `preview_id` drives two workflow actions. `blender.live_boolean_cut_commit`
+marks the workflow committed, keeps the Boolean modifiers live and hides the
+cutters. `blender.live_boolean_cut_cancel` removes every workflow modifier and
+cutter and restores the original modifier stack in one operation. The typed
+contract caps a workflow at eight expanded cutters, 64 segments per curved
+profile, 16 polygon points, 200,000 evaluated target faces and 12,000 generated
+cutter faces. Existing modifiers count against the same stack limit of eight.
+
+BlenderBench on Blender 5.2.2 validated all five profile families in one
+seven-cutter preview, rejected an expansion beyond the hard limit, committed the
+workflow without applying geometry, cancelled it after commit, verified complete
+modifier/cutter rollback, journaled every transition and preserved the source
+`.blend` byte-for-byte. The ORDAX Studio WebView bootstrap consumes the same
+`blender.live_modeling_schema`, and its MCP / Capacidades view renders the
+operation status plus its `commit` and `cancel` workflow actions.
+
 ## Promotion gate
 
 A disabled mutation can become available only after all of the following are
@@ -144,14 +170,16 @@ true:
    the durable trajectory, and the source `.blend` on disk remains unchanged;
 7. the normal Bridge CI remains green.
 
-The promotion gate has now been satisfied for `create_primitive`, `add_modifier` and
-`surface_scatter`. Future modeling mutations must still follow the same fail-closed
+The promotion gate has now been satisfied for `create_primitive`, `add_modifier`,
+`surface_scatter` and `boolean_cut_preview` (including commit/cancel transitions).
+Future modeling mutations must still follow the same fail-closed
 process before registration.
 
 ## Current real-smoke coverage
 
-`scripts/blender_benchmark.py` continues to exercise all four production
-modeling mutations through the real companion dispatcher on every BlenderBench
+`scripts/blender_benchmark.py` continues to exercise the production typed
+modeling mutations and the Boolean preview/commit/cancel workflow through the
+real companion dispatcher on every BlenderBench
 run. It keeps positive/negative controls, durable trajectory evidence, temporary
 object cleanup and source `.blend` hash protection so later changes cannot
 silently weaken the validated behavior.

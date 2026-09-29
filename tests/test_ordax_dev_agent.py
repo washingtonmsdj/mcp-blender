@@ -99,6 +99,9 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_create_primitive", result.data["actions"])
             self.assertIn("blender.live_add_modifier", result.data["actions"])
             self.assertIn("blender.live_surface_scatter", result.data["actions"])
+            self.assertIn("blender.live_boolean_cut_preview", result.data["actions"])
+            self.assertIn("blender.live_boolean_cut_commit", result.data["actions"])
+            self.assertIn("blender.live_boolean_cut_cancel", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
@@ -255,6 +258,15 @@ class AgentActionRegistryTests(unittest.TestCase):
                 "blender.live_surface_scatter",
                 tools["surface_scatter"]["action"],
             )
+            self.assertEqual("available", tools["boolean_cut_preview"]["status"])
+            self.assertEqual(
+                "blender.live_boolean_cut_preview",
+                tools["boolean_cut_preview"]["action"],
+            )
+            self.assertEqual(
+                {"commit": "blender.live_boolean_cut_commit", "cancel": "blender.live_boolean_cut_cancel"},
+                tools["boolean_cut_preview"]["workflow_actions"],
+            )
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["create_primitive"],
@@ -266,6 +278,10 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["surface_scatter"],
+            )
+            self.assertEqual(
+                "available",
+                result.data["mutation_policy"]["boolean_cut_preview"],
             )
 
     def test_create_primitive_normalizes_and_dispatches(self) -> None:
@@ -378,6 +394,65 @@ class AgentActionRegistryTests(unittest.TestCase):
         self.assertEqual(7, result.data["payload"]["seed"])
         self.assertEqual(1.0, result.data["payload"]["scale_min"])
         self.assertTrue(result.data["payload"]["align_to_normal"])
+
+    def test_boolean_cut_preview_and_transitions_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={"operation": operation, "payload": payload, "timeout_seconds": timeout_seconds},
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                preview = registry.execute(
+                    "blender.live_boolean_cut_preview",
+                    {
+                        "object_name": "Panel",
+                        "name": "CutPass",
+                        "profiles": [
+                            {"type": "box", "dimensions": [1.0, 0.5, 2.0]},
+                            {"type": "circle", "radius": 0.2, "depth": 2.0},
+                        ],
+                    },
+                )
+                commit = registry.execute(
+                    "blender.live_boolean_cut_commit",
+                    {"preview_id": "preview-123"},
+                )
+                cancel = registry.execute(
+                    "blender.live_boolean_cut_cancel",
+                    {"preview_id": "preview-123"},
+                )
+
+        self.assertTrue(preview.ok)
+        self.assertEqual("boolean_cut_preview", preview.data["operation"])
+        self.assertEqual(2, preview.data["payload"]["expanded_cutters"])
+        self.assertEqual("boolean_cut_commit", commit.data["operation"])
+        self.assertEqual({"preview_id": "preview-123"}, commit.data["payload"])
+        self.assertEqual("boolean_cut_cancel", cancel.data["operation"])
+        self.assertEqual({"preview_id": "preview-123"}, cancel.data["payload"])
+
+    def test_boolean_cut_preview_rejects_unknown_profile_fields_before_ipc(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            with patch.object(registry, "_blender_live") as live:
+                result = registry.execute(
+                    "blender.live_boolean_cut_preview",
+                    {
+                        "object_name": "Panel",
+                        "name": "BadCut",
+                        "profiles": [{"type": "circle", "radius": 0.2, "depth": 1.0, "code": "bad"}],
+                    },
+                )
+        self.assertFalse(result.ok)
+        self.assertIn("unsupported field(s): code", result.summary)
+        live.assert_not_called()
 
     def test_promoted_modeling_mutations_remain_closed_world(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
