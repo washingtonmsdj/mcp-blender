@@ -52,7 +52,14 @@ class BlenderAdoptionTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def _discovery(self, pid: int, *, age: float = 0.0, file: Path | None = None):
+    def _discovery(
+        self,
+        pid: int,
+        *,
+        age: float = 0.0,
+        file: Path | None = None,
+        attached_project: str | None = None,
+    ):
         path = self.state / "blender-discovery" / f"{pid}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -61,7 +68,7 @@ class BlenderAdoptionTests(unittest.TestCase):
                 "timestamp": time.time() - age,
                 "file": str(file or self.blend),
                 "blender_version": "5.2.2",
-                "attached_project": None,
+                "attached_project": attached_project,
             }),
             encoding="utf-8",
         )
@@ -76,6 +83,20 @@ class BlenderAdoptionTests(unittest.TestCase):
         self.assertEqual(config["version"], 1)
         self.assertEqual(config["projects"]["demo"]["root"], str(self.project_root.resolve()))
         self.assertEqual(config["companion_fingerprint"], "fingerprint-1")
+        marker = json.loads(self.manager.install_marker_path.read_text(encoding="utf-8"))
+        self.assertEqual(marker["bootstrap_sha256"], self.manager.installation_status()["bootstrap_sha256"])
+
+    def test_ensure_installed_is_noop_when_bootstrap_is_current(self):
+        first = self.manager.install()
+        self.assertTrue(first.ok)
+        marker = json.loads(self.manager.install_marker_path.read_text(encoding="utf-8"))
+        marker["enabled"] = True
+        self.manager.install_marker_path.write_text(json.dumps(marker), encoding="utf-8")
+        with patch.object(self.manager, "install", wraps=self.manager.install) as install:
+            result = self.manager.ensure_installed()
+        self.assertTrue(result.ok)
+        self.assertFalse(result.data["changed"])
+        install.assert_not_called()
 
     def test_enable_timeout_is_recovered_when_probe_confirms_addon_enabled(self):
         self.manager.enable_addon = True
@@ -106,6 +127,10 @@ class BlenderAdoptionTests(unittest.TestCase):
         self.assertEqual({item["pid"] for item in instances}, {101, 103})
         matches = self.manager.matching_instances(self.project)
         self.assertEqual([item["pid"] for item in matches], [101])
+
+    def test_matching_instances_excludes_window_attached_to_other_project(self):
+        self._discovery(104, attached_project="another-project")
+        self.assertEqual(self.manager.matching_instances(self.project), [])
 
     def test_system_blender_pids_parses_windows_tasklist(self):
         completed = SimpleNamespace(
@@ -153,9 +178,20 @@ class BlenderAdoptionTests(unittest.TestCase):
         self.assertEqual(result.data["pid"], pid)
         self.assertEqual(result.data["presence"]["project"], "demo")
 
-    def test_blender_addon_asset_is_valid_python(self):
+    def test_request_timeout_removes_pending_request(self):
+        pid = 302
+        self._discovery(pid)
+        result = self.manager.request_adoption(self.project, pid=pid, wait_seconds=0.5)
+        self.assertFalse(result.ok)
+        self.assertTrue(result.data["retryable"])
+        self.assertFalse((self.state / "blender-adoption" / f"{pid}.json").exists())
+
+    def test_blender_addon_asset_is_valid_python_and_suppresses_managed_launch(self):
         source = Path(__file__).resolve().parents[1] / "ordax_dev_agent" / "assets" / "ordax_studio_blender_addon.py"
-        compile(source.read_text(encoding="utf-8-sig"), str(source), "exec")
+        text = source.read_text(encoding="utf-8-sig")
+        compile(text, str(source), "exec")
+        self.assertIn("def _managed_launch()", text)
+        self.assertIn("if _managed_launch():", text)
 
 
 class BlenderStartAdoptionTests(unittest.TestCase):
