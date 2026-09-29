@@ -8,6 +8,7 @@ from typing import Any
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
 
+from .blender_connection import prepare_blender_connection
 from .instance_lock import SingleInstanceLock
 
 APP_NAME = "ORDAX Studio"
@@ -119,99 +120,7 @@ class StudioApi:
         return self._result(self.agent.execute("project.preview_status", {"project": self.project}))
 
     def blender_prepare(self) -> dict[str, Any]:
-        project = self.agent.projects[self.project]
-        if "blender" not in project.apps:
-            return {
-                "ok": True,
-                "data": {
-                    "state": "not_blender",
-                    "project": self.project,
-                    "can_start": False,
-                    "can_capture": False,
-                    "requires_restart": False,
-                },
-            }
-
-        status = self.agent.execute("blender.live_status", {"project": self.project})
-        if status.ok:
-            presence = status.data.get("presence") or {}
-            return {
-                "ok": True,
-                "summary": "Blender já conectado",
-                "data": {
-                    "state": "connected",
-                    "project": self.project,
-                    "pid": presence.get("pid"),
-                    "file": presence.get("file"),
-                    "can_start": False,
-                    "can_capture": True,
-                    "requires_restart": False,
-                },
-            }
-
-        adopted = self.agent.execute(
-            "blender.adopt",
-            {"project": self.project, "wait_seconds": 4.0},
-        )
-        if adopted.ok:
-            return {
-                "ok": True,
-                "summary": adopted.summary,
-                "data": {
-                    "state": "adopted",
-                    "project": self.project,
-                    "pid": adopted.data.get("pid"),
-                    "file": (adopted.data.get("presence") or {}).get("file"),
-                    "can_start": False,
-                    "can_capture": True,
-                    "requires_restart": False,
-                },
-            }
-        if adopted.data.get("no_match"):
-            instances = self.agent.execute("blender.instances", {})
-            if instances.ok:
-                unmanaged = instances.data.get("unmanaged_blender_pids") or []
-                if unmanaged:
-                    return {
-                        "ok": True,
-                        "summary": "Blender aberto sem o bridge ORDAX carregado",
-                        "data": {
-                            "state": "restart_required",
-                            "project": self.project,
-                            "blender_pids": unmanaged,
-                            "install_action": "blender.adoption_install",
-                            "bridge_installable": True,
-                            "can_start": False,
-                            "can_capture": False,
-                            "requires_restart": True,
-                        },
-                    }
-            return {
-                "ok": True,
-                "summary": "Nenhuma janela Blender aberta para este projeto",
-                "data": {
-                    "state": "idle",
-                    "project": self.project,
-                    "can_start": True,
-                    "can_capture": False,
-                    "requires_restart": False,
-                },
-            }
-        if adopted.data.get("ambiguous"):
-            return {
-                "ok": True,
-                "summary": "Mais de uma janela Blender corresponde ao projeto",
-                "data": {
-                    "state": "ambiguous",
-                    "project": self.project,
-                    "instances": adopted.data.get("instances", []),
-                    "requires_pid": True,
-                    "can_start": False,
-                    "can_capture": False,
-                    "requires_restart": False,
-                },
-            }
-        return self._result(adopted)
+        return prepare_blender_connection(self.agent, self.project, wait_seconds=4.0)
 
     def blender_install_bridge(self) -> dict[str, Any]:
         project = self.agent.projects[self.project]
