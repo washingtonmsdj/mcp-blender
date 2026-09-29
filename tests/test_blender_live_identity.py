@@ -92,15 +92,19 @@ class BlenderLiveIdentityTests(unittest.TestCase):
 
     def test_start_refuses_fresh_mismatched_session_instead_of_spawning(self):
         self._presence(project="other")
-        with patch(
-            "ordax_dev_agent.blender_live_bridge._process_is_running",
+        with patch.object(
+            self.bridge,
+            "presence_is_fresh",
             return_value=True,
         ), patch.object(self.bridge, "_companion_fingerprint", return_value="fp"), patch(
             "ordax_dev_agent.blender_live_bridge.subprocess.Popen"
         ) as popen:
             result = self.bridge.start(wait_seconds=0.1)
         self.assertFalse(result.ok)
-        self.assertTrue(result.data["identity_mismatch"])
+        self.assertTrue(
+            result.data.get("identity_mismatch"),
+            (result.summary, result.data),
+        )
         popen.assert_not_called()
 
 
