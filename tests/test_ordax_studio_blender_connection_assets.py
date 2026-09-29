@@ -29,6 +29,14 @@ class OrdaxStudioBlenderConnectionAssetTests(unittest.TestCase):
         self.assertIn("Instalar bridge", script)
         self.assertIn("Abrir Blender", script)
 
+    def test_connection_controller_rejects_stale_project_responses(self):
+        root = Path(__file__).resolve().parents[1] / "ordax_studio" / "assets"
+        script = (root / "blender-connection.js").read_text(encoding="utf-8")
+        self.assertIn("activeProject", script)
+        self.assertIn("projectAtStart", script)
+        self.assertIn("activeProject()!==projectAtStart", script)
+        self.assertIn("if(stale)schedule(0)", script)
+
     def test_connection_component_has_responsive_styles(self):
         root = Path(__file__).resolve().parents[1] / "ordax_studio" / "assets"
         stylesheet = (root / "blender-connection.css").read_text(encoding="utf-8")
