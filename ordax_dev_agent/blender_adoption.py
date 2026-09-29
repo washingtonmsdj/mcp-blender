@@ -355,6 +355,21 @@ class BlenderAdoptionManager:
 
         selected = candidates[0]
         selected_pid = int(selected["pid"])
+        attached_project = str(selected.get("attached_project") or "").strip()
+        if attached_project and attached_project != project.slug:
+            return ActionResult(
+                False,
+                "Blender window matches the requested file tree but is attached to another ORDAX project",
+                {
+                    "project": project.slug,
+                    "pid": selected_pid,
+                    "attached_project": attached_project,
+                    "attachment_conflict": True,
+                    "instance": selected,
+                    "retryable": False,
+                },
+            )
+
         request_id = uuid.uuid4().hex
         request_path = self._request_path(selected_pid)
         request_path.parent.mkdir(parents=True, exist_ok=True)
