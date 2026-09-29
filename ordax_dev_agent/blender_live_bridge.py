@@ -22,6 +22,7 @@ LEGACY_MAINTENANCE_OPERATIONS = {
     "save",
     "quit",
 }
+IDENTITY_RECOVERY_OPERATIONS = {"quit"}
 
 
 BUNDLE_MANIFEST_NAME = "blender_companion_bundle.json"
@@ -119,12 +120,8 @@ class BlenderLiveBridge:
             project.blender.get("scripts_dir", "automation/blender"),
             must_exist=False,
         )
-        self.assets_root = (
-            Path(__file__).resolve().parent / "assets"
-        ).resolve()
-        self.companion = (
-            self.assets_root / "blender_live_companion.py"
-        )
+        self.assets_root = (Path(__file__).resolve().parent / "assets").resolve()
+        self.companion = self.assets_root / "blender_live_companion.py"
 
     def _companion_fingerprint(self) -> str | None:
         try:
@@ -177,10 +174,31 @@ class BlenderLiveBridge:
         raise last_error
 
     def _read_presence(self) -> dict[str, Any]:
-        return self._read_json_object_retry(
-            self.presence,
-            label="presence.json",
-        )
+        return self._read_json_object_retry(self.presence, label="presence.json")
+
+    def _presence_identity(self, presence: dict[str, Any]) -> dict[str, Any]:
+        reported_project = str(presence.get("project") or "").strip()
+        project_matches = reported_project == self.project.slug
+        raw_file = str(presence.get("file") or "").strip()
+        file_matches = True
+        resolved_file = ""
+        if raw_file:
+            try:
+                candidate = Path(raw_file).resolve()
+                resolved_file = str(candidate)
+                file_matches = candidate.is_relative_to(self.project.root.resolve())
+            except (OSError, RuntimeError, ValueError):
+                file_matches = False
+        return {
+            "identity_matches": bool(project_matches and file_matches),
+            "presence_project": reported_project,
+            "project_matches": project_matches,
+            "presence_file": raw_file,
+            "resolved_presence_file": resolved_file,
+            "file_matches_project": file_matches,
+            "expected_project": self.project.slug,
+            "expected_project_root": str(self.project.root.resolve()),
+        }
 
     def status(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -199,6 +217,7 @@ class BlenderLiveBridge:
             try:
                 presence = self._read_presence()
                 data["presence"] = presence
+                data.update(self._presence_identity(presence))
                 protocol = presence.get("protocol_version")
                 data["protocol_version"] = protocol
                 data["protocol_compatible"] = protocol == EXPECTED_PROTOCOL_VERSION
@@ -216,6 +235,7 @@ class BlenderLiveBridge:
             except Exception as error:
                 data["presence_error"] = str(error)
                 data["protocol_compatible"] = False
+                data["identity_matches"] = False
         return data
 
     def start(
@@ -226,6 +246,12 @@ class BlenderLiveBridge:
     ) -> ActionResult:
         if self.presence_is_fresh():
             status = self.status()
+            if status.get("identity_matches") is False:
+                return ActionResult(
+                    False,
+                    "Visible Blender session identity no longer matches this ORDAX project",
+                    {"identity_mismatch": True, **status},
+                )
             if status.get("protocol_compatible") and status.get("companion_current"):
                 return ActionResult(
                     True,
@@ -241,8 +267,6 @@ class BlenderLiveBridge:
                     status,
                 )
 
-            # Protocol upgrades are safe to apply automatically when the current
-            # Blender session is clean. The previous protocol already supports quit.
             self.request("quit", timeout_seconds=15.0)
             deadline = time.monotonic() + 15.0
             while time.monotonic() < deadline and self.presence_is_fresh():
@@ -260,9 +284,7 @@ class BlenderLiveBridge:
                 "Blender live companion bundle is missing or invalid",
                 {
                     "companion": str(self.companion),
-                    "bundle_manifest": str(
-                        self.assets_root / BUNDLE_MANIFEST_NAME
-                    ),
+                    "bundle_manifest": str(self.assets_root / BUNDLE_MANIFEST_NAME),
                 },
             )
 
@@ -278,11 +300,7 @@ class BlenderLiveBridge:
                 except OSError:
                     pass
 
-        command = [
-            str(blender),
-            "--factory-startup",
-            "--disable-autoexec",
-        ]
+        command = [str(blender), "--factory-startup", "--disable-autoexec"]
 
         if blend_file:
             blend = self.project.path(blend_file)
@@ -312,9 +330,7 @@ class BlenderLiveBridge:
         startup_log = self.root / "blender-startup.log"
         startup_log.parent.mkdir(parents=True, exist_ok=True)
         with startup_log.open("a", encoding="utf-8", errors="replace") as log_handle:
-            log_handle.write(
-                f"\n--- OrdaX Blender start {time.time():.3f} ---\n"
-            )
+            log_handle.write(f"\n--- OrdaX Blender start {time.time():.3f} ---\n")
             log_handle.flush()
             process = subprocess.Popen(
                 command,
@@ -330,11 +346,21 @@ class BlenderLiveBridge:
         while time.monotonic() < deadline:
             if self.presence_is_fresh():
                 data = self.status()
-                if data.get("protocol_compatible") and data.get("companion_current"):
+                if (
+                    data.get("identity_matches")
+                    and data.get("protocol_compatible")
+                    and data.get("companion_current")
+                ):
                     data["pid"] = process.pid
                     data["log_file"] = str(startup_log)
                     data["transport"] = "blender-visible-companion"
                     return ActionResult(True, "Visible Blender live session started", data)
+                if data.get("identity_matches") is False:
+                    return ActionResult(
+                        False,
+                        "Blender companion started with a mismatched project identity",
+                        {"identity_mismatch": True, **data},
+                    )
             if process.poll() is not None:
                 return ActionResult(
                     False,
@@ -350,11 +376,7 @@ class BlenderLiveBridge:
         return ActionResult(
             False,
             "Blender opened but live companion did not become ready in time",
-            {
-                "pid": process.pid,
-                "log_file": str(startup_log),
-                **self.status(),
-            },
+            {"pid": process.pid, "log_file": str(startup_log), **self.status()},
         )
 
     def request(
@@ -368,6 +390,12 @@ class BlenderLiveBridge:
             return ActionResult(False, "Visible Blender live session is not running", self.status())
 
         status = self.status()
+        if operation not in IDENTITY_RECOVERY_OPERATIONS and status.get("identity_matches") is False:
+            return ActionResult(
+                False,
+                "Visible Blender file no longer belongs to this ORDAX project; operation blocked",
+                {"identity_mismatch": True, "blocked_operation": operation, **status},
+            )
         maintenance = operation in LEGACY_MAINTENANCE_OPERATIONS
         if not maintenance and status.get("protocol_compatible") is False:
             return ActionResult(
@@ -420,16 +448,9 @@ class BlenderLiveBridge:
                 return ActionResult(
                     ok,
                     str(response.get("summary") or "Blender live response"),
-                    {
-                        "transport": "blender-visible-companion",
-                        **response,
-                    },
+                    {"transport": "blender-visible-companion", **response},
                 )
 
-            # Heavy Blender operations block the main UI thread, so the normal
-            # presence heartbeat cannot advance while they run. The companion
-            # writes a per-command inflight marker immediately before execution.
-            # If that marker exists, stale presence means "busy", not "dead".
             if not inflight_path.is_file() and not self.presence_is_fresh(max_age_seconds=12.0):
                 return ActionResult(
                     False,
@@ -444,8 +465,6 @@ class BlenderLiveBridge:
             time.sleep(0.05)
 
         inflight = inflight_path.is_file()
-        # Delete only commands that were never consumed. Once inflight, the
-        # Blender companion owns the command and may still finish after timeout.
         if not inflight:
             try:
                 command_path.unlink()
@@ -536,10 +555,7 @@ class BlenderLiveBridge:
             )
 
         try:
-            response = self._read_json_object_retry(
-                path,
-                label="Blender live result",
-            )
+            response = self._read_json_object_retry(path, label="Blender live result")
         except (OSError, json.JSONDecodeError, ValueError) as error:
             return ActionResult(
                 False,
