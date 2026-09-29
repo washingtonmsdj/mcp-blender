@@ -33,9 +33,16 @@ def capability_contracts() -> dict[str, Any]:
         "blender_modeling": {
             "operations": modeling,
             "pending_variants": {
-                name: sorted(schema.get("pending_types", {}))
+                name: sorted(
+                    variant
+                    for variant, variant_schema in (schema.get("type_overrides") or {}).items()
+                    if variant_schema.get("status") != "available"
+                )
                 for name, schema in schemas.items()
-                if schema.get("pending_types")
+                if any(
+                    variant_schema.get("status") != "available"
+                    for variant_schema in (schema.get("type_overrides") or {}).values()
+                )
             },
             "available_actions": sorted({
                 action

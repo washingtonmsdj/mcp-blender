@@ -368,6 +368,59 @@ class BlenderModelingContractTests(unittest.TestCase):
         self.assertFalse(rejected["allowed"])
         self.assertIn("boolean preview would exceed modifier stack limit", rejected["reasons"])
 
+    def test_mesh_cleanup_plan_is_executable_after_blenderbench_promotion(self) -> None:
+        digest = "a" * 64
+        plan = plan_modeling_operation(
+            "mesh_cleanup",
+            {
+                "object_name": "Body",
+                "repair": "remove_loose_vertices",
+                "expected_base_geometry_sha256": digest,
+                "expected_loose_vertices": 3,
+            },
+        )
+        self.assertTrue(plan["executable"])
+        self.assertEqual("available", plan["status"])
+        self.assertEqual("blender.live_mesh_cleanup", plan["action"])
+        self.assertFalse(plan["requires_real_blender_smoke"])
+        self.assertEqual(digest, plan["arguments"]["expected_base_geometry_sha256"])
+        self.assertEqual(3, plan["arguments"]["expected_loose_vertices"])
+        self.assertIn("single_user_mesh_data", plan["runtime_requirements"])
+        self.assertIn("no_shape_keys", plan["runtime_requirements"])
+        self.assertIn("no_modifiers", plan["runtime_requirements"])
+        self.assertIn("mutate_working_mesh_copy_only", plan["failure_policy"])
+
+    def test_mesh_cleanup_plan_rejects_unbounded_or_stale_contract_inputs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "64-character SHA-256"):
+            plan_modeling_operation(
+                "mesh_cleanup",
+                {
+                    "object_name": "Body",
+                    "repair": "remove_loose_vertices",
+                    "expected_base_geometry_sha256": "not-a-hash",
+                },
+            )
+        with self.assertRaisesRegex(ValueError, "repair must be remove_loose_vertices"):
+            plan_modeling_operation(
+                "mesh_cleanup",
+                {
+                    "object_name": "Body",
+                    "repair": "merge_by_distance",
+                    "expected_base_geometry_sha256": "b" * 64,
+                },
+            )
+
+        with self.assertRaisesRegex(ValueError, "expected_loose_vertices must be between 1"):
+            plan_modeling_operation(
+                "mesh_cleanup",
+                {
+                    "object_name": "Body",
+                    "repair": "remove_loose_vertices",
+                    "expected_base_geometry_sha256": "d" * 64,
+                    "expected_loose_vertices": 0,
+                },
+            )
+
     def test_transform_plan_is_executable_and_closed_to_unknown_fields(self) -> None:
         plan = plan_modeling_operation(
             "object_transform",

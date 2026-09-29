@@ -80,6 +80,7 @@ class ComponentVersioningTests(unittest.TestCase):
                 "blender.live_boolean_cut_commit",
                 "blender.live_boolean_cut_preview",
                 "blender.live_create_primitive",
+                "blender.live_mesh_cleanup",
                 "blender.live_object_transform",
                 "blender.live_surface_scatter",
             ],
@@ -101,6 +102,8 @@ class ComponentVersioningTests(unittest.TestCase):
             {"commit": "blender.live_boolean_cut_commit", "cancel": "blender.live_boolean_cut_cancel"},
             modeling["operations"]["boolean_cut_preview"]["workflow_actions"],
         )
+        self.assertEqual("available", modeling["operations"]["mesh_cleanup"]["status"])
+        self.assertEqual("blender.live_mesh_cleanup", modeling["operations"]["mesh_cleanup"]["action"])
         self.assertEqual(
             8,
             modeling["operations"]["add_modifier"]["runtime_guards"][

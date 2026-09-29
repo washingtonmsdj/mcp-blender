@@ -158,6 +158,37 @@ MODELING_SCHEMAS = {
             "profiles": {"type": "array", "minimum_items": 1, "maximum_items": MAX_CUTTER_PROFILES},
         },
     },
+    "mesh_cleanup": {
+        "status": "available",
+        "action": "blender.live_mesh_cleanup",
+        "runtime_requirements": [
+            "object_mode",
+            "no_render_job",
+            "local_nonlinked_mesh_target",
+            "single_user_mesh_data",
+            "no_shape_keys",
+            "no_modifiers",
+            "expected_base_geometry_sha256_matches",
+            "animated_or_constrained_target_requires_dedicated_workflow",
+        ],
+        "failure_policy": [
+            "mutate_working_mesh_copy_only",
+            "swap_mesh_datablock_only_after_success",
+            "restore_original_mesh_on_failure",
+        ],
+        "description": (
+            "Revision-guarded topology cleanup validated by BlenderBench on Blender 5.2.2. "
+            "The promoted repair removes only truly isolated loose vertices; broader topology "
+            "edits remain diagnostic-only."
+        ),
+        "required": ["repair", "expected_base_geometry_sha256"],
+        "selectors": ["object_name", "ordax_object_id"],
+        "properties": {
+            "repair": {"enum": ["remove_loose_vertices"]},
+            "expected_base_geometry_sha256": {"type": "sha256"},
+            "expected_loose_vertices": {"type": "integer", "minimum": 1, "maximum": 1000000},
+        },
+    },
     "add_modifier": {
         "status": "available",
         "action": "blender.live_add_modifier",
@@ -274,6 +305,13 @@ def _bounded_string(value: Any, field: str, *, max_utf8_bytes: int = 63) -> str:
         or any(ord(character) < 32 for character in result)
     ):
         raise ValueError(f"{field} must be a non-empty bounded UTF-8 string")
+    return result
+
+
+def _sha256(value: Any, field: str) -> str:
+    result = _bounded_string(value, field, max_utf8_bytes=64).lower()
+    if len(result) != 64 or any(character not in "0123456789abcdef" for character in result):
+        raise ValueError(f"{field} must be a 64-character SHA-256 hex digest")
     return result
 
 
@@ -686,6 +724,41 @@ def evaluate_boolean_cut_runtime_budget(*, modifier_count: Any, target_faces: An
     }
 
 
+def _plan_mesh_cleanup(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "object_name",
+        "ordax_object_id",
+        "repair",
+        "expected_base_geometry_sha256",
+        "expected_loose_vertices",
+    }
+    _reject_unknown_fields(payload, allowed)
+    selector = normalize_object_selector(payload)
+    repair = str(payload.get("repair") or "").strip().lower()
+    if repair != "remove_loose_vertices":
+        raise ValueError("repair must be remove_loose_vertices")
+    expected_sha256 = _sha256(
+        payload.get("expected_base_geometry_sha256"),
+        "expected_base_geometry_sha256",
+    )
+    arguments: dict[str, Any] = {
+        **selector,
+        "repair": repair,
+        "expected_base_geometry_sha256": expected_sha256,
+    }
+    if "expected_loose_vertices" in payload:
+        arguments["expected_loose_vertices"] = int(
+            _bounded_number(
+                payload.get("expected_loose_vertices"),
+                "expected_loose_vertices",
+                1,
+                1000000,
+                integer=True,
+            )
+        )
+    return arguments
+
+
 def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "object_name",
@@ -928,7 +1001,7 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
     normalized_operation = str(operation or "").strip().lower()
     if normalized_operation not in MODELING_SCHEMAS:
         raise ValueError(
-            "operation must be create_primitive, object_transform, surface_scatter, boolean_cut_preview, or add_modifier"
+            "operation must be create_primitive, object_transform, surface_scatter, boolean_cut_preview, mesh_cleanup, or add_modifier"
         )
 
     if normalized_operation == "create_primitive":
@@ -939,6 +1012,8 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         arguments = _plan_surface_scatter(payload)
     elif normalized_operation == "boolean_cut_preview":
         arguments = _plan_boolean_cut_preview(payload)
+    elif normalized_operation == "mesh_cleanup":
+        arguments = _plan_mesh_cleanup(payload)
     else:
         arguments = _plan_modifier(payload)
 

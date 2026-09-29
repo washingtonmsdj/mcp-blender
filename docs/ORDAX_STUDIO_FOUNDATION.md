@@ -78,12 +78,14 @@ Integrar Blender Live, Unity e adapters de assets à experiência do Studio, man
 
 ### Estado atual da integração Blender no Studio
 
-Projetos Blender na shell WebView2 agora carregam `blender.live_modeling_schema`
-no bootstrap do workspace. A visão **MCP / Capacidades** renderiza diretamente
-as operações tipadas publicadas pelo `ActionRegistry`, incluindo ARRAY, Geometry
-Nodes surface scatter e o workflow Boolean não destrutivo `preview → commit →
-cancel`. O Studio não mantém uma segunda lista de capacidades: status, ações e
-workflow vêm do mesmo contrato consumido pelos clientes MCP e pelo companion.
+Projetos Blender na shell WebView2 carregam `blender.live_modeling_schema` no
+bootstrap do workspace. A visão **MCP / Capacidades** renderiza diretamente as
+operações tipadas publicadas pelo `ActionRegistry`, incluindo ARRAY, Geometry
+Nodes surface scatter, o workflow Boolean não destrutivo `preview → commit →
+cancel` e `mesh_cleanup`. O quality gate também publica repair hints de topologia;
+quando um hint é realmente seguro, ele referencia a mesma action revision-guarded
+que aparece no MCP. O Studio não mantém uma segunda lista de capacidades: status,
+ações e workflow vêm do mesmo contrato consumido pelos clientes MCP e pelo companion.
 
 ### Fase 4 — autonomia controlada
 

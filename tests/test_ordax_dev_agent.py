@@ -102,6 +102,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_boolean_cut_preview", result.data["actions"])
             self.assertIn("blender.live_boolean_cut_commit", result.data["actions"])
             self.assertIn("blender.live_boolean_cut_cancel", result.data["actions"])
+            self.assertIn("blender.live_mesh_cleanup", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
@@ -267,6 +268,10 @@ class AgentActionRegistryTests(unittest.TestCase):
                 {"commit": "blender.live_boolean_cut_commit", "cancel": "blender.live_boolean_cut_cancel"},
                 tools["boolean_cut_preview"]["workflow_actions"],
             )
+            self.assertEqual("available", tools["mesh_cleanup"]["status"])
+            self.assertEqual("blender.live_mesh_cleanup", tools["mesh_cleanup"]["action"])
+            self.assertIn("no_shape_keys", tools["mesh_cleanup"]["runtime_requirements"])
+            self.assertIn("no_modifiers", tools["mesh_cleanup"]["runtime_requirements"])
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["create_primitive"],
@@ -282,6 +287,10 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["boolean_cut_preview"],
+            )
+            self.assertEqual(
+                "available",
+                result.data["mutation_policy"]["mesh_cleanup"],
             )
 
     def test_create_primitive_normalizes_and_dispatches(self) -> None:
@@ -435,6 +444,42 @@ class AgentActionRegistryTests(unittest.TestCase):
         self.assertEqual({"preview_id": "preview-123"}, commit.data["payload"])
         self.assertEqual("boolean_cut_cancel", cancel.data["operation"])
         self.assertEqual({"preview_id": "preview-123"}, cancel.data["payload"])
+
+    def test_mesh_cleanup_normalizes_and_dispatches(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={"operation": operation, "payload": payload, "timeout_seconds": timeout_seconds},
+                )
+            )
+            digest = "c" * 64
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.execute(
+                    "blender.live_mesh_cleanup",
+                    {
+                        "object_name": "Body",
+                        "repair": "remove_loose_vertices",
+                        "expected_base_geometry_sha256": digest,
+                        "expected_loose_vertices": 2,
+                    },
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("mesh_cleanup", result.data["operation"])
+        self.assertEqual(
+            {
+                "object_name": "Body",
+                "repair": "remove_loose_vertices",
+                "expected_base_geometry_sha256": digest,
+                "expected_loose_vertices": 2,
+            },
+            result.data["payload"],
+        )
 
     def test_boolean_cut_preview_rejects_unknown_profile_fields_before_ipc(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

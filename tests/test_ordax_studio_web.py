@@ -79,6 +79,10 @@ class OrdaxStudioWebTests(unittest.TestCase):
         tools = modeling["data"]["tools"]
         self.assertEqual("available", tools["surface_scatter"]["status"])
         self.assertEqual("available", tools["boolean_cut_preview"]["status"])
+        self.assertEqual("available", tools["mesh_cleanup"]["status"])
+        self.assertEqual("blender.live_mesh_cleanup", tools["mesh_cleanup"]["action"])
+        self.assertIn("expected_base_geometry_sha256_matches", tools["mesh_cleanup"]["runtime_requirements"])
+        self.assertIn("no_modifiers", tools["mesh_cleanup"]["runtime_requirements"])
         self.assertEqual(
             {"commit": "blender.live_boolean_cut_commit", "cancel": "blender.live_boolean_cut_cancel"},
             tools["boolean_cut_preview"]["workflow_actions"],

@@ -177,6 +177,7 @@ CAPABILITIES = [
     "boolean_cut_preview",
     "boolean_cut_commit",
     "boolean_cut_cancel",
+    "mesh_cleanup",
     "material_apply",
     "create_camera",
     "create_light",
@@ -1664,12 +1665,7 @@ def _modeling_surface_scatter(command: dict) -> None:
     try:
         _modeling_runtime_preconditions()
         plan = _modeling_plan_from_command("surface_scatter", command)
-        smoke_allowed = (
-            bool(CFG.ordax_smoke_modeling_fixture)
-            and str(command_id).startswith("smoke-model-scatter")
-            and plan.get("status") == "pending_blender_smoke"
-        )
-        if not plan["executable"] and not smoke_allowed:
+        if not plan["executable"]:
             raise ValueError(
                 f"{plan['status']}: surface scatter is not enabled for execution"
             )
@@ -1947,12 +1943,7 @@ def _modeling_boolean_cut_preview(command: dict) -> None:
     try:
         _modeling_runtime_preconditions()
         plan = _modeling_plan_from_command("boolean_cut_preview", command)
-        smoke_allowed = (
-            bool(CFG.ordax_smoke_modeling_fixture)
-            and str(command_id).startswith("smoke-model-cut")
-            and plan.get("status") == "pending_blender_smoke"
-        )
-        if not plan["executable"] and not smoke_allowed:
+        if not plan["executable"]:
             raise ValueError(f"{plan['status']}: boolean cutter preview is not enabled for execution")
         arguments = plan["arguments"]
         target = _resolve_object(arguments)
@@ -2122,6 +2113,120 @@ def _modeling_boolean_cut_cancel(command: dict) -> None:
         )
     except Exception as error:
         _response(command_id, False, str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}", operation="boolean_cut_cancel")
+
+
+def _modeling_mesh_cleanup(command: dict) -> None:
+    command_id = command["id"]
+    obj = None
+    original_mesh = None
+    working_mesh = None
+    before = None
+    try:
+        _modeling_runtime_preconditions()
+        plan = _modeling_plan_from_command("mesh_cleanup", command)
+        if not plan["executable"]:
+            raise ValueError(f"{plan['status']}: mesh cleanup is not enabled for execution")
+        arguments = plan["arguments"]
+        obj = _resolve_object(arguments)
+        if (
+            obj.type != "MESH"
+            or obj.library is not None
+            or obj.override_library is not None
+            or getattr(obj.data, "library", None) is not None
+        ):
+            raise ValueError("mesh cleanup target must be an existing local, non-linked mesh object")
+        if obj.animation_data is not None or len(obj.constraints) > 0:
+            raise ValueError("animated or constrained cleanup targets require a dedicated workflow")
+        if getattr(obj.data, "users", 0) != 1:
+            raise ValueError("mesh cleanup requires single-user mesh data")
+        if getattr(obj.data, "shape_keys", None) is not None:
+            raise ValueError("mesh cleanup does not modify meshes with shape keys")
+        if len(obj.modifiers) > 0:
+            raise ValueError("mesh cleanup requires a target without modifiers")
+
+        current_sha256, current_counts = _mesh_fingerprint(obj, evaluated=False)
+        if current_sha256 != arguments["expected_base_geometry_sha256"]:
+            raise ValueError("stale mesh cleanup refused: base geometry fingerprint changed")
+
+        probe = bmesh.new()
+        try:
+            probe.from_mesh(obj.data)
+            loose_vertices = [vertex for vertex in probe.verts if not vertex.link_edges]
+            loose_count = len(loose_vertices)
+        finally:
+            probe.free()
+        if loose_count <= 0:
+            raise ValueError("mesh cleanup found no isolated loose vertices")
+        expected_loose = arguments.get("expected_loose_vertices")
+        if expected_loose is not None and loose_count != expected_loose:
+            raise ValueError(
+                f"stale mesh cleanup refused: expected {expected_loose} loose vertices, found {loose_count}"
+            )
+
+        before = _object_details(obj)
+        original_mesh = obj.data
+        original_name = original_mesh.name
+        working_mesh = original_mesh.copy()
+        work = bmesh.new()
+        try:
+            work.from_mesh(working_mesh)
+            removable = [vertex for vertex in work.verts if not vertex.link_edges]
+            if arguments["repair"] == "remove_loose_vertices" and removable:
+                bmesh.ops.delete(work, geom=removable, context="VERTS")
+            work.to_mesh(working_mesh)
+            working_mesh.update()
+        finally:
+            work.free()
+
+        obj.data = working_mesh
+        bpy.context.view_layer.update()
+        after_sha256, after_counts = _mesh_fingerprint(obj, evaluated=False)
+        removed = int(current_counts.get("vertices", 0)) - int(after_counts.get("vertices", 0))
+        if removed != loose_count:
+            raise RuntimeError(
+                f"mesh cleanup removed {removed} vertices but diagnosed {loose_count} isolated vertices"
+            )
+
+        _response(
+            command_id,
+            True,
+            "Blender mesh cleanup completed",
+            operation="mesh_cleanup",
+            repair=arguments["repair"],
+            removed_vertices=removed,
+            before_geometry_sha256=current_sha256,
+            after_geometry_sha256=after_sha256,
+            before_mesh=current_counts,
+            after_mesh=after_counts,
+            before=before,
+            object=_object_details(obj),
+        )
+        if original_mesh is not None and original_mesh.users == 0:
+            try:
+                bpy.data.meshes.remove(original_mesh)
+                working_mesh.name = original_name
+            except Exception:
+                pass
+    except Exception as error:
+        if obj is not None and original_mesh is not None and working_mesh is not None:
+            try:
+                if obj.data == working_mesh:
+                    obj.data = original_mesh
+                    bpy.context.view_layer.update()
+            except Exception:
+                pass
+        if working_mesh is not None and getattr(working_mesh, "users", 0) == 0:
+            try:
+                bpy.data.meshes.remove(working_mesh)
+            except Exception:
+                pass
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="mesh_cleanup",
+            before=before,
+        )
 
 
 def _material_apply(command: dict) -> None:
@@ -3588,6 +3693,128 @@ def _quality_mesh(check: dict) -> dict:
             "material_slots": material_slots,
         }
 
+        base_geometry_sha256, base_mesh_counts = _mesh_fingerprint(obj, evaluated=False)
+        automatic_repair_blockers = []
+        if evaluated:
+            automatic_repair_blockers.append("diagnostic_must_use_base_mesh")
+        if (
+            obj.library is not None
+            or obj.override_library is not None
+            or getattr(obj.data, "library", None) is not None
+        ):
+            automatic_repair_blockers.append("local_nonlinked_mesh_required")
+        if getattr(obj.data, "users", 0) != 1:
+            automatic_repair_blockers.append("single_user_mesh_data_required")
+        if getattr(obj.data, "shape_keys", None) is not None:
+            automatic_repair_blockers.append("shape_keys_not_supported")
+        if len(obj.modifiers) > 0:
+            automatic_repair_blockers.append("modifiers_require_manual_review")
+        if obj.animation_data is not None or len(obj.constraints) > 0:
+            automatic_repair_blockers.append("animation_or_constraints_require_manual_review")
+        if not base_geometry_sha256:
+            automatic_repair_blockers.append("base_geometry_fingerprint_unavailable")
+        repair_hints = []
+
+        def add_repair_hint(
+            code: str,
+            category: str,
+            count: int,
+            severity: str,
+            recommendation: str,
+            *,
+            auto_fix: bool = False,
+        ) -> None:
+            if count <= 0:
+                return
+            hint = {
+                "code": code,
+                "category": category,
+                "count": int(count),
+                "severity": severity,
+                "recommendation": recommendation,
+                "automatic": False,
+            }
+            if auto_fix:
+                hint["automatic_blockers"] = list(automatic_repair_blockers)
+            if auto_fix and not automatic_repair_blockers:
+                hint["automatic"] = True
+                hint["auto_fix"] = {
+                    "action": "blender.live_mesh_cleanup",
+                    "arguments": {
+                        "object_name": obj.name,
+                        "repair": "remove_loose_vertices",
+                        "expected_base_geometry_sha256": base_geometry_sha256,
+                        "expected_loose_vertices": int(loose_vertices),
+                    },
+                }
+            repair_hints.append(hint)
+
+        add_repair_hint(
+            "remove_isolated_vertices",
+            "loose_vertices",
+            loose_vertices,
+            "warning",
+            "Isolated vertices have no linked edges. They can be removed without changing connected topology.",
+            auto_fix=True,
+        )
+        add_repair_hint(
+            "review_non_finite_vertices",
+            "non_finite_vertices",
+            non_finite_vertices,
+            "error",
+            "Non-finite coordinates require manual source inspection; automatic coordinate fabrication is refused.",
+        )
+        add_repair_hint(
+            "review_zero_length_edges",
+            "zero_length_edges",
+            zero_length_edges,
+            "warning",
+            "Zero-length edges can encode collapsed or duplicated topology. Inspect before merge/dissolve operations.",
+        )
+        add_repair_hint(
+            "review_degenerate_faces",
+            "degenerate_faces",
+            degenerate_faces,
+            "warning",
+            "Degenerate faces need local topology review; automatic dissolve may change neighboring surfaces.",
+        )
+        add_repair_hint(
+            "review_wire_edges",
+            "wire_edges",
+            wire_edges,
+            "info",
+            "Wire edges may be intentional guides or incomplete topology. No automatic deletion is offered.",
+        )
+        add_repair_hint(
+            "review_boundary_edges",
+            "boundary_edges",
+            boundary_edges,
+            "info",
+            "Boundary edges can be intentional on open surfaces. Inspect local examples before filling or closing geometry.",
+        )
+        if connected_component_count > 1:
+            add_repair_hint(
+                "review_connected_components",
+                "connected_components",
+                connected_component_count,
+                "info",
+                "Multiple mesh components can be intentional. Compare component bounds/examples before separating or deleting islands.",
+            )
+        add_repair_hint(
+            "review_ngons",
+            "ngon_faces",
+            ngon_faces,
+            "info",
+            "N-gons are not inherently invalid. Review only where deformation, shading, export, or downstream topology requires it.",
+        )
+        add_repair_hint(
+            "review_non_manifold_edges",
+            "non_manifold_edges",
+            non_manifold_edges,
+            "warning",
+            "Non-manifold edges include open boundaries and multi-face edges. Inspect the bounded edge examples before repair.",
+        )
+
         rules = []
 
         def maximum(field: str, actual: int) -> None:
@@ -3674,6 +3901,15 @@ def _quality_mesh(check: dict) -> dict:
             "diagnostic_limit": diagnostic_limit,
             "metrics": metrics,
             "diagnostics": diagnostics,
+            "repair_context": {
+                "evaluated": evaluated,
+                "base_geometry_sha256": base_geometry_sha256,
+                "base_mesh": base_mesh_counts,
+                "automatic_repairs_require_base_mesh_diagnostics": True,
+                "automatic_repair_eligible": not automatic_repair_blockers,
+                "automatic_repair_blockers": list(automatic_repair_blockers),
+            },
+            "repair_hints": repair_hints,
             "rules": rules,
             "failed_rules": len(failed),
         }
@@ -5401,6 +5637,8 @@ def _process(path: Path) -> None:
             _modeling_boolean_cut_commit(command)
         elif operation == "boolean_cut_cancel":
             _modeling_boolean_cut_cancel(command)
+        elif operation == "mesh_cleanup":
+            _modeling_mesh_cleanup(command)
         elif operation == "material_apply":
             _material_apply(command)
         elif operation == "create_camera":
@@ -5516,6 +5754,10 @@ def _run_modeling_smoke_fixture() -> dict:
         "cut_invalid": "smoke-model-cut-invalid",
         "cut_commit": "smoke-model-cut-commit",
         "cut_cancel": "smoke-model-cut-cancel",
+        "cleanup_blocked": "smoke-model-cleanup-blocked",
+        "cleanup_diag": "smoke-model-cleanup-diagnostic",
+        "cleanup": "smoke-model-cleanup",
+        "cleanup_stale": "smoke-model-cleanup-stale",
     }
     result_paths = {
         key: RESULTS / f"{identifier}.json"
@@ -5699,6 +5941,96 @@ def _run_modeling_smoke_fixture() -> dict:
             },
         )
         _process(cut_cancel_path)
+
+        temporary = bpy.context.scene.objects.get(temporary_name)
+        if temporary is None or temporary.type != "MESH":
+            raise RuntimeError("cleanup smoke temporary mesh is unavailable")
+        temporary.data.vertices.add(1)
+        temporary.data.vertices[-1].co = (9.0, 9.0, 9.0)
+        temporary.data.update()
+        bpy.context.view_layer.update()
+
+        cleanup_blocked_path = INBOX / f"{smoke_ids['cleanup_blocked']}.json"
+        _write_json_atomic(
+            cleanup_blocked_path,
+            {
+                "id": smoke_ids["cleanup_blocked"],
+                "operation": "quality_gate",
+                "checks": [
+                    {
+                        "type": "mesh_quality",
+                        "object_name": temporary_name,
+                        "evaluated": False,
+                        "diagnostic_limit": 8,
+                        "max_loose_vertices": 0,
+                    }
+                ],
+            },
+        )
+        _process(cleanup_blocked_path)
+
+        for modifier_name in ("SmokeArray", "SmokeBevel"):
+            modifier = temporary.modifiers.get(modifier_name)
+            if modifier is not None:
+                temporary.modifiers.remove(modifier)
+        bpy.context.view_layer.update()
+
+        cleanup_diag_path = INBOX / f"{smoke_ids['cleanup_diag']}.json"
+        _write_json_atomic(
+            cleanup_diag_path,
+            {
+                "id": smoke_ids["cleanup_diag"],
+                "operation": "quality_gate",
+                "checks": [
+                    {
+                        "type": "mesh_quality",
+                        "object_name": temporary_name,
+                        "evaluated": False,
+                        "diagnostic_limit": 8,
+                        "max_loose_vertices": 0,
+                    }
+                ],
+            },
+        )
+        _process(cleanup_diag_path)
+        cleanup_diag = json.loads(
+            result_paths["cleanup_diag"].read_text(encoding="utf-8-sig")
+        )
+        cleanup_check = (cleanup_diag.get("checks") or [{}])[0]
+        cleanup_hints = cleanup_check.get("repair_hints") or []
+        cleanup_hint = next(
+            (
+                hint for hint in cleanup_hints
+                if hint.get("code") == "remove_isolated_vertices"
+                and hint.get("automatic")
+            ),
+            None,
+        )
+        if cleanup_hint is None:
+            raise RuntimeError("mesh quality did not expose the bounded loose-vertex auto-fix")
+        cleanup_arguments = (cleanup_hint.get("auto_fix") or {}).get("arguments") or {}
+
+        cleanup_path = INBOX / f"{smoke_ids['cleanup']}.json"
+        _write_json_atomic(
+            cleanup_path,
+            {
+                "id": smoke_ids["cleanup"],
+                "operation": "mesh_cleanup",
+                **cleanup_arguments,
+            },
+        )
+        _process(cleanup_path)
+
+        cleanup_stale_path = INBOX / f"{smoke_ids['cleanup_stale']}.json"
+        _write_json_atomic(
+            cleanup_stale_path,
+            {
+                "id": smoke_ids["cleanup_stale"],
+                "operation": "mesh_cleanup",
+                **cleanup_arguments,
+            },
+        )
+        _process(cleanup_stale_path)
 
         scatter_path = INBOX / f"{smoke_ids['scatter']}.json"
         _write_json_atomic(
@@ -5911,6 +6243,55 @@ def _run_modeling_smoke_fixture() -> dict:
         if _boolean_cut_preview_items(smoke_ids["cut_preview"]):
             raise RuntimeError("boolean cutter cancel left preview cutter objects in the scene")
 
+        cleanup_blocked = summaries["cleanup_blocked"]
+        if bool(cleanup_blocked.get("ok")):
+            raise RuntimeError("modifier-blocked mesh cleanup diagnostic unexpectedly passed")
+        cleanup_blocked_check = (cleanup_blocked.get("checks") or [{}])[0]
+        blocked_hint = next(
+            (
+                hint for hint in (cleanup_blocked_check.get("repair_hints") or [])
+                if hint.get("code") == "remove_isolated_vertices"
+            ),
+            None,
+        )
+        if not blocked_hint or blocked_hint.get("automatic"):
+            raise RuntimeError("mesh cleanup diagnostic incorrectly offered auto-fix with modifiers")
+        if "modifiers_require_manual_review" not in (blocked_hint.get("automatic_blockers") or []):
+            raise RuntimeError("mesh cleanup modifier safety blocker was not reported")
+
+        cleanup_diag = summaries["cleanup_diag"]
+        if bool(cleanup_diag.get("ok")):
+            raise RuntimeError("mesh cleanup diagnostic unexpectedly passed with an isolated vertex")
+        cleanup_check = (cleanup_diag.get("checks") or [{}])[0]
+        if int((cleanup_check.get("metrics") or {}).get("loose_vertices") or 0) != 1:
+            raise RuntimeError("mesh cleanup diagnostic did not measure exactly one loose vertex")
+        cleanup_hints = cleanup_check.get("repair_hints") or []
+        cleanup_hint = next(
+            (hint for hint in cleanup_hints if hint.get("code") == "remove_isolated_vertices"),
+            None,
+        )
+        if not cleanup_hint or not cleanup_hint.get("automatic"):
+            raise RuntimeError("mesh cleanup diagnostic did not expose its revision-guarded auto-fix")
+        cleanup = summaries["cleanup"]
+        if not bool(cleanup.get("ok")):
+            raise RuntimeError(
+                "mesh cleanup smoke failed: "
+                + str(cleanup.get("summary") or "unknown failure")
+            )
+        if int(cleanup.get("removed_vertices") or 0) != 1:
+            raise RuntimeError("mesh cleanup did not remove exactly one isolated vertex")
+        if int((cleanup.get("before_mesh") or {}).get("vertices") or 0) != 9:
+            raise RuntimeError("mesh cleanup did not report the expected 9-vertex pre-state")
+        if int((cleanup.get("after_mesh") or {}).get("vertices") or 0) != 8:
+            raise RuntimeError("mesh cleanup did not restore the expected 8-vertex base mesh")
+        if cleanup.get("before_geometry_sha256") == cleanup.get("after_geometry_sha256"):
+            raise RuntimeError("mesh cleanup did not produce a new base geometry fingerprint")
+        cleanup_stale = summaries["cleanup_stale"]
+        if bool(cleanup_stale.get("ok")):
+            raise RuntimeError("stale mesh cleanup fingerprint was incorrectly accepted")
+        if "fingerprint changed" not in str(cleanup_stale.get("summary") or ""):
+            raise RuntimeError("stale mesh cleanup rejection did not report fingerprint mismatch")
+
         trajectory_ids = set()
         if TRAJECTORY.is_file():
             for line in TRAJECTORY.read_text(encoding="utf-8-sig").splitlines():
@@ -5950,6 +6331,11 @@ def _run_modeling_smoke_fixture() -> dict:
             "cut_cancel_rollback": True,
             "cut_profile_types": sorted(profile_types),
             "cutters_created": len(cut_preview.get("cutters") or []),
+            "cleanup_modifier_guard": True,
+            "cleanup_diagnostic_positive": True,
+            "cleanup_positive": True,
+            "cleanup_stale_guard": True,
+            "cleanup_removed_vertices": int(summaries["cleanup"].get("removed_vertices") or 0),
             "dispatcher_journaled": True,
             "object_name": object_name,
             "location": current.get("location"),

@@ -415,6 +415,26 @@ def cancel_boolean_cut(project: str | None = None, preview_id: str = "") -> dict
 
 
 @mcp.tool()
+def cleanup_mesh(
+    project: str | None = None,
+    object_name: str = "",
+    ordax_object_id: str = "",
+    repair: str = "remove_loose_vertices",
+    expected_base_geometry_sha256: str = "",
+    expected_loose_vertices: int | None = None,
+) -> dict:
+    """Apply one revision-guarded bounded topology cleanup to the base mesh."""
+    args: dict = {
+        "repair": repair,
+        "expected_base_geometry_sha256": expected_base_geometry_sha256,
+    }
+    args.update({"object_name": object_name} if object_name else {"ordax_object_id": ordax_object_id})
+    if expected_loose_vertices is not None:
+        args["expected_loose_vertices"] = expected_loose_vertices
+    return _blender_action("blender.live_mesh_cleanup", project, args)
+
+
+@mcp.tool()
 def delete_object(project: str | None = None, object_name: str = "", missing_ok: bool = False) -> dict:
     """Remove one named Blender object through the bounded live mutation contract."""
     return _blender_action("blender.live_object_remove", project, {"object_names": [object_name], "missing_ok": missing_ok})

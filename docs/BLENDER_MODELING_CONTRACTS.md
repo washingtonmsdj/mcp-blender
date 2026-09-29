@@ -103,11 +103,12 @@ Example planning request:
 
 This request can now be sent through the normal typed mutation action.
 
-This variant now returns `status: available` and
-`executable: true`. The host action and Blender companion now execute it because BlenderBench
-proves modifier creation, evaluated
-copy count, offset behavior, budget rejection and rollback on Blender 5.x. The
-existing BEVEL, SUBSURF, SOLIDIFY and MIRROR variants remain available.
+This variant now returns `status: available` and `executable: true`. The host action
+and Blender companion execute it because BlenderBench proves ARRAY modifier creation,
+`count=4` runtime-budget evidence, over-limit count rejection, durable trajectory
+evidence and source `.blend` integrity on Blender 5.x. The benchmark does not claim
+to measure every evaluated spacing outcome. The existing BEVEL, SUBSURF, SOLIDIFY
+and MIRROR variants remain available.
 
 ### Geometry Nodes surface scatter
 
@@ -155,6 +156,35 @@ modifier/cutter rollback, journaled every transition and preserved the source
 `blender.live_modeling_schema`, and its MCP / Capacidades view renders the
 operation status plus its `commit` and `cancel` workflow actions.
 
+### Mesh repair hints and revision-guarded cleanup
+
+`mesh_quality` now returns `repair_hints` alongside bounded diagnostic samples.
+Hints cover loose vertices, non-finite coordinates, zero-length edges, degenerate
+faces, wire edges, boundary edges, disconnected components, n-gons and
+non-manifold edges. These hints are descriptive rather than blanket defect labels:
+open boundaries, multiple components and n-gons can be intentional depending on
+the asset.
+
+The first automatic repair is intentionally narrow. When `mesh_quality` runs with
+`evaluated=false` and finds truly isolated vertices, it can publish an `auto_fix`
+for `blender.live_mesh_cleanup` with repair `remove_loose_vertices`. The fix carries
+the base-mesh SHA-256 and diagnosed loose-vertex count. The companion rechecks both
+before mutation and refuses stale geometry. It also requires local single-user mesh
+data, no shape keys, no modifiers, Object Mode, no render job, and no
+animation/constraints.
+
+Cleanup is atomic at the mesh-datablock level: the companion edits a copied mesh,
+verifies the exact removed-vertex count, swaps the copy into the object only after
+success and restores the original datablock if anything fails. No merge-by-distance,
+face dissolve, hole filling, component deletion or retopology is inferred
+automatically.
+
+BlenderBench on Blender 5.2.2 validated a nine-vertex fixture containing exactly
+one isolated vertex, emitted the revision-guarded repair hint, removed exactly that
+one vertex, restored the expected eight-vertex base mesh and rejected a repeated
+cleanup using the now-stale pre-repair fingerprint. The source `.blend` remained
+byte-for-byte unchanged on disk.
+
 ## Promotion gate
 
 A disabled mutation can become available only after all of the following are
@@ -171,15 +201,15 @@ true:
 7. the normal Bridge CI remains green.
 
 The promotion gate has now been satisfied for `create_primitive`, `add_modifier`,
-`surface_scatter` and `boolean_cut_preview` (including commit/cancel transitions).
+`surface_scatter`, `boolean_cut_preview` (including commit/cancel transitions) and
+`mesh_cleanup` (`remove_loose_vertices`).
 Future modeling mutations must still follow the same fail-closed
 process before registration.
 
 ## Current real-smoke coverage
 
 `scripts/blender_benchmark.py` continues to exercise the production typed
-modeling mutations and the Boolean preview/commit/cancel workflow through the
-real companion dispatcher on every BlenderBench
-run. It keeps positive/negative controls, durable trajectory evidence, temporary
+modeling mutations, the Boolean preview/commit/cancel workflow and revision-guarded
+mesh cleanup through the real companion dispatcher on every BlenderBench run. It keeps positive/negative controls, durable trajectory evidence, temporary
 object cleanup and source `.blend` hash protection so later changes cannot
 silently weaken the validated behavior.

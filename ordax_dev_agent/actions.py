@@ -166,6 +166,7 @@ class ActionRegistry(
             "blender.live_boolean_cut_preview": self.blender_live_boolean_cut_preview,
             "blender.live_boolean_cut_commit": self.blender_live_boolean_cut_commit,
             "blender.live_boolean_cut_cancel": self.blender_live_boolean_cut_cancel,
+            "blender.live_mesh_cleanup": self.blender_live_mesh_cleanup,
             "blender.live_material_apply": self.blender_live_material_apply,
             "blender.live_create_camera": self.blender_live_create_camera,
             "blender.live_create_light": self.blender_live_create_light,

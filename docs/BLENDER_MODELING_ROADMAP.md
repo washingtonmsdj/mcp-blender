@@ -89,15 +89,20 @@ Sources: [Hardflow workflow discussion](https://www.reddit.com/r/blender/comment
 One user described manually extruding edges across a surface and asked for a
 faster way to turn drawn guides into topology. Automated retopology and
 interactive stroke tools depend on artistic judgment and viewport interaction.
-The existing mesh-quality gate already measures topology counts; it now also
-returns bounded edge/face/vertex examples with indices and local coordinates,
-including n-gons and non-finite coordinates. It also groups disconnected mesh
-components and reports bounded summaries with local bounds, so the artist or
-agent can locate islands without another scene mutation. A caller can set
-`max_connected_components` when a single continuous shell is required; multiple
-components can be intentional. Next add repair hints and carefully bounded
-corrective operations. Only later consider a typed retopo operation with an
-explicit target density and a preview/rollback gate.
+The mesh-quality gate now turns its bounded topology evidence into explicit
+`repair_hints`: loose/non-finite vertices, zero-length or boundary/wire/non-manifold
+edges, disconnected components, n-gons and degenerate faces are described with
+counts and local examples instead of being treated as universal defects.
+
+The first corrective operation is deliberately narrower than the diagnostics.
+`mesh_cleanup` can remove only truly isolated loose vertices, and only when the
+quality check inspected the base mesh (`evaluated=false`). The hint carries a
+base-geometry SHA-256 plus the expected loose-vertex count; Blender rechecks both,
+works on a copied mesh datablock, swaps only after success and rejects stale
+geometry, multi-user mesh data, shape keys, animation or constraints. BlenderBench
+on Blender 5.2.2 validated one isolated-vertex removal plus stale-fingerprint
+rejection while preserving the source `.blend` on disk. Broader topology repair
+remains review-only until an equally bounded preview/rollback contract exists.
 
 Sources: [surface-conforming modeling question](https://www.reddit.com/r/blenderhelp/comments/1iqqfnw/what_are_some_more_efficient_workflow_for_modeling_along_a_surface/),
 [iterative topology/editability feedback on Blender MCP](https://www.reddit.com/r/OpenAI/comments/1we95z2/blender_mcp_is_impressive_but_not_that_useable_yet/),
@@ -121,8 +126,12 @@ automatically declaring every disconnected island or non-quad a defect.
 3. **ConcluÃ­do:** cutters Boolean tipados (`box`, `circle`, `slot`, `polygon`,
    `vent`) com Preview â†’ Commit â†’ Cancel nÃ£o destrutivo, limites de geometria,
    rollback de uma operaÃ§Ã£o, BlenderBench real e exposiÃ§Ã£o no ORDAX Studio.
-4. **PrÃ³ximo:** component-aware repair hints e pequenas operaÃ§Ãµes corretivas nos
-   diagnÃ³sticos de malha antes de qualquer tentativa de retopologia automÃ¡tica.
+4. **ConcluÃ­do:** repair hints component-aware no `mesh_quality` e primeiro
+   `mesh_cleanup` revision-guarded para vÃ©rtices realmente isolados, com cÃ³pia de
+   datablock, hash stale guard, BlenderBench real e exposiÃ§Ã£o no ORDAX Studio.
+5. **PrÃ³ximo:** estudar previews estritamente tipados para correÃ§Ãµes mais ambÃ­guas
+   (zero-length edges e faces degeneradas) antes de qualquer auto-apply ou
+   retopologia automÃ¡tica.
 
 Each mutation should stay small in the MCP surface: one composable typed action,
 strict schemas, clear failure evidence, and visual/geometry inspection after

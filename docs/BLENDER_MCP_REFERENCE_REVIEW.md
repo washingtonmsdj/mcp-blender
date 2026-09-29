@@ -74,7 +74,11 @@ examples per category, can be set from 0 to 16, and `0` disables examples while
 keeping aggregate metrics. N-gon/degenerate-face examples include at most 32
 vertex indices and report when that list was truncated. When `evaluated=true`,
 indices belong to the evaluated mesh after modifiers; set `evaluated=false` to
-get indices from the source mesh.
+get indices from the source mesh. `mesh_quality` also returns `repair_hints` for
+these categories. Hints are descriptive by default; only truly isolated loose
+vertices diagnosed on the base mesh may expose an automatic fix. That fix points
+to `blender.live_mesh_cleanup`, carries the base-geometry SHA-256 and expected
+loose-vertex count, and is refused if the mesh changed before execution.
 
 Example request to inspect the source mesh and sample up to four issues per
 category:

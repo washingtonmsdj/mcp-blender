@@ -803,6 +803,7 @@ class BlenderActions:
                     "create_primitive": "available",
                     "surface_scatter": modeling_schemas()["surface_scatter"]["status"],
                     "boolean_cut_preview": modeling_schemas()["boolean_cut_preview"]["status"],
+                    "mesh_cleanup": modeling_schemas()["mesh_cleanup"]["status"],
                     "add_modifier": "available",
                 },
             },
@@ -1121,6 +1122,23 @@ class BlenderActions:
     def blender_live_boolean_cut_cancel(self, payload: dict[str, Any]) -> ActionResult:
         return self._boolean_cut_transition(payload, "boolean_cut_cancel")
 
+    def blender_live_mesh_cleanup(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            plan = plan_modeling_operation("mesh_cleanup", payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        if not plan["executable"]:
+            return ActionResult(
+                False,
+                f"{plan['status']}: mesh cleanup is not enabled for execution",
+                {"plan": plan},
+            )
+        return self._blender_live(payload).request(
+            "mesh_cleanup",
+            plan["arguments"],
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+
     def blender_live_material_apply(self, payload: dict[str, Any]) -> ActionResult:
         try:
             arguments = normalize_material_request(payload)
@@ -1346,6 +1364,7 @@ class BlenderActions:
             "boolean_cut_preview": self.blender_live_boolean_cut_preview,
             "boolean_cut_commit": self.blender_live_boolean_cut_commit,
             "boolean_cut_cancel": self.blender_live_boolean_cut_cancel,
+            "mesh_cleanup": self.blender_live_mesh_cleanup,
             "material_apply": self.blender_live_material_apply,
             "create_camera": self.blender_live_create_camera,
             "create_light": self.blender_live_create_light,

@@ -192,6 +192,10 @@ def _run_companion_smoke(
     modeling_cut_invalid_path = control_root / "results" / "smoke-model-cut-invalid.json"
     modeling_cut_commit_path = control_root / "results" / "smoke-model-cut-commit.json"
     modeling_cut_cancel_path = control_root / "results" / "smoke-model-cut-cancel.json"
+    modeling_cleanup_blocked_path = control_root / "results" / "smoke-model-cleanup-blocked.json"
+    modeling_cleanup_diag_path = control_root / "results" / "smoke-model-cleanup-diagnostic.json"
+    modeling_cleanup_path = control_root / "results" / "smoke-model-cleanup.json"
+    modeling_cleanup_stale_path = control_root / "results" / "smoke-model-cleanup-stale.json"
     if not all(
         path.is_file()
         for path in (
@@ -209,6 +213,10 @@ def _run_companion_smoke(
             modeling_cut_invalid_path,
             modeling_cut_commit_path,
             modeling_cut_cancel_path,
+            modeling_cleanup_blocked_path,
+            modeling_cleanup_diag_path,
+            modeling_cleanup_path,
+            modeling_cleanup_stale_path,
         )
     ):
         raise RuntimeError(
@@ -248,6 +256,10 @@ def _run_companion_smoke(
     modeling_cut_invalid = json.loads(modeling_cut_invalid_path.read_text(encoding="utf-8-sig"))
     modeling_cut_commit = json.loads(modeling_cut_commit_path.read_text(encoding="utf-8-sig"))
     modeling_cut_cancel = json.loads(modeling_cut_cancel_path.read_text(encoding="utf-8-sig"))
+    modeling_cleanup_blocked = json.loads(modeling_cleanup_blocked_path.read_text(encoding="utf-8-sig"))
+    modeling_cleanup_diag = json.loads(modeling_cleanup_diag_path.read_text(encoding="utf-8-sig"))
+    modeling_cleanup = json.loads(modeling_cleanup_path.read_text(encoding="utf-8-sig"))
+    modeling_cleanup_stale = json.loads(modeling_cleanup_stale_path.read_text(encoding="utf-8-sig"))
     if not modeling_valid.get("ok"):
         raise RuntimeError(
             "modeling positive control failed: "
@@ -300,6 +312,38 @@ def _run_companion_smoke(
         raise RuntimeError("boolean cutter commit smoke failed")
     if not modeling_cut_cancel.get("ok") or modeling_cut_cancel.get("state") != "cancelled":
         raise RuntimeError("boolean cutter cancel smoke failed")
+    if modeling_cleanup_blocked.get("ok"):
+        raise RuntimeError("modifier-blocked mesh cleanup diagnostic unexpectedly passed")
+    cleanup_blocked_check = (modeling_cleanup_blocked.get("checks") or [{}])[0]
+    blocked_hint = next(
+        (
+            hint for hint in (cleanup_blocked_check.get("repair_hints") or [])
+            if hint.get("code") == "remove_isolated_vertices"
+        ),
+        None,
+    )
+    if not blocked_hint or blocked_hint.get("automatic"):
+        raise RuntimeError("mesh cleanup diagnostic incorrectly offered auto-fix with modifiers")
+    if "modifiers_require_manual_review" not in (blocked_hint.get("automatic_blockers") or []):
+        raise RuntimeError("mesh cleanup modifier safety blocker was not reported")
+    if modeling_cleanup_diag.get("ok"):
+        raise RuntimeError("mesh cleanup diagnostic unexpectedly passed")
+    cleanup_check = (modeling_cleanup_diag.get("checks") or [{}])[0]
+    if int((cleanup_check.get("metrics") or {}).get("loose_vertices") or 0) != 1:
+        raise RuntimeError("mesh cleanup diagnostic did not measure one loose vertex")
+    cleanup_hint = next((hint for hint in (cleanup_check.get("repair_hints") or []) if hint.get("code") == "remove_isolated_vertices"), None)
+    if not cleanup_hint or not cleanup_hint.get("automatic"):
+        raise RuntimeError("mesh cleanup diagnostic did not expose the bounded auto-fix")
+    if not modeling_cleanup.get("ok") or int(modeling_cleanup.get("removed_vertices") or 0) != 1:
+        raise RuntimeError("mesh cleanup smoke did not remove exactly one isolated vertex")
+    if int((modeling_cleanup.get("before_mesh") or {}).get("vertices") or 0) != 9:
+        raise RuntimeError("mesh cleanup pre-state did not contain 9 vertices")
+    if int((modeling_cleanup.get("after_mesh") or {}).get("vertices") or 0) != 8:
+        raise RuntimeError("mesh cleanup post-state did not restore 8 vertices")
+    if modeling_cleanup_stale.get("ok"):
+        raise RuntimeError("stale mesh cleanup fingerprint was incorrectly accepted")
+    if "fingerprint changed" not in str(modeling_cleanup_stale.get("summary") or ""):
+        raise RuntimeError("stale mesh cleanup rejection did not expose fingerprint mismatch")
 
     created_object = modeling_create.get("object") or {}
     if (created_object.get("mesh") or {}).get("vertices") != 8:
@@ -398,6 +442,10 @@ def _run_companion_smoke(
         "smoke-model-cut-invalid",
         "smoke-model-cut-commit",
         "smoke-model-cut-cancel",
+        "smoke-model-cleanup-blocked",
+        "smoke-model-cleanup-diagnostic",
+        "smoke-model-cleanup",
+        "smoke-model-cleanup-stale",
     }.issubset(trajectory_ids):
         raise RuntimeError(
             "modeling fixture commands are missing from trajectory evidence"
@@ -418,6 +466,10 @@ def _run_companion_smoke(
         "cut_limit_detected": True,
         "cut_commit_positive": True,
         "cut_cancel_rollback": True,
+        "cleanup_modifier_guard": True,
+        "cleanup_diagnostic_positive": True,
+        "cleanup_positive": True,
+        "cleanup_stale_guard": True,
         "dispatcher_journaled": True,
         "valid": modeling_valid,
         "invalid": modeling_invalid,
@@ -433,6 +485,10 @@ def _run_companion_smoke(
         "cut_invalid": modeling_cut_invalid,
         "cut_commit": modeling_cut_commit,
         "cut_cancel": modeling_cut_cancel,
+        "cleanup_blocked": modeling_cleanup_blocked,
+        "cleanup_diag": modeling_cleanup_diag,
+        "cleanup": modeling_cleanup,
+        "cleanup_stale": modeling_cleanup_stale,
     }
 
     after = hashlib.sha256(scene.read_bytes()).hexdigest()
@@ -570,6 +626,13 @@ def run(root: Path) -> dict:
             "cut_cancel_rollback": baseline["modeling"]["cut_cancel_rollback"],
             "cut_profile_types": sorted(item.get("type") for item in (baseline["modeling"]["cut_preview"].get("profiles") or [])),
             "cutters_created": len(baseline["modeling"]["cut_preview"].get("cutters") or []),
+            "cleanup_modifier_guard": baseline["modeling"]["cleanup_modifier_guard"],
+            "cleanup_blocked_repair_hints": (baseline["modeling"]["cleanup_blocked"].get("checks") or [{}])[0].get("repair_hints"),
+            "cleanup_diagnostic_positive": baseline["modeling"]["cleanup_diagnostic_positive"],
+            "cleanup_positive": baseline["modeling"]["cleanup_positive"],
+            "cleanup_stale_guard": baseline["modeling"]["cleanup_stale_guard"],
+            "cleanup_removed_vertices": baseline["modeling"]["cleanup"].get("removed_vertices"),
+            "cleanup_repair_hints": (baseline["modeling"]["cleanup_diag"].get("checks") or [{}])[0].get("repair_hints"),
             "dispatcher_journaled": baseline["modeling"]["dispatcher_journaled"],
             "location": (
                 (baseline["modeling"]["valid"].get("object") or {}).get("location")
