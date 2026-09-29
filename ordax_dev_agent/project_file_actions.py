@@ -4,7 +4,12 @@ from __future__ import annotations
 from typing import Any
 
 from .models import ActionResult
-from .project_text_actions import _WRITABLE_SUFFIXES, _relative_project_path, _sha256
+from .project_text_actions import (
+    _MAX_READ_BYTES,
+    _WRITABLE_SUFFIXES,
+    _relative_project_path,
+    _sha256,
+)
 
 
 class ProjectFileActions:
@@ -45,6 +50,13 @@ class ProjectFileActions:
                 {"destination": destination_relative.as_posix()},
             )
 
+        size = source.stat().st_size
+        if size > _MAX_READ_BYTES:
+            return ActionResult(
+                False,
+                f"text file is too large to move through generic maintenance: {size} > {_MAX_READ_BYTES}",
+                {"source": source_relative.as_posix(), "size_bytes": size},
+            )
         before = source.read_bytes()
         current_sha = _sha256(before)
         expected = str(payload.get("expected_sha256") or "").strip().lower()
@@ -107,6 +119,13 @@ class ProjectFileActions:
                 f"text file extension is not maintainable: {path.suffix or '<none>'}",
             )
 
+        size = path.stat().st_size
+        if size > _MAX_READ_BYTES:
+            return ActionResult(
+                False,
+                f"text file is too large to delete through generic maintenance: {size} > {_MAX_READ_BYTES}",
+                {"path": relative.as_posix(), "size_bytes": size},
+            )
         before = path.read_bytes()
         current_sha = _sha256(before)
         expected = str(payload.get("expected_sha256") or "").strip().lower()
