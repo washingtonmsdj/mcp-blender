@@ -378,8 +378,13 @@ class BlenderAdoptionManager:
                 if (
                     0 <= age <= DISCOVERY_MAX_AGE_SECONDS
                     and int(data.get("pid", -1)) == selected_pid
+                    and data.get("project") == project.slug
                     and data.get("companion_fingerprint") == self.companion_fingerprint
                 ):
+                    try:
+                        request_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
                     return ActionResult(
                         True,
                         "Existing Blender window adopted by ORDAX Studio",
@@ -389,6 +394,10 @@ class BlenderAdoptionManager:
                 pass
             time.sleep(0.05)
 
+        try:
+            request_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         return ActionResult(
             False,
             "Blender adoption request timed out",
