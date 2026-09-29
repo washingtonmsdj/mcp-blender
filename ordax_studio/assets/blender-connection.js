@@ -71,6 +71,10 @@
         actions.append(button(label,'adopt',{pid:instance.pid,primary:true}));
       }
       actions.append(button('Reverificar','refresh'));
+    }else if(connection.state==='error'){
+      title.textContent='Conexão Blender indisponível';
+      detail.textContent=summary||'Falha ao consultar o bridge ORDAX.';
+      actions.append(button('Reverificar','refresh',{primary:true}));
     }else{
       title.textContent='Blender ainda não está aberto';
       detail.textContent='O ORDAX pode abrir uma única sessão conectada para este projeto.';
@@ -83,6 +87,15 @@
     card.querySelectorAll('[data-action]').forEach(item=>item.addEventListener('click',onAction));
   }
 
+  function renderApiResult(result,selector=value=>value){
+    if(!result?.ok){
+      render({state:'error'},result?.summary||'Falha na conexão Blender.');
+      return false;
+    }
+    render(selector(result.data||{}),result.summary);
+    return true;
+  }
+
   async function onAction(event){
     if(busy)return;
     const projectAtStart=activeProject();
@@ -92,20 +105,21 @@
     try{
       if(action==='capture'){
         if(typeof window.capturePreview==='function')await window.capturePreview();
-        else await api('preview_capture');
+        else{
+          const result=await api('preview_capture');
+          if(activeProject()===projectAtStart&&!result?.ok)render({state:'error'},result?.summary||'Falha ao capturar o preview Blender.');
+        }
       }else if(action==='install'){
         const result=await api('blender_install_bridge');
-        if(activeProject()===projectAtStart)render(result?.data?.connection,result?.summary);
+        if(activeProject()===projectAtStart)renderApiResult(result,data=>data.connection||{state:'error'});
       }else if(action==='adopt'){
         const result=await api('blender_adopt',Number(event.currentTarget.dataset.pid));
         if(activeProject()!==projectAtStart)return;
-        render(result?.data,result?.summary);
-        if(result?.ok&&typeof window.refreshPreview==='function')await window.refreshPreview(true);
+        if(renderApiResult(result)&&typeof window.refreshPreview==='function')await window.refreshPreview(true);
       }else if(action==='start'){
         const result=await api('blender_start');
         if(activeProject()!==projectAtStart)return;
-        render(result?.data,result?.summary);
-        if(result?.ok&&typeof window.refreshPreview==='function')await window.refreshPreview(true);
+        if(renderApiResult(result)&&typeof window.refreshPreview==='function')await window.refreshPreview(true);
       }else{
         await refresh();
       }
@@ -126,7 +140,7 @@
     try{
       const result=await api('blender_prepare');
       stale=activeProject()!==projectAtStart;
-      if(!stale)render(result?.data,result?.summary);
+      if(!stale)renderApiResult(result);
     }finally{
       busy=false;
       if(stale)schedule(0);
