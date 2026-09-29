@@ -109,6 +109,26 @@ proves modifier creation, evaluated
 copy count, offset behavior, budget rejection and rollback on Blender 5.x. The
 existing BEVEL, SUBSURF, SOLIDIFY and MIRROR variants remain available.
 
+### Geometry Nodes surface scatter
+
+`surface_scatter` is available through `blender.live_surface_scatter`. It builds a
+closed Geometry Nodes graph with `Distribute Points on Faces`, an index-based hard
+instance cap and `Instance on Points`; it does not accept arbitrary nodes or Python.
+The request declares a target selector, `source_object_name`, modifier `name`,
+`density`, `seed`, `max_instances`, `scale_min`, `scale_max`, `align_to_normal` and
+`keep_surface`. Defaults preserve the target surface and align instances to surface
+rotation.
+
+Runtime guards cap the target at 200,000 evaluated faces, the source at 100,000
+faces, generated instances at 5,000 and projected realized geometry at 2,000,000
+faces. The companion measures the actual generated instance count after evaluation
+and rejects zero output or any cap violation. Failures remove both the new modifier
+and its node group while leaving the source object and previous modifier stack intact.
+
+BlenderBench on Blender 5.2.2 validated fixed seed `37`, an exact 25-instance cap,
+overflow rejection, allowed projected geometry budget, durable trajectory evidence
+and unchanged source `.blend` hashes. Instances remain non-realized by default.
+
 ## Promotion gate
 
 A disabled mutation can become available only after all of the following are
@@ -124,13 +144,13 @@ true:
    the durable trajectory, and the source `.blend` on disk remains unchanged;
 7. the normal Bridge CI remains green.
 
-The promotion gate has now been satisfied for `create_primitive` and
-`add_modifier`. Future modeling mutations must still follow the same fail-closed
+The promotion gate has now been satisfied for `create_primitive`, `add_modifier` and
+`surface_scatter`. Future modeling mutations must still follow the same fail-closed
 process before registration.
 
 ## Current real-smoke coverage
 
-`scripts/blender_benchmark.py` continues to exercise all three production
+`scripts/blender_benchmark.py` continues to exercise all four production
 modeling mutations through the real companion dispatcher on every BlenderBench
 run. It keeps positive/negative controls, durable trajectory evidence, temporary
 object cleanup and source `.blend` hash protection so later changes cannot

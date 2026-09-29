@@ -98,6 +98,7 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.reference_decision", result.data["actions"])
             self.assertIn("blender.live_create_primitive", result.data["actions"])
             self.assertIn("blender.live_add_modifier", result.data["actions"])
+            self.assertIn("blender.live_surface_scatter", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
@@ -249,6 +250,11 @@ class AgentActionRegistryTests(unittest.TestCase):
                 "blender.live_add_modifier",
                 tools["add_modifier"]["action"],
             )
+            self.assertEqual("available", tools["surface_scatter"]["status"])
+            self.assertEqual(
+                "blender.live_surface_scatter",
+                tools["surface_scatter"]["action"],
+            )
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["create_primitive"],
@@ -256,6 +262,10 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["add_modifier"],
+            )
+            self.assertEqual(
+                "available",
+                result.data["mutation_policy"]["surface_scatter"],
             )
 
     def test_create_primitive_normalizes_and_dispatches(self) -> None:
@@ -334,6 +344,40 @@ class AgentActionRegistryTests(unittest.TestCase):
             },
             result.data["payload"],
         )
+
+    def test_surface_scatter_normalizes_and_dispatches(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True, summary="accepted", data={
+                        "operation": operation,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    },
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                result = registry.execute(
+                    "blender.live_surface_scatter",
+                    {
+                        "object_name": "Ground",
+                        "source_object_name": "Rock",
+                        "name": "Rocks",
+                        "density": 2,
+                        "seed": 7,
+                        "max_instances": 250,
+                    },
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual("surface_scatter", result.data["operation"])
+        self.assertEqual(250, result.data["payload"]["max_instances"])
+        self.assertEqual(7, result.data["payload"]["seed"])
+        self.assertEqual(1.0, result.data["payload"]["scale_min"])
+        self.assertTrue(result.data["payload"]["align_to_normal"])
 
     def test_promoted_modeling_mutations_remain_closed_world(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

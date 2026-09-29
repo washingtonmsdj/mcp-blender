@@ -162,6 +162,7 @@ class ActionRegistry(
             "blender.live_create_primitive": self.blender_live_create_primitive,
             "blender.live_create_box_with_cutouts": self.blender_live_create_box_with_cutouts,
             "blender.live_add_modifier": self.blender_live_add_modifier,
+            "blender.live_surface_scatter": self.blender_live_surface_scatter,
             "blender.live_material_apply": self.blender_live_material_apply,
             "blender.live_create_camera": self.blender_live_create_camera,
             "blender.live_create_light": self.blender_live_create_light,

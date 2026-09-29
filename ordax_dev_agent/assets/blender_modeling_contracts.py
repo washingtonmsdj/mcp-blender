@@ -15,6 +15,10 @@ MAX_EVALUATED_FACES = 200000
 MAX_PROJECTED_SUBSURF_FACES = 500000
 MAX_ARRAY_COUNT = 64
 MAX_PROJECTED_ARRAY_FACES = 500000
+MAX_SCATTER_INSTANCES = 5000
+MAX_SCATTER_DENSITY = 1000.0
+MAX_SCATTER_SOURCE_FACES = 100000
+MAX_PROJECTED_SCATTER_FACES = 2000000
 
 
 MODELING_SCHEMAS = {
@@ -63,6 +67,50 @@ MODELING_SCHEMAS = {
             },
             "scale": {"type": "vector3", "minimum": 0.0001, "maximum": 1000},
             "dimensions": {"type": "vector3", "minimum": 0.0001, "maximum": 100000},
+        },
+    },
+    "surface_scatter": {
+        "status": "available",
+        "action": "blender.live_surface_scatter",
+        "runtime_requirements": [
+            "object_mode",
+            "no_render_job",
+            "local_nonlinked_mesh_target",
+            "local_nonlinked_mesh_source",
+            "unique_modifier_name",
+            "source_and_target_must_differ",
+            "animated_or_constrained_target_requires_dedicated_workflow",
+        ],
+        "failure_policy": [
+            "remove_new_modifier_on_failure",
+            "remove_new_node_group_on_failure",
+            "preserve_source_object",
+            "preserve_existing_modifier_stack",
+        ],
+        "runtime_guards": {
+            "max_modifier_stack": MAX_MODIFIER_STACK,
+            "max_target_faces": MAX_EVALUATED_FACES,
+            "max_source_faces": MAX_SCATTER_SOURCE_FACES,
+            "max_instances": MAX_SCATTER_INSTANCES,
+            "max_density": MAX_SCATTER_DENSITY,
+            "max_projected_instance_faces": MAX_PROJECTED_SCATTER_FACES,
+        },
+        "description": (
+            "Fixed-seed Geometry Nodes surface scatter using preserved instances, "
+            "validated by BlenderBench on Blender 5.2.2 with hard instance and projected-geometry budgets."
+        ),
+        "required": ["name", "source_object_name"],
+        "selectors": ["object_name", "ordax_object_id"],
+        "properties": {
+            "name": {"type": "string", "max_utf8_bytes": 63},
+            "source_object_name": {"type": "string", "max_utf8_bytes": 63},
+            "density": {"type": "number", "minimum": 0.0001, "maximum": MAX_SCATTER_DENSITY},
+            "seed": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+            "max_instances": {"type": "integer", "minimum": 1, "maximum": MAX_SCATTER_INSTANCES},
+            "scale_min": {"type": "number", "minimum": 0.001, "maximum": 100},
+            "scale_max": {"type": "number", "minimum": 0.001, "maximum": 100},
+            "align_to_normal": {"type": "boolean"},
+            "keep_surface": {"type": "boolean"},
         },
     },
     "add_modifier": {
@@ -364,6 +412,103 @@ def _plan_create_primitive(payload: dict[str, Any]) -> dict[str, Any]:
     return arguments
 
 
+def _plan_surface_scatter(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "object_name", "ordax_object_id", "name", "source_object_name",
+        "density", "seed", "max_instances", "scale_min", "scale_max",
+        "align_to_normal", "keep_surface",
+    }
+    _reject_unknown_fields(payload, allowed)
+    selector = normalize_object_selector(payload)
+    name = _bounded_string(payload.get("name"), "name")
+    source_object_name = _bounded_string(
+        payload.get("source_object_name"), "source_object_name"
+    )
+    if selector.get("object_name") == source_object_name:
+        raise ValueError("surface scatter source and target must be different objects")
+    density = _bounded_number(
+        payload.get("density", 1.0), "density", 0.0001, MAX_SCATTER_DENSITY
+    )
+    seed = _bounded_number(
+        payload.get("seed", 0), "seed", 0, 2147483647, integer=True
+    )
+    max_instances = _bounded_number(
+        payload.get("max_instances", 1000),
+        "max_instances", 1, MAX_SCATTER_INSTANCES, integer=True,
+    )
+    scale_min = _bounded_number(
+        payload.get("scale_min", 1.0), "scale_min", 0.001, 100.0
+    )
+    scale_max = _bounded_number(
+        payload.get("scale_max", 1.0), "scale_max", 0.001, 100.0
+    )
+    if scale_max < scale_min:
+        raise ValueError("scale_max must be greater than or equal to scale_min")
+    align_to_normal = payload.get("align_to_normal", True)
+    keep_surface = payload.get("keep_surface", True)
+    if not isinstance(align_to_normal, bool):
+        raise ValueError("align_to_normal must be boolean")
+    if not isinstance(keep_surface, bool):
+        raise ValueError("keep_surface must be boolean")
+    return {
+        **selector,
+        "name": name,
+        "source_object_name": source_object_name,
+        "density": float(density),
+        "seed": int(seed),
+        "max_instances": int(max_instances),
+        "scale_min": float(scale_min),
+        "scale_max": float(scale_max),
+        "align_to_normal": align_to_normal,
+        "keep_surface": keep_surface,
+    }
+
+
+def evaluate_surface_scatter_runtime_budget(
+    *, modifier_count: Any, target_faces: Any, source_faces: Any, max_instances: Any
+) -> dict[str, Any]:
+    modifier_stack_count = _bounded_number(
+        modifier_count, "modifier_count", 0, MAX_MODIFIER_STACK, integer=True
+    )
+    target_face_count = _bounded_number(
+        target_faces, "target_faces", 0, 1000000000, integer=True
+    )
+    source_face_count = _bounded_number(
+        source_faces, "source_faces", 0, 1000000000, integer=True
+    )
+    instance_cap = _bounded_number(
+        max_instances, "max_instances", 1, MAX_SCATTER_INSTANCES, integer=True
+    )
+    projected_faces = int(source_face_count) * int(instance_cap)
+    reasons: list[str] = []
+    if modifier_stack_count >= MAX_MODIFIER_STACK:
+        reasons.append("modifier stack limit reached")
+    if target_face_count > MAX_EVALUATED_FACES:
+        reasons.append("scatter target exceeds interactive face budget")
+    if source_face_count <= 0:
+        reasons.append("scatter source must contain mesh faces")
+    if source_face_count > MAX_SCATTER_SOURCE_FACES:
+        reasons.append("scatter source exceeds source face budget")
+    if projected_faces > MAX_PROJECTED_SCATTER_FACES:
+        reasons.append("projected scatter geometry exceeds interactive face budget")
+    return {
+        "allowed": not reasons,
+        "modifier_count": int(modifier_stack_count),
+        "target_faces": int(target_face_count),
+        "source_faces": int(source_face_count),
+        "max_instances": int(instance_cap),
+        "projected_instance_faces": projected_faces,
+        "limits": {
+            "max_modifier_stack": MAX_MODIFIER_STACK,
+            "max_target_faces": MAX_EVALUATED_FACES,
+            "max_source_faces": MAX_SCATTER_SOURCE_FACES,
+            "max_instances": MAX_SCATTER_INSTANCES,
+            "max_projected_instance_faces": MAX_PROJECTED_SCATTER_FACES,
+        },
+        "reasons": reasons,
+    }
+
+
 def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "object_name",
@@ -606,13 +751,15 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
     normalized_operation = str(operation or "").strip().lower()
     if normalized_operation not in MODELING_SCHEMAS:
         raise ValueError(
-            "operation must be create_primitive, object_transform, or add_modifier"
+            "operation must be create_primitive, object_transform, surface_scatter, or add_modifier"
         )
 
     if normalized_operation == "create_primitive":
         arguments = _plan_create_primitive(payload)
     elif normalized_operation == "object_transform":
         arguments = normalize_transform_request(payload)
+    elif normalized_operation == "surface_scatter":
+        arguments = _plan_surface_scatter(payload)
     else:
         arguments = _plan_modifier(payload)
 

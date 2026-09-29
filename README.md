@@ -30,7 +30,7 @@ espacial de cenas, inspeção/preview Blender e sequências de capturas com snap
 e imagens entregues ao modelo por MCP. Cloudflare v3 é o Control Plane remoto de produção do Device Agent, com WebSocket persistente, D1 e R2.
 
 Versionamento é por componente, não global: bridge/distribuição `0.3.0`, Dev
-Agent `1.24.0`, protocolo Blender Live `9`, bundle do companion `1` e
+Agent `1.25.0`, protocolo Blender Live `9`, bundle do companion `1` e
 Reference Contract `1`. O inventário completo e as regras de compatibilidade
 estão em [docs/VERSIONING.md](docs/VERSIONING.md) e também aparecem em
 `agent.status.versions`.
@@ -209,7 +209,7 @@ A superfície recomendada é o **ORDAX Studio MCP**, não a bridge histórica. E
 - `git_status` e `git_diff`;
 - `project_preview_status`, `project_preview_start`, `project_preview_stop` e `project_preview_image`;
 - `install_blender_adoption`, `blender_instances` e `adopt_blender` para reutilizar uma janela Blender já aberta sem criar uma segunda instância;
-- `get_blender_status`, `get_scene_info`, `get_object_info`, `get_viewport_screenshot`, `add_primitive`, `modify_object`, `delete_object`, `set_material`, `batch_edit` e `save_blender`;
+- `get_blender_status`, `get_scene_info`, `get_object_info`, `get_viewport_screenshot`, `add_primitive`, `modify_object`, `scatter_on_surface`, `delete_object`, `set_material`, `batch_edit` e `save_blender`;
 - `session_context`, `session_resume`, `session_finish`, `memory_remember` e `session_checkpoint`;
 - `action_execute` para capabilities tipadas registradas, incluindo Blender, Unity, Unreal e pipelines de assets.
 
@@ -360,10 +360,9 @@ The visible Blender companion now exposes a richer typed perception loop:
   optional exact triangle-overlap evidence under a bounded analysis budget.
 - `blender.live_modeling_schema` — read-only typed modeling contracts. The
   validated mutations are `blender.live_object_transform`,
-  `blender.live_create_primitive` and `blender.live_add_modifier`. They share
-  closed-world planning, runtime guards and Blender-side validation. Create and
-  modifier were promoted after a successful real Blender 5.2.2 BlenderBench on
-  September 20, 2026.
+  `blender.live_create_primitive`, `blender.live_add_modifier` and `blender.live_surface_scatter`. They share
+  closed-world planning, runtime guards and Blender-side validation. Surface scatter was promoted after a successful real Blender 5.2.2 BlenderBench on
+  September 28, 2026.
 - `blender.live_modeling_plan` — read-only closed-world planner that validates
   one modeling intent, rejects unknown/inapplicable fields and returns normalized
   defaults/arguments plus the concrete action when execution is available. Use
@@ -373,7 +372,9 @@ The visible Blender companion now exposes a richer typed perception loop:
   those limits from live scene metrics, never user-claimed counts.
   Create/modifier plans also carry runtime preconditions and rollback guarantees
   (Object Mode/no render, uniqueness/local-target requirements and
-  cleanup-on-failure).
+  cleanup-on-failure). Surface scatter adds a 5,000-instance hard cap, 2M
+  projected-face budget, deterministic seed/scale controls and modifier/node-group
+  rollback while preserving non-realized instances.
 - \`blender.asset_search\` — typed external asset discovery (Poly Haven first).
 - \`blender.asset_manifest\` — provider file manifest/provenance lookup.
 
@@ -399,7 +400,7 @@ this layer and the capabilities intentionally not copied.
 
 `python scripts/verify_visual_agent.py` now runs both the existing isolated render smoke and the real companion deterministic silhouette-multiview path. On the Windows self-hosted recovery runner this candidate smoke runs before the managed agent is touched.
 
-`python scripts/blender_benchmark.py` adds an end-to-end regression: exact baseline self-comparison must pass, while a controlled geometry mutation must fail silhouette IoU and expose the expected bounds delta. See `docs/BLENDERBENCH.md`. The benchmark also contains valid/invalid UV fixtures and a real companion-dispatch modeling fixture: `object_transform` must mutate the temporary scene in memory, a zero-scale negative control must be rejected, both commands must be journaled, and the source `.blend` must remain byte-for-byte unchanged on disk.
+`python scripts/blender_benchmark.py` adds an end-to-end regression: exact baseline self-comparison must pass, while a controlled geometry mutation must fail silhouette IoU and expose the expected bounds delta. See `docs/BLENDERBENCH.md`. The benchmark also contains valid/invalid UV fixtures and a real companion-dispatch modeling fixture covering transform, primitive creation, BEVEL/ARRAY modifiers and Geometry Nodes surface scatter. It verifies negative controls, fixed scatter seed/count limits, runtime budgets, durable trajectory evidence and byte-for-byte source `.blend` integrity.
 
 `blender.benchmark` exposes that same benchmark through the typed Dev Agent. It is a fixed diagnostic action: only `project` and bounded `timeout_seconds` are accepted; callers cannot supply a script, shell command or arbitrary output path. The structured report is written under the agent state directory and returned as an artifact.
 

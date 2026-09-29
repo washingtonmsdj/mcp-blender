@@ -186,6 +186,8 @@ def _run_companion_smoke(
     )
     modeling_array_path = control_root / "results" / "smoke-model-array.json"
     modeling_array_invalid_path = control_root / "results" / "smoke-model-array-invalid.json"
+    modeling_scatter_path = control_root / "results" / "smoke-model-scatter.json"
+    modeling_scatter_invalid_path = control_root / "results" / "smoke-model-scatter-invalid.json"
     if not all(
         path.is_file()
         for path in (
@@ -197,6 +199,8 @@ def _run_companion_smoke(
             modeling_modifier_duplicate_path,
             modeling_array_path,
             modeling_array_invalid_path,
+            modeling_scatter_path,
+            modeling_scatter_invalid_path,
         )
     ):
         raise RuntimeError(
@@ -225,6 +229,12 @@ def _run_companion_smoke(
     )
     modeling_array_invalid = json.loads(
         modeling_array_invalid_path.read_text(encoding="utf-8-sig")
+    )
+    modeling_scatter = json.loads(
+        modeling_scatter_path.read_text(encoding="utf-8-sig")
+    )
+    modeling_scatter_invalid = json.loads(
+        modeling_scatter_invalid_path.read_text(encoding="utf-8-sig")
     )
     if not modeling_valid.get("ok"):
         raise RuntimeError(
@@ -262,6 +272,14 @@ def _run_companion_smoke(
         raise RuntimeError(
             "ARRAY count above the contract limit was incorrectly accepted"
         )
+    if not modeling_scatter.get("ok"):
+        raise RuntimeError(
+            "surface scatter smoke failed: " + json.dumps(modeling_scatter, indent=2)
+        )
+    if modeling_scatter_invalid.get("ok"):
+        raise RuntimeError(
+            "surface scatter instance cap overflow was incorrectly accepted"
+        )
 
     created_object = modeling_create.get("object") or {}
     if (created_object.get("mesh") or {}).get("vertices") != 8:
@@ -287,6 +305,20 @@ def _run_companion_smoke(
     array_budget = modeling_array.get("runtime_budget") or {}
     if not array_budget.get("allowed") or int(array_budget.get("count") or 0) != 4:
         raise RuntimeError("smoke ARRAY runtime budget/count mismatch")
+
+    scatter_object = modeling_scatter.get("object") or {}
+    if not any(
+        item.get("name") == "SmokeScatter" and item.get("type") == "NODES"
+        for item in (scatter_object.get("modifiers") or [])
+    ):
+        raise RuntimeError("smoke surface scatter modifier is missing")
+    scatter_budget = modeling_scatter.get("runtime_budget") or {}
+    if not scatter_budget.get("allowed"):
+        raise RuntimeError("smoke surface scatter exceeded runtime budget")
+    if int(modeling_scatter.get("instance_count") or 0) != 25:
+        raise RuntimeError("smoke surface scatter did not enforce max_instances=25")
+    if int((modeling_scatter.get("scatter_parameters") or {}).get("seed") or -1) != 37:
+        raise RuntimeError("smoke surface scatter did not preserve seed=37")
 
     modeled_object = modeling_valid.get("object") or {}
     if modeled_object.get("location") != [1.25, -0.5, 0.75]:
@@ -322,6 +354,8 @@ def _run_companion_smoke(
         "smoke-model-modifier-duplicate",
         "smoke-model-array",
         "smoke-model-array-invalid",
+        "smoke-model-scatter",
+        "smoke-model-scatter-invalid",
     }.issubset(trajectory_ids):
         raise RuntimeError(
             "modeling fixture commands are missing from trajectory evidence"
@@ -336,6 +370,8 @@ def _run_companion_smoke(
         "modifier_duplicate_detected": True,
         "array_positive": True,
         "array_limit_detected": True,
+        "scatter_positive": True,
+        "scatter_limit_detected": True,
         "dispatcher_journaled": True,
         "valid": modeling_valid,
         "invalid": modeling_invalid,
@@ -345,6 +381,8 @@ def _run_companion_smoke(
         "modifier_duplicate": modeling_modifier_duplicate,
         "array": modeling_array,
         "array_invalid": modeling_array_invalid,
+        "scatter": modeling_scatter,
+        "scatter_invalid": modeling_scatter_invalid,
     }
 
     after = hashlib.sha256(scene.read_bytes()).hexdigest()
@@ -472,6 +510,10 @@ def run(root: Path) -> dict:
             "modifier_duplicate_detected": baseline["modeling"]["modifier_duplicate_detected"],
             "array_positive": baseline["modeling"]["array_positive"],
             "array_limit_detected": baseline["modeling"]["array_limit_detected"],
+            "scatter_positive": baseline["modeling"]["scatter_positive"],
+            "scatter_limit_detected": baseline["modeling"]["scatter_limit_detected"],
+            "scatter_instance_count": baseline["modeling"]["scatter"].get("instance_count"),
+            "scatter_seed": (baseline["modeling"]["scatter"].get("scatter_parameters") or {}).get("seed"),
             "dispatcher_journaled": baseline["modeling"]["dispatcher_journaled"],
             "location": (
                 (baseline["modeling"]["valid"].get("object") or {}).get("location")
@@ -484,6 +526,7 @@ def run(root: Path) -> dict:
             ),
             "modifier_runtime_budget": baseline["modeling"]["modifier"].get("runtime_budget"),
             "array_runtime_budget": baseline["modeling"]["array"].get("runtime_budget"),
+            "scatter_runtime_budget": baseline["modeling"]["scatter"].get("runtime_budget"),
         },
         "self_comparison": {
             "passed": identical.data.get("comparison_passed"),

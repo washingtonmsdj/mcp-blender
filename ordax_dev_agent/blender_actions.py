@@ -801,6 +801,7 @@ class BlenderActions:
                 "mutation_policy": {
                     "object_transform": "available",
                     "create_primitive": "available",
+                    "surface_scatter": modeling_schemas()["surface_scatter"]["status"],
                     "add_modifier": "available",
                 },
             },
@@ -1065,6 +1066,23 @@ class BlenderActions:
             timeout_seconds=float(payload.get("timeout_seconds", 30)),
         )
 
+    def blender_live_surface_scatter(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            plan = plan_modeling_operation("surface_scatter", payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        if not plan["executable"]:
+            return ActionResult(
+                False,
+                f"{plan['status']}: surface scatter is not enabled for execution",
+                {"plan": plan},
+            )
+        return self._blender_live(payload).request(
+            "surface_scatter",
+            plan["arguments"],
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+
     def blender_live_material_apply(self, payload: dict[str, Any]) -> ActionResult:
         try:
             arguments = normalize_material_request(payload)
@@ -1286,6 +1304,7 @@ class BlenderActions:
             "create_primitive": self.blender_live_create_primitive,
             "create_box_with_cutouts": self.blender_live_create_box_with_cutouts,
             "add_modifier": self.blender_live_add_modifier,
+            "surface_scatter": self.blender_live_surface_scatter,
             "material_apply": self.blender_live_material_apply,
             "create_camera": self.blender_live_create_camera,
             "create_light": self.blender_live_create_light,

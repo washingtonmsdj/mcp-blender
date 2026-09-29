@@ -44,17 +44,19 @@ orientation of an array of nuts; in another, they described nodes for placing
 holes at reference points. The Blender manual describes Geometry Nodes as a
 surface point-distribution workflow.
 
-This should be a separate typed Geometry Nodes operation, not arbitrary node
-tree injection. It needs a declared source object, target surface, density or
-count, seed, scale/rotation ranges, instance-vs-realized output and a strict
-instance/face budget. It should report the seed and evaluated instance count so
-an agent can reproduce and inspect the result. Preserve instances through
-preview when possible; realize them only when a downstream operation requires
-editable mesh geometry.
+This is now implemented as the typed `surface_scatter` operation rather than
+arbitrary node-tree injection. It requires a declared mesh source and target,
+uses a fixed seed, bounded density, deterministic scale range, optional normal
+alignment and a hard `max_instances` cap enforced inside the node graph. The
+runtime also measures the actual generated instance count, preserves instances
+by default, rejects source/target or projected-geometry budgets before mutation,
+and removes the new modifier/node group on failure. BlenderBench on Blender
+5.2.2 validated a 25-instance hard cap, seed preservation, negative overflow
+control, trajectory evidence and source `.blend` integrity.
 
 Sources: [randomized fastener workflow](https://www.reddit.com/r/blenderhelp/comments/1ipz5np/i_used_simple_array_modifiers_on_the_hex_nuts_is/),
 [pattern-of-holes discussion](https://www.reddit.com/r/blender/comments/1985hfi/how_would_you_create_this_pattern/),
-[Distribute Points on Faces manual](https://docs.blender.org/manual/en/4.4/modeling/geometry_nodes/point/distribute_points_on_faces.html).
+[Distribute Points on Faces manual](https://docs.blender.org/manual/en/5.2/modeling/geometry_nodes/point/distribute_points_on_faces.html).
 
 ### 3. More expressive non-destructive cutters
 
@@ -101,8 +103,9 @@ automatically declaring every disconnected island or non-quad a defect.
 1. **Concluído:** fixed-count linear `ARRAY` promovido após contratos positivos/
    negativos e BlenderBench real no Blender 5.2.2, mantendo limites de contagem,
    faces projetadas, nomes duplicados, rollback e integridade do `.blend`.
-2. Add a fixed-seed Geometry Nodes surface scatter operation with instance
-   count and memory budgets.
+2. **ConcluÃ­do:** surface scatter com Geometry Nodes promovido apÃ³s BlenderBench
+   real, seed determinÃ­stico, contagem efetiva, hard cap de instÃ¢ncias, orÃ§amento
+   de geometria projetada e rollback do modifier/node group.
 3. Expand box cutouts into a constrained library of slot, circle, polygon and
    vent cutters; retain live boolean previews and one-operation rollback.
 4. Add component-aware repair hints and small corrective operations to the

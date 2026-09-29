@@ -45,7 +45,7 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                     for blender_tool in (
                         'get_blender_status', 'start_blender', 'get_scene_info',
                         'get_object_info', 'get_viewport_screenshot', 'add_primitive',
-                        'modify_object', 'delete_object', 'set_material', 'batch_edit',
+                        'modify_object', 'scatter_on_surface', 'delete_object', 'set_material', 'batch_edit',
                         'save_blender', 'run_blender_project_script',
                     ):
                         self.assertIn(blender_tool, names)

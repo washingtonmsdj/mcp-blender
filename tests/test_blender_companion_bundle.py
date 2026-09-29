@@ -9,6 +9,7 @@ from ordax_dev_agent.blender_live_bridge import (
 )
 from ordax_dev_agent.assets.blender_modeling_contracts import (
     evaluate_modifier_runtime_budget,
+    evaluate_surface_scatter_runtime_budget,
     modeling_schemas,
     normalize_transform_fields,
     normalize_transform_request,
@@ -249,6 +250,66 @@ class BlenderModelingContractTests(unittest.TestCase):
                     "constant_offset": [0, 0, 0],
                 },
             )
+
+    def test_surface_scatter_plan_is_executable_after_blenderbench_promotion(self) -> None:
+        plan = plan_modeling_operation(
+            "surface_scatter",
+            {
+                "object_name": "Ground",
+                "source_object_name": "Rock",
+                "name": "RockScatter",
+                "density": 2.5,
+                "seed": 17,
+                "max_instances": 400,
+                "scale_min": 0.75,
+                "scale_max": 1.25,
+            },
+        )
+        self.assertTrue(plan["executable"])
+        self.assertEqual("available", plan["status"])
+        self.assertEqual("blender.live_surface_scatter", plan["action"])
+        self.assertFalse(plan["requires_real_blender_smoke"])
+        self.assertEqual(17, plan["arguments"]["seed"])
+        self.assertEqual(400, plan["arguments"]["max_instances"])
+        self.assertEqual(5000, plan["runtime_guards"]["max_instances"])
+        self.assertEqual(2000000, plan["runtime_guards"]["max_projected_instance_faces"])
+
+    def test_surface_scatter_plan_rejects_unsafe_inputs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "source and target"):
+            plan_modeling_operation(
+                "surface_scatter",
+                {
+                    "object_name": "Ground",
+                    "source_object_name": "Ground",
+                    "name": "BadScatter",
+                },
+            )
+        with self.assertRaisesRegex(ValueError, "scale_max"):
+            plan_modeling_operation(
+                "surface_scatter",
+                {
+                    "object_name": "Ground",
+                    "source_object_name": "Rock",
+                    "name": "BadScale",
+                    "scale_min": 2.0,
+                    "scale_max": 1.0,
+                },
+            )
+
+    def test_surface_scatter_budget_bounds_projected_geometry(self) -> None:
+        accepted = evaluate_surface_scatter_runtime_budget(
+            modifier_count=1, target_faces=1000, source_faces=100, max_instances=5000
+        )
+        self.assertTrue(accepted["allowed"])
+        self.assertEqual(500000, accepted["projected_instance_faces"])
+        rejected = evaluate_surface_scatter_runtime_budget(
+            modifier_count=1, target_faces=1000, source_faces=1000, max_instances=5000
+        )
+        self.assertFalse(rejected["allowed"])
+        self.assertIn(
+            "projected scatter geometry exceeds interactive face budget",
+            rejected["reasons"],
+        )
 
     def test_transform_plan_is_executable_and_closed_to_unknown_fields(self) -> None:
         plan = plan_modeling_operation(

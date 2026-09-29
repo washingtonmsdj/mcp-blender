@@ -78,6 +78,7 @@ class ComponentVersioningTests(unittest.TestCase):
                 "blender.live_add_modifier",
                 "blender.live_create_primitive",
                 "blender.live_object_transform",
+                "blender.live_surface_scatter",
             ],
             modeling["available_actions"],
         )

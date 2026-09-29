@@ -134,6 +134,7 @@ _MODELING_CONTRACTS = _load_companion_asset_module(
 _normalize_transform_request = _MODELING_CONTRACTS.normalize_transform_request
 _plan_modeling_operation = _MODELING_CONTRACTS.plan_modeling_operation
 _evaluate_modifier_runtime_budget = _MODELING_CONTRACTS.evaluate_modifier_runtime_budget
+_evaluate_surface_scatter_runtime_budget = _MODELING_CONTRACTS.evaluate_surface_scatter_runtime_budget
 
 _MATERIAL_CONTRACTS = _load_companion_asset_module(
     "blender_material_contracts.py",
@@ -171,6 +172,7 @@ CAPABILITIES = [
     "create_primitive",
     "create_box_with_cutouts",
     "add_modifier",
+    "surface_scatter",
     "material_apply",
     "create_camera",
     "create_light",
@@ -1645,6 +1647,170 @@ def _modeling_add_modifier(command: dict) -> None:
             False,
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
             operation="add_modifier",
+            before=before,
+        )
+
+
+def _modeling_surface_scatter(command: dict) -> None:
+    command_id = command["id"]
+    modifier = None
+    node_group = None
+    target = None
+    before = None
+    try:
+        _modeling_runtime_preconditions()
+        plan = _modeling_plan_from_command("surface_scatter", command)
+        smoke_allowed = (
+            bool(CFG.ordax_smoke_modeling_fixture)
+            and str(command_id).startswith("smoke-model-scatter")
+            and plan.get("status") == "pending_blender_smoke"
+        )
+        if not plan["executable"] and not smoke_allowed:
+            raise ValueError(
+                f"{plan['status']}: surface scatter is not enabled for execution"
+            )
+        arguments = plan["arguments"]
+        target = _resolve_object(arguments)
+        source = bpy.context.scene.objects.get(arguments["source_object_name"])
+        if source is None:
+            raise ValueError("surface scatter source object was not found in the scene")
+        if target == source:
+            raise ValueError("surface scatter source and target must be different objects")
+        for label, obj in (("target", target), ("source", source)):
+            if (
+                obj.type != "MESH"
+                or obj.library is not None
+                or obj.override_library is not None
+                or getattr(obj.data, "library", None) is not None
+            ):
+                raise ValueError(
+                    f"surface scatter {label} must be an existing local, non-linked mesh object"
+                )
+        if target.animation_data is not None or len(target.constraints) > 0:
+            raise ValueError("animated or constrained scatter targets require a dedicated workflow")
+        if target.modifiers.get(arguments["name"]) is not None:
+            raise ValueError("modifier name already exists; scatter insertion refused")
+
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        target_eval = target.evaluated_get(depsgraph)
+        source_eval = source.evaluated_get(depsgraph)
+        budget = _evaluate_surface_scatter_runtime_budget(
+            modifier_count=len(target.modifiers),
+            target_faces=len(target_eval.data.polygons),
+            source_faces=len(source_eval.data.polygons),
+            max_instances=arguments["max_instances"],
+        )
+        if not budget["allowed"]:
+            raise ValueError("; ".join(budget["reasons"]))
+
+        def _instance_count() -> int:
+            graph = bpy.context.evaluated_depsgraph_get()
+            graph.update()
+            count = 0
+            for item in graph.object_instances:
+                if item.is_instance and item.parent is not None and item.parent.name == target.name:
+                    count += 1
+            return count
+
+        before_instances = _instance_count()
+        before = _object_details(target)
+        modifier = target.modifiers.new(arguments["name"], "NODES")
+        node_group = bpy.data.node_groups.new(
+            f"ORDAX Scatter - {target.name} - {arguments['name']}", "GeometryNodeTree"
+        )
+        node_group.is_modifier = True
+        node_group.interface.new_socket(
+            name="Geometry", in_out="INPUT", socket_type="NodeSocketGeometry"
+        )
+        node_group.interface.new_socket(
+            name="Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry"
+        )
+        modifier.node_group = node_group
+
+        nodes = node_group.nodes
+        links = node_group.links
+        group_input = nodes.new("NodeGroupInput")
+        group_output = nodes.new("NodeGroupOutput")
+        distribute = nodes.new("GeometryNodeDistributePointsOnFaces")
+        distribute.distribute_method = "RANDOM"
+        distribute.inputs["Density"].default_value = arguments["density"]
+        distribute.inputs["Seed"].default_value = arguments["seed"]
+        index = nodes.new("GeometryNodeInputIndex")
+        compare = nodes.new("FunctionNodeCompare")
+        compare.data_type = "INT"
+        compare.operation = "LESS_THAN"
+        compare.inputs["B"].default_value = arguments["max_instances"]
+        object_info = nodes.new("GeometryNodeObjectInfo")
+        object_info.transform_space = "ORIGINAL"
+        object_info.inputs["Object"].default_value = source
+        random_scale = nodes.new("FunctionNodeRandomValue")
+        random_scale.data_type = "FLOAT"
+        random_scale.inputs["Min"].default_value = arguments["scale_min"]
+        random_scale.inputs["Max"].default_value = arguments["scale_max"]
+        random_scale.inputs["Seed"].default_value = (arguments["seed"] + 1) % 2147483647
+        instance_on_points = nodes.new("GeometryNodeInstanceOnPoints")
+
+        links.new(group_input.outputs["Geometry"], distribute.inputs["Mesh"])
+        links.new(index.outputs["Index"], compare.inputs["A"])
+        links.new(compare.outputs["Result"], instance_on_points.inputs["Selection"])
+        links.new(distribute.outputs["Points"], instance_on_points.inputs["Points"])
+        links.new(object_info.outputs["Geometry"], instance_on_points.inputs["Instance"])
+        links.new(random_scale.outputs["Value"], instance_on_points.inputs["Scale"])
+        if arguments["align_to_normal"]:
+            links.new(distribute.outputs["Rotation"], instance_on_points.inputs["Rotation"])
+        if arguments["keep_surface"]:
+            join = nodes.new("GeometryNodeJoinGeometry")
+            links.new(group_input.outputs["Geometry"], join.inputs["Geometry"])
+            links.new(instance_on_points.outputs["Instances"], join.inputs["Geometry"])
+            links.new(join.outputs["Geometry"], group_output.inputs["Geometry"])
+        else:
+            links.new(instance_on_points.outputs["Instances"], group_output.inputs["Geometry"])
+
+        bpy.context.view_layer.update()
+        after_instances = _instance_count()
+        actual_instances = max(0, after_instances - before_instances)
+        if actual_instances > arguments["max_instances"]:
+            raise RuntimeError("surface scatter exceeded its hard instance cap")
+        if actual_instances <= 0:
+            raise ValueError("surface scatter produced zero instances; increase density")
+        _response(
+            command_id,
+            True,
+            "Blender Geometry Nodes surface scatter created",
+            operation="surface_scatter",
+            runtime_budget=budget,
+            instance_count=actual_instances,
+            scatter_parameters={
+                "source_object_name": source.name,
+                "density": arguments["density"],
+                "seed": arguments["seed"],
+                "max_instances": arguments["max_instances"],
+                "scale_min": arguments["scale_min"],
+                "scale_max": arguments["scale_max"],
+                "align_to_normal": arguments["align_to_normal"],
+                "keep_surface": arguments["keep_surface"],
+            },
+            node_group=node_group.name,
+            before=before,
+            object=_object_details(target),
+        )
+    except Exception as error:
+        if modifier is not None and target is not None:
+            try:
+                target.modifiers.remove(modifier)
+                bpy.context.view_layer.update()
+            except Exception:
+                pass
+        if node_group is not None and getattr(node_group, "users", 0) == 0:
+            try:
+                bpy.data.node_groups.remove(node_group)
+            except Exception:
+                pass
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="surface_scatter",
             before=before,
         )
 
@@ -4918,6 +5084,8 @@ def _process(path: Path) -> None:
             _create_box_with_cutouts(command)
         elif operation == "add_modifier":
             _modeling_add_modifier(command)
+        elif operation == "surface_scatter":
+            _modeling_surface_scatter(command)
         elif operation == "material_apply":
             _material_apply(command)
         elif operation == "create_camera":
@@ -5027,6 +5195,8 @@ def _run_modeling_smoke_fixture() -> dict:
         "modifier_duplicate": "smoke-model-modifier-duplicate",
         "array": "smoke-model-array",
         "array_invalid": "smoke-model-array-invalid",
+        "scatter": "smoke-model-scatter",
+        "scatter_invalid": "smoke-model-scatter-invalid",
     }
     result_paths = {
         key: RESULTS / f"{identifier}.json"
@@ -5154,6 +5324,42 @@ def _run_modeling_smoke_fixture() -> dict:
         )
         _process(invalid_array_path)
 
+        scatter_path = INBOX / f"{smoke_ids['scatter']}.json"
+        _write_json_atomic(
+            scatter_path,
+            {
+                "id": smoke_ids["scatter"],
+                "operation": "surface_scatter",
+                "object_name": object_name,
+                "source_object_name": temporary_name,
+                "name": "SmokeScatter",
+                "density": 100.0,
+                "seed": 37,
+                "max_instances": 25,
+                "scale_min": 0.8,
+                "scale_max": 1.2,
+                "align_to_normal": True,
+                "keep_surface": True,
+            },
+        )
+        _process(scatter_path)
+
+        invalid_scatter_path = INBOX / f"{smoke_ids['scatter_invalid']}.json"
+        _write_json_atomic(
+            invalid_scatter_path,
+            {
+                "id": smoke_ids["scatter_invalid"],
+                "operation": "surface_scatter",
+                "object_name": object_name,
+                "source_object_name": temporary_name,
+                "name": "SmokeScatterTooLarge",
+                "density": 1.0,
+                "seed": 37,
+                "max_instances": 5001,
+            },
+        )
+        _process(invalid_scatter_path)
+
         for key, result_path in result_paths.items():
             if not result_path.is_file():
                 raise RuntimeError(
@@ -5198,6 +5404,15 @@ def _run_modeling_smoke_fixture() -> dict:
         if bool(summaries["array_invalid"].get("ok")):
             raise RuntimeError(
                 "ARRAY count above the contract limit was incorrectly accepted"
+            )
+        if not bool(summaries["scatter"].get("ok")):
+            raise RuntimeError(
+                "surface scatter smoke failed: "
+                + str(summaries["scatter"].get("summary") or "unknown failure")
+            )
+        if bool(summaries["scatter_invalid"].get("ok")):
+            raise RuntimeError(
+                "surface scatter instance cap overflow was incorrectly accepted"
             )
 
         transformed = summaries["transform"].get("object") or {}
@@ -5260,6 +5475,22 @@ def _run_modeling_smoke_fixture() -> dict:
         if int(array_budget.get("count") or 0) != 4:
             raise RuntimeError("smoke ARRAY runtime budget did not preserve count=4")
 
+        scatter_modified = summaries["scatter"].get("object") or {}
+        scatter_modifiers = scatter_modified.get("modifiers") or []
+        if not any(
+            item.get("name") == "SmokeScatter" and item.get("type") == "NODES"
+            for item in scatter_modifiers
+        ):
+            raise RuntimeError("smoke surface scatter Geometry Nodes modifier is missing")
+        scatter_budget = summaries["scatter"].get("runtime_budget") or {}
+        if not bool(scatter_budget.get("allowed")):
+            raise RuntimeError("smoke surface scatter unexpectedly exceeded runtime budget")
+        if int(summaries["scatter"].get("instance_count") or 0) != 25:
+            raise RuntimeError("smoke surface scatter did not enforce max_instances=25")
+        scatter_parameters = summaries["scatter"].get("scatter_parameters") or {}
+        if int(scatter_parameters.get("seed") or -1) != 37:
+            raise RuntimeError("smoke surface scatter did not preserve seed=37")
+
         trajectory_ids = set()
         if TRAJECTORY.is_file():
             for line in TRAJECTORY.read_text(encoding="utf-8-sig").splitlines():
@@ -5289,6 +5520,10 @@ def _run_modeling_smoke_fixture() -> dict:
             "modifier_duplicate_detected": True,
             "array_positive": True,
             "array_limit_detected": True,
+            "scatter_positive": True,
+            "scatter_limit_detected": True,
+            "scatter_instance_count": int(summaries["scatter"].get("instance_count") or 0),
+            "scatter_seed": int((summaries["scatter"].get("scatter_parameters") or {}).get("seed") or 0),
             "dispatcher_journaled": True,
             "object_name": object_name,
             "location": current.get("location"),
@@ -5299,6 +5534,18 @@ def _run_modeling_smoke_fixture() -> dict:
             },
         }
     finally:
+        scatter_modifier = obj.modifiers.get("SmokeScatter") if obj is not None else None
+        scatter_group = scatter_modifier.node_group if scatter_modifier is not None else None
+        if scatter_modifier is not None:
+            try:
+                obj.modifiers.remove(scatter_modifier)
+            except Exception:
+                pass
+        if scatter_group is not None and getattr(scatter_group, "users", 0) == 0:
+            try:
+                bpy.data.node_groups.remove(scatter_group)
+            except Exception:
+                pass
         temporary = bpy.context.scene.objects.get(temporary_name)
         if temporary is not None:
             mesh = temporary.data if temporary.type == "MESH" else None

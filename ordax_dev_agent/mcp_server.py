@@ -358,6 +358,37 @@ def modify_object(
 
 
 @mcp.tool()
+def scatter_on_surface(
+    project: str | None = None,
+    object_name: str = "",
+    ordax_object_id: str = "",
+    source_object_name: str = "",
+    name: str = "SurfaceScatter",
+    density: float = 1.0,
+    seed: int = 0,
+    max_instances: int = 1000,
+    scale_min: float = 1.0,
+    scale_max: float = 1.0,
+    align_to_normal: bool = True,
+    keep_surface: bool = True,
+) -> dict:
+    """Create a bounded fixed-seed Geometry Nodes scatter on a mesh surface."""
+    args: dict = {
+        "source_object_name": source_object_name,
+        "name": name,
+        "density": density,
+        "seed": seed,
+        "max_instances": max_instances,
+        "scale_min": scale_min,
+        "scale_max": scale_max,
+        "align_to_normal": align_to_normal,
+        "keep_surface": keep_surface,
+    }
+    args.update({"object_name": object_name} if object_name else {"ordax_object_id": ordax_object_id})
+    return _blender_action("blender.live_surface_scatter", project, args)
+
+
+@mcp.tool()
 def delete_object(project: str | None = None, object_name: str = "", missing_ok: bool = False) -> dict:
     """Remove one named Blender object through the bounded live mutation contract."""
     return _blender_action("blender.live_object_remove", project, {"object_names": [object_name], "missing_ok": missing_ok})
