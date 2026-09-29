@@ -38,7 +38,8 @@ async def main(project: str | None = None) -> int:
                 "studio_status", "repository_catalog", "agent_capabilities",
                 "project_inventory", "project_read", "project_write", "project_patch",
                 "project_preview_status", "git_status", "git_diff",
-                "install_blender_adoption", "blender_instances", "adopt_blender",
+                "prepare_blender_connection", "install_blender_adoption",
+                "blender_instances", "adopt_blender",
             }
             missing = sorted(required - tool_names)
             if missing:
