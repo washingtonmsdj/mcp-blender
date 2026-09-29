@@ -37,6 +37,7 @@ async def main(project: str | None = None) -> int:
             required = {
                 "studio_status", "repository_catalog", "agent_capabilities",
                 "project_inventory", "project_read", "project_write", "project_patch",
+                "project_move", "project_delete", "repository_info", "sync_repository",
                 "project_preview_status", "git_status", "git_diff",
                 "prepare_blender_connection", "install_blender_adoption",
                 "blender_instances", "adopt_blender",
