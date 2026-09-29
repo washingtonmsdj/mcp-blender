@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ORDAX Studio</title>
 <link rel="stylesheet" href="assets/studio.css">
+<link rel="stylesheet" href="assets/blender-connection.css">
 </head>
 <body>
 <header class="appbar">
@@ -20,7 +21,8 @@
     <div class="homeHeading">
       <div><div class="eyebrow">WORKSPACES</div><h1>Projetos</h1><p>Um projeto é um repositório completo, não uma coleção solta de arquivos.</p></div>
       <input id="projectFilter" class="projectFilter" placeholder="Buscar projeto..." autocomplete="off">
-    </div>    <div id="homeStats" class="homeStats"></div>
+    </div>
+    <div id="homeStats" class="homeStats"></div>
     <div id="projectGrid" class="projectGrid"></div>
   </section>
   <aside class="homeAside">
@@ -45,7 +47,8 @@
       <nav class="workspaceTools" aria-label="Ferramentas do projeto">
         <button class="toolButton active" data-view="agent"><span>✦</span>Agente</button>
         <button class="toolButton" data-view="files"><span>⌘</span>Arquivos</button>
-        <button class="toolButton" data-view="search"><span>⌕</span>Buscar</button>        <button class="toolButton" data-view="git"><span>⑂</span>Git</button>
+        <button class="toolButton" data-view="search"><span>⌕</span>Buscar</button>
+        <button class="toolButton" data-view="git"><span>⑂</span>Git</button>
         <button class="toolButton" data-view="memory"><span>◫</span>Memória</button>
         <button class="toolButton" data-view="mcp"><span>M</span>MCP</button>
       </nav>
@@ -67,7 +70,8 @@
       <div class="previewToolbar">
         <div class="previewIdentity"><div class="eyebrow">LIVE</div><strong>Preview</strong><span id="previewState">parado</span></div>
         <div class="previewActions"><button onclick="runPreview()" title="Executar preview">▶</button><button onclick="capturePreview()" title="Capturar">◉</button><button onclick="togglePreviewLogs()" title="Logs">≡</button><button onclick="refreshPreview(true)" title="Atualizar">↻</button><button onclick="togglePreviewFocus()" title="Maximizar preview">⛶</button></div>
-      </div>      <div id="previewSurface" class="previewSurface">
+      </div>
+      <div id="previewSurface" class="previewSurface">
         <iframe id="webPreview" title="Preview web do projeto"></iframe>
         <img id="imagePreview" alt="Preview do projeto">
         <div id="emptyPreview" class="emptyPreview"><div class="previewPulse"></div><strong>Preparando preview</strong><span>Projetos visuais abrem aqui automaticamente.</span></div>
@@ -79,5 +83,6 @@
   <footer class="statusbar"><span id="statusBranch">branch —</span><span id="statusChanges">Git —</span><span id="statusMemory">Memória —</span><span id="statusAdapters">Adapters —</span><span class="statusGrow"></span><span>ORDAX MCP</span></footer>
 </main>
 <script src="assets/studio.js"></script>
+<script src="assets/blender-connection.js"></script>
 </body>
 </html>
