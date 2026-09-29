@@ -109,6 +109,9 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertIn("blender.live_merge_by_distance_preview", result.data["actions"])
             self.assertIn("blender.live_merge_by_distance_commit", result.data["actions"])
             self.assertIn("blender.live_merge_by_distance_cancel", result.data["actions"])
+            self.assertIn("blender.live_boundary_hole_fill_preview", result.data["actions"])
+            self.assertIn("blender.live_boundary_hole_fill_commit", result.data["actions"])
+            self.assertIn("blender.live_boundary_hole_fill_cancel", result.data["actions"])
             self.assertNotIn("shell.exec", result.data["actions"])
 
 
@@ -302,6 +305,18 @@ class AgentActionRegistryTests(unittest.TestCase):
                 },
                 tools["merge_by_distance_preview"]["workflow_actions"],
             )
+            self.assertEqual("available", tools["boundary_hole_fill_preview"]["status"])
+            self.assertEqual(
+                "blender.live_boundary_hole_fill_preview",
+                tools["boundary_hole_fill_preview"]["action"],
+            )
+            self.assertEqual(
+                {
+                    "commit": "blender.live_boundary_hole_fill_commit",
+                    "cancel": "blender.live_boundary_hole_fill_cancel",
+                },
+                tools["boundary_hole_fill_preview"]["workflow_actions"],
+            )
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["create_primitive"],
@@ -329,6 +344,10 @@ class AgentActionRegistryTests(unittest.TestCase):
             self.assertEqual(
                 "available",
                 result.data["mutation_policy"]["merge_by_distance_preview"],
+            )
+            self.assertEqual(
+                "available",
+                result.data["mutation_policy"]["boundary_hole_fill_preview"],
             )
 
     def test_create_primitive_normalizes_and_dispatches(self) -> None:
@@ -598,6 +617,43 @@ class AgentActionRegistryTests(unittest.TestCase):
         self.assertEqual({"preview_id": "preview-789"}, commit.data["payload"])
         self.assertEqual("merge_by_distance_cancel", cancel.data["operation"])
         self.assertEqual({"preview_id": "preview-789"}, cancel.data["payload"])
+
+    def test_boundary_hole_fill_preview_and_transitions_dispatch_after_promotion(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "hordax").mkdir()
+            registry = ActionRegistry(self.make_config(root))
+            fake_live = SimpleNamespace(
+                request=lambda operation, payload, timeout_seconds: SimpleNamespace(
+                    ok=True,
+                    summary="accepted",
+                    data={"operation": operation, "payload": payload, "timeout_seconds": timeout_seconds},
+                )
+            )
+            with patch.object(registry, "_blender_live", return_value=fake_live):
+                preview = registry.execute(
+                    "blender.live_boundary_hole_fill_preview",
+                    {
+                        "object_name": "Panel",
+                        "expected_base_geometry_sha256": "c" * 64,
+                        "edge_indices": [11, 3, 9, 6],
+                    },
+                )
+                commit = registry.execute(
+                    "blender.live_boundary_hole_fill_commit",
+                    {"preview_id": "preview-hole-1"},
+                )
+                cancel = registry.execute(
+                    "blender.live_boundary_hole_fill_cancel",
+                    {"preview_id": "preview-hole-1"},
+                )
+        self.assertTrue(preview.ok)
+        self.assertEqual("boundary_hole_fill_preview", preview.data["operation"])
+        self.assertEqual([3, 6, 9, 11], preview.data["payload"]["edge_indices"])
+        self.assertEqual("boundary_hole_fill_commit", commit.data["operation"])
+        self.assertEqual({"preview_id": "preview-hole-1"}, commit.data["payload"])
+        self.assertEqual("boundary_hole_fill_cancel", cancel.data["operation"])
+        self.assertEqual({"preview_id": "preview-hole-1"}, cancel.data["payload"])
 
     def test_boolean_cut_preview_rejects_unknown_profile_fields_before_ipc(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

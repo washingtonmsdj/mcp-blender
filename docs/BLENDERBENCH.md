@@ -68,10 +68,17 @@ Acceptance requires all of the following:
     one vertex (`6 -> 5`) and verifies all four unselected vertex identities survive;
 34. merge cancel restores the exact original fingerprint, commit preserves the reviewed
     candidate, no-op selections are rejected and stale SHA replay is refused;
-35. broader topology findings remain descriptive hints rather than implicit edits;
-36. all modeling/repair command IDs are present in `trajectory.jsonl`;
-37. temporary smoke geometry and repair backup objects are cleaned before capture;
-38. despite all in-memory modeling operations, the source `.blend` remains
+35. a boundary-hole diagnostic measures exactly two closed loops and emits explicit
+    preview candidates instead of treating every open surface as a defect;
+36. `boundary_hole_fill_preview` selects one four-edge loop, creates exactly one face
+    and zero edges, preserves all original topology, changes boundary edges `8 -> 4`
+    and faces `4 -> 5`;
+37. hole-fill cancel restores the exact original SHA, an open edge chain is rejected,
+    explicit commit preserves the reviewed candidate and stale replay is refused;
+38. broader topology findings remain descriptive hints rather than implicit edits;
+39. all modeling/repair command IDs are present in `trajectory.jsonl`;
+40. temporary smoke geometry and repair backup objects are cleaned before capture;
+41. despite all in-memory modeling operations, the source `.blend` remains
     byte-for-byte unchanged on disk.
 
 The benchmark intentionally uses a primitive rather than a production asset.
@@ -128,8 +135,9 @@ The modeling fixture validates the production typed mutation paths
 `object_transform`, `create_primitive`, `add_modifier` (including fixed-count
 `ARRAY`) and `surface_scatter`, plus the non-destructive `boolean_cut_preview` â†’
 `boolean_cut_commit` â†’ `boolean_cut_cancel` workflow, revision-guarded
-`mesh_cleanup`, reversible `degenerate_repair_preview` â†’ commit/cancel and
-explicit-selection `merge_by_distance_preview` â†’ commit/cancel workflows. The same normal dispatcher operations and runtime guards used by live
+`mesh_cleanup`, reversible `degenerate_repair_preview` â†’ commit/cancel,
+explicit-selection `merge_by_distance_preview` â†’ commit/cancel and localized
+`boundary_hole_fill_preview` â†’ commit/cancel workflows. The same normal dispatcher operations and runtime guards used by live
 sessions are exercised in the benchmark.
 
 The September 20, 2026 benchmark job
@@ -153,6 +161,10 @@ journaled and the source `.blend` stayed unchanged. The September 29 Blender 5.2
 run also promoted explicit-selection Merge by Distance: `[0,1]` merged one vertex
 from a six-vertex fixture, all four unselected identities survived preview/commit,
 cancel restored the original SHA, no-op selection was rejected and stale replay failed.
-A benchmark failure continues
+The same September 29 run promoted localized boundary hole-fill: a fixture with two
+closed boundary loops previewed one four-edge loop, added exactly one face and no
+edge, reduced boundary edges from eight to four without removing original topology,
+restored the original SHA on cancel, rejected an open chain, committed the reviewed
+candidate and refused stale replay. A benchmark failure continues
 to block recovery/update of the managed agent instead of allowing an unverified
 Blender control layer onto the workstation.

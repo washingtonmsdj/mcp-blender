@@ -207,6 +207,13 @@ def _run_companion_smoke(
     modeling_merge_commit_path = control_root / "results" / "smoke-model-merge-commit.json"
     modeling_merge_stale_path = control_root / "results" / "smoke-model-merge-stale.json"
     modeling_merge_noop_path = control_root / "results" / "smoke-model-merge-noop.json"
+    modeling_hole_diag_path = control_root / "results" / "smoke-model-hole-diagnostic.json"
+    modeling_hole_preview_path = control_root / "results" / "smoke-model-hole-preview.json"
+    modeling_hole_cancel_path = control_root / "results" / "smoke-model-hole-cancel.json"
+    modeling_hole_invalid_path = control_root / "results" / "smoke-model-hole-invalid.json"
+    modeling_hole_preview_commit_path = control_root / "results" / "smoke-model-hole-preview-commit.json"
+    modeling_hole_commit_path = control_root / "results" / "smoke-model-hole-commit.json"
+    modeling_hole_stale_path = control_root / "results" / "smoke-model-hole-stale.json"
     if not all(
         path.is_file()
         for path in (
@@ -240,6 +247,13 @@ def _run_companion_smoke(
             modeling_merge_commit_path,
             modeling_merge_stale_path,
             modeling_merge_noop_path,
+            modeling_hole_diag_path,
+            modeling_hole_preview_path,
+            modeling_hole_cancel_path,
+            modeling_hole_invalid_path,
+            modeling_hole_preview_commit_path,
+            modeling_hole_commit_path,
+            modeling_hole_stale_path,
         )
     ):
         raise RuntimeError(
@@ -295,6 +309,13 @@ def _run_companion_smoke(
     modeling_merge_commit = json.loads(modeling_merge_commit_path.read_text(encoding="utf-8-sig"))
     modeling_merge_stale = json.loads(modeling_merge_stale_path.read_text(encoding="utf-8-sig"))
     modeling_merge_noop = json.loads(modeling_merge_noop_path.read_text(encoding="utf-8-sig"))
+    modeling_hole_diag = json.loads(modeling_hole_diag_path.read_text(encoding="utf-8-sig"))
+    modeling_hole_preview = json.loads(modeling_hole_preview_path.read_text(encoding="utf-8-sig"))
+    modeling_hole_cancel = json.loads(modeling_hole_cancel_path.read_text(encoding="utf-8-sig"))
+    modeling_hole_invalid = json.loads(modeling_hole_invalid_path.read_text(encoding="utf-8-sig"))
+    modeling_hole_preview_commit = json.loads(modeling_hole_preview_commit_path.read_text(encoding="utf-8-sig"))
+    modeling_hole_commit = json.loads(modeling_hole_commit_path.read_text(encoding="utf-8-sig"))
+    modeling_hole_stale = json.loads(modeling_hole_stale_path.read_text(encoding="utf-8-sig"))
     if not modeling_valid.get("ok"):
         raise RuntimeError(
             "modeling positive control failed: "
@@ -455,6 +476,52 @@ def _run_companion_smoke(
     if "fingerprint changed" not in str(modeling_merge_stale.get("summary") or ""):
         raise RuntimeError("stale merge-by-distance rejection did not expose fingerprint mismatch")
 
+    if modeling_hole_diag.get("ok"):
+        raise RuntimeError("boundary-hole diagnostic unexpectedly passed")
+    hole_check = (modeling_hole_diag.get("checks") or [{}])[0]
+    if int((hole_check.get("metrics") or {}).get("boundary_loops") or 0) != 2:
+        raise RuntimeError("boundary-hole diagnostic did not measure two closed loops")
+    hole_hint = next(
+        (hint for hint in (hole_check.get("repair_hints") or []) if hint.get("code") == "preview_boundary_hole_fill"),
+        None,
+    )
+    if not hole_hint or len(hole_hint.get("preview_candidates") or []) < 2:
+        raise RuntimeError("boundary-hole diagnostic did not expose explicit preview candidates")
+    if not modeling_hole_preview.get("ok") or modeling_hole_preview.get("state") != "preview":
+        raise RuntimeError("boundary hole-fill preview smoke failed")
+    if len(modeling_hole_preview.get("selected_edge_indices") or []) != 4:
+        raise RuntimeError("boundary hole-fill preview lost the four-edge selection")
+    if int(modeling_hole_preview.get("new_faces") or 0) != 1:
+        raise RuntimeError("boundary hole-fill preview did not create exactly one face")
+    if int(modeling_hole_preview.get("new_edges") or 0) != 0:
+        raise RuntimeError("boundary hole-fill preview unexpectedly created an edge")
+    if not modeling_hole_preview.get("original_topology_preserved"):
+        raise RuntimeError("boundary hole-fill preview did not prove original topology preservation")
+    if int(modeling_hole_preview.get("boundary_edges_before") or 0) != 8 or int(modeling_hole_preview.get("boundary_edges_after") or 0) != 4:
+        raise RuntimeError("boundary hole-fill preview did not close exactly one four-edge loop")
+    if int((modeling_hole_preview.get("before_mesh") or {}).get("polygons") or 0) != 4:
+        raise RuntimeError("boundary hole-fill pre-state did not contain four faces")
+    if int((modeling_hole_preview.get("candidate_mesh") or {}).get("polygons") or 0) != 5:
+        raise RuntimeError("boundary hole-fill candidate did not contain five faces")
+    if not modeling_hole_cancel.get("ok") or modeling_hole_cancel.get("state") != "cancelled":
+        raise RuntimeError("boundary hole-fill cancel smoke failed")
+    if modeling_hole_cancel.get("restored_geometry_sha256") != modeling_hole_preview.get("before_geometry_sha256"):
+        raise RuntimeError("boundary hole-fill cancel did not restore the original fingerprint")
+    if modeling_hole_invalid.get("ok"):
+        raise RuntimeError("open boundary chain was incorrectly accepted as a hole loop")
+    if "closed" not in str(modeling_hole_invalid.get("summary") or ""):
+        raise RuntimeError("open boundary-chain rejection did not expose closed-loop failure")
+    if not modeling_hole_preview_commit.get("ok"):
+        raise RuntimeError("boundary hole-fill second preview failed")
+    if not modeling_hole_commit.get("ok") or modeling_hole_commit.get("state") != "committed":
+        raise RuntimeError("boundary hole-fill commit smoke failed")
+    if modeling_hole_commit.get("committed_geometry_sha256") != modeling_hole_preview_commit.get("candidate_geometry_sha256"):
+        raise RuntimeError("boundary hole-fill commit changed the reviewed candidate fingerprint")
+    if modeling_hole_stale.get("ok"):
+        raise RuntimeError("stale boundary hole-fill preview was incorrectly accepted")
+    if "fingerprint changed" not in str(modeling_hole_stale.get("summary") or ""):
+        raise RuntimeError("stale boundary hole-fill rejection did not expose fingerprint mismatch")
+
     created_object = modeling_create.get("object") or {}
     if (created_object.get("mesh") or {}).get("vertices") != 8:
         raise RuntimeError(
@@ -568,6 +635,13 @@ def _run_companion_smoke(
         "smoke-model-merge-commit",
         "smoke-model-merge-stale",
         "smoke-model-merge-noop",
+        "smoke-model-hole-diagnostic",
+        "smoke-model-hole-preview",
+        "smoke-model-hole-cancel",
+        "smoke-model-hole-invalid",
+        "smoke-model-hole-preview-commit",
+        "smoke-model-hole-commit",
+        "smoke-model-hole-stale",
     }.issubset(trajectory_ids):
         raise RuntimeError(
             "modeling fixture commands are missing from trajectory evidence"
@@ -604,6 +678,12 @@ def _run_companion_smoke(
         "merge_noop_guard": True,
         "merge_explicit_selection_preserved": True,
         "merge_unselected_survived_preview": bool(modeling_merge_preview.get("unselected_vertices_preserved")),
+        "hole_diagnostic_positive": True,
+        "hole_preview_positive": True,
+        "hole_cancel_rollback": True,
+        "hole_commit_positive": True,
+        "hole_stale_guard": True,
+        "hole_open_chain_guard": True,
         "merge_unselected_survived_commit": bool(modeling_merge_preview_commit.get("unselected_vertices_preserved")),
         "dispatcher_journaled": True,
         "valid": modeling_valid,
@@ -636,6 +716,13 @@ def _run_companion_smoke(
         "merge_commit": modeling_merge_commit,
         "merge_stale": modeling_merge_stale,
         "merge_noop": modeling_merge_noop,
+        "hole_diag": modeling_hole_diag,
+        "hole_preview": modeling_hole_preview,
+        "hole_cancel": modeling_hole_cancel,
+        "hole_invalid": modeling_hole_invalid,
+        "hole_preview_commit": modeling_hole_preview_commit,
+        "hole_commit": modeling_hole_commit,
+        "hole_stale": modeling_hole_stale,
     }
 
     after = hashlib.sha256(scene.read_bytes()).hexdigest()
@@ -800,6 +887,21 @@ def run(root: Path) -> dict:
             "merge_merged_vertices": baseline["modeling"]["merge_preview"].get("merged_vertices"),
             "merge_before_mesh": baseline["modeling"]["merge_preview"].get("before_mesh"),
             "merge_candidate_mesh": baseline["modeling"]["merge_preview"].get("candidate_mesh"),
+            "hole_diagnostic_positive": baseline["modeling"]["hole_diagnostic_positive"],
+            "hole_preview_positive": baseline["modeling"]["hole_preview_positive"],
+            "hole_cancel_rollback": baseline["modeling"]["hole_cancel_rollback"],
+            "hole_commit_positive": baseline["modeling"]["hole_commit_positive"],
+            "hole_stale_guard": baseline["modeling"]["hole_stale_guard"],
+            "hole_open_chain_guard": baseline["modeling"]["hole_open_chain_guard"],
+            "hole_boundary_loops": ((baseline["modeling"]["hole_diag"].get("checks") or [{}])[0].get("metrics") or {}).get("boundary_loops"),
+            "hole_selected_edge_indices": baseline["modeling"]["hole_preview"].get("selected_edge_indices"),
+            "hole_new_faces": baseline["modeling"]["hole_preview"].get("new_faces"),
+            "hole_new_edges": baseline["modeling"]["hole_preview"].get("new_edges"),
+            "hole_boundary_edges_before": baseline["modeling"]["hole_preview"].get("boundary_edges_before"),
+            "hole_boundary_edges_after": baseline["modeling"]["hole_preview"].get("boundary_edges_after"),
+            "hole_before_mesh": baseline["modeling"]["hole_preview"].get("before_mesh"),
+            "hole_candidate_mesh": baseline["modeling"]["hole_preview"].get("candidate_mesh"),
+            "hole_repair_hints": (baseline["modeling"]["hole_diag"].get("checks") or [{}])[0].get("repair_hints"),
             "dispatcher_journaled": baseline["modeling"]["dispatcher_journaled"],
             "location": (
                 (baseline["modeling"]["valid"].get("object") or {}).get("location")

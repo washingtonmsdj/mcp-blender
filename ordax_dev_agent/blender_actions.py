@@ -806,6 +806,7 @@ class BlenderActions:
                     "mesh_cleanup": modeling_schemas()["mesh_cleanup"]["status"],
                     "degenerate_repair_preview": modeling_schemas()["degenerate_repair_preview"]["status"],
                     "merge_by_distance_preview": modeling_schemas()["merge_by_distance_preview"]["status"],
+                    "boundary_hole_fill_preview": modeling_schemas()["boundary_hole_fill_preview"]["status"],
                     "add_modifier": "available",
                 },
             },
@@ -1201,6 +1202,29 @@ class BlenderActions:
     def blender_live_merge_by_distance_cancel(self, payload: dict[str, Any]) -> ActionResult:
         return self._mesh_repair_transition(payload, "merge_by_distance_cancel")
 
+    def blender_live_boundary_hole_fill_preview(self, payload: dict[str, Any]) -> ActionResult:
+        try:
+            plan = plan_modeling_operation("boundary_hole_fill_preview", payload)
+        except ValueError as error:
+            return ActionResult(False, str(error))
+        if not plan["executable"]:
+            return ActionResult(
+                False,
+                f"{plan['status']}: boundary hole-fill preview is not enabled for execution",
+                {"plan": plan},
+            )
+        return self._blender_live(payload).request(
+            "boundary_hole_fill_preview",
+            plan["arguments"],
+            timeout_seconds=float(payload.get("timeout_seconds", 60)),
+        )
+
+    def blender_live_boundary_hole_fill_commit(self, payload: dict[str, Any]) -> ActionResult:
+        return self._mesh_repair_transition(payload, "boundary_hole_fill_commit")
+
+    def blender_live_boundary_hole_fill_cancel(self, payload: dict[str, Any]) -> ActionResult:
+        return self._mesh_repair_transition(payload, "boundary_hole_fill_cancel")
+
     def blender_live_material_apply(self, payload: dict[str, Any]) -> ActionResult:
         try:
             arguments = normalize_material_request(payload)
@@ -1433,6 +1457,9 @@ class BlenderActions:
             "merge_by_distance_preview": self.blender_live_merge_by_distance_preview,
             "merge_by_distance_commit": self.blender_live_merge_by_distance_commit,
             "merge_by_distance_cancel": self.blender_live_merge_by_distance_cancel,
+            "boundary_hole_fill_preview": self.blender_live_boundary_hole_fill_preview,
+            "boundary_hole_fill_commit": self.blender_live_boundary_hole_fill_commit,
+            "boundary_hole_fill_cancel": self.blender_live_boundary_hole_fill_cancel,
             "material_apply": self.blender_live_material_apply,
             "create_camera": self.blender_live_create_camera,
             "create_light": self.blender_live_create_light,

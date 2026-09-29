@@ -230,6 +230,31 @@ vertex (`6 â†’ 5`) while all four unselected vertices survived both preview
 committed candidate, plus no-op rejection, exact cancel rollback and stale-SHA
 rejection. The source `.blend` remained byte-for-byte unchanged.
 
+### Explicit boundary-loop hole-fill workflow
+
+`boundary_hole_fill_preview` never treats every open surface as a defect. The
+quality gate groups boundary edges into connected components and identifies a
+preview candidate only when one component is a simple closed cycle: at least three
+edges, one edge per loop vertex, and degree two at every loop vertex. Diagnostics
+include bounded edge/vertex indices, local bounds and perimeter so the caller can
+review the intended loop explicitly.
+
+Execution requires the exact base-mesh SHA-256 and 3â€“32 explicit boundary-edge
+indices on a local single-user mesh with no shape keys or modifiers. The target is
+capped at 200,000 faces and the preview may create at most 32 faces. The companion
+works on a candidate datablock, proves every original vertex, edge and face remains
+identifiable, rejects any new vertex, and requires all created faces/edges to use
+only vertices of the selected loop. The boundary-edge count must decrease by
+exactly the selected-loop edge count.
+
+BlenderBench on Blender 5.2.2 validated a four-face planar ring with two closed
+boundary loops. The smaller four-edge loop `[3, 6, 9, 11]` was selected explicitly;
+preview changed `8v/12e/4f` to `8v/12e/5f`, created exactly one face and zero edges,
+and reduced boundary edges from `8` to `4`. A three-edge open chain was rejected,
+cancel restored the exact original fingerprint, commit preserved the reviewed
+candidate fingerprint, and replaying the old SHA was rejected as stale. Closed
+boundaries remain review-only evidence; no hole is filled automatically.
+
 ## Promotion gate
 
 A disabled mutation can become available only after all of the following are
@@ -247,8 +272,9 @@ true:
 
 The promotion gate has now been satisfied for `create_primitive`, `add_modifier`,
 `surface_scatter`, `boolean_cut_preview` (including commit/cancel transitions),
-`mesh_cleanup` (`remove_loose_vertices`), `degenerate_repair_preview` and
-`merge_by_distance_preview` (both including explicit commit/cancel transitions).
+`mesh_cleanup` (`remove_loose_vertices`), `degenerate_repair_preview`,
+`merge_by_distance_preview` and `boundary_hole_fill_preview` (all preview workflows
+including explicit commit/cancel transitions).
 Future modeling mutations must still follow the same fail-closed
 process before registration.
 
@@ -256,8 +282,9 @@ process before registration.
 
 `scripts/blender_benchmark.py` continues to exercise the production typed
 modeling mutations, the Boolean preview/commit/cancel workflow, revision-guarded
-mesh cleanup, the reversible degenerate-repair workflow and explicit-selection
-Merge by Distance preview/commit/cancel through the real companion dispatcher on every BlenderBench run. It keeps
+mesh cleanup, the reversible degenerate-repair workflow, explicit-selection Merge
+by Distance and explicit boundary-loop hole-fill preview/commit/cancel through the
+real companion dispatcher on every BlenderBench run. It keeps
 positive/negative controls, exact rollback fingerprints, durable trajectory
 evidence, temporary object cleanup and source `.blend` hash protection so later
 changes cannot silently weaken the validated behavior.

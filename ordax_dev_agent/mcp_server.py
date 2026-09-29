@@ -499,6 +499,35 @@ def cancel_merge_by_distance(project: str | None = None, preview_id: str = "") -
 
 
 @mcp.tool()
+def preview_boundary_hole_fill(
+    project: str | None = None,
+    object_name: str = "",
+    ordax_object_id: str = "",
+    expected_base_geometry_sha256: str = "",
+    edge_indices: list[int] | None = None,
+) -> dict:
+    """Preview a localized fill for one explicit closed base-mesh boundary loop."""
+    args: dict = {
+        "expected_base_geometry_sha256": expected_base_geometry_sha256,
+        "edge_indices": list(edge_indices or []),
+    }
+    args.update({"object_name": object_name} if object_name else {"ordax_object_id": ordax_object_id})
+    return _blender_action("blender.live_boundary_hole_fill_preview", project, args)
+
+
+@mcp.tool()
+def commit_boundary_hole_fill(project: str | None = None, preview_id: str = "") -> dict:
+    """Commit a reviewed boundary hole-fill candidate."""
+    return _blender_action("blender.live_boundary_hole_fill_commit", project, {"preview_id": preview_id})
+
+
+@mcp.tool()
+def cancel_boundary_hole_fill(project: str | None = None, preview_id: str = "") -> dict:
+    """Cancel a boundary hole-fill preview and restore the exact original mesh."""
+    return _blender_action("blender.live_boundary_hole_fill_cancel", project, {"preview_id": preview_id})
+
+
+@mcp.tool()
 def delete_object(project: str | None = None, object_name: str = "", missing_ok: bool = False) -> dict:
     """Remove one named Blender object through the bounded live mutation contract."""
     return _blender_action("blender.live_object_remove", project, {"object_names": [object_name], "missing_ok": missing_ok})

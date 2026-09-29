@@ -104,7 +104,7 @@ on Blender 5.2.2 validated one isolated-vertex removal plus stale-fingerprint
 rejection while preserving the source `.blend` on disk. Zero-length edges and
 zero-area faces now have that bounded contract: `degenerate_repair_preview` edits a
 candidate copy, retains the exact original as an ORDAX backup and requires an
-explicit commit or cancel. Explicit-selection Merge by Distance is now also available as a bounded preview workflow: callers must provide 2â€“64 base-mesh vertex indices, distance is capped at 0.001, unselected vertex identity is verified before the candidate is exposed, and commit/cancel use the same fingerprint guards. Other broader topology repairs remain review-only.
+explicit commit or cancel. Explicit-selection Merge by Distance is now also available as a bounded preview workflow: callers must provide 2â€“64 base-mesh vertex indices, distance is capped at 0.001, unselected vertex identity is verified before the candidate is exposed, and commit/cancel use the same fingerprint guards. Closed boundary loops now receive structured perimeter/bounds evidence and can be passed explicitly to a localized hole-fill preview; open surfaces are never classified automatically as defects.
 
 Sources: [surface-conforming modeling question](https://www.reddit.com/r/blenderhelp/comments/1iqqfnw/what_are_some_more_efficient_workflow_for_modeling_along_a_surface/),
 [iterative topology/editability feedback on Blender MCP](https://www.reddit.com/r/OpenAI/comments/1we95z2/blender_mcp_is_impressive_but_not_that_useable_yet/),
@@ -134,9 +134,8 @@ automatically declaring every disconnected island or non-quad a defect.
 5. **Concluído:** `degenerate_repair_preview` para zero-length edges e faces de
    área zero, usando candidate mesh + backup oculto, Preview → Commit → Cancel,
    fingerprints stale/candidate guards e BlenderBench real no Blender 5.2.2.
-6. **Próximo:** estudar reparos localizados ainda mais ambíguos, como merge por
-   distância com seleção explícita ou pequenos hole-fill, sempre com preview,
-   limites de região e rollback antes de qualquer commit.
+6. **Concluído:** reparos localizados ambíguos agora têm workflows reversíveis: Merge by Distance limitado a seleção explícita de vértices e `boundary_hole_fill_preview` limitado a um único loop de borda simples/fechado, ambos com fingerprint guards, cancel exato, commit explícito e BlenderBench real.
+7. **Próximo:** estudar bridge entre dois boundary loops explicitamente selecionados e outras pequenas correções regionais, mantendo candidate mesh, budgets e revisão antes do commit; retopologia automática continua fora do escopo.
 
 Each mutation should stay small in the MCP surface: one composable typed action,
 strict schemas, clear failure evidence, and visual/geometry inspection after

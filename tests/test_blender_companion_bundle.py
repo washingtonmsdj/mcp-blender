@@ -533,6 +533,53 @@ class BlenderModelingContractTests(unittest.TestCase):
                 {**base, "vertex_indices": list(range(65))},
             )
 
+    def test_boundary_hole_fill_preview_plan_is_executable_after_blenderbench_promotion(self) -> None:
+        digest = "7" * 64
+        plan = plan_modeling_operation(
+            "boundary_hole_fill_preview",
+            {
+                "object_name": "Panel",
+                "expected_base_geometry_sha256": digest,
+                "edge_indices": [9, 3, 6, 11],
+            },
+        )
+        self.assertTrue(plan["executable"])
+        self.assertEqual("available", plan["status"])
+        self.assertEqual("blender.live_boundary_hole_fill_preview", plan["action"])
+        self.assertFalse(plan["requires_real_blender_smoke"])
+        self.assertEqual([3, 6, 9, 11], plan["arguments"]["edge_indices"])
+        self.assertEqual(32, plan["runtime_guards"]["max_boundary_edges"])
+        self.assertEqual(32, plan["runtime_guards"]["max_new_faces"])
+        self.assertEqual(
+            "blender.live_boundary_hole_fill_commit",
+            plan["workflow_actions"]["commit"],
+        )
+        self.assertEqual(
+            "blender.live_boundary_hole_fill_cancel",
+            plan["workflow_actions"]["cancel"],
+        )
+
+    def test_boundary_hole_fill_preview_rejects_unsafe_edge_contracts(self) -> None:
+        base = {
+            "object_name": "Panel",
+            "expected_base_geometry_sha256": "6" * 64,
+        }
+        with self.assertRaisesRegex(ValueError, "between 3 and 32"):
+            plan_modeling_operation(
+                "boundary_hole_fill_preview",
+                {**base, "edge_indices": [1, 2]},
+            )
+        with self.assertRaisesRegex(ValueError, "duplicate vertex indices"):
+            plan_modeling_operation(
+                "boundary_hole_fill_preview",
+                {**base, "edge_indices": [1, 2, 2]},
+            )
+        with self.assertRaisesRegex(ValueError, "between 3 and 32"):
+            plan_modeling_operation(
+                "boundary_hole_fill_preview",
+                {**base, "edge_indices": list(range(33))},
+            )
+
     def test_transform_plan_is_executable_and_closed_to_unknown_fields(self) -> None:
         plan = plan_modeling_operation(
             "object_transform",

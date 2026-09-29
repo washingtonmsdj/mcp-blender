@@ -184,6 +184,9 @@ CAPABILITIES = [
     "merge_by_distance_preview",
     "merge_by_distance_commit",
     "merge_by_distance_cancel",
+    "boundary_hole_fill_preview",
+    "boundary_hole_fill_commit",
+    "boundary_hole_fill_cancel",
     "material_apply",
     "create_camera",
     "create_light",
@@ -2147,6 +2150,20 @@ def _degenerate_issue_counts(mesh, threshold: float) -> dict:
         bm.free()
 
 
+_MESH_REPAIR_KINDS = ("degenerate", "merge", "hole")
+
+
+def _target_has_active_mesh_repair_preview(obj) -> bool:
+    for kind in _MESH_REPAIR_KINDS:
+        if str(obj.get(f"ordax_{kind}_preview_id") or ""):
+            return True
+    for item in bpy.data.objects:
+        for kind in _MESH_REPAIR_KINDS:
+            if bool(item.get(f"ordax_{kind}_backup")) and str(item.get(f"ordax_{kind}_target") or "") == obj.name:
+                return True
+    return False
+
+
 def _mesh_repair_preview_backups(kind: str, preview_id: str) -> list:
     preview_key = f"ordax_{kind}_preview_id"
     backup_key = f"ordax_{kind}_backup"
@@ -2359,14 +2376,8 @@ def _modeling_degenerate_repair_preview(command: dict) -> None:
             raise ValueError("degenerate repair preview does not support shape keys")
         if len(obj.modifiers) > 0:
             raise ValueError("degenerate repair preview requires a target without modifiers")
-        if str(obj.get("ordax_degenerate_preview_id") or "") or str(obj.get("ordax_merge_preview_id") or ""):
+        if _target_has_active_mesh_repair_preview(obj):
             raise ValueError("target already has an active mesh-repair preview")
-        if any(
-            str(item.get("ordax_degenerate_target") or item.get("ordax_merge_target") or "") == obj.name
-            for item in bpy.data.objects
-            if bool(item.get("ordax_degenerate_backup")) or bool(item.get("ordax_merge_backup"))
-        ):
-            raise ValueError("target already has an active mesh-repair backup")
 
         max_faces = int(getattr(_MODELING_CONTRACTS, "MAX_EVALUATED_FACES", 200000))
         if len(obj.data.polygons) > max_faces:
@@ -2619,14 +2630,8 @@ def _modeling_merge_by_distance_preview(command: dict) -> None:
             raise ValueError("merge-by-distance preview does not support shape keys")
         if len(obj.modifiers) > 0:
             raise ValueError("merge-by-distance preview requires a target without modifiers")
-        if str(obj.get("ordax_merge_preview_id") or "") or str(obj.get("ordax_degenerate_preview_id") or ""):
+        if _target_has_active_mesh_repair_preview(obj):
             raise ValueError("target already has an active mesh-repair preview")
-        if any(
-            str(item.get("ordax_merge_target") or item.get("ordax_degenerate_target") or "") == obj.name
-            for item in bpy.data.objects
-            if bool(item.get("ordax_merge_backup")) or bool(item.get("ordax_degenerate_backup"))
-        ):
-            raise ValueError("target already has an active mesh-repair backup")
 
         max_faces = int(getattr(_MODELING_CONTRACTS, "MAX_EVALUATED_FACES", 200000))
         if len(obj.data.polygons) > max_faces:
@@ -2870,6 +2875,339 @@ def _modeling_merge_by_distance_cancel(command: dict) -> None:
             False,
             str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
             operation="merge_by_distance_cancel",
+        )
+
+
+def _modeling_boundary_hole_fill_preview(command: dict) -> None:
+    command_id = command["id"]
+    obj = None
+    original_mesh = None
+    candidate_mesh = None
+    backup = None
+    collection = None
+    before = None
+    try:
+        _modeling_runtime_preconditions()
+        plan = _modeling_plan_from_command("boundary_hole_fill_preview", command)
+        if not plan["executable"]:
+            raise ValueError(
+                f"{plan['status']}: boundary hole-fill preview is not enabled for execution"
+            )
+        arguments = plan["arguments"]
+        obj = _resolve_object(arguments)
+        if (
+            obj.type != "MESH"
+            or obj.library is not None
+            or obj.override_library is not None
+            or getattr(obj.data, "library", None) is not None
+        ):
+            raise ValueError("boundary hole-fill target must be an existing local, non-linked mesh object")
+        if obj.animation_data is not None or len(obj.constraints) > 0:
+            raise ValueError("animated or constrained hole-fill targets require a dedicated workflow")
+        if getattr(obj.data, "users", 0) != 1:
+            raise ValueError("boundary hole-fill preview requires single-user mesh data")
+        if getattr(obj.data, "shape_keys", None) is not None:
+            raise ValueError("boundary hole-fill preview does not support shape keys")
+        if len(obj.modifiers) > 0:
+            raise ValueError("boundary hole-fill preview requires a target without modifiers")
+        if _target_has_active_mesh_repair_preview(obj):
+            raise ValueError("target already has an active mesh-repair preview")
+
+        max_faces = int(getattr(_MODELING_CONTRACTS, "MAX_EVALUATED_FACES", 200000))
+        max_new_faces = int(getattr(_MODELING_CONTRACTS, "MAX_HOLE_FILL_NEW_FACES", 32))
+        if len(obj.data.polygons) > max_faces:
+            raise ValueError("boundary hole-fill target exceeds interactive face budget")
+        current_sha256, current_mesh_counts = _mesh_fingerprint(obj, evaluated=False)
+        if current_sha256 != arguments["expected_base_geometry_sha256"]:
+            raise ValueError("stale boundary hole-fill preview refused: base geometry fingerprint changed")
+        edge_indices = list(arguments["edge_indices"])
+        edge_count = len(obj.data.edges)
+        if not edge_indices or edge_indices[-1] >= edge_count:
+            raise ValueError("boundary hole-fill edge index is outside the current base mesh")
+
+        before = _object_details(obj)
+        original_mesh = obj.data
+        candidate_mesh = original_mesh.copy()
+        candidate_mesh.name = f"__ordax_hole_candidate_{str(command_id)[:12]}"
+        work = bmesh.new()
+        loop_vertex_ids = set()
+        perimeter = 0.0
+        new_face_count = 0
+        new_edge_count = 0
+        before_boundary_edges = 0
+        after_boundary_edges = 0
+        try:
+            work.from_mesh(candidate_mesh)
+            work.verts.ensure_lookup_table()
+            work.edges.ensure_lookup_table()
+            work.faces.ensure_lookup_table()
+            selected_edges = [work.edges[index] for index in edge_indices]
+            if not all(edge.is_boundary for edge in selected_edges):
+                raise ValueError("boundary hole-fill selection must contain only boundary edges")
+            selected_set = set(edge_indices)
+            adjacency = {}
+            for edge in selected_edges:
+                perimeter += float((edge.verts[0].co - edge.verts[1].co).length)
+                for vertex in edge.verts:
+                    vertex_id = int(vertex.index)
+                    loop_vertex_ids.add(vertex_id)
+                    adjacency.setdefault(vertex_id, []).append(int(edge.index))
+            if len(loop_vertex_ids) != len(selected_edges) or any(len(items) != 2 for items in adjacency.values()):
+                raise ValueError("boundary hole-fill selection must form one simple closed edge cycle")
+            visited_edges = set()
+            stack = [edge_indices[0]]
+            while stack:
+                current_id = stack.pop()
+                if current_id in visited_edges:
+                    continue
+                visited_edges.add(current_id)
+                current = work.edges[current_id]
+                for vertex in current.verts:
+                    for linked_id in adjacency[int(vertex.index)]:
+                        if linked_id not in visited_edges:
+                            stack.append(linked_id)
+            if visited_edges != selected_set:
+                raise ValueError("boundary hole-fill selection must be one connected closed loop")
+            if perimeter <= 0.0:
+                raise ValueError("boundary hole-fill loop perimeter must be positive")
+
+            vertex_layer = work.verts.layers.int.new("__ordax_original_vertex")
+            edge_layer = work.edges.layers.int.new("__ordax_original_edge")
+            face_layer = work.faces.layers.int.new("__ordax_original_face")
+            for vertex in work.verts:
+                vertex[vertex_layer] = int(vertex.index) + 1
+            for edge in work.edges:
+                edge[edge_layer] = int(edge.index) + 1
+            for face in work.faces:
+                face[face_layer] = int(face.index) + 1
+            original_vertex_ids = {int(vertex[vertex_layer]) for vertex in work.verts}
+            original_edge_ids = {int(edge[edge_layer]) for edge in work.edges}
+            original_face_ids = {int(face[face_layer]) for face in work.faces}
+            before_boundary_edges = sum(1 for edge in work.edges if edge.is_boundary)
+            # Creating BMesh custom-data layers invalidates previously held BMEdge
+            # references in Blender 5.2. Rebuild the explicit selection from its
+            # validated stable indices immediately before invoking holes_fill.
+            work.edges.ensure_lookup_table()
+            selected_edges = [work.edges[index] for index in edge_indices]
+            original_edge_elements = set(work.edges)
+
+            result = bmesh.ops.holes_fill(work, edges=selected_edges, sides=0)
+            created_faces = list(result.get("faces") or [])
+            if not created_faces:
+                raise ValueError("boundary hole-fill selection produced no face")
+            new_faces = created_faces
+            new_edges = [edge for edge in work.edges if edge not in original_edge_elements]
+            new_face_count = len(new_faces)
+            new_edge_count = len(new_edges)
+            if len(work.verts) != len(original_vertex_ids):
+                raise RuntimeError("boundary hole-fill preview created unexpected vertices")
+            if not (1 <= new_face_count <= max_new_faces):
+                raise RuntimeError("boundary hole-fill preview exceeded new-face budget")
+            if {int(vertex[vertex_layer]) for vertex in work.verts} != original_vertex_ids:
+                raise RuntimeError("boundary hole-fill preview changed original vertex identity")
+            if not original_edge_ids.issubset({int(edge[edge_layer]) for edge in work.edges}):
+                raise RuntimeError("boundary hole-fill preview removed an original edge")
+            if not original_face_ids.issubset({int(face[face_layer]) for face in work.faces}):
+                raise RuntimeError("boundary hole-fill preview removed an original face")
+            loop_original_vertex_ids = {vertex_id + 1 for vertex_id in loop_vertex_ids}
+            for face in new_faces:
+                if not {int(vertex[vertex_layer]) for vertex in face.verts}.issubset(loop_original_vertex_ids):
+                    raise RuntimeError("boundary hole-fill preview created a face outside the selected loop")
+            for edge in new_edges:
+                if not {int(vertex[vertex_layer]) for vertex in edge.verts}.issubset(loop_original_vertex_ids):
+                    raise RuntimeError("boundary hole-fill preview created an edge outside the selected loop")
+            after_boundary_edges = sum(1 for edge in work.edges if edge.is_boundary)
+            if before_boundary_edges - after_boundary_edges != len(edge_indices):
+                raise RuntimeError("boundary hole-fill preview did not close exactly the selected boundary loop")
+
+            work.verts.layers.int.remove(vertex_layer)
+            work.edges.layers.int.remove(edge_layer)
+            work.faces.layers.int.remove(face_layer)
+            work.to_mesh(candidate_mesh)
+            candidate_mesh.update()
+        finally:
+            work.free()
+
+        preview_id = str(command_id)
+        collection = bpy.data.collections.new(f"__ORDAX_HOLE_PREVIEW_{preview_id[:12]}")
+        bpy.context.scene.collection.children.link(collection)
+        backup = bpy.data.objects.new(f"__ordax_hole_backup_{preview_id[:12]}", original_mesh)
+        collection.objects.link(backup)
+        backup.hide_render = True
+        backup.hide_set(True)
+        backup["ordax_hole_preview_id"] = preview_id
+        backup["ordax_hole_backup"] = True
+        backup["ordax_hole_target"] = obj.name
+        backup["ordax_hole_original_sha256"] = current_sha256
+
+        obj.data = candidate_mesh
+        bpy.context.view_layer.update()
+        candidate_sha256, candidate_counts = _mesh_fingerprint(obj, evaluated=False)
+        obj["ordax_hole_preview_id"] = preview_id
+        obj["ordax_hole_preview_state"] = "preview"
+        obj["ordax_hole_original_sha256"] = current_sha256
+        obj["ordax_hole_candidate_sha256"] = candidate_sha256
+        obj["ordax_hole_backup_object"] = backup.name
+        _response(
+            command_id,
+            True,
+            "Blender boundary hole-fill preview created for one explicit closed boundary loop",
+            operation="boundary_hole_fill_preview",
+            preview_id=preview_id,
+            state="preview",
+            selected_edge_indices=edge_indices,
+            loop_vertex_indices=sorted(loop_vertex_ids),
+            perimeter=round(perimeter, 12),
+            new_faces=new_face_count,
+            new_edges=new_edge_count,
+            boundary_edges_before=before_boundary_edges,
+            boundary_edges_after=after_boundary_edges,
+            original_topology_preserved=True,
+            before_geometry_sha256=current_sha256,
+            candidate_geometry_sha256=candidate_sha256,
+            before_mesh=current_mesh_counts,
+            candidate_mesh=candidate_counts,
+            before=before,
+            object=_object_details(obj),
+        )
+    except Exception as error:
+        if obj is not None and original_mesh is not None and candidate_mesh is not None:
+            try:
+                if obj.data == candidate_mesh:
+                    obj.data = original_mesh
+                    bpy.context.view_layer.update()
+            except Exception:
+                pass
+        if obj is not None:
+            _clear_mesh_repair_preview_metadata(obj, "hole")
+        if backup is not None:
+            try:
+                _remove_mesh_repair_backup(backup)
+            except Exception:
+                pass
+        elif collection is not None:
+            try:
+                if len(collection.objects) == 0 and len(collection.children) == 0:
+                    bpy.data.collections.remove(collection)
+            except Exception:
+                pass
+        if candidate_mesh is not None and getattr(candidate_mesh, "users", 0) == 0:
+            try:
+                bpy.data.meshes.remove(candidate_mesh)
+            except Exception:
+                pass
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="boundary_hole_fill_preview",
+            before=before,
+        )
+
+
+def _modeling_boundary_hole_fill_commit(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        _modeling_runtime_preconditions()
+        preview_id = _normalize_preview_id(command)
+        target, backup = _mesh_repair_preview_target("hole", preview_id)
+        if str(target.get("ordax_hole_preview_state") or "") != "preview":
+            raise ValueError("boundary hole-fill preview state is invalid")
+        stored_candidate_sha256 = str(target.get("ordax_hole_candidate_sha256") or "")
+        stored_original_sha256 = str(target.get("ordax_hole_original_sha256") or "")
+        current_candidate_sha256, candidate_counts = _mesh_fingerprint(target, evaluated=False)
+        original_sha256, original_counts = _mesh_fingerprint(backup, evaluated=False)
+        if current_candidate_sha256 != stored_candidate_sha256:
+            raise ValueError("boundary hole-fill candidate changed after preview; start a new preview")
+        if original_sha256 != stored_original_sha256:
+            raise ValueError("boundary hole-fill original backup changed after preview")
+        candidate_mesh = target.data
+        original_mesh = backup.data
+        original_name = original_mesh.name
+        _remove_mesh_repair_backup(backup)
+        if getattr(original_mesh, "users", 0) == 0:
+            try:
+                bpy.data.meshes.remove(original_mesh)
+            except Exception:
+                pass
+        try:
+            candidate_mesh.name = original_name
+        except Exception:
+            pass
+        _clear_mesh_repair_preview_metadata(target, "hole")
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender boundary hole-fill preview committed",
+            operation="boundary_hole_fill_commit",
+            preview_id=preview_id,
+            state="committed",
+            original_geometry_sha256=stored_original_sha256,
+            committed_geometry_sha256=current_candidate_sha256,
+            original_mesh=original_counts,
+            committed_mesh=candidate_counts,
+            object=_object_details(target),
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="boundary_hole_fill_commit",
+        )
+
+
+def _modeling_boundary_hole_fill_cancel(command: dict) -> None:
+    command_id = command["id"]
+    try:
+        _modeling_runtime_preconditions()
+        preview_id = _normalize_preview_id(command)
+        target, backup = _mesh_repair_preview_target("hole", preview_id)
+        if str(target.get("ordax_hole_preview_state") or "") != "preview":
+            raise ValueError("boundary hole-fill preview state is invalid")
+        stored_original_sha256 = str(target.get("ordax_hole_original_sha256") or "")
+        original_mesh = backup.data
+        original_sha256, original_counts = _mesh_fingerprint(backup, evaluated=False)
+        if original_sha256 != stored_original_sha256:
+            raise ValueError("boundary hole-fill original backup changed after preview")
+        candidate_mesh = target.data
+        discarded_sha256, candidate_counts = _mesh_fingerprint(target, evaluated=False)
+        target.data = original_mesh
+        bpy.context.view_layer.update()
+        restored_sha256, restored_counts = _mesh_fingerprint(target, evaluated=False)
+        if restored_sha256 != stored_original_sha256:
+            target.data = candidate_mesh
+            bpy.context.view_layer.update()
+            raise RuntimeError("boundary hole-fill cancel could not restore the original geometry fingerprint")
+        _clear_mesh_repair_preview_metadata(target, "hole")
+        _remove_mesh_repair_backup(backup)
+        if candidate_mesh is not original_mesh and getattr(candidate_mesh, "users", 0) == 0:
+            try:
+                bpy.data.meshes.remove(candidate_mesh)
+            except Exception:
+                pass
+        bpy.context.view_layer.update()
+        _response(
+            command_id,
+            True,
+            "Blender boundary hole-fill preview cancelled and original mesh restored",
+            operation="boundary_hole_fill_cancel",
+            preview_id=preview_id,
+            state="cancelled",
+            restored_geometry_sha256=restored_sha256,
+            discarded_candidate_sha256=discarded_sha256,
+            original_mesh=original_counts,
+            discarded_candidate_mesh=candidate_counts,
+            restored_mesh=restored_counts,
+            object=_object_details(target),
+        )
+    except Exception as error:
+        _response(
+            command_id,
+            False,
+            str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}",
+            operation="boundary_hole_fill_cancel",
         )
 
 
@@ -4123,6 +4461,7 @@ def _quality_mesh(check: dict) -> dict:
 
         diagnostic_categories = (
             "boundary_edges",
+            "boundary_loops",
             "wire_edges",
             "non_manifold_edges",
             "loose_vertices",
@@ -4149,6 +4488,9 @@ def _quality_mesh(check: dict) -> dict:
                 bucket["examples"].append(sample_factory())
 
         boundary_edges = 0
+        boundary_edge_objects = []
+        boundary_loops = 0
+        boundary_loop_examples = []
         wire_edges = 0
         non_manifold_edges = 0
         zero_length_edges = 0
@@ -4180,6 +4522,7 @@ def _quality_mesh(check: dict) -> dict:
             join_component(edge.verts[0].index, edge.verts[1].index)
             if edge.is_boundary:
                 boundary_edges += 1
+                boundary_edge_objects.append(edge)
                 record_sample("boundary_edges", lambda: edge_example(edge))
             if edge.is_wire:
                 wire_edges += 1
@@ -4194,6 +4537,74 @@ def _quality_mesh(check: dict) -> dict:
                     "zero_length_edges",
                     lambda: {**edge_example(edge), "length": round(length, 12)},
                 )
+
+        if boundary_edge_objects:
+            boundary_vertex_edges = {}
+            for boundary_edge in boundary_edge_objects:
+                for boundary_vertex in boundary_edge.verts:
+                    boundary_vertex_edges.setdefault(int(boundary_vertex.index), []).append(boundary_edge)
+            remaining_boundary_edges = {int(edge.index): edge for edge in boundary_edge_objects}
+            boundary_component_index = 0
+            max_hole_edges = int(getattr(_MODELING_CONTRACTS, "MAX_HOLE_FILL_BOUNDARY_EDGES", 32))
+            while remaining_boundary_edges:
+                seed_index = min(remaining_boundary_edges)
+                stack = [remaining_boundary_edges.pop(seed_index)]
+                component_edges = []
+                component_edge_ids = set()
+                component_vertex_ids = set()
+                while stack:
+                    current_edge = stack.pop()
+                    current_edge_id = int(current_edge.index)
+                    if current_edge_id in component_edge_ids:
+                        continue
+                    component_edge_ids.add(current_edge_id)
+                    component_edges.append(current_edge)
+                    for current_vertex in current_edge.verts:
+                        vertex_id = int(current_vertex.index)
+                        component_vertex_ids.add(vertex_id)
+                        for linked_edge in boundary_vertex_edges.get(vertex_id, []):
+                            linked_id = int(linked_edge.index)
+                            pending = remaining_boundary_edges.pop(linked_id, None)
+                            if pending is not None:
+                                stack.append(pending)
+                degrees = {vertex_id: 0 for vertex_id in component_vertex_ids}
+                for component_edge in component_edges:
+                    for component_vertex in component_edge.verts:
+                        degrees[int(component_vertex.index)] += 1
+                closed_simple = (
+                    len(component_edges) >= 3
+                    and len(component_edges) == len(component_vertex_ids)
+                    and all(degree == 2 for degree in degrees.values())
+                )
+                if closed_simple:
+                    boundary_loops += 1
+                    if diagnostic_limit and len(boundary_loop_examples) < diagnostic_limit:
+                        ordered_edge_ids = sorted(component_edge_ids)
+                        ordered_vertex_ids = sorted(component_vertex_ids)
+                        perimeter = sum(float((edge.verts[0].co - edge.verts[1].co).length) for edge in component_edges)
+                        coordinates = [bm.verts[index].co for index in ordered_vertex_ids]
+                        local_min = [min(float(co[axis]) for co in coordinates) for axis in range(3)]
+                        local_max = [max(float(co[axis]) for co in coordinates) for axis in range(3)]
+                        boundary_loop_examples.append({
+                            "loop_index": int(boundary_loops - 1),
+                            "component_index": int(boundary_component_index),
+                            "edge_count": len(ordered_edge_ids),
+                            "vertex_count": len(ordered_vertex_ids),
+                            "edge_indices": ordered_edge_ids[:max_hole_edges],
+                            "edge_indices_truncated": len(ordered_edge_ids) > max_hole_edges,
+                            "vertex_indices": ordered_vertex_ids[:max_hole_edges],
+                            "vertex_indices_truncated": len(ordered_vertex_ids) > max_hole_edges,
+                            "perimeter": round(perimeter, 12),
+                            "local_bounds": {
+                                "min": local_coordinate(local_min),
+                                "max": local_coordinate(local_max),
+                            },
+                        })
+                boundary_component_index += 1
+            bucket = diagnostics.get("boundary_loops")
+            if bucket is not None:
+                bucket["total"] = boundary_loops
+                bucket["examples"] = boundary_loop_examples
 
         loose_vertices = 0
         non_finite_vertices = 0
@@ -4326,6 +4737,7 @@ def _quality_mesh(check: dict) -> dict:
             "ngon_faces": ngon_faces,
             "quad_ratio": round(quad_ratio, 6),
             "boundary_edges": boundary_edges,
+            "boundary_loops": boundary_loops,
             "wire_edges": wire_edges,
             "non_manifold_edges": non_manifold_edges,
             "loose_vertices": loose_vertices,
@@ -4473,6 +4885,45 @@ def _quality_mesh(check: dict) -> dict:
             "info",
             "Boundary edges can be intentional on open surfaces. Inspect local examples before filling or closing geometry.",
         )
+        if boundary_loops:
+            hole_preview_blockers = list(automatic_repair_blockers)
+            preview_candidates = []
+            max_hole_edges = int(getattr(_MODELING_CONTRACTS, "MAX_HOLE_FILL_BOUNDARY_EDGES", 32))
+            for loop in boundary_loop_examples:
+                blockers = list(hole_preview_blockers)
+                if loop.get("edge_indices_truncated") or int(loop.get("edge_count") or 0) > max_hole_edges:
+                    blockers.append("boundary_loop_exceeds_preview_edge_limit")
+                if float(loop.get("perimeter") or 0.0) <= epsilon:
+                    blockers.append("boundary_loop_perimeter_is_degenerate")
+                candidate = {
+                    "loop_index": int(loop.get("loop_index") or 0),
+                    "edge_count": int(loop.get("edge_count") or 0),
+                    "perimeter": float(loop.get("perimeter") or 0.0),
+                    "preview_available": not blockers,
+                    "preview_blockers": blockers,
+                }
+                if not blockers:
+                    candidate["preview_fix"] = {
+                        "action": "blender.live_boundary_hole_fill_preview",
+                        "arguments": {
+                            "object_name": obj.name,
+                            "expected_base_geometry_sha256": base_geometry_sha256,
+                            "edge_indices": list(loop.get("edge_indices") or []),
+                        },
+                    }
+                preview_candidates.append(candidate)
+            repair_hints.append({
+                "code": "preview_boundary_hole_fill",
+                "category": "boundary_loops",
+                "count": int(boundary_loops),
+                "severity": "info",
+                "recommendation": (
+                    "Closed boundary loops can represent intentional open surfaces or holes. Review one explicit loop, "
+                    "preview a localized fill on a candidate mesh, then commit or cancel explicitly."
+                ),
+                "automatic": False,
+                "preview_candidates": preview_candidates,
+            })
         if connected_component_count > 1:
             add_repair_hint(
                 "review_connected_components",
@@ -6332,6 +6783,12 @@ def _process(path: Path) -> None:
             _modeling_merge_by_distance_commit(command)
         elif operation == "merge_by_distance_cancel":
             _modeling_merge_by_distance_cancel(command)
+        elif operation == "boundary_hole_fill_preview":
+            _modeling_boundary_hole_fill_preview(command)
+        elif operation == "boundary_hole_fill_commit":
+            _modeling_boundary_hole_fill_commit(command)
+        elif operation == "boundary_hole_fill_cancel":
+            _modeling_boundary_hole_fill_cancel(command)
         elif operation == "material_apply":
             _material_apply(command)
         elif operation == "create_camera":
@@ -6463,6 +6920,13 @@ def _run_modeling_smoke_fixture() -> dict:
         "merge_commit": "smoke-model-merge-commit",
         "merge_stale": "smoke-model-merge-stale",
         "merge_noop": "smoke-model-merge-noop",
+        "hole_diag": "smoke-model-hole-diagnostic",
+        "hole_preview": "smoke-model-hole-preview",
+        "hole_cancel": "smoke-model-hole-cancel",
+        "hole_invalid": "smoke-model-hole-invalid",
+        "hole_preview_commit": "smoke-model-hole-preview-commit",
+        "hole_commit": "smoke-model-hole-commit",
+        "hole_stale": "smoke-model-hole-stale",
     }
     result_paths = {
         key: RESULTS / f"{identifier}.json"
@@ -6471,6 +6935,7 @@ def _run_modeling_smoke_fixture() -> dict:
     temporary_name = "SmokePrimitive"
     degenerate_name = "SmokeDegenerate"
     merge_name = "SmokeMergeSelection"
+    hole_name = "SmokeBoundaryHole"
     summaries = {}
 
     if bpy.context.scene.objects.get(temporary_name) is not None:
@@ -6484,6 +6949,10 @@ def _run_modeling_smoke_fixture() -> dict:
     if bpy.context.scene.objects.get(merge_name) is not None:
         raise RuntimeError(
             f"modeling smoke merge object already exists: {merge_name}"
+        )
+    if bpy.context.scene.objects.get(hole_name) is not None:
+        raise RuntimeError(
+            f"modeling smoke hole object already exists: {hole_name}"
         )
 
     try:
@@ -7009,6 +7478,144 @@ def _run_modeling_smoke_fixture() -> dict:
         )
         _process(merge_stale_path)
 
+        hole_mesh = bpy.data.meshes.new(hole_name + "Mesh")
+        hole_mesh.from_pydata(
+            [
+                (-2.0, -2.0, 0.0),
+                (2.0, -2.0, 0.0),
+                (2.0, 2.0, 0.0),
+                (-2.0, 2.0, 0.0),
+                (-0.5, -0.5, 0.0),
+                (0.5, -0.5, 0.0),
+                (0.5, 0.5, 0.0),
+                (-0.5, 0.5, 0.0),
+            ],
+            [],
+            [
+                (0, 1, 5, 4),
+                (1, 2, 6, 5),
+                (2, 3, 7, 6),
+                (3, 0, 4, 7),
+            ],
+        )
+        hole_mesh.update()
+        hole_object = bpy.data.objects.new(hole_name, hole_mesh)
+        bpy.context.scene.collection.objects.link(hole_object)
+        bpy.context.view_layer.update()
+
+        hole_diag_path = INBOX / f"{smoke_ids['hole_diag']}.json"
+        _write_json_atomic(
+            hole_diag_path,
+            {
+                "id": smoke_ids["hole_diag"],
+                "operation": "quality_gate",
+                "checks": [
+                    {
+                        "type": "mesh_quality",
+                        "object_name": hole_name,
+                        "evaluated": False,
+                        "diagnostic_limit": 8,
+                        "max_boundary_edges": 0,
+                    }
+                ],
+            },
+        )
+        _process(hole_diag_path)
+        hole_diag = json.loads(result_paths["hole_diag"].read_text(encoding="utf-8-sig"))
+        hole_check = (hole_diag.get("checks") or [{}])[0]
+        hole_metrics = hole_check.get("metrics") or {}
+        if int(hole_metrics.get("boundary_loops") or 0) != 2:
+            raise RuntimeError("boundary-hole diagnostic did not detect the inner and outer closed loops")
+        hole_hint = next(
+            (
+                hint for hint in (hole_check.get("repair_hints") or [])
+                if hint.get("code") == "preview_boundary_hole_fill"
+            ),
+            None,
+        )
+        if not hole_hint:
+            raise RuntimeError("mesh quality did not expose boundary-loop preview candidates")
+        candidates = [
+            candidate for candidate in (hole_hint.get("preview_candidates") or [])
+            if candidate.get("preview_available") and (candidate.get("preview_fix") or {}).get("arguments")
+        ]
+        if len(candidates) < 2:
+            raise RuntimeError("boundary-hole diagnostic did not expose both bounded loop candidates")
+        chosen_hole = min(candidates, key=lambda candidate: float(candidate.get("perimeter") or 0.0))
+        hole_arguments = ((chosen_hole.get("preview_fix") or {}).get("arguments") or {})
+        hole_original_sha = str(hole_arguments.get("expected_base_geometry_sha256") or "")
+        hole_edges = list(hole_arguments.get("edge_indices") or [])
+        if len(hole_edges) != 4:
+            raise RuntimeError("boundary-hole diagnostic did not expose the four-edge inner loop")
+
+        hole_preview_path = INBOX / f"{smoke_ids['hole_preview']}.json"
+        _write_json_atomic(
+            hole_preview_path,
+            {
+                "id": smoke_ids["hole_preview"],
+                "operation": "boundary_hole_fill_preview",
+                **hole_arguments,
+            },
+        )
+        _process(hole_preview_path)
+
+        hole_cancel_path = INBOX / f"{smoke_ids['hole_cancel']}.json"
+        _write_json_atomic(
+            hole_cancel_path,
+            {
+                "id": smoke_ids["hole_cancel"],
+                "operation": "boundary_hole_fill_cancel",
+                "preview_id": smoke_ids["hole_preview"],
+            },
+        )
+        _process(hole_cancel_path)
+
+        hole_invalid_path = INBOX / f"{smoke_ids['hole_invalid']}.json"
+        _write_json_atomic(
+            hole_invalid_path,
+            {
+                "id": smoke_ids["hole_invalid"],
+                "operation": "boundary_hole_fill_preview",
+                "object_name": hole_name,
+                "expected_base_geometry_sha256": hole_original_sha,
+                "edge_indices": hole_edges[:3],
+            },
+        )
+        _process(hole_invalid_path)
+
+        hole_preview_commit_path = INBOX / f"{smoke_ids['hole_preview_commit']}.json"
+        _write_json_atomic(
+            hole_preview_commit_path,
+            {
+                "id": smoke_ids["hole_preview_commit"],
+                "operation": "boundary_hole_fill_preview",
+                **hole_arguments,
+            },
+        )
+        _process(hole_preview_commit_path)
+
+        hole_commit_path = INBOX / f"{smoke_ids['hole_commit']}.json"
+        _write_json_atomic(
+            hole_commit_path,
+            {
+                "id": smoke_ids["hole_commit"],
+                "operation": "boundary_hole_fill_commit",
+                "preview_id": smoke_ids["hole_preview_commit"],
+            },
+        )
+        _process(hole_commit_path)
+
+        hole_stale_path = INBOX / f"{smoke_ids['hole_stale']}.json"
+        _write_json_atomic(
+            hole_stale_path,
+            {
+                "id": smoke_ids["hole_stale"],
+                "operation": "boundary_hole_fill_preview",
+                **hole_arguments,
+            },
+        )
+        _process(hole_stale_path)
+
         for key, result_path in result_paths.items():
             if not result_path.is_file():
                 raise RuntimeError(
@@ -7343,6 +7950,63 @@ def _run_modeling_smoke_fixture() -> dict:
         if "fingerprint changed" not in str(merge_stale.get("summary") or ""):
             raise RuntimeError("stale merge-by-distance preview did not report fingerprint mismatch")
 
+        hole_diag = summaries["hole_diag"]
+        if bool(hole_diag.get("ok")):
+            raise RuntimeError("boundary-hole diagnostic unexpectedly passed with open boundaries")
+        hole_check = (hole_diag.get("checks") or [{}])[0]
+        if int((hole_check.get("metrics") or {}).get("boundary_loops") or 0) != 2:
+            raise RuntimeError("boundary-hole diagnostic lost closed-loop evidence")
+        hole_preview = summaries["hole_preview"]
+        if not bool(hole_preview.get("ok")) or hole_preview.get("state") != "preview":
+            raise RuntimeError("boundary hole-fill preview smoke failed")
+        if hole_preview.get("selected_edge_indices") != hole_edges:
+            raise RuntimeError("boundary hole-fill preview lost the explicit edge loop")
+        if int(hole_preview.get("new_faces") or 0) != 1:
+            raise RuntimeError("boundary hole-fill preview did not create exactly one local face")
+        if int(hole_preview.get("new_edges") or 0) != 0:
+            raise RuntimeError("boundary hole-fill preview unexpectedly created internal edges")
+        if not hole_preview.get("original_topology_preserved"):
+            raise RuntimeError("boundary hole-fill preview did not preserve original topology identities")
+        if int(hole_preview.get("boundary_edges_before") or 0) - int(hole_preview.get("boundary_edges_after") or 0) != 4:
+            raise RuntimeError("boundary hole-fill preview did not close exactly the four selected edges")
+        if int((hole_preview.get("before_mesh") or {}).get("polygons") or 0) != 4:
+            raise RuntimeError("boundary hole-fill preview pre-state did not contain four ring faces")
+        if int((hole_preview.get("candidate_mesh") or {}).get("polygons") or 0) != 5:
+            raise RuntimeError("boundary hole-fill candidate did not contain the expected fifth face")
+
+        hole_cancel = summaries["hole_cancel"]
+        if not bool(hole_cancel.get("ok")) or hole_cancel.get("state") != "cancelled":
+            raise RuntimeError("boundary hole-fill cancel smoke failed")
+        if hole_cancel.get("restored_geometry_sha256") != hole_original_sha:
+            raise RuntimeError("boundary hole-fill cancel did not restore the exact original fingerprint")
+        if _mesh_repair_preview_backups("hole", smoke_ids["hole_preview"]):
+            raise RuntimeError("boundary hole-fill cancel left its hidden backup in the scene")
+
+        hole_invalid = summaries["hole_invalid"]
+        if bool(hole_invalid.get("ok")):
+            raise RuntimeError("open boundary-edge chain was incorrectly accepted as a hole loop")
+        if "closed" not in str(hole_invalid.get("summary") or ""):
+            raise RuntimeError("invalid boundary-hole selection did not report closed-loop failure")
+
+        hole_preview_commit = summaries["hole_preview_commit"]
+        if not bool(hole_preview_commit.get("ok")):
+            raise RuntimeError("second boundary hole-fill preview for commit failed")
+        hole_commit = summaries["hole_commit"]
+        if not bool(hole_commit.get("ok")) or hole_commit.get("state") != "committed":
+            raise RuntimeError("boundary hole-fill commit smoke failed")
+        if hole_commit.get("committed_geometry_sha256") != hole_preview_commit.get("candidate_geometry_sha256"):
+            raise RuntimeError("boundary hole-fill commit changed the reviewed candidate fingerprint")
+        if int((hole_commit.get("committed_mesh") or {}).get("polygons") or 0) != 5:
+            raise RuntimeError("boundary hole-fill commit did not preserve the five-face candidate")
+        if _mesh_repair_preview_backups("hole", smoke_ids["hole_preview_commit"]):
+            raise RuntimeError("boundary hole-fill commit left its hidden backup in the scene")
+
+        hole_stale = summaries["hole_stale"]
+        if bool(hole_stale.get("ok")):
+            raise RuntimeError("stale boundary hole-fill preview was incorrectly accepted")
+        if "fingerprint changed" not in str(hole_stale.get("summary") or ""):
+            raise RuntimeError("stale boundary hole-fill preview did not report fingerprint mismatch")
+
         trajectory_ids = set()
         if TRAJECTORY.is_file():
             for line in TRAJECTORY.read_text(encoding="utf-8-sig").splitlines():
@@ -7404,6 +8068,16 @@ def _run_modeling_smoke_fixture() -> dict:
             "merge_unselected_survived_commit": merge_unselected_survived_commit,
             "merge_original_vertices": int(merge_original_counts.get("vertices") or 0),
             "merge_candidate_vertices": int((merge_preview.get("candidate_mesh") or {}).get("vertices") or 0),
+            "hole_diagnostic_positive": True,
+            "hole_preview_positive": True,
+            "hole_cancel_rollback": True,
+            "hole_commit_positive": True,
+            "hole_stale_guard": True,
+            "hole_open_chain_guard": True,
+            "hole_selected_edge_indices": hole_edges,
+            "hole_new_faces": int(hole_preview.get("new_faces") or 0),
+            "hole_boundary_edges_before": int(hole_preview.get("boundary_edges_before") or 0),
+            "hole_boundary_edges_after": int(hole_preview.get("boundary_edges_after") or 0),
             "dispatcher_journaled": True,
             "object_name": object_name,
             "location": current.get("location"),
@@ -7472,6 +8146,30 @@ def _run_modeling_smoke_fixture() -> dict:
         if merge_object is not None:
             mesh = merge_object.data if merge_object.type == "MESH" else None
             bpy.data.objects.remove(merge_object, do_unlink=True)
+            if mesh is not None and getattr(mesh, "users", 0) == 0:
+                bpy.data.meshes.remove(mesh)
+        for backup in list(bpy.data.objects):
+            if (
+                bool(backup.get("ordax_hole_backup"))
+                and str(backup.get("ordax_hole_target") or "") == hole_name
+            ):
+                backup_mesh = backup.data if backup.type == "MESH" else None
+                try:
+                    _remove_mesh_repair_backup(backup)
+                except Exception:
+                    try:
+                        bpy.data.objects.remove(backup, do_unlink=True)
+                    except Exception:
+                        pass
+                if backup_mesh is not None and getattr(backup_mesh, "users", 0) == 0:
+                    try:
+                        bpy.data.meshes.remove(backup_mesh)
+                    except Exception:
+                        pass
+        hole_object = bpy.context.scene.objects.get(hole_name)
+        if hole_object is not None:
+            mesh = hole_object.data if hole_object.type == "MESH" else None
+            bpy.data.objects.remove(hole_object, do_unlink=True)
             if mesh is not None and getattr(mesh, "users", 0) == 0:
                 bpy.data.meshes.remove(mesh)
         temporary = bpy.context.scene.objects.get(temporary_name)

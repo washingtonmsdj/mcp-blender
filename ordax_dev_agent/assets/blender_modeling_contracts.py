@@ -27,6 +27,8 @@ MAX_DEGENERATE_REPAIR_DISTANCE = 0.001
 MAX_DEGENERATE_REPAIR_ELEMENTS = 10000
 MAX_MERGE_BY_DISTANCE = 0.001
 MAX_MERGE_SELECTED_VERTICES = 64
+MAX_HOLE_FILL_BOUNDARY_EDGES = 32
+MAX_HOLE_FILL_NEW_FACES = 32
 
 
 MODELING_SCHEMAS = {
@@ -282,6 +284,50 @@ MODELING_SCHEMAS = {
             "expected_base_geometry_sha256": {"type": "sha256"},
             "vertex_indices": {"type": "integer_array", "minimum_items": 2, "maximum_items": MAX_MERGE_SELECTED_VERTICES},
             "distance": {"type": "number", "minimum": 1e-12, "maximum": MAX_MERGE_BY_DISTANCE},
+        },
+    },
+    "boundary_hole_fill_preview": {
+        "status": "available",
+        "action": "blender.live_boundary_hole_fill_preview",
+        "workflow_actions": {
+            "commit": "blender.live_boundary_hole_fill_commit",
+            "cancel": "blender.live_boundary_hole_fill_cancel",
+        },
+        "runtime_requirements": [
+            "object_mode",
+            "no_render_job",
+            "local_nonlinked_mesh_target",
+            "single_user_mesh_data",
+            "no_shape_keys",
+            "no_modifiers",
+            "expected_base_geometry_sha256_matches",
+            "explicit_boundary_edge_loop_only",
+            "single_simple_closed_boundary_cycle",
+            "no_active_repair_preview_on_target",
+            "animated_or_constrained_target_requires_dedicated_workflow",
+        ],
+        "failure_policy": [
+            "mutate_candidate_mesh_copy_only",
+            "preserve_original_mesh_in_hidden_backup",
+            "restore_original_mesh_on_cancel_or_preview_failure",
+            "preserve_all_original_vertices_edges_faces",
+            "commit_only_explicitly",
+        ],
+        "runtime_guards": {
+            "max_target_faces": MAX_EVALUATED_FACES,
+            "max_boundary_edges": MAX_HOLE_FILL_BOUNDARY_EDGES,
+            "max_new_faces": MAX_HOLE_FILL_NEW_FACES,
+        },
+        "description": (
+            "BlenderBench-validated localized hole fill for one explicitly selected simple closed base-mesh boundary loop. "
+            "Blender 5.2.2 proves original topology identities survive, only the selected boundary is closed, cancel "
+            "restores the exact original mesh, and commit preserves the reviewed candidate."
+        ),
+        "required": ["expected_base_geometry_sha256", "edge_indices"],
+        "selectors": ["object_name", "ordax_object_id"],
+        "properties": {
+            "expected_base_geometry_sha256": {"type": "sha256"},
+            "edge_indices": {"type": "integer_array", "minimum_items": 3, "maximum_items": MAX_HOLE_FILL_BOUNDARY_EDGES},
         },
     },
     "add_modifier": {
@@ -960,6 +1006,31 @@ def _plan_merge_by_distance_preview(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _plan_boundary_hole_fill_preview(payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "object_name",
+        "ordax_object_id",
+        "expected_base_geometry_sha256",
+        "edge_indices",
+    }
+    _reject_unknown_fields(payload, allowed)
+    selector = normalize_object_selector(payload)
+    expected_sha256 = _sha256(
+        payload.get("expected_base_geometry_sha256"),
+        "expected_base_geometry_sha256",
+    )
+    edge_indices = _vertex_index_list(payload.get("edge_indices"), "edge_indices")
+    if len(edge_indices) < 3 or len(edge_indices) > MAX_HOLE_FILL_BOUNDARY_EDGES:
+        raise ValueError(
+            f"edge_indices must contain between 3 and {MAX_HOLE_FILL_BOUNDARY_EDGES} edge indices"
+        )
+    return {
+        **selector,
+        "expected_base_geometry_sha256": expected_sha256,
+        "edge_indices": edge_indices,
+    }
+
+
 def _plan_modifier(payload: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "object_name",
@@ -1202,7 +1273,7 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
     normalized_operation = str(operation or "").strip().lower()
     if normalized_operation not in MODELING_SCHEMAS:
         raise ValueError(
-            "operation must be create_primitive, object_transform, surface_scatter, boolean_cut_preview, mesh_cleanup, degenerate_repair_preview, merge_by_distance_preview, or add_modifier"
+            "operation must be create_primitive, object_transform, surface_scatter, boolean_cut_preview, mesh_cleanup, degenerate_repair_preview, merge_by_distance_preview, boundary_hole_fill_preview, or add_modifier"
         )
 
     if normalized_operation == "create_primitive":
@@ -1219,6 +1290,8 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         arguments = _plan_degenerate_repair_preview(payload)
     elif normalized_operation == "merge_by_distance_preview":
         arguments = _plan_merge_by_distance_preview(payload)
+    elif normalized_operation == "boundary_hole_fill_preview":
+        arguments = _plan_boundary_hole_fill_preview(payload)
     else:
         arguments = _plan_modifier(payload)
 

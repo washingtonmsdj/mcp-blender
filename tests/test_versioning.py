@@ -79,6 +79,9 @@ class ComponentVersioningTests(unittest.TestCase):
                 "blender.live_boolean_cut_cancel",
                 "blender.live_boolean_cut_commit",
                 "blender.live_boolean_cut_preview",
+                "blender.live_boundary_hole_fill_cancel",
+                "blender.live_boundary_hole_fill_commit",
+                "blender.live_boundary_hole_fill_preview",
                 "blender.live_create_primitive",
                 "blender.live_degenerate_repair_cancel",
                 "blender.live_degenerate_repair_commit",
@@ -125,6 +128,14 @@ class ComponentVersioningTests(unittest.TestCase):
         self.assertEqual(
             {"commit": "blender.live_merge_by_distance_commit", "cancel": "blender.live_merge_by_distance_cancel"},
             modeling["operations"]["merge_by_distance_preview"]["workflow_actions"],
+        )
+        self.assertEqual(
+            "available",
+            modeling["operations"]["boundary_hole_fill_preview"]["status"],
+        )
+        self.assertEqual(
+            {"commit": "blender.live_boundary_hole_fill_commit", "cancel": "blender.live_boundary_hole_fill_cancel"},
+            modeling["operations"]["boundary_hole_fill_preview"]["workflow_actions"],
         )
         self.assertEqual(
             8,
