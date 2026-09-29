@@ -52,8 +52,9 @@ weaken the Blender-side contract.
 `create_primitive` supports cube, sphere and cylinder creation through
 `blender.live_create_primitive`.
 
-`add_modifier` supports BEVEL, SUBSURF, SOLIDIFY and MIRROR through
-`blender.live_add_modifier`. ARRAY has a typed planning contract, but is not yet
+`add_modifier` supports BEVEL, SUBSURF, SOLIDIFY, MIRROR and fixed-count linear
+ARRAY through
+`blender.live_add_modifier`. ARRAY is now
 executable.
 
 Both use the same closed-world planner that powered the staged smoke path. The
@@ -79,7 +80,7 @@ trajectory evidence, UV positive/negative controls, multiview self-comparison
 and controlled mutation detection. The benchmark completed with return code 0
 and a durable report artifact.
 
-### Array modifier candidate (pending Blender smoke)
+### Array modifier (promoted after Blender smoke)
 
 The `ARRAY` modifier variant has a closed typed plan for fixed-count linear
 repetition. It accepts `count` (2–64), a `relative_offset` vector (default
@@ -100,11 +101,11 @@ Example planning request:
 }
 ```
 
-This is a planning example only; it must not be sent to the mutation action.
+This request can now be sent through the normal typed mutation action.
 
-This variant deliberately returns `status: pending_blender_smoke` and
-`executable: false`. The host action and the Blender companion both refuse to
-execute it until the current BlenderBench proves modifier creation, evaluated
+This variant now returns `status: available` and
+`executable: true`. The host action and Blender companion now execute it because BlenderBench
+proves modifier creation, evaluated
 copy count, offset behavior, budget rejection and rollback on Blender 5.x. The
 existing BEVEL, SUBSURF, SOLIDIFY and MIRROR variants remain available.
 

@@ -184,6 +184,8 @@ def _run_companion_smoke(
     modeling_modifier_duplicate_path = (
         control_root / "results" / "smoke-model-modifier-duplicate.json"
     )
+    modeling_array_path = control_root / "results" / "smoke-model-array.json"
+    modeling_array_invalid_path = control_root / "results" / "smoke-model-array-invalid.json"
     if not all(
         path.is_file()
         for path in (
@@ -193,6 +195,8 @@ def _run_companion_smoke(
             modeling_create_duplicate_path,
             modeling_modifier_path,
             modeling_modifier_duplicate_path,
+            modeling_array_path,
+            modeling_array_invalid_path,
         )
     ):
         raise RuntimeError(
@@ -215,6 +219,12 @@ def _run_companion_smoke(
     )
     modeling_modifier_duplicate = json.loads(
         modeling_modifier_duplicate_path.read_text(encoding="utf-8-sig")
+    )
+    modeling_array = json.loads(
+        modeling_array_path.read_text(encoding="utf-8-sig")
+    )
+    modeling_array_invalid = json.loads(
+        modeling_array_invalid_path.read_text(encoding="utf-8-sig")
     )
     if not modeling_valid.get("ok"):
         raise RuntimeError(
@@ -244,6 +254,14 @@ def _run_companion_smoke(
         raise RuntimeError(
             "duplicate modifier name was incorrectly accepted"
         )
+    if not modeling_array.get("ok"):
+        raise RuntimeError(
+            "ARRAY modifier smoke failed: " + json.dumps(modeling_array, indent=2)
+        )
+    if modeling_array_invalid.get("ok"):
+        raise RuntimeError(
+            "ARRAY count above the contract limit was incorrectly accepted"
+        )
 
     created_object = modeling_create.get("object") or {}
     if (created_object.get("mesh") or {}).get("vertices") != 8:
@@ -259,6 +277,16 @@ def _run_companion_smoke(
         raise RuntimeError("smoke BEVEL modifier is missing")
     if not (modeling_modifier.get("runtime_budget") or {}).get("allowed"):
         raise RuntimeError("smoke modifier exceeded runtime budget")
+
+    array_object = modeling_array.get("object") or {}
+    if not any(
+        item.get("name") == "SmokeArray" and item.get("type") == "ARRAY"
+        for item in (array_object.get("modifiers") or [])
+    ):
+        raise RuntimeError("smoke ARRAY modifier is missing")
+    array_budget = modeling_array.get("runtime_budget") or {}
+    if not array_budget.get("allowed") or int(array_budget.get("count") or 0) != 4:
+        raise RuntimeError("smoke ARRAY runtime budget/count mismatch")
 
     modeled_object = modeling_valid.get("object") or {}
     if modeled_object.get("location") != [1.25, -0.5, 0.75]:
@@ -292,6 +320,8 @@ def _run_companion_smoke(
         "smoke-model-create-duplicate",
         "smoke-model-modifier",
         "smoke-model-modifier-duplicate",
+        "smoke-model-array",
+        "smoke-model-array-invalid",
     }.issubset(trajectory_ids):
         raise RuntimeError(
             "modeling fixture commands are missing from trajectory evidence"
@@ -304,6 +334,8 @@ def _run_companion_smoke(
         "create_duplicate_detected": True,
         "modifier_positive": True,
         "modifier_duplicate_detected": True,
+        "array_positive": True,
+        "array_limit_detected": True,
         "dispatcher_journaled": True,
         "valid": modeling_valid,
         "invalid": modeling_invalid,
@@ -311,6 +343,8 @@ def _run_companion_smoke(
         "create_duplicate": modeling_create_duplicate,
         "modifier": modeling_modifier,
         "modifier_duplicate": modeling_modifier_duplicate,
+        "array": modeling_array,
+        "array_invalid": modeling_array_invalid,
     }
 
     after = hashlib.sha256(scene.read_bytes()).hexdigest()
@@ -436,6 +470,8 @@ def run(root: Path) -> dict:
             "create_duplicate_detected": baseline["modeling"]["create_duplicate_detected"],
             "modifier_positive": baseline["modeling"]["modifier_positive"],
             "modifier_duplicate_detected": baseline["modeling"]["modifier_duplicate_detected"],
+            "array_positive": baseline["modeling"]["array_positive"],
+            "array_limit_detected": baseline["modeling"]["array_limit_detected"],
             "dispatcher_journaled": baseline["modeling"]["dispatcher_journaled"],
             "location": (
                 (baseline["modeling"]["valid"].get("object") or {}).get("location")
@@ -447,6 +483,7 @@ def run(root: Path) -> dict:
                 ((baseline["modeling"]["create"].get("object") or {}).get("mesh") or {}).get("vertices")
             ),
             "modifier_runtime_budget": baseline["modeling"]["modifier"].get("runtime_budget"),
+            "array_runtime_budget": baseline["modeling"]["array"].get("runtime_budget"),
         },
         "self_comparison": {
             "passed": identical.data.get("comparison_passed"),

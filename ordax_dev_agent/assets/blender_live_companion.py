@@ -5025,6 +5025,8 @@ def _run_modeling_smoke_fixture() -> dict:
         "create_duplicate": "smoke-model-create-duplicate",
         "modifier": "smoke-model-modifier",
         "modifier_duplicate": "smoke-model-modifier-duplicate",
+        "array": "smoke-model-array",
+        "array_invalid": "smoke-model-array-invalid",
     }
     result_paths = {
         key: RESULTS / f"{identifier}.json"
@@ -5122,6 +5124,36 @@ def _run_modeling_smoke_fixture() -> dict:
         )
         _process(duplicate_modifier_path)
 
+        array_path = INBOX / f"{smoke_ids['array']}.json"
+        _write_json_atomic(
+            array_path,
+            {
+                "id": smoke_ids["array"],
+                "operation": "add_modifier",
+                "object_name": temporary_name,
+                "name": "SmokeArray",
+                "type": "ARRAY",
+                "count": 4,
+                "relative_offset": [1.5, 0.0, 0.0],
+            },
+        )
+        _process(array_path)
+
+        invalid_array_path = INBOX / f"{smoke_ids['array_invalid']}.json"
+        _write_json_atomic(
+            invalid_array_path,
+            {
+                "id": smoke_ids["array_invalid"],
+                "operation": "add_modifier",
+                "object_name": temporary_name,
+                "name": "SmokeArrayTooLarge",
+                "type": "ARRAY",
+                "count": 65,
+                "relative_offset": [1.0, 0.0, 0.0],
+            },
+        )
+        _process(invalid_array_path)
+
         for key, result_path in result_paths.items():
             if not result_path.is_file():
                 raise RuntimeError(
@@ -5157,6 +5189,15 @@ def _run_modeling_smoke_fixture() -> dict:
         if bool(summaries["modifier_duplicate"].get("ok")):
             raise RuntimeError(
                 "duplicate modifier name was incorrectly accepted"
+            )
+        if not bool(summaries["array"].get("ok")):
+            raise RuntimeError(
+                "ARRAY modifier smoke failed: "
+                + str(summaries["array"].get("summary") or "unknown failure")
+            )
+        if bool(summaries["array_invalid"].get("ok")):
+            raise RuntimeError(
+                "ARRAY count above the contract limit was incorrectly accepted"
             )
 
         transformed = summaries["transform"].get("object") or {}
@@ -5206,6 +5247,19 @@ def _run_modeling_smoke_fixture() -> dict:
                 "smoke modifier unexpectedly exceeded runtime budget"
             )
 
+        array_modified = summaries["array"].get("object") or {}
+        array_modifiers = array_modified.get("modifiers") or []
+        if not any(
+            item.get("name") == "SmokeArray" and item.get("type") == "ARRAY"
+            for item in array_modifiers
+        ):
+            raise RuntimeError("smoke ARRAY modifier is missing from object details")
+        array_budget = summaries["array"].get("runtime_budget") or {}
+        if not bool(array_budget.get("allowed")):
+            raise RuntimeError("smoke ARRAY unexpectedly exceeded runtime budget")
+        if int(array_budget.get("count") or 0) != 4:
+            raise RuntimeError("smoke ARRAY runtime budget did not preserve count=4")
+
         trajectory_ids = set()
         if TRAJECTORY.is_file():
             for line in TRAJECTORY.read_text(encoding="utf-8-sig").splitlines():
@@ -5233,6 +5287,8 @@ def _run_modeling_smoke_fixture() -> dict:
             "create_duplicate_detected": True,
             "modifier_positive": True,
             "modifier_duplicate_detected": True,
+            "array_positive": True,
+            "array_limit_detected": True,
             "dispatcher_journaled": True,
             "object_name": object_name,
             "location": current.get("location"),

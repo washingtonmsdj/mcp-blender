@@ -217,6 +217,39 @@ class BlenderModelingContractTests(unittest.TestCase):
             plan["arguments"],
         )
 
+    def test_array_modifier_plan_is_executable_after_blenderbench_promotion(self) -> None:
+        plan = plan_modeling_operation(
+            "add_modifier",
+            {
+                "object_name": "Body",
+                "name": "Repeat",
+                "type": "ARRAY",
+                "count": 4,
+                "relative_offset": [1.5, 0, 0],
+            },
+        )
+        self.assertTrue(plan["executable"])
+        self.assertEqual("available", plan["status"])
+        self.assertEqual("blender.live_add_modifier", plan["action"])
+        self.assertEqual(4, plan["arguments"]["count"])
+        self.assertEqual([1.5, 0.0, 0.0], plan["arguments"]["relative_offset"])
+        self.assertFalse(plan["requires_real_blender_smoke"])
+        self.assertEqual(64, plan["runtime_guards"]["max_array_count"])
+        self.assertEqual(500000, plan["runtime_guards"]["max_projected_array_faces"])
+
+    def test_array_modifier_plan_rejects_zero_offsets(self) -> None:
+        with self.assertRaisesRegex(ValueError, "non-zero relative_offset or constant_offset"):
+            plan_modeling_operation(
+                "add_modifier",
+                {
+                    "object_name": "Body",
+                    "name": "Repeat",
+                    "type": "ARRAY",
+                    "relative_offset": [0, 0, 0],
+                    "constant_offset": [0, 0, 0],
+                },
+            )
+
     def test_transform_plan_is_executable_and_closed_to_unknown_fields(self) -> None:
         plan = plan_modeling_operation(
             "object_transform",

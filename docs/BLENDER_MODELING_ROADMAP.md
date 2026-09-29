@@ -25,11 +25,10 @@ repeat, booleans and precision placement into one hard-surface workflow.
 
 The native Array modifier is the right first increment for this MCP: it is
 non-destructive, deterministic, and easier to bound than generating thousands
-of independent objects. The typed `ARRAY` plan has been added with a 64-copy
-ceiling and a 500,000 evaluated-face budget. It remains pending BlenderBench
-promotion, so it cannot mutate a live scene yet. Start with a fixed-count linear
-array; add radial placement and curve fitting only after their origin and
-orientation contracts can be proven with Blender 5.x fixtures.
+of independent objects. The fixed-count linear `ARRAY` variant is now promoted
+after BlenderBench validation on Blender 5.2.2, with a 64-copy ceiling and a
+500,000 projected-face budget. Radial placement and curve fitting remain deferred
+until their origin and orientation contracts can be proven with Blender 5.x fixtures.
 
 Sources: [Blender 5.0 discussion](https://www.reddit.com/r/blender/comments/1p0jwvc/blender_50_released/),
 [uniform rivets workflow](https://www.reddit.com/r/blender/comments/nml89x/how_to_uniformly_place_rivets_around_window/),
@@ -99,10 +98,9 @@ automatically declaring every disconnected island or non-quad a defect.
 
 ## Suggested delivery sequence
 
-1. Promote the fixed-count linear `ARRAY` variant after adding positive and
-   negative host contracts and real Blender 5.x BlenderBench controls for count,
-   spacing, evaluated face limits, duplicate names, rollback and source-file
-   integrity.
+1. **Concluído:** fixed-count linear `ARRAY` promovido após contratos positivos/
+   negativos e BlenderBench real no Blender 5.2.2, mantendo limites de contagem,
+   faces projetadas, nomes duplicados, rollback e integridade do `.blend`.
 2. Add a fixed-seed Geometry Nodes surface scatter operation with instance
    count and memory budgets.
 3. Expand box cutouts into a constrained library of slot, circle, polygon and

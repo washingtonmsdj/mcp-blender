@@ -84,9 +84,9 @@ MODELING_SCHEMAS = {
             "max_evaluated_faces": MAX_EVALUATED_FACES,
             "max_projected_subsurf_faces": MAX_PROJECTED_SUBSURF_FACES,
         },
-        "pending_types": {
+        "type_overrides": {
             "ARRAY": {
-                "status": "pending_blender_smoke",
+                "status": "available",
                 "runtime_requirements": [
                     "object_mode",
                     "no_render_job",
@@ -105,15 +105,15 @@ MODELING_SCHEMAS = {
                     "preserve_existing_modifier_stack",
                 ],
                 "description": (
-                    "Non-destructive fixed-count linear array. This variant stays "
-                    "non-executable until BlenderBench verifies the live modifier."
+                    "Non-destructive fixed-count linear array, "
+                    "validated by BlenderBench on Blender 5.2.2 with count and rollback guards."
                 ),
             }
         },
         "description": (
             "Typed modifier insertion validated by BlenderBench on Blender 5.2.2. "
             "Supports BEVEL, SUBSURF, SOLIDIFY and MIRROR under runtime budgets. "
-            "ARRAY has a typed plan but is pending live Blender validation."
+            "ARRAY is available as a fixed-count linear variant under bounded runtime budgets."
         ),
         "required": ["name", "type"],
         "selectors": ["object_name", "ordax_object_id"],
@@ -617,12 +617,12 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         arguments = _plan_modifier(payload)
 
     schema = MODELING_SCHEMAS[normalized_operation]
-    pending_variant = (
-        schema.get("pending_types", {}).get(arguments.get("type"))
+    type_override = (
+        schema.get("type_overrides", {}).get(arguments.get("type"))
         if normalized_operation == "add_modifier"
         else None
     )
-    status = pending_variant.get("status") if pending_variant else schema["status"]
+    status = type_override.get("status") if type_override else schema["status"]
     executable = status == "available"
     result = {
         "operation": normalized_operation,
@@ -637,7 +637,7 @@ def plan_modeling_operation(operation: Any, payload: dict[str, Any]) -> dict[str
         "runtime_guards",
         "failure_policy",
     ):
-        metadata_source = pending_variant if pending_variant else schema
+        metadata_source = type_override if type_override else schema
         if metadata_key in metadata_source:
             result[metadata_key] = copy.deepcopy(metadata_source[metadata_key])
     return result
