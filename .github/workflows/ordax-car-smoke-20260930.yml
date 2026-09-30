@@ -11,58 +11,116 @@ permissions:
   contents: read
 
 jobs:
-  probe:
+  generate-car:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
     environment: cloudflare-v3
     env:
       CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
       ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
       DEVICE_ID: 75d0cda4-95d9-4f3b-9e93-f3645ccc7a19
+      PROJECT: bay-of-all-saints
     steps:
-      - name: Queue projects.list
-        id: queue
+      - name: Generate car through ORDAX Device Agent
         shell: bash
         run: |
           set -euo pipefail
-          body="$(jq -cn --arg device_id "$DEVICE_ID" '{device_id:$device_id,action:"projects.list",payload:{}}')"
-          response="$(curl --fail-with-body --silent --show-error \
-            -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
-            -H 'Content-Type: application/json' \
-            -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
-          job_id="$(jq -er '.job_id' <<<"$response")"
-          echo "job_id=$job_id" >> "$GITHUB_OUTPUT"
-          echo "Queued projects.list as $job_id"
+          mkdir -p results captures
 
-      - name: Wait for installed device
-        shell: bash
-        env:
-          JOB_ID: ${{ steps.queue.outputs.job_id }}
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 180); do
+          run_action() {
+            local label="$1"
+            local action="$2"
+            local payload="$3"
+            local body response job_id status ok
+            body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action "$action" --argjson payload "$payload" '{device_id:$device_id,action:$action,payload:$payload}')"
             response="$(curl --fail-with-body --silent --show-error \
               -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
-              "$CONTROL_PLANE_URL/v3/jobs/$JOB_ID")"
-            status="$(jq -r '.job.status // "unknown"' <<<"$response")"
-            if [[ "$status" == "succeeded" ]]; then
-              jq '{job:{id:.job.id,device_id:.job.device_id,capability:.job.capability,status:.job.status,result:.job.result},artifacts:.artifacts}' <<<"$response" | tee result.json
-              exit 0
-            fi
-            if [[ "$status" == "failed" || "$status" == "cancelled" ]]; then
-              jq '{job:{id:.job.id,capability:.job.capability,status:.job.status,error_code:.job.error_code,result:.job.result},events:.events}' <<<"$response" | tee result.json
-              exit 1
-            fi
-            sleep 2
-          done
-          response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$JOB_ID")"
-          jq '{job:.job,events:.events}' <<<"$response" | tee result.json
-          exit 2
+              -H 'Content-Type: application/json' \
+              -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
+            job_id="$(jq -er '.job_id' <<<"$response")"
+            echo "[$label] queued $action as $job_id"
+            for attempt in $(seq 1 180); do
+              response="$(curl --fail-with-body --silent --show-error \
+                -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
+                "$CONTROL_PLANE_URL/v3/jobs/$job_id")"
+              status="$(jq -r '.job.status // "unknown"' <<<"$response")"
+              if [[ "$status" == "succeeded" ]]; then
+                printf '%s\n' "$response" > "results/$label.json"
+                ok="$(jq -r '.job.result.ok // false' <<<"$response")"
+                echo "[$label] $action succeeded; action_ok=$ok"
+                jq -c '{summary:.job.result.summary,data:.job.result.data,artifacts:.artifacts}' <<<"$response"
+                [[ "$ok" == "true" ]]
+                return
+              fi
+              if [[ "$status" == "failed" || "$status" == "cancelled" ]]; then
+                printf '%s\n' "$response" > "results/$label.json"
+                jq '{status:.job.status,error_code:.job.error_code,result:.job.result,events:.events}' <<<"$response" >&2
+                return 1
+              fi
+              sleep 2
+            done
+            response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$job_id")"
+            printf '%s\n' "$response" > "results/$label.json"
+            echo "[$label] timed out waiting for $action" >&2
+            return 1
+          }
 
-      - name: Upload probe result
+          run_action start blender.live_start "$(jq -cn --arg project "$PROJECT" '{project:$project,wait_seconds:60}')"
+
+          run_action body_create blender.live_create_primitive "$(jq -cn --arg project "$PROJECT" '{project:$project,name:"ORDAX_Car_Body",primitive:"cube",location:[0,0,1.05],size:1.0,timeout_seconds:60}')"
+          run_action body_shape blender.live_object_transform "$(jq -cn --arg project "$PROJECT" '{project:$project,object_name:"ORDAX_Car_Body",dimensions:[4.6,2.0,0.62],timeout_seconds:60}')"
+
+          run_action cabin_create blender.live_create_primitive "$(jq -cn --arg project "$PROJECT" '{project:$project,name:"ORDAX_Car_Cabin",primitive:"cube",location:[-0.35,0,1.72],size:1.0,timeout_seconds:60}')"
+          run_action cabin_shape blender.live_object_transform "$(jq -cn --arg project "$PROJECT" '{project:$project,object_name:"ORDAX_Car_Cabin",dimensions:[2.15,1.72,0.82],timeout_seconds:60}')"
+
+          run_action hood_create blender.live_create_primitive "$(jq -cn --arg project "$PROJECT" '{project:$project,name:"ORDAX_Car_Hood",primitive:"cube",location:[1.45,0,1.43],size:1.0,timeout_seconds:60}')"
+          run_action hood_shape blender.live_object_transform "$(jq -cn --arg project "$PROJECT" '{project:$project,object_name:"ORDAX_Car_Hood",dimensions:[1.35,1.88,0.32],timeout_seconds:60}')"
+
+          for spec in \
+            'FL 1.55 -1.08 0.62' \
+            'FR 1.55 1.08 0.62' \
+            'RL -1.45 -1.08 0.62' \
+            'RR -1.45 1.08 0.62'; do
+            set -- $spec
+            tag="$1"; x="$2"; y="$3"; z="$4"
+            name="ORDAX_Car_Wheel_$tag"
+            run_action "wheel_${tag}_create" blender.live_create_primitive "$(jq -cn --arg project "$PROJECT" --arg name "$name" --argjson x "$x" --argjson y "$y" --argjson z "$z" '{project:$project,name:$name,primitive:"cylinder",location:[$x,$y,$z],radius:0.52,depth:0.42,segments:32,timeout_seconds:60}')"
+            run_action "wheel_${tag}_rotate" blender.live_object_transform "$(jq -cn --arg project "$PROJECT" --arg name "$name" '{project:$project,object_name:$name,rotation_euler:[1.57079632679,0,0],timeout_seconds:60}')"
+          done
+
+          run_action body_material blender.live_material_apply "$(jq -cn --arg project "$PROJECT" '{project:$project,object_name:"ORDAX_Car_Body",material_name:"ORDAX_Car_Blue",base_color:[0.035,0.22,0.72,1.0],metallic:0.28,roughness:0.28,timeout_seconds:60}')"
+          run_action hood_material blender.live_material_apply "$(jq -cn --arg project "$PROJECT" '{project:$project,object_name:"ORDAX_Car_Hood",material_name:"ORDAX_Car_Blue",base_color:[0.035,0.22,0.72,1.0],metallic:0.28,roughness:0.28,timeout_seconds:60}')"
+          run_action cabin_material blender.live_material_apply "$(jq -cn --arg project "$PROJECT" '{project:$project,object_name:"ORDAX_Car_Cabin",material_name:"ORDAX_Car_Glass",base_color:[0.035,0.065,0.11,1.0],metallic:0.05,roughness:0.18,timeout_seconds:60}')"
+          for tag in FL FR RL RR; do
+            run_action "wheel_${tag}_material" blender.live_material_apply "$(jq -cn --arg project "$PROJECT" --arg name "ORDAX_Car_Wheel_$tag" '{project:$project,object_name:$name,material_name:"ORDAX_Car_Tire",base_color:[0.012,0.012,0.015,1.0],metallic:0.0,roughness:0.72,timeout_seconds:60}')"
+          done
+
+          run_action snapshot blender.live_scene_snapshot "$(jq -cn --arg project "$PROJECT" '{project:$project,object_names:["ORDAX_Car_Body","ORDAX_Car_Cabin","ORDAX_Car_Hood","ORDAX_Car_Wheel_FL","ORDAX_Car_Wheel_FR","ORDAX_Car_Wheel_RL","ORDAX_Car_Wheel_RR"],max_objects:20,timeout_seconds:60}')"
+
+          run_action save blender.live_save "$(jq -cn --arg project "$PROJECT" '{project:$project,target_path:"automation/blender/ordax_car_smoke.blend",timeout_seconds:120}')"
+
+          run_action multiview blender.live_multiview_capture "$(jq -cn --arg project "$PROJECT" '{project:$project,views:["front","left","right","top","three_quarter"],object_names:["ORDAX_Car_Body","ORDAX_Car_Cabin","ORDAX_Car_Hood","ORDAX_Car_Wheel_FL","ORDAX_Car_Wheel_FR","ORDAX_Car_Wheel_RL","ORDAX_Car_Wheel_RR"],timeout_seconds:240}')"
+
+          jq '{result:.job.result,artifacts:.artifacts}' results/multiview.json > results/final-summary.json
+
+          artifact_count="$(jq '.artifacts | length' results/multiview.json)"
+          echo "Multiview artifact count: $artifact_count"
+          jq -r '.artifacts[]? | [.id,.file_name] | @tsv' results/multiview.json | while IFS=$'\t' read -r artifact_id file_name; do
+            [[ -n "$artifact_id" ]] || continue
+            safe_name="$(basename "$file_name")"
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
+              "$CONTROL_PLANE_URL/v3/artifacts/$artifact_id" \
+              -o "captures/$safe_name"
+            echo "Downloaded artifact $artifact_id -> captures/$safe_name"
+          done
+
+      - name: Upload car smoke evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ordax-car-probe
-          path: result.json
+          name: ordax-car-smoke-evidence
+          path: |
+            results/
+            captures/
           if-no-files-found: warn
