@@ -29,18 +29,12 @@ jobs:
             local action="$1"
             local payload="$2"
             local body response job_id status
-            body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action "$action" --argjson payload "$payload" \
-              '{device_id:$device_id,action:$action,payload:$payload}')"
-            response="$(curl --fail-with-body --silent --show-error \
-              -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
-              -H 'Content-Type: application/json' \
-              -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
+            body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action "$action" --argjson payload "$payload" '{device_id:$device_id,action:$action,payload:$payload}')"
+            response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" -H 'Content-Type: application/json' -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
             job_id="$(jq -er '.job_id' <<<"$response")"
             echo "Queued $action as $job_id" >&2
             for attempt in $(seq 1 180); do
-              response="$(curl --fail-with-body --silent --show-error \
-                -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
-                "$CONTROL_PLANE_URL/v3/jobs/$job_id")"
+              response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$job_id")"
               status="$(jq -r '.job.status // "unknown"' <<<"$response")"
               case "$status" in
                 succeeded)
@@ -59,7 +53,6 @@ jobs:
             return 1
           }
 
-          echo "Checking registered projects..."
           PROJECTS_RESULT="$(run_action projects.list '{}')"
           echo "$PROJECTS_RESULT" | jq .
           PROJECT="$(jq -r '.data.default_project // .default_project // empty' <<<"$PROJECTS_RESULT")"
@@ -70,151 +63,116 @@ jobs:
           echo "Using project: $PROJECT"
 
           CAR_SCRIPT="$(cat <<'PY'
-import bpy, math, json
-from pathlib import Path
-from mathutils import Vector
+          import bpy, math, json
+          from pathlib import Path
+          from mathutils import Vector
 
-root = Path(__file__).resolve().parent
-for obj in list(bpy.data.objects):
-    bpy.data.objects.remove(obj, do_unlink=True)
+          root = Path(__file__).resolve().parent
+          for obj in list(bpy.data.objects):
+              bpy.data.objects.remove(obj, do_unlink=True)
 
-def mat(name, color, metallic=0.0, roughness=0.45):
-    m = bpy.data.materials.new(name)
-    m.diffuse_color = (*color, 1.0)
-    m.use_nodes = True
-    bsdf = m.node_tree.nodes.get('Principled BSDF')
-    bsdf.inputs['Base Color'].default_value = (*color, 1.0)
-    bsdf.inputs['Metallic'].default_value = metallic
-    bsdf.inputs['Roughness'].default_value = roughness
-    return m
+          def mat(name, color, metallic=0.0, roughness=0.45):
+              m = bpy.data.materials.new(name)
+              m.diffuse_color = (*color, 1.0)
+              m.use_nodes = True
+              bsdf = m.node_tree.nodes.get('Principled BSDF')
+              bsdf.inputs['Base Color'].default_value = (*color, 1.0)
+              bsdf.inputs['Metallic'].default_value = metallic
+              bsdf.inputs['Roughness'].default_value = roughness
+              return m
 
-def cube(name, loc, scale, material, bevel=0.12):
-    bpy.ops.mesh.primitive_cube_add(location=loc)
-    o = bpy.context.object
-    o.name = name
-    o.scale = scale
-    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-    bev = o.modifiers.new('Bevel', 'BEVEL')
-    bev.width = bevel
-    bev.segments = 3
-    o.data.materials.append(material)
-    return o
+          def cube(name, loc, scale, material, bevel=0.12):
+              bpy.ops.mesh.primitive_cube_add(location=loc)
+              o = bpy.context.object
+              o.name = name
+              o.scale = scale
+              bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+              bev = o.modifiers.new('Bevel', 'BEVEL')
+              bev.width = bevel
+              bev.segments = 3
+              o.data.materials.append(material)
+              return o
 
-def cyl(name, loc, radius, depth, material, rot=(math.radians(90),0,0)):
-    bpy.ops.mesh.primitive_cylinder_add(vertices=48, radius=radius, depth=depth, location=loc, rotation=rot)
-    o = bpy.context.object
-    o.name = name
-    o.data.materials.append(material)
-    bev = o.modifiers.new('Bevel', 'BEVEL')
-    bev.width = 0.05
-    bev.segments = 2
-    return o
+          def wheel(name, loc, tire, rim):
+              bpy.ops.mesh.primitive_cylinder_add(vertices=48, radius=0.48, depth=0.28, location=loc, rotation=(math.radians(90),0,0))
+              o = bpy.context.object
+              o.name = name + '_Tire'
+              o.data.materials.append(tire)
+              bpy.ops.mesh.primitive_cylinder_add(vertices=48, radius=0.26, depth=0.30, location=loc, rotation=(math.radians(90),0,0))
+              r = bpy.context.object
+              r.name = name + '_Rim'
+              r.data.materials.append(rim)
 
-body_mat = mat('CarPaint', (0.035, 0.12, 0.32), metallic=0.72, roughness=0.22)
-trim_mat = mat('Trim', (0.018, 0.022, 0.028), metallic=0.2, roughness=0.3)
-glass_mat = mat('Glass', (0.07, 0.14, 0.19), metallic=0.05, roughness=0.12)
-wheel_mat = mat('Tire', (0.012, 0.012, 0.014), roughness=0.68)
-rim_mat = mat('Rim', (0.34, 0.36, 0.4), metallic=0.9, roughness=0.16)
-light_mat = mat('Headlight', (0.9, 0.95, 1.0), metallic=0.0, roughness=0.08)
+          def look_at(obj, target):
+              direction = Vector(target) - obj.location
+              obj.rotation_euler = direction.to_track_quat('-Z','Y').to_euler()
 
-cube('Body', (0,0,0.95), (2.45,1.02,0.42), body_mat, 0.22)
-cube('LowerBody', (0,0,0.62), (2.18,0.98,0.24), trim_mat, 0.12)
-cube('Cabin', (-0.15,0,1.5), (1.24,0.9,0.44), body_mat, 0.18)
-cube('Windshield', (0.63,0,1.62), (0.44,0.905,0.28), glass_mat, 0.08).rotation_euler[1] = math.radians(-25)
-cube('RearGlass', (-0.9,0,1.58), (0.34,0.905,0.26), glass_mat, 0.08).rotation_euler[1] = math.radians(28)
-cube('Hood', (1.55,0,1.18), (0.76,0.98,0.12), body_mat, 0.08)
-cube('Trunk', (-1.72,0,1.12), (0.5,0.98,0.13), body_mat, 0.08)
+          paint = mat('CarPaint', (0.035,0.12,0.32), 0.72, 0.22)
+          trim = mat('Trim', (0.018,0.022,0.028), 0.2, 0.3)
+          glass = mat('Glass', (0.07,0.14,0.19), 0.05, 0.12)
+          tire = mat('Tire', (0.012,0.012,0.014), 0.0, 0.68)
+          rim = mat('Rim', (0.34,0.36,0.4), 0.9, 0.16)
+          lamp = mat('Lamp', (0.9,0.95,1.0), 0.0, 0.08)
 
-for x in (-1.45, 1.45):
-    for y in (-1.04, 1.04):
-        cyl(f'Tire_{x}_{y}', (x,y,0.58), 0.48, 0.28, wheel_mat)
-        cyl(f'Rim_{x}_{y}', (x,y*1.005,0.58), 0.26, 0.30, rim_mat)
+          cube('Body', (0,0,0.95), (2.45,1.02,0.42), paint, 0.22)
+          cube('LowerBody', (0,0,0.62), (2.18,0.98,0.24), trim, 0.12)
+          cube('Cabin', (-0.15,0,1.5), (1.24,0.9,0.44), paint, 0.18)
+          cube('Windshield', (0.63,0,1.62), (0.44,0.905,0.28), glass, 0.08).rotation_euler[1] = math.radians(-25)
+          cube('RearGlass', (-0.9,0,1.58), (0.34,0.905,0.26), glass, 0.08).rotation_euler[1] = math.radians(28)
+          cube('Hood', (1.55,0,1.18), (0.76,0.98,0.12), paint, 0.08)
+          cube('Trunk', (-1.72,0,1.12), (0.5,0.98,0.13), paint, 0.08)
 
-for y in (-0.63, 0.63):
-    cube(f'Headlight_{y}', (2.44,y,1.0), (0.08,0.22,0.13), light_mat, 0.04)
-    cube(f'Taillight_{y}', (-2.44,y,0.95), (0.08,0.24,0.12), mat(f'Red_{y}', (0.55,0.015,0.02), metallic=0.1, roughness=0.2), 0.04)
+          for x in (-1.45, 1.45):
+              for y in (-1.04, 1.04):
+                  wheel(f'Wheel_{x}_{y}', (x,y,0.58), tire, rim)
+          for y in (-0.63,0.63):
+              cube(f'Headlight_{y}', (2.44,y,1.0), (0.08,0.22,0.13), lamp, 0.04)
+          for y in (-1.02,1.02):
+              cube(f'Mirror_{y}', (0.35,y,1.46), (0.18,0.10,0.08), paint, 0.05)
 
-# mirrors
-for y in (-1.02, 1.02):
-    cube(f'Mirror_{y}', (0.35,y,1.46), (0.18,0.10,0.08), body_mat, 0.05)
+          bpy.ops.mesh.primitive_plane_add(size=30, location=(0,0,0.08))
+          bpy.context.object.data.materials.append(mat('Ground', (0.035,0.038,0.045), 0.0, 0.82))
 
-# ground
-bpy.ops.mesh.primitive_plane_add(size=30, location=(0,0,0.08))
-ground = bpy.context.object
-ground.name = 'Ground'
-ground.data.materials.append(mat('GroundMat', (0.035,0.038,0.045), roughness=0.82))
+          bpy.ops.object.camera_add(location=(7.5,-8.5,5.0))
+          cam = bpy.context.object
+          bpy.context.scene.camera = cam
+          look_at(cam, (0,0,0.9))
+          cam.data.lens = 52
 
-# camera
-bpy.ops.object.camera_add(location=(7.5,-8.5,5.0))
-cam = bpy.context.object
-bpy.context.scene.camera = cam
+          for loc, energy, size in [((4,-4,7),1250,5.0),((-4,-1,4),700,4.0),((0,5,3),900,3.0)]:
+              bpy.ops.object.light_add(type='AREA', location=loc)
+              light = bpy.context.object
+              light.data.energy = energy
+              light.data.size = size
+              look_at(light, (0,0,1))
 
-def look_at(obj, target):
-    direction = Vector(target) - obj.location
-    obj.rotation_euler = direction.to_track_quat('-Z','Y').to_euler()
-look_at(cam, (0,0,0.9))
-cam.data.lens = 52
+          scene = bpy.context.scene
+          scene.render.engine = 'BLENDER_EEVEE_NEXT'
+          scene.render.resolution_x = 960
+          scene.render.resolution_y = 640
+          scene.render.resolution_percentage = 100
+          scene.render.image_settings.file_format = 'PNG'
+          scene.render.filepath = str(root / 'ordax_car_smoke.png')
+          scene.world.color = (0.015,0.018,0.025)
 
-# lights
-bpy.ops.object.light_add(type='AREA', location=(4,-4,7))
-key = bpy.context.object
-key.data.energy = 1250
-key.data.shape = 'DISK'
-key.data.size = 5.0
-look_at(key, (0,0,1))
+          blend_path = root / 'ordax_car_smoke.blend'
+          bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
+          bpy.ops.render.render(write_still=True)
+          result = {'ok':True,'blend':str(blend_path),'render':str(root/'ordax_car_smoke.png'),'objects':len(bpy.data.objects),'meshes':len(bpy.data.meshes),'materials':len(bpy.data.materials)}
+          (root / 'ordax_car_smoke_result.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+          print('ORDAX_CAR_SMOKE_OK ' + json.dumps(result, separators=(',',':')))
+          PY
+          )"
 
-bpy.ops.object.light_add(type='AREA', location=(-4,-1,4))
-fill = bpy.context.object
-fill.data.energy = 700
-fill.data.size = 4.0
-look_at(fill, (0,0,1))
-
-bpy.ops.object.light_add(type='AREA', location=(0,5,3))
-rim = bpy.context.object
-rim.data.energy = 900
-rim.data.size = 3.0
-look_at(rim, (0,0,1))
-
-scene = bpy.context.scene
-scene.render.engine = 'BLENDER_EEVEE_NEXT'
-scene.render.resolution_x = 960
-scene.render.resolution_y = 640
-scene.render.resolution_percentage = 100
-scene.render.image_settings.file_format = 'PNG'
-scene.render.filepath = str(root / 'ordax_car_smoke.png')
-scene.world.color = (0.015,0.018,0.025)
-
-blend_path = root / 'ordax_car_smoke.blend'
-bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
-bpy.ops.render.render(write_still=True)
-
-result = {
-    'ok': True,
-    'blend': str(blend_path),
-    'render': str(root / 'ordax_car_smoke.png'),
-    'objects': len(bpy.data.objects),
-    'meshes': len(bpy.data.meshes),
-    'materials': len(bpy.data.materials),
-}
-(root / 'ordax_car_smoke_result.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
-print('ORDAX_CAR_SMOKE_OK ' + json.dumps(result, separators=(',',':')))
-PY
-)"
-
-          WRITE_PAYLOAD="$(jq -cn --arg project "$PROJECT" --arg path "ordax_remote_car_smoke.py" --arg content "$CAR_SCRIPT" \
-            '{project:$project,path:$path,content:$content}')"
+          WRITE_PAYLOAD="$(jq -cn --arg project "$PROJECT" --arg path 'ordax_remote_car_smoke.py' --arg content "$CAR_SCRIPT" '{project:$project,path:$path,content:$content}')"
           run_action project.text_write "$WRITE_PAYLOAD" >/dev/null
 
-          RUN_PAYLOAD="$(jq -cn --arg project "$PROJECT" \
-            '{project:$project,script_path:"ordax_remote_car_smoke.py",timeout_seconds:600}')"
+          RUN_PAYLOAD="$(jq -cn --arg project "$PROJECT" '{project:$project,script_path:"ordax_remote_car_smoke.py",timeout_seconds:600}')"
           BLENDER_RESULT="$(run_action blender.run_python "$RUN_PAYLOAD")"
-          echo "Blender result:"
           echo "$BLENDER_RESULT" | jq .
 
-          READ_PAYLOAD="$(jq -cn --arg project "$PROJECT" \
-            '{project:$project,path:"ordax_car_smoke_result.json"}')"
+          READ_PAYLOAD="$(jq -cn --arg project "$PROJECT" '{project:$project,path:"ordax_car_smoke_result.json"}')"
           VERIFY_RESULT="$(run_action project.text_read "$READ_PAYLOAD")"
-          echo "Verification result:"
           echo "$VERIFY_RESULT" | jq .
 
           {
@@ -223,6 +181,6 @@ PY
             echo "- Device: $DEVICE_ID"
             echo "- Project: $PROJECT"
             echo '- Remote path: Control Plane -> Device Agent -> Blender'
-            echo '- Expected outputs: `ordax_car_smoke.blend`, `ordax_car_smoke.png`, `ordax_car_smoke_result.json`'
+            echo '- Outputs: ordax_car_smoke.blend, ordax_car_smoke.png, ordax_car_smoke_result.json'
             echo '- Status: succeeded'
           } >> "$GITHUB_STEP_SUMMARY"
