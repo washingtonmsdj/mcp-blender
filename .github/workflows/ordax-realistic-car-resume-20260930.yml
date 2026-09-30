@@ -1,0 +1,87 @@
+name: ORDAX Realistic Car Resume
+
+on:
+  push:
+    branches:
+      - codex/ordax-car-smoke-20260930
+    paths:
+      - .github/workflows/ordax-realistic-car-resume-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  resume:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      DEVICE_ID: 75d0cda4-95d9-4f3b-9e93-f3645ccc7a19
+      PROJECT: bay-of-all-saints
+      SCRIPT_PATH: automation/blender/ordax_realistic_car_v2.py
+      SCRIPT_SHA: 1555a45e12c9dc5f1b9072ed59c34a1c72e781ce7863dbd011fe4354889ba9bb
+    steps:
+      - name: Patch script, rerun model, save and capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results captures
+          run_action() {
+            local label="$1" action="$2" payload="$3"
+            local body response job_id status ok
+            body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action "$action" --argjson payload "$payload" '{device_id:$device_id,action:$action,payload:$payload}')"
+            response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" -H 'Content-Type: application/json' -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
+            job_id="$(jq -er '.job_id' <<<"$response")"
+            for attempt in $(seq 1 240); do
+              response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$job_id")"
+              status="$(jq -r '.job.status // "unknown"' <<<"$response")"
+              if [[ "$status" == "succeeded" ]]; then
+                printf '%s\n' "$response" > "results/$label.json"
+                ok="$(jq -r '.job.result.ok // false' <<<"$response")"
+                jq -c '{summary:.job.result.summary,data:.job.result.data,artifacts:.artifacts}' <<<"$response"
+                [[ "$ok" == true ]]; return
+              fi
+              if [[ "$status" == "failed" || "$status" == "cancelled" ]]; then
+                printf '%s\n' "$response" > "results/$label.json"; jq '{status:.job.status,result:.job.result,events:.events}' <<<"$response" >&2; return 1
+              fi
+              sleep 2
+            done
+            return 1
+          }
+          retry() {
+            local label="$1" action="$2" payload="$3"
+            for n in 1 2 3; do
+              if run_action "${label}_${n}" "$action" "$payload"; then return 0; fi
+              s="$(jq -r '.job.result.summary // ""' "results/${label}_${n}.json" 2>/dev/null || true)"
+              [[ "$s" == *"WinError 5"* || "$s" == *"PermissionError"* ]] || return 1
+              sleep 1
+            done
+            return 1
+          }
+
+          retry start blender.live_start "$(jq -cn --arg p "$PROJECT" '{project:$p,wait_seconds:20}')"
+          patch="$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" --arg sha "$SCRIPT_SHA" '{project:$p,path:$path,expected_sha256:$sha,replacements:[{old:"BLENDER_EEVEE_NEXT",new:"BLENDER_EEVEE",expected_count:1}]}')"
+          run_action patch project.text_patch "$patch"
+          retry refine blender.live_run_script "$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" '{project:$p,script_path:$path,timeout_seconds:240}')"
+          retry save blender.live_save "$(jq -cn --arg p "$PROJECT" '{project:$p,target_path:"automation/blender/ordax_car_realistic_v2.blend",timeout_seconds:120}')"
+          retry multiview blender.live_multiview_capture "$(jq -cn --arg p "$PROJECT" '{project:$p,views:["front","back","left","right","top","three_quarter"],timeout_seconds:240}')"
+          retry snapshot blender.live_scene_snapshot "$(jq -cn --arg p "$PROJECT" '{project:$p,max_objects:200,timeout_seconds:60}')"
+
+          for f in results/multiview_*.json; do
+            [[ -f "$f" ]] || continue
+            jq -r '.artifacts[]? | [.file_name,.signed_url] | @tsv' "$f" | while IFS=$'\t' read -r file_name signed_url; do
+              [[ -n "$signed_url" && "$signed_url" != null ]] || continue
+              curl --fail-with-body --silent --show-error "$signed_url" -o "captures/$(basename "$file_name")"
+            done
+          done
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordax-realistic-car-v2-evidence
+          path: |
+            results/
+            captures/
+          if-no-files-found: warn
