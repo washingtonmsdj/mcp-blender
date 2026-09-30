@@ -1,0 +1,236 @@
+name: ORDAX Realistic Car V4
+
+on:
+  push:
+    branches:
+      - codex/ordax-car-smoke-20260930
+    paths:
+      - .github/workflows/ordax-realistic-car-v4-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      DEVICE_ID: 75d0cda4-95d9-4f3b-9e93-f3645ccc7a19
+      PROJECT: bay-of-all-saints
+      SCRIPT_PATH: automation/blender/ordax_realistic_car_v4.py
+    steps:
+      - name: Sculpt V4, save and capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results captures
+          action() {
+            local label="$1" kind="$2" payload="$3" body response job status ok
+            body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action "$kind" --argjson payload "$payload" '{device_id:$device_id,action:$action,payload:$payload}')"
+            response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" -H 'Content-Type: application/json' -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
+            job="$(jq -er '.job_id' <<<"$response")"
+            for i in $(seq 1 240); do
+              response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$job")"
+              status="$(jq -r '.job.status // "unknown"' <<<"$response")"
+              if [[ "$status" == succeeded ]]; then printf '%s\n' "$response" > "results/$label.json"; ok="$(jq -r '.job.result.ok // false' <<<"$response")"; [[ "$ok" == true ]]; return; fi
+              if [[ "$status" == failed || "$status" == cancelled ]]; then printf '%s\n' "$response" > "results/$label.json"; jq '.job.result' <<<"$response" >&2; return 1; fi
+              sleep 2
+            done
+            return 1
+          }
+          retry() {
+            local l="$1" a="$2" p="$3"
+            for n in 1 2 3; do
+              if action "${l}_${n}" "$a" "$p"; then return 0; fi
+              s="$(jq -r '.job.result.summary // ""' "results/${l}_${n}.json" 2>/dev/null || true)"
+              [[ "$s" == *"WinError 5"* || "$s" == *"PermissionError"* ]] || return 1
+              sleep 1
+            done
+            return 1
+          }
+
+          cat > /tmp/car_v4.py <<'PY'
+          import bpy, math
+          from mathutils import Vector
+
+          bpy.ops.object.select_all(action='SELECT')
+          bpy.ops.object.delete(use_global=False)
+          for blocks in (bpy.data.meshes,bpy.data.curves,bpy.data.cameras,bpy.data.lights):
+              for b in list(blocks):
+                  if b.users==0: blocks.remove(b)
+
+          def mat(name,c,metal=0,rough=.4,trans=0,emit=None):
+              m=bpy.data.materials.get(name) or bpy.data.materials.new(name); m.use_nodes=True
+              p=m.node_tree.nodes.get('Principled BSDF'); p.inputs['Base Color'].default_value=c; p.inputs['Metallic'].default_value=metal; p.inputs['Roughness'].default_value=rough
+              if 'Transmission Weight' in p.inputs: p.inputs['Transmission Weight'].default_value=trans
+              if trans: p.inputs['IOR'].default_value=1.45
+              if emit and 'Emission Color' in p.inputs: p.inputs['Emission Color'].default_value=emit; p.inputs['Emission Strength'].default_value=5
+              return m
+          BODY=mat('V4_Paint',(0.022,0.030,0.043,1),.83,.15)
+          BLACK=mat('V4_Black',(.003,.004,.006,1),.12,.23)
+          GLASS=mat('V4_Glass',(.014,.032,.052,1),.04,.07,.78)
+          CHROME=mat('V4_Chrome',(.52,.57,.64,1),.97,.09)
+          RIM=mat('V4_Rim',(.12,.14,.18,1),.92,.13)
+          TIRE=mat('V4_Tire',(.005,.006,.007,1),0,.75)
+          BRAKE=mat('V4_Brake',(.48,.012,.006,1),.62,.22)
+          LAMP=mat('V4_LED',(.58,.80,1,1),.12,.10,0,(.72,.92,1,1))
+          TAIL=mat('V4_Tail',(.52,.004,.003,1),.10,.13,0,(1,.01,.005,1))
+          LEATHER=mat('V4_Leather',(.10,.042,.020,1),0,.42)
+          CABIN=mat('V4_Cabin',(.018,.019,.022,1),0,.50)
+
+          def finish(o,m=None,smooth=True,bevel=0):
+              if m and o.type=='MESH': o.data.materials.append(m)
+              if smooth and o.type=='MESH':
+                  for f in o.data.polygons: f.use_smooth=True
+              if bevel and o.type=='MESH': q=o.modifiers.new('EdgeSoftness','BEVEL'); q.width=bevel; q.segments=3
+              return o
+
+          def box(name,loc,dims,m,bevel=.025,rot=(0,0,0)):
+              bpy.ops.mesh.primitive_cube_add(location=loc,rotation=rot); o=bpy.context.object; o.name=name; o.dimensions=dims
+              bpy.ops.object.transform_apply(location=False,rotation=False,scale=True); return finish(o,m,True,bevel)
+
+          def cyl(name,a,b,r,m,verts=24):
+              a=Vector(a); b=Vector(b); v=b-a; L=v.length; mid=(a+b)/2
+              bpy.ops.mesh.primitive_cylinder_add(vertices=verts,radius=r,depth=L,location=mid)
+              o=bpy.context.object; o.name=name; o.rotation_mode='QUATERNION'; o.rotation_quaternion=v.to_track_quat('Z','Y'); o.rotation_mode='XYZ'; return finish(o,m)
+
+          def disc(name,loc,r,depth,m):
+              bpy.ops.mesh.primitive_cylinder_add(vertices=64,radius=r,depth=depth,location=loc,rotation=(math.pi/2,0,0)); o=bpy.context.object; o.name=name; return finish(o,m,True,.012)
+
+          def torus(name,loc,major,minor,m):
+              bpy.ops.mesh.primitive_torus_add(major_radius=major,minor_radius=minor,major_segments=64,minor_segments=20,location=loc,rotation=(math.pi/2,0,0)); o=bpy.context.object; o.name=name; return finish(o,m)
+
+          def elliptical_loft(name,specs,m,rings=24):
+              # specs = x,width,center_z,half_height. Dense rings avoid boxy side panels.
+              verts=[]
+              for x,w,cz,h in specs:
+                  for i in range(rings):
+                      a=2*math.pi*i/rings
+                      y=w*math.cos(a)
+                      # slightly flatten the bottom, keep strong shoulder at the top.
+                      s=math.sin(a); z=cz+h*s
+                      if s < -.65: z=max(z,.28)
+                      verts.append((x,y,z))
+              faces=[]
+              for s in range(len(specs)-1):
+                  a=s*rings; b=(s+1)*rings
+                  for i in range(rings): faces.append((a+i,a+(i+1)%rings,b+(i+1)%rings,b+i))
+              faces.append(tuple(range(rings-1,-1,-1))); last=(len(specs)-1)*rings; faces.append(tuple(last+i for i in range(rings)))
+              me=bpy.data.meshes.new(name+'Mesh'); me.from_pydata(verts,[],faces); me.update(); o=bpy.data.objects.new(name,me); bpy.context.collection.objects.link(o); return finish(o,m)
+
+          # One continuous sculpted lower body, 4.95m x 1.96m, low belt line.
+          body=[
+            (-2.48,.48,.57,.20),(-2.42,.66,.59,.26),(-2.28,.84,.63,.33),(-2.05,.93,.66,.38),(-1.72,.97,.68,.40),
+            (-1.30,.985,.69,.405),(-.80,.99,.69,.41),(-.25,.992,.69,.41),(.30,.992,.69,.41),(.82,.988,.69,.405),
+            (1.28,.975,.68,.395),(1.66,.95,.66,.37),(1.98,.90,.63,.33),(2.25,.82,.60,.28),(2.43,.62,.57,.22),(2.49,.44,.55,.17)]
+          elliptical_loft('V4_Body',body,BODY,28)
+
+          # Continuous panoramic glasshouse; lower half naturally disappears into body.
+          glass=[(-1.34,.50,1.10,.14),(-1.22,.63,1.13,.23),(-1.03,.70,1.17,.29),(-.72,.76,1.19,.32),(-.32,.79,1.20,.335),(.10,.79,1.20,.335),(.42,.76,1.18,.31),(.68,.69,1.15,.26),(.86,.55,1.11,.17)]
+          elliptical_loft('V4_Glasshouse',glass,GLASS,28)
+
+          # Roof rails and pillars define a conventional four-door sedan glasshouse.
+          for side in (-1,1):
+              y=.77*side
+              cyl(f'V4_RoofRail_{side}',(-1.05,y,1.38),(.62,y,1.38),.028,BODY,16)
+              cyl(f'V4_Apillar_{side}',(.76,.69*side,1.12),(.58,.72*side,1.42),.030,BODY,16)
+              cyl(f'V4_Bpillar_{side}',(-.24,.79*side,1.08),(-.24,.77*side,1.48),.026,BLACK,16)
+              cyl(f'V4_Cpillar_{side}',(-1.18,.67*side,1.08),(-.92,.72*side,1.39),.034,BODY,16)
+          # Cross roof bows and panoramic center roof.
+          cyl('V4_RoofFront',(.57,-.70,1.42),(.57,.70,1.42),.027,BODY,16)
+          cyl('V4_RoofRear',(-.95,-.70,1.39),(-.95,.70,1.39),.029,BODY,16)
+          box('V4_PanoramicRoof',(-.24,0,1.505),(1.15,1.02,.025),GLASS,.012)
+
+          # Interior.
+          box('V4_Dashboard',(.52,0,1.00),(.48,1.28,.13),CABIN,.055)
+          for x in (.05,-.70):
+              for y in (-.42,.42):
+                  box(f'V4_SeatBase_{x}_{y}',(x,y,.78),(.44,.43,.14),LEATHER,.065)
+                  box(f'V4_SeatBack_{x}_{y}',(x-.06,y,1.03),(.17,.43,.48),LEATHER,.065,(0,.12,0))
+                  box(f'V4_Headrest_{x}_{y}',(x-.10,y,1.30),(.15,.25,.15),LEATHER,.055)
+          torus('V4_Steering',(.39,-.42,1.14),.14,.025,BLACK)
+
+          # Front bumper details sit almost flush with the nose.
+          for y in (-.205,.205):
+              box(f'V4_Grille_{y}',(2.472,y,.72),(.030,.335,.285),BLACK,.105)
+              box(f'V4_GrilleTrim_{y}',(2.488,y,.72),(.012,.37,.315),CHROME,.115)
+              for k in range(5):
+                  yy=y+(k-2)*.048; box(f'V4_Slat_{y}_{k}',(2.498,yy,.72),(.010,.010,.20),CHROME,.004)
+          for y in (-.61,.61):
+              box(f'V4_Headlight_{y}',(2.442,y,.92),(.050,.52,.115),BLACK,.050)
+              box(f'V4_LED_{y}',(2.473,y,.935),(.018,.43,.042),LAMP,.020)
+              box(f'V4_DRL_{y}',(2.484,y, .975),(.012,.34,.015),LAMP,.005)
+              box(f'V4_Intake_{y}',(2.41,y*1.18,.52),(.045,.23,.17),BLACK,.050)
+          box('V4_LowerGrille',(2.455,0,.49),(.030,.78,.14),BLACK,.055)
+          box('V4_FrontLip',(2.29,0,.315),(.30,1.66,.055),BLACK,.020)
+
+          # Rear integrated lamps and exhaust.
+          for y in (-.60,.60):
+              box(f'V4_Tail_{y}',(-2.435,y,.91),(.040,.52,.10),TAIL,.040)
+              box(f'V4_TailInner_{y}',(-2.456,y,.91),(.012,.40,.030),TAIL,.010)
+              disc(f'V4_Exhaust_{y}',(-2.41,y,.39),.073,.10,CHROME)
+          box('V4_RearDiffuser',(-2.30,0,.32),(.28,1.56,.065),BLACK,.022)
+
+          # Side detailing: subtle seams and body-color handles.
+          for side in (-1,1):
+              y=.985*side
+              box(f'V4_SideSkirt_{side}',(-.03,y,.34),(3.55,.045,.075),BLACK,.018)
+              box(f'V4_Mirror_{side}',(.62,1.055*side,1.15),(.32,.18,.135),BODY,.055)
+              box(f'V4_MirrorGlass_{side}',(.64,1.151*side,1.15),(.22,.018,.078),GLASS,.018)
+              for x in (.25,-.78): box(f'V4_Handle_{side}_{x}',(x,.992*side,.87),(.20,.020,.025),CHROME,.010)
+              # very thin gaps, not black posts
+              for x in (.46,-.28,-1.20): box(f'V4_DoorGap_{side}_{x}',(x,.996*side,.72),(.009,.006,.43),BLACK,.002)
+
+          # Clean realistic wheels: torus tire, real spokes, no tread spikes.
+          def wheel(x,side):
+              y=.995*side; z=.415; tag=f'{x}_{side}'
+              torus(f'V4_Tire_{tag}',(x,y,z),.304,.092,TIRE)
+              torus(f'V4_RimLip_{tag}',(x,y,z),.244,.020,CHROME)
+              disc(f'V4_Disc_{tag}',(x,y,z),.215,.045,CHROME)
+              disc(f'V4_Hub_{tag}',(x,y,z),.062,.060,BLACK)
+              box(f'V4_Caliper_{tag}',(x+.16,y,z),(.085,.060,.17),BRAKE,.028)
+              # 10 thin radial spokes as cylinders.
+              for i in range(10):
+                  a=i*2*math.pi/10
+                  p0=(x+math.cos(a)*.075,y,z+math.sin(a)*.075)
+                  p1=(x+math.cos(a)*.232,y,z+math.sin(a)*.232)
+                  cyl(f'V4_Spoke_{tag}_{i}',p0,p1,.014,RIM,12)
+          for x in (1.54,-1.52):
+              for side in (-1,1): wheel(x,side)
+
+          # Small recognizable automotive detail.
+          disc('V4_HoodBadge',(1.48,0,1.055),.061,.012,CHROME)
+          disc('V4_HoodBadgeInner',(1.48,0,1.064),.043,.009,BLACK)
+          box('V4_WiperL',(.68,-.22,1.09),(.34,.014,.014),BLACK,.004,(0,.28,.08))
+          box('V4_WiperR',(.68,.22,1.09),(.34,.014,.014),BLACK,.004,(0,.28,-.08))
+          bpy.ops.mesh.primitive_cone_add(vertices=24,radius1=.065,radius2=.012,depth=.055,location=(-.60,0,1.535)); fin=bpy.context.object; fin.name='V4_SharkFin'; finish(fin,BODY)
+
+          scene=bpy.context.scene; scene.render.engine='BLENDER_EEVEE'; scene.render.resolution_x=1024; scene.render.resolution_y=1024; scene.render.resolution_percentage=100
+          scene.world.color=(.035,.038,.045); scene['ordax_realistic_car_revision']='v4'; scene['ordax_realistic_car_target']='continuous modern premium sedan silhouette'
+          print({'ok':True,'objects':len(bpy.data.objects),'revision':'v4'})
+          PY
+
+          content="$(cat /tmp/car_v4.py)"
+          write="$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" --arg content "$content" '{project:$p,path:$path,content:$content,create:true}')"
+          retry start blender.live_start "$(jq -cn --arg p "$PROJECT" '{project:$p,wait_seconds:20}')"
+          retry checkpoint blender.live_checkpoint_create "$(jq -cn --arg p "$PROJECT" '{project:$p,label:"before-realistic-car-v4",timeout_seconds:120}')"
+          action write project.text_write "$write"
+          retry run blender.live_run_script "$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" '{project:$p,script_path:$path,timeout_seconds:240}')"
+          retry save blender.live_save "$(jq -cn --arg p "$PROJECT" '{project:$p,target_path:"automation/blender/ordax_car_realistic_v4.blend",timeout_seconds:120}')"
+          retry capture blender.live_multiview_capture "$(jq -cn --arg p "$PROJECT" '{project:$p,views:["front","back","left","right","top","three_quarter"],timeout_seconds:240}')"
+          retry snapshot blender.live_scene_snapshot "$(jq -cn --arg p "$PROJECT" '{project:$p,max_objects:200,timeout_seconds:60}')"
+          jq -r '.job.result.data.uploaded_artifacts[]? | [.storage_path,.signed_url] | @tsv' results/capture_1.json | while IFS=$'\t' read -r storage signed; do
+            [[ -n "$signed" ]] || continue; raw="$(basename "$storage")"; name="${raw#*-}"; curl --fail-with-body --silent --show-error "$signed" -o "captures/$name"
+          done
+      - name: Upload V4 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordax-realistic-car-v4
+          path: |
+            results/
+            captures/*.png
+          if-no-files-found: warn
