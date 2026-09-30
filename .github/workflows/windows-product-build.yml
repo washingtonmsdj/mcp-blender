@@ -71,15 +71,47 @@ jobs:
         with:
           name: ordax-studio-windows-x64
           path: artifact
-      - name: Install, start runtime and verify action-ready health
+      - name: Install, upgrade over running runtime, and verify action-ready health
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
+
+          function Wait-OrdaxReady {
+            param(
+              [string]$Label,
+              [int]$TimeoutSeconds = 60
+            )
+            $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+            $lastCandidate = $null
+            while ([DateTime]::UtcNow -lt $deadline) {
+              try {
+                $candidate = Invoke-RestMethod -Uri "http://127.0.0.1:8765/status" -TimeoutSec 2
+                $lastCandidate = $candidate
+                $state = if ($candidate.runtime) { [string]$candidate.runtime.state } else { "" }
+                $actionCount = @($candidate.actions).Count
+                if ($candidate.runtime -and $state -ne "initializing" -and $actionCount -gt 0) {
+                  if ($state -notin @("local-ready", "pairing", "ready")) {
+                    throw "ORDAX Runtime reached unexpected state: $state"
+                  }
+                  Write-Host ($Label + "_STATE=" + $state)
+                  Write-Host ($Label + "_ACTIONS=" + $actionCount)
+                  return $candidate
+                }
+              } catch {
+              }
+              Start-Sleep -Milliseconds 750
+            }
+            if ($lastCandidate) { $lastCandidate | ConvertTo-Json -Depth 8 | Write-Host }
+            throw "Installed ORDAX Runtime did not reach action-ready state for $Label"
+          }
+
           $installer = Get-ChildItem .\artifact\ORDAX-Studio-Setup-*.exe | Select-Object -First 1
           if (-not $installer) { throw "ORDAX Studio installer artifact is missing" }
           $installRoot = Join-Path $env:RUNNER_TEMP "ordax-studio-install"
           $installLog = Join-Path $env:RUNNER_TEMP "ordax-studio-install.log"
+          $upgradeLog = Join-Path $env:RUNNER_TEMP "ordax-studio-upgrade.log"
           Remove-Item $installRoot -Recurse -Force -ErrorAction SilentlyContinue
+
           $installProcess = Start-Process -FilePath $installer.FullName -ArgumentList @(
             "/VERYSILENT",
             "/SUPPRESSMSGBOXES",
@@ -112,37 +144,42 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Installed private runtime import smoke failed" }
 
           $runtime = Start-Process -FilePath $runtimeExe -WorkingDirectory $installRoot -PassThru
+          $upgradedRuntime = $null
           try {
-            $deadline = [DateTime]::UtcNow.AddSeconds(60)
-            $status = $null
-            $lastCandidate = $null
-            while ([DateTime]::UtcNow -lt $deadline) {
-              try {
-                $candidate = Invoke-RestMethod -Uri "http://127.0.0.1:8765/status" -TimeoutSec 2
-                $lastCandidate = $candidate
-                $state = if ($candidate.runtime) { [string]$candidate.runtime.state } else { "" }
-                $actionCount = @($candidate.actions).Count
-                if ($candidate.runtime -and $state -ne "initializing" -and $actionCount -gt 0) {
-                  $status = $candidate
-                  break
-                }
-              } catch {
+            $null = Wait-OrdaxReady -Label "ORDAX_RUNTIME"
+
+            Write-Host "Upgrade over running ORDAX Runtime"
+            $upgradeProcess = Start-Process -FilePath $installer.FullName -ArgumentList @(
+              "/VERYSILENT",
+              "/SUPPRESSMSGBOXES",
+              "/NORESTART",
+              "/DIR=$installRoot",
+              "/LOG=$upgradeLog"
+            ) -Wait -PassThru
+            if ($upgradeProcess.ExitCode -ne 0) {
+              if (Test-Path $upgradeLog) { Get-Content $upgradeLog -Tail 200 }
+              throw "ORDAX Studio silent upgrade failed: $($upgradeProcess.ExitCode)"
+            }
+
+            Start-Sleep -Milliseconds 750
+            $runtime.Refresh()
+            if (-not $runtime.HasExited) {
+              throw "running runtime did not exit during upgrade"
+            }
+
+            foreach ($required in @($studioExe, $runtimeExe, $privatePython)) {
+              if (-not (Test-Path $required)) {
+                if (Test-Path $upgradeLog) { Get-Content $upgradeLog -Tail 200 }
+                throw "Upgraded product file is missing: $required"
               }
-              Start-Sleep -Milliseconds 750
             }
-            if (-not $status) {
-              if ($lastCandidate) { $lastCandidate | ConvertTo-Json -Depth 8 | Write-Host }
-              throw "Installed ORDAX Runtime did not reach action-ready state"
-            }
-            $finalState = [string]$status.runtime.state
-            if ($finalState -notin @("local-ready", "pairing", "ready")) {
-              throw "Installed ORDAX Runtime reached unexpected state: $finalState"
-            }
-            $finalActionCount = @($status.actions).Count
-            if ($finalActionCount -le 0) { throw "Installed ORDAX Runtime published no actions" }
-            Write-Host ("ORDAX_RUNTIME_STATE=" + $finalState)
-            Write-Host ("ORDAX_RUNTIME_ACTIONS=" + $finalActionCount)
+
+            $upgradedRuntime = Start-Process -FilePath $runtimeExe -WorkingDirectory $installRoot -PassThru
+            $null = Wait-OrdaxReady -Label "ORDAX_UPGRADE_RUNTIME"
           } finally {
+            if ($upgradedRuntime) {
+              Stop-Process -Id $upgradedRuntime.Id -Force -ErrorAction SilentlyContinue
+            }
             Stop-Process -Id $runtime.Id -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
           }
