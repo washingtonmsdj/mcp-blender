@@ -5,6 +5,7 @@ import {
   type ProductAuthEnv,
 } from "./product_auth";
 import { handleOrdaxMcp } from "./mcp_http";
+import { oauthConsentResponse } from "./oauth_consent";
 
 interface Env extends ProductAuthEnv {
   DB: D1Database;
@@ -2159,13 +2160,16 @@ export default {
     if (request.method === "DELETE" && parts[0] === "v3" && parts[1] === "devices" && parts.length === 3) {
       return deleteDevice(request, env, parts[2]);
     }
+    if (request.method === "GET" && url.pathname === "/oauth/consent") {
+      return oauthConsentResponse(request);
+    }
     if (request.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
       const authorizationServers = env.PRODUCT_AUTH_ISSUER ? [env.PRODUCT_AUTH_ISSUER] : [];
       return json({
         resource: `${url.origin}/mcp`,
         authorization_servers: authorizationServers,
         bearer_methods_supported: ["header"],
-        scopes_supported: ["authenticated"],
+        scopes_supported: ["email"],
       });
     }
     if (url.pathname === "/mcp") {
