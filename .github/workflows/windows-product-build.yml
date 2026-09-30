@@ -77,14 +77,18 @@ jobs:
           $ErrorActionPreference = "Stop"
           $installer = Get-ChildItem .\artifact\ORDAX-Studio-Setup-*.exe | Select-Object -First 1
           if (-not $installer) { throw "ORDAX Studio installer artifact is missing" }
-          $installRoot = Join-Path $env:RUNNER_TEMP "ORDAX Studio"
+          $installRoot = Join-Path $env:RUNNER_TEMP "ordax-studio-install"
+          $installLog = Join-Path $env:RUNNER_TEMP "ordax-studio-install.log"
+          Remove-Item $installRoot -Recurse -Force -ErrorAction SilentlyContinue
           $installProcess = Start-Process -FilePath $installer.FullName -ArgumentList @(
             "/VERYSILENT",
             "/SUPPRESSMSGBOXES",
             "/NORESTART",
-            "/DIR=$installRoot"
+            "/DIR=$installRoot",
+            "/LOG=$installLog"
           ) -Wait -PassThru
           if ($installProcess.ExitCode -ne 0) {
+            if (Test-Path $installLog) { Get-Content $installLog -Tail 200 }
             throw "ORDAX Studio silent install failed: $($installProcess.ExitCode)"
           }
 
@@ -92,7 +96,10 @@ jobs:
           $runtimeExe = Join-Path $installRoot "ORDAX Runtime.exe"
           $privatePython = Join-Path $installRoot "runtime\python.exe"
           foreach ($required in @($studioExe, $runtimeExe, $privatePython)) {
-            if (-not (Test-Path $required)) { throw "Installed product file is missing: $required" }
+            if (-not (Test-Path $required)) {
+              if (Test-Path $installLog) { Get-Content $installLog -Tail 200 }
+              throw "Installed product file is missing: $required"
+            }
           }
 
           & $privatePython -c "import ordax_studio, ordax_dev_agent, ordax_device_agent; print('ORDAX_INSTALLED_RUNTIME_OK')"
