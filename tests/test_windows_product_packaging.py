@@ -81,7 +81,8 @@ class WindowsProductPackagingTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("Upgrade over running ORDAX Runtime", workflow)
-        self.assertIn("ORDAX_UPGRADE_RUNTIME_STATE", workflow)
+        self.assertIn('Wait-OrdaxReady -Label "ORDAX_UPGRADE_RUNTIME"', workflow)
+        self.assertIn('Write-Host ($Label + "_STATE=" + $state)', workflow)
         self.assertIn("running runtime did not exit during upgrade", workflow)
 
 
