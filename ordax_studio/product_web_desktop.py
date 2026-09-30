@@ -53,7 +53,7 @@ def main() -> int:
         return 0
     try:
         api = StudioProductApi(ActionRegistry(config))
-        html = Path(__file__).with_name("studio.html").resolve()
+        html = Path(__file__).with_name("studio_product.html").resolve()
         webview.create_window(
             APP_NAME,
             url=html.as_uri(),
