@@ -62,6 +62,7 @@ static DWORD run_python_child(
     const wchar_t *module,
     const wchar_t *root,
     HANDLE job,
+    HANDLE shutdown_event,
     bool hidden
 ) {
     wchar_t command[ORDAX_MAX_PATH];
@@ -104,9 +105,31 @@ static DWORD run_python_child(
         AssignProcessToJobObject(job, process.hProcess);
     }
 
-    WaitForSingleObject(process.hProcess, INFINITE);
+    HANDLE wait_handles[2] = { process.hProcess, shutdown_event };
+    DWORD wait_result = WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
     DWORD exit_code = 1;
-    GetExitCodeProcess(process.hProcess, &exit_code);
+
+    if (wait_result == WAIT_OBJECT_0 + 1) {
+        if (job != NULL) {
+            TerminateJobObject(job, 0);
+        } else {
+            TerminateProcess(process.hProcess, 0);
+        }
+        WaitForSingleObject(process.hProcess, 5000);
+        exit_code = ERROR_CANCELLED;
+    } else if (wait_result == WAIT_OBJECT_0) {
+        GetExitCodeProcess(process.hProcess, &exit_code);
+    } else {
+        DWORD error = GetLastError();
+        if (job != NULL) {
+            TerminateJobObject(job, error);
+        } else {
+            TerminateProcess(process.hProcess, error);
+        }
+        WaitForSingleObject(process.hProcess, 5000);
+        exit_code = error == ERROR_SUCCESS ? ERROR_GEN_FAILURE : error;
+    }
+
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     return exit_code;
@@ -121,6 +144,10 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
     const wchar_t *mutex_name = ORDAX_RUNTIME_LAUNCHER
         ? L"Local\\ORDAXRuntime"
         : L"Local\\ORDAXStudio";
+    const wchar_t *shutdown_event_name = ORDAX_RUNTIME_LAUNCHER
+        ? L"Local\\ORDAXRuntimeShutdown"
+        : L"Local\\ORDAXStudioShutdown";
+
     HANDLE mutex = CreateMutexW(NULL, TRUE, mutex_name);
     if (mutex == NULL) {
         fatal_message(L"Não foi possível inicializar a instância do ORDAX.");
@@ -131,10 +158,20 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
         return 0;
     }
 
+    HANDLE shutdown_event = CreateEventW(NULL, TRUE, FALSE, shutdown_event_name);
+    if (shutdown_event == NULL) {
+        fatal_message(L"Não foi possível inicializar o canal de encerramento do ORDAX.");
+        ReleaseMutex(mutex);
+        CloseHandle(mutex);
+        return 13;
+    }
+
     wchar_t root[ORDAX_MAX_PATH];
     wchar_t python[ORDAX_MAX_PATH];
     if (!get_install_root(root, ORDAX_MAX_PATH)) {
         fatal_message(L"Não foi possível localizar a instalação do ORDAX Studio.");
+        CloseHandle(shutdown_event);
+        ReleaseMutex(mutex);
         CloseHandle(mutex);
         return 11;
     }
@@ -148,6 +185,8 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
             root,
             python_name) < 0 || !file_exists(python)) {
         fatal_message(L"O runtime privado do ORDAX Studio está ausente ou corrompido.");
+        CloseHandle(shutdown_event);
+        ReleaseMutex(mutex);
         CloseHandle(mutex);
         return 12;
     }
@@ -166,22 +205,44 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
             L"ordax_studio.product_web_desktop",
             root,
             job,
+            shutdown_event,
             false);
+        if (result == ERROR_CANCELLED) {
+            result = 0;
+        }
     } else {
         DWORD backoff_ms = 1000;
         for (;;) {
+            if (WaitForSingleObject(shutdown_event, 0) == WAIT_OBJECT_0) {
+                result = 0;
+                break;
+            }
+
             ULONGLONG started = GetTickCount64();
             result = run_python_child(
                 python,
                 L"ordax_device_agent.main",
                 root,
                 job,
+                shutdown_event,
                 true);
+
+            if (
+                result == ERROR_CANCELLED
+                || WaitForSingleObject(shutdown_event, 0) == WAIT_OBJECT_0) {
+                result = 0;
+                break;
+            }
+
             ULONGLONG elapsed = GetTickCount64() - started;
             if (elapsed >= 60000) {
                 backoff_ms = 1000;
             }
-            Sleep(backoff_ms);
+
+            if (WaitForSingleObject(shutdown_event, backoff_ms) == WAIT_OBJECT_0) {
+                result = 0;
+                break;
+            }
             if (backoff_ms < 30000) {
                 backoff_ms *= 2;
                 if (backoff_ms > 30000) {
@@ -194,6 +255,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
     if (job != NULL) {
         CloseHandle(job);
     }
+    CloseHandle(shutdown_event);
     ReleaseMutex(mutex);
     CloseHandle(mutex);
     return (int)result;

@@ -17,6 +17,29 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn("ORDAX_AGENT_REPO_PATH", launcher)
         self.assertIn("ORDAX_BRIDGE_PATH", launcher)
 
+    def test_launchers_expose_cooperative_shutdown_for_product_updates(self) -> None:
+        launcher = (ROOT / "packaging" / "windows" / "ordax_launcher.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ORDAXRuntimeShutdown", launcher)
+        self.assertIn("ORDAXStudioShutdown", launcher)
+        self.assertIn("CreateEventW", launcher)
+        self.assertIn("WaitForMultipleObjects", launcher)
+        self.assertIn("TerminateJobObject", launcher)
+        self.assertIn("WaitForSingleObject(shutdown_event, backoff_ms)", launcher)
+
+    def test_installer_stops_running_product_before_replacing_files(self) -> None:
+        installer = (ROOT / "packaging" / "windows" / "ordax-studio.iss").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("function PrepareToInstall", installer)
+        self.assertIn("SignalShutdownEvent", installer)
+        self.assertIn("Local\\ORDAXRuntimeShutdown", installer)
+        self.assertIn("Local\\ORDAXStudioShutdown", installer)
+        self.assertIn("WaitForShutdownEventGone", installer)
+        self.assertIn("taskkill.exe", installer)
+        self.assertIn("0.3.0/0.3.1", installer)
+
     def test_installer_does_not_expose_python_or_codex_as_user_dependency(self) -> None:
         installer = (ROOT / "packaging" / "windows" / "ordax-studio.iss").read_text(
             encoding="utf-8"
@@ -52,6 +75,15 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertNotIn("chatgpt", launcher)
         self.assertNotIn("claude", launcher)
         self.assertIn("ordaxruntime", launcher)
+
+    def test_windows_ci_reinstalls_over_a_running_runtime(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "windows-product-build.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Upgrade over running ORDAX Runtime", workflow)
+        self.assertIn('Wait-OrdaxReady -Label "ORDAX_UPGRADE_RUNTIME"', workflow)
+        self.assertIn('Write-Host ($Label + "_STATE=" + $state)', workflow)
+        self.assertIn("running runtime did not exit during upgrade", workflow)
 
 
 if __name__ == "__main__":
