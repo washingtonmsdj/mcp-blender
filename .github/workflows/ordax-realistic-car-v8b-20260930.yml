@@ -1,0 +1,218 @@
+name: ORDAX Realistic Car V8B
+
+on:
+  push:
+    branches: [codex/ordax-car-smoke-20260930]
+    paths: [.github/workflows/ordax-realistic-car-v8b-20260930.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      DEVICE_ID: 75d0cda4-95d9-4f3b-9e93-f3645ccc7a19
+      PROJECT: bay-of-all-saints
+      SOURCE_URL: https://cdn.3dassets.dev/assets/32490/v1/model.glb
+      SOURCE_PAGE: https://3dassets.dev/assets/car-park-and-road-vehicle-fleet-saloon-ad831b1f
+      SCRIPT_PATH: automation/blender/ordax_realistic_car_v8b.py
+    steps:
+      - name: Transfer high-detail saloon, import and capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results captures transfer
+
+          action(){
+            local label="$1" kind="$2" payload="$3" body response job status ok
+            body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action "$kind" --argjson payload "$payload" '{device_id:$device_id,action:$action,payload:$payload}')"
+            response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" -H 'Content-Type: application/json' -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
+            job="$(jq -er '.job_id' <<<"$response")"
+            for i in $(seq 1 600); do
+              response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$job")"
+              status="$(jq -r '.job.status // "unknown"' <<<"$response")"
+              if [[ "$status" == succeeded ]]; then
+                printf '%s\n' "$response" > "results/$label.json"
+                ok="$(jq -r '.job.result.ok // false' <<<"$response")"
+                jq -c '{summary:.job.result.summary,data:.job.result.data}' <<<"$response"
+                [[ "$ok" == true ]]
+                return
+              fi
+              if [[ "$status" == failed || "$status" == cancelled ]]; then
+                printf '%s\n' "$response" > "results/$label.json"
+                jq '.job.result' <<<"$response" >&2
+                return 1
+              fi
+              sleep 2
+            done
+            return 1
+          }
+
+          retry(){
+            local label="$1" kind="$2" payload="$3"
+            for n in 1 2 3; do
+              if action "${label}_${n}" "$kind" "$payload"; then return 0; fi
+              summary="$(jq -r '.job.result.summary // ""' "results/${label}_${n}.json" 2>/dev/null || true)"
+              [[ "$summary" == *"WinError 5"* || "$summary" == *"PermissionError"* ]] || return 1
+              sleep 1
+            done
+            return 1
+          }
+
+          curl -L --fail-with-body --silent --show-error \
+            -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36' \
+            -H 'Accept: model/gltf-binary,application/octet-stream,*/*' \
+            -e 'https://3dassets.dev/' "$SOURCE_URL" -o transfer/model.glb
+
+          size="$(stat -c%s transfer/model.glb)"
+          sha="$(sha256sum transfer/model.glb | awk '{print $1}')"
+          magic="$(head -c4 transfer/model.glb)"
+          printf '%s  model.glb\n' "$sha" > transfer/source.sha256
+          echo "source_bytes=$size sha=$sha magic=$magic"
+          [[ "$size" -gt 300000 && "$magic" == glTF ]]
+
+          base64 -w0 transfer/model.glb > transfer/model.b64
+          split -b 60000 -d -a 3 transfer/model.b64 transfer/part
+          transfer_dir="automation/blender/assets/ordax_v8b_${GITHUB_SHA}"
+          count=0
+          for f in transfer/part*; do
+            content="$(cat "$f")"
+            remote="$transfer_dir/part$(printf '%03d' "$count").txt"
+            payload="$(jq -cn --arg p "$PROJECT" --arg path "$remote" --arg content "$content" '{project:$p,path:$path,content:$content,create:true}')"
+            action "part_${count}" project.text_write "$payload"
+            count=$((count+1))
+          done
+          echo "transfer_parts=$count"
+
+          cat > /tmp/car_v8b.py <<PY
+          import base64, bpy, hashlib, json
+          from pathlib import Path
+          from mathutils import Vector
+
+          SOURCE_URL=${SOURCE_URL@Q}
+          SOURCE_PAGE=${SOURCE_PAGE@Q}
+          TRANSFER_REL=${transfer_dir@Q}
+          EXPECTED_SHA=${sha@Q}
+          EXPECTED_SIZE=${size}
+
+          blend_dir=Path(bpy.path.abspath('//')).resolve()
+          project=next((p for p in [blend_dir,*blend_dir.parents] if (p/'.git').exists()),None)
+          if project is None: raise RuntimeError(f'project root not found from {blend_dir}')
+          parts=sorted((project/TRANSFER_REL).glob('part*.txt'))
+          if not parts: raise RuntimeError('transfer parts missing')
+          raw=base64.b64decode(''.join(p.read_text(encoding='utf-8') for p in parts),validate=True)
+          actual=hashlib.sha256(raw).hexdigest()
+          if len(raw)!=EXPECTED_SIZE or actual!=EXPECTED_SHA or raw[:4]!=b'glTF':
+              raise RuntimeError(f'GLB validation failed bytes={len(raw)} sha={actual} magic={raw[:4]!r}')
+
+          asset_dir=project/'automation'/'blender'/'assets'; asset_dir.mkdir(parents=True,exist_ok=True)
+          glb=asset_dir/'premium_saloon_cc0.glb'; tmp=glb.with_suffix('.glb.part'); tmp.write_bytes(raw); tmp.replace(glb)
+
+          before=set(bpy.data.objects)
+          bpy.ops.import_scene.gltf(filepath=str(glb),import_pack_images=True)
+          imported=[o for o in bpy.data.objects if o not in before]
+          meshes=[o for o in imported if o.type=='MESH']
+          if not meshes:
+              for o in imported: bpy.data.objects.remove(o,do_unlink=True)
+              raise RuntimeError('high-detail saloon imported without meshes')
+
+          for o in list(before):
+              if o.name in bpy.data.objects: bpy.data.objects.remove(o,do_unlink=True)
+
+          corners=[o.matrix_world@Vector(c) for o in meshes for c in o.bound_box]
+          minx,maxx=min(v.x for v in corners),max(v.x for v in corners)
+          miny,maxy=min(v.y for v in corners),max(v.y for v in corners)
+          minz,maxz=min(v.z for v in corners),max(v.z for v in corners)
+          offset=Vector((-(minx+maxx)/2,-(miny+maxy)/2,-minz))
+          for o in imported:
+              if o.parent is None: o.location+=offset
+
+          def pbsdf(m):
+              if not m.use_nodes: m.use_nodes=True
+              return m.node_tree.nodes.get('Principled BSDF')
+
+          paint=[]; glass=[]; rubber=[]; metal=[]
+          for m in bpy.data.materials:
+              p=pbsdf(m)
+              if not p: continue
+              n=m.name.lower(); base=p.inputs.get('Base Color'); metallic=p.inputs.get('Metallic'); rough=p.inputs.get('Roughness'); trans=p.inputs.get('Transmission Weight')
+              if any(k in n for k in ('glass','window','windscreen','windshield')) or (trans and float(trans.default_value)>.18):
+                  glass.append(m)
+                  if base: base.default_value=(.008,.020,.036,1)
+                  if rough: rough.default_value=.07
+                  if trans: trans.default_value=.58
+              elif any(k in n for k in ('rubber','tire','tyre')):
+                  rubber.append(m)
+                  if base: base.default_value=(.003,.004,.005,1)
+                  if rough: rough.default_value=.74
+                  if metallic: metallic.default_value=0.0
+              elif any(k in n for k in ('chrome','metal','rim','alloy','wheel')):
+                  metal.append(m)
+                  if metallic: metallic.default_value=.90
+                  if rough: rough.default_value=.13
+              elif any(k in n for k in ('paint','body','exterior','shell','panel','car')):
+                  paint.append(m)
+                  if base: base.default_value=(.012,.020,.032,1)
+                  if metallic: metallic.default_value=.83
+                  if rough: rough.default_value=.16
+
+          if not paint:
+              body_words=('body','door','hood','bonnet','roof','fender','bumper','trunk','boot','quarter','wing')
+              for o in meshes:
+                  if not any(k in o.name.lower() for k in body_words): continue
+                  for slot in o.material_slots:
+                      m=slot.material
+                      if not m or m in glass or m in rubber or m in metal: continue
+                      p=pbsdf(m)
+                      if p:
+                          p.inputs['Base Color'].default_value=(.012,.020,.032,1)
+                          p.inputs['Metallic'].default_value=.83
+                          p.inputs['Roughness'].default_value=.16
+                          if m not in paint: paint.append(m)
+
+          red=bpy.data.materials.get('ORDAX_V8B_Caliper') or bpy.data.materials.new('ORDAX_V8B_Caliper'); red.use_nodes=True
+          rp=red.node_tree.nodes.get('Principled BSDF'); rp.inputs['Base Color'].default_value=(.50,.006,.003,1); rp.inputs['Metallic'].default_value=.65; rp.inputs['Roughness'].default_value=.20
+          for o in meshes:
+              lname=o.name.lower()
+              if 'caliper' in lname:
+                  if len(o.data.materials): o.data.materials[0]=red
+                  else: o.data.materials.append(red)
+              if not any(k in lname for k in ('wheel','rim','tire','tyre','disc','caliper','grille')):
+                  for poly in o.data.polygons: poly.use_smooth=True
+
+          scene=bpy.context.scene; scene.render.engine='BLENDER_EEVEE'; scene.render.resolution_x=1280; scene.render.resolution_y=720; scene.render.resolution_percentage=100; scene.world.color=(.018,.021,.027)
+          scene['ordax_realistic_car_revision']='v8b-high-detail-cc0-saloon'; scene['ordax_asset_source']=SOURCE_URL; scene['ordax_asset_page']=SOURCE_PAGE; scene['ordax_asset_license']='CC0 1.0 Universal'; scene['ordax_asset_sha256']=EXPECTED_SHA
+          print(json.dumps({'ok':True,'revision':'v8b','objects':len(imported),'meshes':len(meshes),'bounds':[maxx-minx,maxy-miny,maxz-minz],'paint':[m.name for m in paint],'glass':[m.name for m in glass],'rubber':[m.name for m in rubber],'metal':[m.name for m in metal]}))
+          PY
+
+          script_content="$(cat /tmp/car_v8b.py)"
+          script_payload="$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" --arg content "$script_content" '{project:$p,path:$path,content:$content,create:true}')"
+          retry start blender.live_start "$(jq -cn --arg p "$PROJECT" '{project:$p,wait_seconds:20}')"
+          retry checkpoint blender.live_checkpoint_create "$(jq -cn --arg p "$PROJECT" '{project:$p,label:"before-realistic-car-v8b",timeout_seconds:120}')"
+          action script project.text_write "$script_payload"
+          retry import blender.live_run_script "$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" '{project:$p,script_path:$path,timeout_seconds:360}')"
+          retry save blender.live_save "$(jq -cn --arg p "$PROJECT" '{project:$p,target_path:"automation/blender/ordax_car_realistic_v8b.blend",timeout_seconds:180}')"
+          retry capture blender.live_multiview_capture "$(jq -cn --arg p "$PROJECT" '{project:$p,views:["front","back","left","right","top","three_quarter"],timeout_seconds:360}')"
+          retry snapshot blender.live_scene_snapshot "$(jq -cn --arg p "$PROJECT" '{project:$p,max_objects:500,timeout_seconds:120}')"
+
+          jq -r '.job.result.data.uploaded_artifacts[]? | [.storage_path,.signed_url] | @tsv' results/capture_1.json | while IFS=$'\t' read -r storage signed; do
+            [[ -n "$signed" ]] || continue
+            raw_name="$(basename "$storage")"; name="${raw_name#*-}"
+            curl --fail-with-body --silent --show-error "$signed" -o "captures/$name"
+          done
+
+      - name: Upload V8B evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordax-realistic-car-v8b
+          path: |
+            results/
+            captures/*.png
+            transfer/source.sha256
+          if-no-files-found: warn
