@@ -32,3 +32,8 @@ O pacote versionado do plugin está em `plugins/ordax-studio/` e aponta somente 
 - o Device Agent mantém conexão de saída e executa somente ações tipadas concedidas;
 - não existe shell remoto genérico;
 - Blender é acessado pelo companion tipado e pelo fluxo de adoção de janela existente.
+
+
+## Pacote reproduz?vel do plugin
+
+A fonte do plugin vive em `plugins/ordax-studio/`. Para gerar um pacote instal?vel em outra conta do ChatGPT sem reutilizar tokens ou estado desta conta, execute `python scripts/build_ordax_plugin.py`. O build valida os manifests, rejeita BOM UTF-8, cria um ZIP determin?stico em `dist/plugins/` e grava o SHA-256 ao lado. Cada conta instala o mesmo pacote, mas conclui sua pr?pria autoriza??o OAuth.

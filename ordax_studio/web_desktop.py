@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
 
@@ -314,6 +316,65 @@ class StudioApi:
         return self._result(self.agent.execute("memory.checkpoint", {
             "project": self.project, "summary": summary,
         }))
+
+    def product_status(self) -> dict[str, Any]:
+        config = self.agent.config
+        resilience = self.agent.execute("agent.resilience_status", {"timeout_seconds": 5})
+        resilience_data = resilience.data.get("resilience", {}) if resilience.ok else {}
+        scheduled = resilience_data.get("scheduled_task") or {}
+        local_health = resilience_data.get("local_health") or {}
+        device_agent = {
+            "ok": bool(scheduled.get("exists")) and str(scheduled.get("state") or "").lower() == "running" and bool(local_health),
+            "configured": bool(config.device_id),
+            "scheduled_task_exists": bool(scheduled.get("exists")),
+            "scheduled_task_state": scheduled.get("state"),
+            "local_health": bool(local_health),
+            "summary": "Device Agent ativo" if local_health else (resilience.summary if not resilience.ok else "Device Agent sem health local"),
+        }
+
+        base_url = str(config.control_plane_url or "").rstrip("/")
+        remote_mcp = {
+            "ok": False,
+            "endpoint": f"{base_url}/mcp" if base_url else None,
+            "oauth": False,
+            "typed_actions_v2": False,
+            "summary": "Control Plane n?o configurado",
+        }
+        if base_url:
+            try:
+                response = httpx.get(f"{base_url}/health", timeout=4.0, follow_redirects=False)
+                payload = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+                capabilities = payload.get("capabilities") if isinstance(payload, dict) else []
+                capabilities = capabilities if isinstance(capabilities, list) else []
+                remote_ok = bool(response.is_success and isinstance(payload, dict) and payload.get("ok") is True)
+                remote_mcp.update({
+                    "ok": remote_ok,
+                    "oauth": bool(isinstance(payload, dict) and payload.get("product_auth_configured")),
+                    "typed_actions_v2": "product_typed_actions_v2" in capabilities,
+                    "summary": "Remote MCP online" if remote_ok else f"Remote MCP HTTP {response.status_code}",
+                })
+            except (httpx.HTTPError, ValueError) as error:
+                remote_mcp["summary"] = f"Remote MCP indispon?vel: {type(error).__name__}"
+
+        project_health = self.agent.execute("agent.project_health", {"project": self.project})
+        adapters = project_health.data.get("adapters", {}) if project_health.ok else {}
+        blender = adapters.get("blender") or {}
+        blender_live = {
+            "ok": bool(blender.get("enabled") and blender.get("state") == "ready"),
+            "enabled": bool(blender.get("enabled")),
+            "state": blender.get("state") or "disabled",
+            "blender_version": blender.get("blender_version"),
+            "file": blender.get("file"),
+            "summary": blender.get("summary") or ("Blender n?o habilitado neste projeto" if not blender.get("enabled") else "Blender Live indispon?vel"),
+        }
+        return {
+            "ok": True,
+            "data": {
+                "device_agent": device_agent,
+                "remote_mcp": remote_mcp,
+                "blender_live": blender_live,
+            },
+        }
 
     def health(self) -> dict[str, Any]:
         return self._result(self.agent.execute("agent.project_health", {"project": self.project}))

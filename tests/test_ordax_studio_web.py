@@ -288,6 +288,50 @@ class OrdaxStudioWebTests(unittest.TestCase):
             self.assertEqual("main", repo["branch"])
             self.assertEqual("https://github.com/example/demo.git", repo["remote"])
 
+
+    def test_product_status_combines_agent_remote_mcp_and_blender(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            (root / "agent-settings.json").write_text(json.dumps({
+                "default_project": "demo",
+                "device_id": "device-1",
+                "control_plane_url": "https://example.test",
+                "projects": {"demo": {"path": str(project), "apps": ["blender"], "blender": {}}},
+            }), encoding="utf-8")
+            env = {"ORDAX_AGENT_STATE_DIR": str(root), "ORDAX_MEMORY_DB": str(root / "memory.db")}
+            with patch.dict(os.environ, env, clear=False):
+                api = StudioApi()
+                with patch.object(api.agent, "execute") as execute, patch("ordax_studio.web_desktop.httpx.get") as get:
+                    execute.side_effect = [
+                        ActionResult(True, "resilience", {"resilience": {
+                            "scheduled_task": {"exists": True, "state": "Running"},
+                            "local_health": {"ok": True},
+                        }}),
+                        ActionResult(True, "health", {"adapters": {"blender": {
+                            "enabled": True, "state": "ready", "summary": "ready",
+                            "blender_version": "5.2.2", "file": str(project / "scene.blend"),
+                        }}}),
+                    ]
+                    response = get.return_value
+                    response.is_success = True
+                    response.status_code = 200
+                    response.headers = {"content-type": "application/json"}
+                    response.json.return_value = {
+                        "ok": True, "product_auth_configured": True,
+                        "capabilities": ["product_typed_actions_v2"],
+                    }
+                    result = api.product_status()
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["data"]["device_agent"]["ok"])
+            self.assertTrue(result["data"]["remote_mcp"]["ok"])
+            self.assertTrue(result["data"]["remote_mcp"]["oauth"])
+            self.assertTrue(result["data"]["remote_mcp"]["typed_actions_v2"])
+            self.assertTrue(result["data"]["blender_live"]["ok"])
+            get.assert_called_once_with("https://example.test/health", timeout=4.0, follow_redirects=False)
+
+
     def test_web_shell_contains_repository_first_home_and_preview_workspace(self):
         root = Path(__file__).resolve().parents[1] / "ordax_studio"
         html = (root / "studio.html").read_text(encoding="utf-8")
@@ -310,6 +354,8 @@ class OrdaxStudioWebTests(unittest.TestCase):
         self.assertIn("MODELAGEM BLENDER TIPADA", script)
         self.assertIn("workflow_actions", script)
         self.assertIn("state.bootstrap?.modeling", script)
+        self.assertIn("product_status", script)
+        self.assertIn("CONEX?O DO PRODUTO", script)
         self.assertIn("adotado", script)
         self.assertIn("preview_start", script)
         self.assertIn("preview_capture", script)
