@@ -39,12 +39,13 @@ if (-not (Test-Path $pythonZip)) {
 }
 Expand-Archive -LiteralPath $pythonZip -DestinationPath $runtimeRoot -Force
 
+$stdlibZip = Get-ChildItem $runtimeRoot -Filter "python*.zip" | Select-Object -First 1
 $pth = Get-ChildItem $runtimeRoot -Filter "python*._pth" | Select-Object -First 1
-if (-not $pth) {
-    throw "Embedded Python ._pth file not found"
+if (-not $stdlibZip -or -not $pth) {
+    throw "Embedded Python runtime is incomplete"
 }
 @(
-    (Get-ChildItem $runtimeRoot -Filter "python*.zip" | Select-Object -First 1).Name,
+    $stdlibZip.Name,
     ".",
     "Lib",
     "Lib\site-packages",
@@ -60,9 +61,18 @@ if ($LASTEXITCODE -ne 0) {
 
 Copy-Item (Join-Path $repoRoot "scripts") (Join-Path $stageRoot "scripts") -Recurse -Force
 
+$privatePython = Join-Path $runtimeRoot "python.exe"
+& $privatePython -c "import ordax_studio, ordax_dev_agent, ordax_device_agent, webview; print('ORDAX_PRIVATE_RUNTIME_OK')"
+if ($LASTEXITCODE -ne 0) {
+    throw "Private ORDAX Python runtime import smoke failed"
+}
+
 $webViewBootstrapper = Join-Path $redistRoot "MicrosoftEdgeWebview2Setup.exe"
 Write-Host "Downloading Microsoft Edge WebView2 Evergreen bootstrapper"
 Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $webViewBootstrapper
+if ((Get-Item $webViewBootstrapper).Length -lt 100000) {
+    throw "WebView2 bootstrapper download is unexpectedly small"
+}
 
 $cl = Get-Command cl.exe -ErrorAction SilentlyContinue
 if (-not $cl) {
@@ -74,15 +84,19 @@ $runtimeExe = Join-Path $stageRoot "ORDAX Runtime.exe"
 
 Push-Location $buildRoot
 try {
-    & cl.exe /nologo /O2 /W4 /DUNICODE /D_UNICODE /DORDAX_RUNTIME_LAUNCHER=0 /Fe:$studioExe $launcherSource /link /SUBSYSTEM:WINDOWS user32.lib
+    & cl.exe /nologo /O2 /W4 /DUNICODE /D_UNICODE /DORDAX_RUNTIME_LAUNCHER=0 "/Fe:$studioExe" $launcherSource /link /SUBSYSTEM:WINDOWS user32.lib
     if ($LASTEXITCODE -ne 0) { throw "ORDAX Studio launcher compilation failed" }
     Remove-Item "ordax_launcher.obj" -Force -ErrorAction SilentlyContinue
 
-    & cl.exe /nologo /O2 /W4 /DUNICODE /D_UNICODE /DORDAX_RUNTIME_LAUNCHER=1 /Fe:$runtimeExe $launcherSource /link /SUBSYSTEM:WINDOWS user32.lib
+    & cl.exe /nologo /O2 /W4 /DUNICODE /D_UNICODE /DORDAX_RUNTIME_LAUNCHER=1 "/Fe:$runtimeExe" $launcherSource /link /SUBSYSTEM:WINDOWS user32.lib
     if ($LASTEXITCODE -ne 0) { throw "ORDAX Runtime launcher compilation failed" }
     Remove-Item "ordax_launcher.obj" -Force -ErrorAction SilentlyContinue
 } finally {
     Pop-Location
+}
+
+if (-not (Test-Path $studioExe) -or -not (Test-Path $runtimeExe)) {
+    throw "Native ORDAX launchers were not produced"
 }
 
 $manifest = [ordered]@{
@@ -100,19 +114,23 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $stageRoot "product-manifest.json") -Encoding UTF8
 
-$iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-if (-not $iscc) {
+$isccPath = $null
+$isccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+if ($isccCommand) {
+    $isccPath = $isccCommand.Source
+}
+if (-not $isccPath) {
     $candidate = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
     if (Test-Path $candidate) {
-        $iscc = Get-Item $candidate
+        $isccPath = $candidate
     }
 }
-if (-not $iscc) {
+if (-not $isccPath) {
     throw "Inno Setup 6 (ISCC.exe) was not found"
 }
 
 $iss = Join-Path $repoRoot "packaging\windows\ordax-studio.iss"
-& $iscc.Source "/DStageDir=$stageRoot" "/DAppVersion=$Version" "/DOutputDir=$OutputDirectory" $iss
+& $isccPath "/DStageDir=$stageRoot" "/DAppVersion=$Version" "/DOutputDir=$OutputDirectory" $iss
 if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup compilation failed"
 }
