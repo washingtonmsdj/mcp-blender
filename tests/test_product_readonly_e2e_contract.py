@@ -12,7 +12,8 @@ class ProductReadonlyE2EContractTests(unittest.TestCase):
 
     def test_product_action_routes_are_separate_from_operator_jobs(self):
         self.assertIn('"/v3/product/actions"', self.worker)
-        self.assertIn("'ordax.product.read.invoke'", self.worker)
+        self.assertIn("product_typed_actions_v2", self.worker)
+        self.assertIn("'ordax.product.invoke'", self.worker)
         self.assertIn("authenticateProductRequest(request, env)", self.worker)
         self.assertIn("resolveProductGrantForContext", self.worker)
 
@@ -37,7 +38,9 @@ class ProductReadonlyE2EContractTests(unittest.TestCase):
         self.assertIn("product_audit_context_mismatch", self.worker)
 
     def test_agent_product_jobs_do_not_execute_directly_in_registry(self):
-        self.assertIn('job.action == "ordax.product.read.invoke"', self.main)
+        self.assertIn('PRODUCT_REMOTE_CAPABILITY', self.main)
+        self.assertIn('PRODUCT_REMOTE_LEGACY_CAPABILITY', self.main)
+        self.assertIn('execute_product_invocation', self.main)
         self.assertIn("execute_product_invocation", self.main)
 
 

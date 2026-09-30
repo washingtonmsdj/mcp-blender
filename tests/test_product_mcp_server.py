@@ -91,11 +91,15 @@ class ProductMcpServerTests(unittest.TestCase):
         self.assertIsNone(submit[2]["project"])
         self.assertEqual(submit[2]["arguments"], {})
 
-    def test_mutation_or_generic_execute_tool_is_not_defined(self):
-        self.assertFalse(hasattr(server, "action_execute"))
-        self.assertFalse(hasattr(server, "git_sync"))
-        self.assertFalse(hasattr(server, "project_text_write"))
-        self.assertFalse(hasattr(server, "shell_exec"))
+    def test_typed_mutations_are_exposed_but_generic_execution_is_not(self):
+        for name in (
+            "project_text_write", "project_text_patch", "blender_start",
+            "blender_transform", "blender_create_primitive",
+            "blender_apply_material", "blender_save",
+        ):
+            self.assertTrue(hasattr(server, name), name)
+        for name in ("action_execute", "shell_exec", "blender_run_python"):
+            self.assertFalse(hasattr(server, name), name)
 
     def test_token_is_required_but_never_a_tool_parameter(self):
         for name in (

@@ -29,6 +29,7 @@ const CONTROL_PLANE_CAPABILITIES = [
   "product_grant_resolution_v1",
   "product_subject_auth_jwks_v1",
   "product_readonly_actions_v1",
+  "product_typed_actions_v2",
 ];
 
 const ACTION_PREFIXES = [
@@ -52,17 +53,37 @@ const PRODUCT_READ_ONLY_ACTIONS = new Set([
   "git.diff",
   "artifact.preview",
 ]);
+const PRODUCT_TYPED_ACTIONS_V2 = new Set([
+  "project.text_write",
+  "project.text_patch",
+  "blender.live_status",
+  "blender.live_scene_snapshot",
+  "blender.live_object_inspect",
+  "blender.live_modeling_schema",
+  "blender.live_start",
+  "blender.live_object_transform",
+  "blender.live_create_primitive",
+  "blender.live_material_apply",
+  "blender.live_save",
+]);
+const PRODUCT_ACTIONS = new Set([
+  ...PRODUCT_READ_ONLY_ACTIONS,
+  ...PRODUCT_TYPED_ACTIONS_V2,
+]);
 const PRODUCT_PROJECT_ACTIONS = new Set([
   "project.inventory",
   "project.text_read",
   "project.search_text",
   "project.text_read_batch",
   "project.preview_status",
+  "project.text_write",
+  "project.text_patch",
   "agent.project_health",
   "artifacts.list",
   "git.status",
   "git.diff",
   "artifact.preview",
+  ...PRODUCT_TYPED_ACTIONS_V2,
 ]);
 
 function json(body: unknown, status = 200): Response {
@@ -388,7 +409,7 @@ function parseProductGrantInput(body: JsonObject): ProductGrantInput | null {
   const actions = normalizedStringArray(body.actions, {
     maxItems: 32,
     validator: (item) => PRODUCT_ID_RE.test(item),
-    allowed: PRODUCT_READ_ONLY_ACTIONS,
+    allowed: PRODUCT_ACTIONS,
   });
   const projects = normalizedStringArray(body.projects ?? [], {
     maxItems: 100,
@@ -671,7 +692,7 @@ async function resolveProductGrantAdmin(
     !PRODUCT_ID_RE.test(subjectId)
     || (spaceId !== null && !PRODUCT_ID_RE.test(spaceId))
     || !UUID_RE.test(deviceId)
-    || !PRODUCT_READ_ONLY_ACTIONS.has(action)
+    || !PRODUCT_ACTIONS.has(action)
     || (project !== null && !PROJECT_SLUG_RE.test(project))
     || (PRODUCT_PROJECT_ACTIONS.has(action) && project === null)
     || (!PRODUCT_PROJECT_ACTIONS.has(action) && project !== null)
@@ -1114,7 +1135,7 @@ async function createProductAction(request: Request, env: Env): Promise<Response
   const action = typeof body.action === "string" ? body.action : "";
   const project = body.project == null ? null : typeof body.project === "string" ? body.project : "";
   const argumentsValue = isRecord(body.arguments) ? { ...body.arguments } : {};
-  if (!UUID_RE.test(deviceId) || (spaceId !== null && !PRODUCT_ID_RE.test(spaceId)) || !PRODUCT_READ_ONLY_ACTIONS.has(action) || (project !== null && !PROJECT_SLUG_RE.test(project)) || (PRODUCT_PROJECT_ACTIONS.has(action) && project === null) || (!PRODUCT_PROJECT_ACTIONS.has(action) && project !== null)) {
+  if (!UUID_RE.test(deviceId) || (spaceId !== null && !PRODUCT_ID_RE.test(spaceId)) || !PRODUCT_ACTIONS.has(action) || (project !== null && !PROJECT_SLUG_RE.test(project)) || (PRODUCT_PROJECT_ACTIONS.has(action) && project === null) || (!PRODUCT_PROJECT_ACTIONS.has(action) && project !== null)) {
     return json({ ok: false, error: "product_action_invalid" }, 400);
   }
   if (project !== null) {
@@ -1151,7 +1172,7 @@ async function createProductAction(request: Request, env: Env): Promise<Response
   const payloadB64 = bytesToBase64(payloadBytes);
   const payloadSha256 = await sha256Text(payloadText);
   await env.DB.batch([
-    env.DB.prepare(`INSERT INTO ordax_jobs (id, device_id, capability, payload_canonical_b64, payload_sha256, status, effect_id, execution_epoch, created_at) VALUES (?1, ?2, 'ordax.product.read.invoke', ?3, ?4, 'queued', ?5, 0, ?6)`).bind(jobId, deviceId, payloadB64, payloadSha256, effectId, createdAt),
+    env.DB.prepare(`INSERT INTO ordax_jobs (id, device_id, capability, payload_canonical_b64, payload_sha256, status, effect_id, execution_epoch, created_at) VALUES (?1, ?2, 'ordax.product.invoke', ?3, ?4, 'queued', ?5, 0, ?6)`).bind(jobId, deviceId, payloadB64, payloadSha256, effectId, createdAt),
     env.DB.prepare(`INSERT INTO ordax_product_action_requests (request_id, job_id, subject_id, space_id, device_id, grant_id, action, project, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`).bind(requestId, jobId, identity.subjectId, spaceId, deviceId, grant.id, action, project, createdAt),
   ]);
   await wakeDeviceSession(env, deviceId);
@@ -1186,7 +1207,7 @@ async function recordProductAudit(request: Request, env: Env): Promise<Response>
   const reason = typeof body.reason === "string" ? body.reason : "";
   const fields = normalizedStringArray(body.payload_fields ?? [], { maxItems: 32, validator: (item) => PRODUCT_ID_RE.test(item) });
   const resultOk = body.result_ok == null ? null : typeof body.result_ok === "boolean" ? body.result_ok : undefined;
-  if (!UUID_RE.test(requestId) || !PRODUCT_ID_RE.test(subjectId) || (grantId !== null && !UUID_RE.test(grantId)) || !PRODUCT_READ_ONLY_ACTIONS.has(action) || (project !== null && !PROJECT_SLUG_RE.test(project)) || !["decision","result"].includes(phase) || !["allow","deny"].includes(decision) || !reason || reason.length > 200 || !fields || resultOk === undefined) return json({ ok: false, error: "product_audit_invalid" }, 400);
+  if (!UUID_RE.test(requestId) || !PRODUCT_ID_RE.test(subjectId) || (grantId !== null && !UUID_RE.test(grantId)) || !PRODUCT_ACTIONS.has(action) || (project !== null && !PROJECT_SLUG_RE.test(project)) || !["decision","result"].includes(phase) || !["allow","deny"].includes(decision) || !reason || reason.length > 200 || !fields || resultOk === undefined) return json({ ok: false, error: "product_audit_invalid" }, 400);
   const owner = await env.DB.prepare(`SELECT subject_id, space_id, device_id, grant_id, action, project FROM ordax_product_action_requests WHERE request_id = ?1`).bind(requestId).first<{ subject_id: string; space_id: string | null; device_id: string; grant_id: string; action: string; project: string | null }>();
   if (!owner || owner.device_id !== deviceId || owner.subject_id !== subjectId || owner.grant_id !== grantId || owner.action !== action || owner.project !== project) return json({ ok: false, error: "product_audit_context_mismatch" }, 403);
   await env.DB.prepare(`INSERT INTO ordax_product_audit (request_id, subject_id, grant_id, device_id, space_id, action, project, phase, decision, reason, payload_fields_json, result_ok, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`).bind(requestId, subjectId, grantId, deviceId, owner.space_id, action, project, phase, decision, reason, stableJson(fields), resultOk === null ? null : resultOk ? 1 : 0, nowIso()).run();

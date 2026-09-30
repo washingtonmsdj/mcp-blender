@@ -21,6 +21,7 @@ class ProductActionSpec:
     local_action: str
     allowed_fields: frozenset[str]
     project_required: bool = True
+    effect: str = "read"
 
 
 @dataclass(frozen=True)
@@ -146,6 +147,22 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
     ),
 }
 
+# Product v2 exposes only bounded typed operations. No generic action executor or shell.
+PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
+    "project.text_write": ProductActionSpec("project.text_write", "project.text_write", frozenset({"project", "path", "content", "expected_sha256", "create"}), effect="write"),
+    "project.text_patch": ProductActionSpec("project.text_patch", "project.text_patch", frozenset({"project", "path", "expected_sha256", "replacements"}), effect="write"),
+    "blender.live_status": ProductActionSpec("blender.live_status", "blender.live_status", frozenset({"project"})),
+    "blender.live_scene_snapshot": ProductActionSpec("blender.live_scene_snapshot", "blender.live_scene_snapshot", frozenset({"project", "max_objects", "object_names", "timeout_seconds"})),
+    "blender.live_object_inspect": ProductActionSpec("blender.live_object_inspect", "blender.live_object_inspect", frozenset({"project", "object_name", "ordax_object_id", "timeout_seconds"})),
+    "blender.live_modeling_schema": ProductActionSpec("blender.live_modeling_schema", "blender.live_modeling_schema", frozenset({"project"})),
+    "blender.live_start": ProductActionSpec("blender.live_start", "blender.live_start", frozenset({"project", "wait_seconds", "timeout_seconds", "pid", "adopt_blank"}), effect="write"),
+    "blender.live_object_transform": ProductActionSpec("blender.live_object_transform", "blender.live_object_transform", frozenset({"project", "object_name", "ordax_object_id", "location", "rotation_euler", "scale", "dimensions", "timeout_seconds"}), effect="write"),
+    "blender.live_create_primitive": ProductActionSpec("blender.live_create_primitive", "blender.live_create_primitive", frozenset({"project", "name", "primitive", "location", "size", "radius", "depth", "segments", "timeout_seconds"}), effect="write"),
+    "blender.live_material_apply": ProductActionSpec("blender.live_material_apply", "blender.live_material_apply", frozenset({"project", "object_name", "ordax_object_id", "material_name", "base_color", "roughness", "metallic", "transmission", "alpha", "ior", "surface_render_method", "transparency_overlap", "timeout_seconds"}), effect="write"),
+    "blender.live_save": ProductActionSpec("blender.live_save", "blender.live_save", frozenset({"project", "target_path", "timeout_seconds"}), effect="write"),
+}
+PRODUCT_ACTIONS: dict[str, ProductActionSpec] = {**PRODUCT_READ_ONLY_ACTIONS, **PRODUCT_TYPED_ACTIONS}
+
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$")
 
 
@@ -153,13 +170,22 @@ def product_action_catalog() -> list[dict[str, Any]]:
     return [
         {
             "name": spec.name,
-            "effect": "read",
+            "effect": spec.effect,
             "project_required": spec.project_required,
             "allowed_fields": sorted(spec.allowed_fields),
         }
-        for spec in PRODUCT_READ_ONLY_ACTIONS.values()
+        for spec in PRODUCT_ACTIONS.values()
     ]
 
+
+_LOCAL_RESULT_KEYS = frozenset({"path", "root", "file", "project_root", "command", "control_root", "bootstrap_config", "discovery_path", "output_path", "snapshot_path"})
+
+def _redact_local_result_paths(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _redact_local_result_paths(item) for key, item in value.items() if key not in _LOCAL_RESULT_KEYS}
+    if isinstance(value, list):
+        return [_redact_local_result_paths(item) for item in value]
+    return value
 
 def _sanitize_product_result(action: str, result: ActionResult) -> ActionResult:
     data = dict(result.data) if isinstance(result.data, dict) else {}
@@ -233,6 +259,8 @@ def _sanitize_product_result(action: str, result: ActionResult) -> ActionResult:
         data.pop("command", None)
     elif action == "artifact.preview":
         data.pop("path", None)
+    elif action.startswith("blender."):
+        data = _redact_local_result_paths(data)
 
     return ActionResult(result.ok, result.summary, data)
 
@@ -242,7 +270,7 @@ def _valid_id(value: str | None) -> bool:
 
 
 class ProductActionGateway:
-    """Fail-closed read-only Product MCP/OrdaX Web action facade.
+    """Fail-closed typed Product MCP/OrdaX Web action facade.
 
     The gateway is not a network server. A future Product MCP/Web endpoint must
     authenticate first, resolve a grant in the Control Plane, provide a verified
@@ -265,7 +293,7 @@ class ProductActionGateway:
         return [
             entry
             for entry in product_action_catalog()
-            if PRODUCT_READ_ONLY_ACTIONS[entry["name"]].local_action in available
+            if PRODUCT_ACTIONS[entry["name"]].local_action in available
         ]
 
     def _event(
@@ -418,7 +446,7 @@ class ProductActionGateway:
                 error_code="grant_expired",
             )
 
-        spec = PRODUCT_READ_ONLY_ACTIONS.get(action)
+        spec = PRODUCT_ACTIONS.get(action)
         if spec is None:
             return self._deny(
                 context=context,
