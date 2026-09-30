@@ -1,0 +1,22 @@
+﻿{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ordax-studio",
+  "version": "0.1.0",
+  "description": "Connect ChatGPT and Codex to ORDAX Studio for authenticated project and Blender workflows.",
+  "author": {"name": "ORDAX"},
+  "repository": "https://github.com/washingtonmsdj/mcp-blender",
+  "license": "Proprietary",
+  "keywords": ["ordax", "blender", "studio", "mcp", "development"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "ORDAX Studio",
+        "shortDescription": "Connect to your ORDAX Studio workstation and Blender projects.",
+        "longDescription": "Use the authenticated ORDAX Studio MCP to inspect and update registered projects and work with Blender through typed, audited actions without a local shell bridge.",
+        "developerName": "ORDAX",
+        "category": "Developer Tools",
+        "capabilities": ["Read", "Write"]
+      }
+    }
+  }
+}
