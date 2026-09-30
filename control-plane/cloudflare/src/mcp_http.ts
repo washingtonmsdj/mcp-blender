@@ -87,6 +87,8 @@ function toolDefinitions(): JsonObject[] {
   return TOOLS.map((tool) => ({
     name: tool.name,
     description: tool.description,
+    securitySchemes: [{ type: "oauth2", scopes: ["email"] }],
+    _meta: { securitySchemes: [{ type: "oauth2", scopes: ["email"] }] },
     inputSchema: {
       type: "object",
       properties: tool.properties ?? {},
