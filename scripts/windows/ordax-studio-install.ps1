@@ -23,21 +23,34 @@ $Programs = [Environment]::GetFolderPath('Programs')
 $OrdaxMenu = Join-Path $Programs 'ORDAX'
 New-Item -ItemType Directory -Force -Path $OrdaxMenu | Out-Null
 $Shell = New-Object -ComObject WScript.Shell
-function New-OrdaxShortcut([string]$Path) {
+function New-OrdaxShortcut([string]$Path, [string]$Module, [string]$Description) {
     $Shortcut = $Shell.CreateShortcut($Path)
     $Shortcut.TargetPath = $Pythonw
-    $Shortcut.Arguments = '-m ordax_studio.web_desktop'
+    $Shortcut.Arguments = "-m $Module"
     $Shortcut.WorkingDirectory = $ManagedRepo
-    $Shortcut.Description = 'ORDAX Studio'
+    $Shortcut.Description = $Description
     $Shortcut.Save()
 }
 $StartMenuLink = Join-Path $OrdaxMenu 'ORDAX Studio.lnk'
-New-OrdaxShortcut $StartMenuLink
-if ($DesktopShortcut) { New-OrdaxShortcut (Join-Path ([Environment]::GetFolderPath('Desktop')) 'ORDAX Studio.lnk') }
+$ChatGPTLink = Join-Path $OrdaxMenu 'Conectar ChatGPT.lnk'
+New-OrdaxShortcut $StartMenuLink 'ordax_studio.web_desktop' 'ORDAX Studio'
+New-OrdaxShortcut $ChatGPTLink 'ordax_studio.openai_tunnel_ui' 'Conectar esta estação ORDAX ao ChatGPT'
+if ($DesktopShortcut) {
+    New-OrdaxShortcut (Join-Path ([Environment]::GetFolderPath('Desktop')) 'ORDAX Studio.lnk') 'ordax_studio.web_desktop' 'ORDAX Studio'
+}
 $StudioState = Join-Path $env:LOCALAPPDATA 'OrdaX\Studio'
 New-Item -ItemType Directory -Force -Path $StudioState | Out-Null
-@{ installed_at=[DateTimeOffset]::UtcNow.ToString('o'); runtime=$ManagedRepo; start_menu=$StartMenuLink; background_task=$TaskName } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $StudioState 'installation.json') -Encoding UTF8
-if (-not $NoLaunch) { Start-Process -FilePath $Pythonw -ArgumentList @('-m','ordax_studio.web_desktop') -WorkingDirectory $ManagedRepo }
+@{
+    installed_at=[DateTimeOffset]::UtcNow.ToString('o')
+    runtime=$ManagedRepo
+    start_menu=$StartMenuLink
+    chatgpt_connector=$ChatGPTLink
+    background_task=$TaskName
+} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $StudioState 'installation.json') -Encoding UTF8
+if (-not $NoLaunch) {
+    Start-Process -FilePath $Pythonw -ArgumentList @('-m','ordax_studio.web_desktop') -WorkingDirectory $ManagedRepo
+}
 Write-Output 'ORDAX_STUDIO=INSTALLED'
 Write-Output ("START_MENU=" + $StartMenuLink)
+Write-Output ("CHATGPT_CONNECTOR=" + $ChatGPTLink)
 Write-Output ("BACKGROUND_TASK=" + $TaskName)
