@@ -1,0 +1,260 @@
+name: ORDAX Realistic Car Refinement
+
+on:
+  push:
+    branches:
+      - codex/ordax-car-smoke-20260930
+    paths:
+      - .github/workflows/ordax-realistic-car-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  refine-car:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      DEVICE_ID: 75d0cda4-95d9-4f3b-9e93-f3645ccc7a19
+      PROJECT: bay-of-all-saints
+      SCRIPT_PATH: automation/blender/ordax_realistic_car_v2.py
+    steps:
+      - name: Build and apply detailed sedan through ORDAX
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results captures
+
+          run_action() {
+            local label="$1" action="$2" payload="$3"
+            local body response job_id status ok
+            body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action "$action" --argjson payload "$payload" '{device_id:$device_id,action:$action,payload:$payload}')"
+            response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" -H 'Content-Type: application/json' -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
+            job_id="$(jq -er '.job_id' <<<"$response")"
+            echo "[$label] queued $action as $job_id"
+            for attempt in $(seq 1 240); do
+              response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$job_id")"
+              status="$(jq -r '.job.status // "unknown"' <<<"$response")"
+              if [[ "$status" == "succeeded" ]]; then
+                printf '%s\n' "$response" > "results/$label.json"
+                ok="$(jq -r '.job.result.ok // false' <<<"$response")"
+                jq -c '{summary:.job.result.summary,data:.job.result.data,artifacts:.artifacts}' <<<"$response"
+                [[ "$ok" == "true" ]]
+                return
+              fi
+              if [[ "$status" == "failed" || "$status" == "cancelled" ]]; then
+                printf '%s\n' "$response" > "results/$label.json"
+                jq '{status:.job.status,error_code:.job.error_code,result:.job.result,events:.events}' <<<"$response" >&2
+                return 1
+              fi
+              sleep 2
+            done
+            return 1
+          }
+
+          run_action_retry() {
+            local label="$1" action="$2" payload="$3"
+            for n in 1 2 3; do
+              if run_action "${label}_try${n}" "$action" "$payload"; then return 0; fi
+              summary="$(jq -r '.job.result.summary // ""' "results/${label}_try${n}.json" 2>/dev/null || true)"
+              if [[ "$summary" != *"WinError 5"* && "$summary" != *"PermissionError"* ]]; then return 1; fi
+              sleep 1
+            done
+            return 1
+          }
+
+          cat > /tmp/ordax_realistic_car_v2.py <<'PY'
+          import bpy, math
+          from mathutils import Vector
+
+          # Isolated test scene: replace the previous smoke model completely.
+          bpy.ops.object.select_all(action='SELECT')
+          bpy.ops.object.delete(use_global=False)
+          for datablocks in (bpy.data.meshes, bpy.data.curves, bpy.data.materials, bpy.data.cameras, bpy.data.lights):
+              pass
+
+          def mat(name, color, metallic=0.0, roughness=0.4, transmission=0.0, emission=None):
+              m = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+              m.use_nodes = True
+              bsdf = m.node_tree.nodes.get('Principled BSDF')
+              bsdf.inputs['Base Color'].default_value = color
+              bsdf.inputs['Metallic'].default_value = metallic
+              bsdf.inputs['Roughness'].default_value = roughness
+              if 'Transmission Weight' in bsdf.inputs:
+                  bsdf.inputs['Transmission Weight'].default_value = transmission
+              if transmission:
+                  bsdf.inputs['IOR'].default_value = 1.45
+              if emission and 'Emission Color' in bsdf.inputs:
+                  bsdf.inputs['Emission Color'].default_value = emission
+                  bsdf.inputs['Emission Strength'].default_value = 4.0
+              return m
+
+          BODY = mat('REALCAR_Graphite', (0.035,0.045,0.060,1), 0.82, 0.18)
+          BLACK = mat('REALCAR_Black', (0.006,0.007,0.009,1), 0.15, 0.23)
+          GLASS = mat('REALCAR_Glass', (0.025,0.045,0.065,1), 0.05, 0.08, 0.78)
+          CHROME = mat('REALCAR_Chrome', (0.42,0.46,0.52,1), 0.96, 0.11)
+          TIRE = mat('REALCAR_Tire', (0.008,0.008,0.010,1), 0.0, 0.72)
+          RIM = mat('REALCAR_Rim', (0.12,0.14,0.18,1), 0.88, 0.15)
+          BRAKE = mat('REALCAR_Brake', (0.22,0.025,0.018,1), 0.65, 0.23)
+          WHITE = mat('REALCAR_Headlamp', (0.65,0.78,1.0,1), 0.15, 0.12, emission=(0.75,0.90,1.0,1))
+          RED = mat('REALCAR_Taillamp', (0.45,0.008,0.006,1), 0.1, 0.16, emission=(1.0,0.02,0.01,1))
+          AMBER = mat('REALCAR_Amber', (0.55,0.13,0.005,1), 0.1, 0.18, emission=(1.0,0.24,0.02,1))
+          INTERIOR = mat('REALCAR_Interior', (0.035,0.03,0.028,1), 0.0, 0.58)
+          LEATHER = mat('REALCAR_Leather', (0.12,0.055,0.028,1), 0.0, 0.48)
+
+          def smooth(obj):
+              if obj.type == 'MESH':
+                  for p in obj.data.polygons: p.use_smooth = True
+
+          def box(name, loc, dims, material, bevel=0.08, rot=(0,0,0)):
+              bpy.ops.mesh.primitive_cube_add(location=loc, rotation=rot)
+              o=bpy.context.object; o.name=name; o.dimensions=dims
+              bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+              if bevel:
+                  mod=o.modifiers.new('EdgeSoftness','BEVEL'); mod.width=bevel; mod.segments=4
+              o.data.materials.append(material); smooth(o); return o
+
+          def cyl(name, loc, radius, depth, material, rot=(math.pi/2,0,0), verts=48):
+              bpy.ops.mesh.primitive_cylinder_add(vertices=verts, radius=radius, depth=depth, location=loc, rotation=rot)
+              o=bpy.context.object; o.name=name; o.data.materials.append(material)
+              b=o.modifiers.new('EdgeSoftness','BEVEL'); b.width=min(0.035,radius*0.08); b.segments=3
+              smooth(o); return o
+
+          def torus(name, loc, major, minor, material, rot=(math.pi/2,0,0)):
+              bpy.ops.mesh.primitive_torus_add(major_radius=major, minor_radius=minor, major_segments=48, minor_segments=12, location=loc, rotation=rot)
+              o=bpy.context.object; o.name=name; o.data.materials.append(material); smooth(o); return o
+
+          # Main sculpted volumes.
+          box('REALCAR_BodyLower',(0,0,0.86),(4.92,1.92,0.62),BODY,0.22)
+          box('REALCAR_Shoulder',(-0.05,0,1.16),(4.52,1.86,0.42),BODY,0.18)
+          box('REALCAR_Hood',(1.48,0,1.39),(1.62,1.82,0.26),BODY,0.13,(0,-0.035,0))
+          box('REALCAR_Trunk',(-1.83,0,1.37),(1.08,1.79,0.32),BODY,0.14,(0,0.035,0))
+          box('REALCAR_Roof',(-0.30,0,1.86),(2.38,1.60,0.55),BODY,0.28)
+
+          # Glasshouse: windshield, rear glass, side windows and sunroof.
+          box('REALCAR_Windshield',(0.82,0,1.76),(0.085,1.51,0.74),GLASS,0.035,(0,-0.46,0))
+          box('REALCAR_RearGlass',(-1.30,0,1.75),(0.08,1.50,0.66),GLASS,0.035,(0,0.47,0))
+          for side in (-1,1):
+              y=0.815*side
+              box(f'REALCAR_FrontWindow_{side}',(0.27,y,1.78),(0.94,0.045,0.56),GLASS,0.035)
+              box(f'REALCAR_RearWindow_{side}',(-0.78,y,1.78),(0.92,0.045,0.56),GLASS,0.035)
+              box(f'REALCAR_Bpillar_{side}',(-0.25,0.84*side,1.75),(0.08,0.045,0.70),BLACK,0.02)
+          box('REALCAR_Sunroof',(-0.42,0,2.145),(1.20,1.05,0.028),GLASS,0.018)
+
+          # Interior visible through glass.
+          box('REALCAR_Dashboard',(0.64,0,1.45),(0.52,1.45,0.20),INTERIOR,0.08)
+          for x in (0.20,-0.72):
+              for y in (-0.47,0.47):
+                  box(f'REALCAR_SeatBase_{x}_{y}',(x,y,1.13),(0.48,0.48,0.16),LEATHER,0.09)
+                  box(f'REALCAR_SeatBack_{x}_{y}',(x-0.05,y,1.47),(0.18,0.48,0.66),LEATHER,0.09,(0,0.13,0))
+          torus('REALCAR_SteeringWheel',(0.50,-0.49,1.57),0.18,0.032,BLACK,(math.pi/2,0,0))
+
+          # Front fascia: twin grilles, headlights and intakes.
+          for y in (-0.235,0.235):
+              box(f'REALCAR_GrilleChrome_{y}',(2.47,y,1.22),(0.08,0.39,0.53),CHROME,0.10)
+              box(f'REALCAR_GrilleBlack_{y}',(2.515,y,1.22),(0.055,0.31,0.44),BLACK,0.08)
+              for iz in range(6):
+                  yy=y + (iz-2.5)*0.048
+                  box(f'REALCAR_GrilleSlat_{y}_{iz}',(2.548,yy,1.22),(0.024,0.018,0.36),CHROME,0.008)
+          for y in (-0.60,0.60):
+              box(f'REALCAR_HeadlightHousing_{y}',(2.40,y,1.39),(0.16,0.56,0.22),BLACK,0.07)
+              box(f'REALCAR_Headlight_{y}',(2.485,y,1.40),(0.045,0.48,0.105),WHITE,0.045)
+              box(f'REALCAR_DRLS_{y}',(2.515,y,1.45),(0.028,0.38,0.032),WHITE,0.012)
+              box(f'REALCAR_FrontVent_{y}',(2.46,y*1.18,0.91),(0.10,0.26,0.34),BLACK,0.07)
+          box('REALCAR_LowerGrille',(2.49,0,0.92),(0.10,0.88,0.22),BLACK,0.06)
+          box('REALCAR_FrontLip',(2.33,0,0.55),(0.42,1.78,0.11),BLACK,0.05)
+
+          # Rear fascia and exhausts.
+          for y in (-0.61,0.61):
+              box(f'REALCAR_TailHousing_{y}',(-2.43,y,1.37),(0.16,0.58,0.22),BLACK,0.07)
+              box(f'REALCAR_Taillight_{y}',(-2.515,y,1.40),(0.045,0.50,0.10),RED,0.04)
+              cyl(f'REALCAR_Exhaust_{y}',(-2.48,y,0.60),0.105,0.18,CHROME,(0,math.pi/2,0),32)
+          box('REALCAR_RearDiffuser',(-2.39,0,0.55),(0.32,1.72,0.13),BLACK,0.05)
+
+          # Doors, handles, side skirts and mirrors.
+          for side in (-1,1):
+              y=0.975*side
+              box(f'REALCAR_SideSkirt_{side}',(-0.10,y,0.61),(3.75,0.07,0.12),BLACK,0.035)
+              box(f'REALCAR_Mirror_{side}',(0.62,1.02*side,1.68),(0.38,0.20,0.17),BODY,0.075)
+              box(f'REALCAR_MirrorGlass_{side}',(0.64,1.125*side,1.68),(0.27,0.025,0.105),GLASS,0.025)
+              for x in (0.32,-0.88):
+                  box(f'REALCAR_Handle_{side}_{x}',(x,0.987*side,1.27),(0.25,0.035,0.045),CHROME,0.018)
+              for x in (0.50,-0.45,-1.40):
+                  box(f'REALCAR_DoorSeam_{side}_{x}',(x,0.991*side,1.18),(0.022,0.018,0.82),BLACK,0.006)
+
+          # Wheels, ventilated discs, calipers, hubs and ten-spoke rims.
+          wheel_x=(1.55,-1.53)
+          for x in wheel_x:
+              for side in (-1,1):
+                  y=1.03*side; z=0.58
+                  tag=f'{x}_{side}'
+                  cyl(f'REALCAR_Tire_{tag}',(x,y,z),0.50,0.31,TIRE,(math.pi/2,0,0),64)
+                  cyl(f'REALCAR_RimBarrel_{tag}',(x,y,z),0.365,0.335,RIM,(math.pi/2,0,0),64)
+                  cyl(f'REALCAR_BrakeDisc_{tag}',(x,y,z),0.285,0.345,CHROME,(math.pi/2,0,0),48)
+                  cyl(f'REALCAR_Hub_{tag}',(x,y,z),0.095,0.36,BLACK,(math.pi/2,0,0),32)
+                  box(f'REALCAR_Caliper_{tag}',(x+0.22,y,z),(0.12,0.36,0.24),BRAKE,0.045)
+                  for i in range(10):
+                      a=i*math.pi/5
+                      sx=x+math.cos(a)*0.17; sz=z+math.sin(a)*0.17
+                      spoke=box(f'REALCAR_Spoke_{tag}_{i}',(sx,y,sz),(0.31,0.045,0.055),RIM,0.018,(0,-a,0))
+
+          # Small details.
+          box('REALCAR_FrontPlate',(2.56,0,1.00),(0.025,0.52,0.15),CHROME,0.025)
+          box('REALCAR_RearPlate',(-2.56,0,1.05),(0.025,0.52,0.15),CHROME,0.025)
+          cyl('REALCAR_HoodBadge',(1.76,0,1.545),0.105,0.028,CHROME,(0,0,0),48)
+          cyl('REALCAR_HoodBadgeInner',(1.76,0,1.562),0.078,0.018,BLACK,(0,0,0),48)
+          bpy.ops.mesh.primitive_cone_add(vertices=32, radius1=0.12, radius2=0.025, depth=0.10, location=(-0.90,0,2.22))
+          fin=bpy.context.object; fin.name='REALCAR_SharkFin'; fin.data.materials.append(BODY); smooth(fin)
+          # Wipers.
+          box('REALCAR_WiperL',(0.88,-0.28,1.48),(0.46,0.025,0.025),BLACK,0.008,(0,0.18,0.12))
+          box('REALCAR_WiperR',(0.88,0.28,1.48),(0.46,0.025,0.025),BLACK,0.008,(0,0.18,-0.12))
+
+          # Studio floor and neutral lighting for evidence captures.
+          floor=box('REALCAR_StudioFloor',(0,0,0.02),(12,8,0.08),mat('REALCAR_Floor',(0.08,0.085,0.095,1),0.05,0.33),0.02)
+          bpy.ops.object.light_add(type='AREA', location=(2.5,-3.8,5.5)); key=bpy.context.object; key.name='REALCAR_Key'; key.data.energy=1200; key.data.shape='DISK'; key.data.size=5.0; key.rotation_euler=(math.radians(28),0,math.radians(38))
+          bpy.ops.object.light_add(type='AREA', location=(-3.5,3.0,3.8)); fill=bpy.context.object; fill.name='REALCAR_Fill'; fill.data.energy=700; fill.data.size=4.0; fill.rotation_euler=(math.radians(52),0,math.radians(220))
+          bpy.ops.object.light_add(type='AREA', location=(0,0,6.0)); top=bpy.context.object; top.name='REALCAR_Top'; top.data.energy=900; top.data.size=3.0
+
+          bpy.context.scene.render.engine='BLENDER_EEVEE_NEXT'
+          bpy.context.scene.render.resolution_x=1280
+          bpy.context.scene.render.resolution_y=720
+          bpy.context.scene.render.resolution_percentage=100
+          bpy.context.scene.world.color=(0.035,0.035,0.045)
+          bpy.context.scene['ordax_realistic_car_revision']='v2'
+          bpy.context.scene['ordax_realistic_car_target']='premium modern sport sedan reference'
+          print({'ok':True,'objects':len(bpy.data.objects),'revision':'v2'})
+          PY
+
+          script_content="$(cat /tmp/ordax_realistic_car_v2.py)"
+          write_payload="$(jq -cn --arg project "$PROJECT" --arg path "$SCRIPT_PATH" --arg content "$script_content" '{project:$project,path:$path,content:$content,create:true}')"
+
+          run_action_retry start blender.live_start "$(jq -cn --arg project "$PROJECT" '{project:$project,wait_seconds:20}')"
+          run_action_retry checkpoint blender.live_checkpoint_create "$(jq -cn --arg project "$PROJECT" '{project:$project,label:"before-realistic-car-v2",timeout_seconds:120}')"
+          run_action script_write project.text_write "$write_payload"
+          run_action_retry refine blender.live_run_script "$(jq -cn --arg project "$PROJECT" --arg path "$SCRIPT_PATH" '{project:$project,script_path:$path,timeout_seconds:240}')"
+          run_action_retry snapshot blender.live_scene_snapshot "$(jq -cn --arg project "$PROJECT" '{project:$project,max_objects:200,timeout_seconds:60}')"
+          run_action_retry save blender.live_save "$(jq -cn --arg project "$PROJECT" '{project:$project,target_path:"automation/blender/ordax_car_realistic_v2.blend",timeout_seconds:120}')"
+          run_action_retry multiview blender.live_multiview_capture "$(jq -cn --arg project "$PROJECT" '{project:$project,views:["front","back","left","right","top","three_quarter"],timeout_seconds:240}')"
+
+          jq '{result:.job.result,artifacts:.artifacts}' results/multiview_try1.json 2>/dev/null > results/final-summary.json || true
+          for f in results/multiview_try*.json; do
+            [[ -f "$f" ]] || continue
+            jq -r '.artifacts[]? | [.id,.file_name,.signed_url] | @tsv' "$f" | while IFS=$'\t' read -r artifact_id file_name signed_url; do
+              [[ -n "$artifact_id" ]] || continue
+              safe_name="$(basename "$file_name")"
+              if [[ -n "$signed_url" && "$signed_url" != "null" ]]; then curl --fail-with-body --silent --show-error "$signed_url" -o "captures/$safe_name"; fi
+            done
+          done
+
+      - name: Upload realistic car evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordax-realistic-car-evidence
+          path: |
+            results/
+            captures/
+          if-no-files-found: warn
