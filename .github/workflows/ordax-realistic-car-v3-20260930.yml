@@ -1,0 +1,289 @@
+name: ORDAX Realistic Car V3
+
+on:
+  push:
+    branches:
+      - codex/ordax-car-smoke-20260930
+    paths:
+      - .github/workflows/ordax-realistic-car-v3-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      DEVICE_ID: 75d0cda4-95d9-4f3b-9e93-f3645ccc7a19
+      PROJECT: bay-of-all-saints
+      SCRIPT_PATH: automation/blender/ordax_realistic_car_v3.py
+    steps:
+      - name: Rebuild sedan, save and capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results captures
+          action() {
+            local label="$1" kind="$2" payload="$3" body response job status ok
+            body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action "$kind" --argjson payload "$payload" '{device_id:$device_id,action:$action,payload:$payload}')"
+            response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" -H 'Content-Type: application/json' -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
+            job="$(jq -er '.job_id' <<<"$response")"
+            for i in $(seq 1 240); do
+              response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$job")"
+              status="$(jq -r '.job.status // "unknown"' <<<"$response")"
+              if [[ "$status" == succeeded ]]; then
+                printf '%s\n' "$response" > "results/$label.json"
+                ok="$(jq -r '.job.result.ok // false' <<<"$response")"
+                echo "[$label] $kind -> $ok"
+                [[ "$ok" == true ]]; return
+              fi
+              if [[ "$status" == failed || "$status" == cancelled ]]; then printf '%s\n' "$response" > "results/$label.json"; jq '.job.result' <<<"$response" >&2; return 1; fi
+              sleep 2
+            done
+            return 1
+          }
+          retry() {
+            local label="$1" kind="$2" payload="$3"
+            for n in 1 2 3; do
+              if action "${label}_${n}" "$kind" "$payload"; then return 0; fi
+              s="$(jq -r '.job.result.summary // ""' "results/${label}_${n}.json" 2>/dev/null || true)"
+              [[ "$s" == *"WinError 5"* || "$s" == *"PermissionError"* ]] || return 1
+              sleep 1
+            done
+            return 1
+          }
+
+          cat > /tmp/car_v3.py <<'PY'
+          import bpy, math
+
+          # Clean isolated smoke scene.
+          bpy.ops.object.select_all(action='SELECT')
+          bpy.ops.object.delete(use_global=False)
+          for blocks in (bpy.data.meshes, bpy.data.curves, bpy.data.cameras, bpy.data.lights):
+              for block in list(blocks):
+                  if block.users == 0:
+                      blocks.remove(block)
+
+          def material(name, color, metallic=0.0, rough=0.4, transmission=0.0, emission=None):
+              m=bpy.data.materials.get(name) or bpy.data.materials.new(name)
+              m.use_nodes=True
+              b=m.node_tree.nodes.get('Principled BSDF')
+              b.inputs['Base Color'].default_value=color
+              b.inputs['Metallic'].default_value=metallic
+              b.inputs['Roughness'].default_value=rough
+              if 'Transmission Weight' in b.inputs: b.inputs['Transmission Weight'].default_value=transmission
+              if transmission: b.inputs['IOR'].default_value=1.45
+              if emission and 'Emission Color' in b.inputs:
+                  b.inputs['Emission Color'].default_value=emission
+                  b.inputs['Emission Strength'].default_value=5.0
+              return m
+
+          BODY=material('V3_Graphite',(0.028,0.038,0.052,1),0.78,0.17)
+          BODY_DARK=material('V3_BodyShadow',(0.012,0.017,0.024,1),0.65,0.21)
+          BLACK=material('V3_Black',(0.004,0.005,0.007,1),0.18,0.24)
+          GLASS=material('V3_Glass',(0.018,0.038,0.058,1),0.03,0.08,0.76)
+          CHROME=material('V3_Chrome',(0.48,0.52,0.58,1),0.95,0.10)
+          RIM=material('V3_Rim',(0.13,0.15,0.19,1),0.90,0.14)
+          TIRE=material('V3_Tire',(0.006,0.007,0.009,1),0.0,0.72)
+          BRAKE=material('V3_Brake',(0.48,0.018,0.008,1),0.65,0.22)
+          LAMP=material('V3_Headlamp',(0.65,0.82,1,1),0.12,0.12,0.0,(0.75,0.92,1,1))
+          TAIL=material('V3_Tail',(0.55,0.006,0.004,1),0.08,0.15,0.0,(1,0.015,0.008,1))
+          INTERIOR=material('V3_Interior',(0.025,0.025,0.028,1),0.0,0.52)
+          LEATHER=material('V3_Leather',(0.10,0.044,0.024,1),0.0,0.44)
+
+          def finish(o, mat, bevel=0.0, subsurf=0):
+              if o.type=='MESH':
+                  if mat: o.data.materials.append(mat)
+                  for p in o.data.polygons: p.use_smooth=True
+                  if bevel:
+                      q=o.modifiers.new('SoftEdges','BEVEL'); q.width=bevel; q.segments=3
+                  if subsurf:
+                      q=o.modifiers.new('Surface','SUBSURF'); q.levels=subsurf; q.render_levels=subsurf
+              return o
+
+          def box(name, loc, dims, mat, bevel=0.035, rot=(0,0,0)):
+              bpy.ops.mesh.primitive_cube_add(location=loc, rotation=rot)
+              o=bpy.context.object; o.name=name; o.dimensions=dims
+              bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+              return finish(o,mat,bevel)
+
+          def cyl(name,loc,radius,depth,mat,rot=(math.pi/2,0,0),verts=48):
+              bpy.ops.mesh.primitive_cylinder_add(vertices=verts,radius=radius,depth=depth,location=loc,rotation=rot)
+              o=bpy.context.object; o.name=name
+              return finish(o,mat,0.018)
+
+          def torus(name,loc,major,minor,mat,rot=(math.pi/2,0,0)):
+              bpy.ops.mesh.primitive_torus_add(major_radius=major,minor_radius=minor,major_segments=64,minor_segments=16,location=loc,rotation=rot)
+              o=bpy.context.object; o.name=name
+              return finish(o,mat)
+
+          def loft(name, sections, mat, bevel=0.04, subsurf=1):
+              # sections: [(x, [(y,z), ...]), ...] with equal ring lengths.
+              n=len(sections[0][1]); verts=[]
+              for x,ring in sections:
+                  verts.extend((x,y,z) for y,z in ring)
+              faces=[]
+              for s in range(len(sections)-1):
+                  a=s*n; b=(s+1)*n
+                  for j in range(n):
+                      faces.append((a+j,a+(j+1)%n,b+(j+1)%n,b+j))
+              faces.append(tuple(range(n-1,-1,-1)))
+              last=(len(sections)-1)*n
+              faces.append(tuple(last+j for j in range(n)))
+              mesh=bpy.data.meshes.new(name+'Mesh'); mesh.from_pydata(verts,[],faces); mesh.update()
+              o=bpy.data.objects.new(name,mesh); bpy.context.collection.objects.link(o)
+              return finish(o,mat,bevel,subsurf)
+
+          def body_ring(wb,ws,ztop,camber=0.035,zlow=0.30):
+              return [(0,zlow-0.025),(-wb*0.92,zlow+0.04),(-wb,0.60),(-ws,ztop),(0,ztop+camber),(ws,ztop),(wb,0.60),(wb*0.92,zlow+0.04)]
+
+          # Low, long modern sedan body shell.
+          body_specs=[
+            (-2.46,0.68,0.59,0.73),(-2.30,0.86,0.78,0.89),(-2.02,0.94,0.87,0.98),
+            (-1.58,0.97,0.91,1.03),(-0.90,0.98,0.92,1.055),(0.0,0.985,0.925,1.06),
+            (0.72,0.98,0.92,1.055),(1.28,0.97,0.91,1.03),(1.75,0.94,0.87,0.96),
+            (2.15,0.88,0.80,0.87),(2.43,0.70,0.61,0.73)
+          ]
+          loft('V3_Body',[(x,body_ring(wb,ws,zt)) for x,wb,ws,zt in body_specs],BODY,0.055,1)
+
+          # Lower dark rocker/bumper volume makes body visually thinner.
+          lower=[
+            (-2.38,[(0,0.29),(-0.78,0.32),(-0.90,0.47),(0,0.50),(0.90,0.47),(0.78,0.32)]),
+            (0.0,[(0,0.27),(-0.88,0.30),(-0.96,0.48),(0,0.51),(0.96,0.48),(0.88,0.30)]),
+            (2.36,[(0,0.29),(-0.78,0.32),(-0.90,0.47),(0,0.50),(0.90,0.47),(0.78,0.32)])]
+          loft('V3_LowerBody',lower,BODY_DARK,0.035,1)
+
+          # Roof skin from gently arched transverse strips.
+          roof_sections=[]
+          for x,w,edge,center in [(-1.15,.61,1.28,1.34),(-.82,.71,1.40,1.47),(-.30,.76,1.46,1.52),(.24,.75,1.45,1.515),(.62,.69,1.38,1.46),(.83,.58,1.27,1.34)]:
+              roof_sections.append((x,[(-w,edge),(0,center),(w,edge),(0,edge-0.035)]))
+          loft('V3_Roof',roof_sections,BODY,0.025,1)
+
+          def poly(name, coords, mat, solid=0.012, bevel=0.012):
+              mesh=bpy.data.meshes.new(name+'Mesh'); mesh.from_pydata(coords,[],[tuple(range(len(coords)))]); mesh.update()
+              o=bpy.data.objects.new(name,mesh); bpy.context.collection.objects.link(o); finish(o,mat,bevel)
+              if solid:
+                  q=o.modifiers.new('Thickness','SOLIDIFY'); q.thickness=solid; q.offset=0
+              return o
+
+          # Side glass is a tapered glasshouse rather than a box.
+          for side in (-1,1):
+              y=.862*side
+              poly(f'V3_FrontSideGlass_{side}',[(.78,y,1.13),(.62,y,1.36),(.20,y,1.46),(-.23,y,1.45),(-.23,y,1.12)],GLASS)
+              poly(f'V3_RearSideGlass_{side}',[(-.28,y,1.12),(-.28,y,1.45),(-.70,y,1.42),(-1.14,y,1.30),(-1.30,y,1.10)],GLASS)
+              box(f'V3_Bpillar_{side}',(-.255,.872*side,1.285),(.065,.038,.35),BLACK,0.014)
+              box(f'V3_Apillar_{side}',(.76,.84*side,1.29),(.075,.055,.38),BODY,0.018,(0,-.39,0))
+              box(f'V3_Cpillar_{side}',(-1.16,.84*side,1.27),(.10,.06,.37),BODY,0.022,(0,.42,0))
+
+          # Windshield and rear glass as sloped quads.
+          poly('V3_Windshield',[(.78,-.73,1.13),(.78,.73,1.13),(.58,.66,1.39),(.58,-.66,1.39)],GLASS,0.014,0.015)
+          poly('V3_RearGlass',[(-1.28,-.73,1.10),(-1.28,.73,1.10),(-.96,.63,1.35),(-.96,-.63,1.35)],GLASS,0.014,0.015)
+          poly('V3_Sunroof',[(-.75,-.45,1.485),(.15,-.48,1.515),(.28,.48,1.50),(-.75,.45,1.46)],GLASS,0.010,0.018)
+
+          # Interior visible through the glass.
+          box('V3_Dashboard',(.53,0,1.03),(.56,1.35,.16),INTERIOR,0.06)
+          for x in (.08,-.70):
+              for y in (-.43,.43):
+                  box(f'V3_SeatBase_{x}_{y}',(x,y,.83),(.46,.45,.15),LEATHER,0.075)
+                  box(f'V3_SeatBack_{x}_{y}',(x-.04,y,1.08),(.18,.45,.52),LEATHER,0.075,(0,.12,0))
+                  box(f'V3_Headrest_{x}_{y}',(x-.09,y,1.36),(.15,.28,.17),LEATHER,0.06)
+          torus('V3_Steering',(.42,-.43,1.18),.145,.027,BLACK)
+
+          # Front fascia: recessed twin grilles and slim LED lamps.
+          for y in (-.22,.22):
+              box(f'V3_GrilleFrame_{y}',(2.405,y,.79),(.055,.37,.31),CHROME,.115)
+              box(f'V3_GrilleInsert_{y}',(2.438,y,.79),(.028,.31,.255),BLACK,.095)
+              for k in range(5):
+                  yy=y+(k-2)*.052
+                  box(f'V3_GrilleSlat_{y}_{k}',(2.455,yy,.79),(.016,.012,.205),CHROME,.006)
+          for y in (-.62,.62):
+              box(f'V3_HeadlampHousing_{y}',(2.365,y,.97),(.11,.53,.145),BLACK,.055,(0,0,.02*side if False else 0))
+              box(f'V3_Headlamp_{y}',(2.424,y,.985),(.025,.44,.060),LAMP,.025)
+              box(f'V3_DRL_{y}',(2.445,y,1.018),(.018,.35,.018),LAMP,.006)
+              box(f'V3_Intake_{y}',(2.39,y*1.18,.56),(.07,.25,.20),BLACK,.06)
+          box('V3_LowerGrille',(2.425,0,.55),(.055,.83,.17),BLACK,.06)
+          box('V3_FrontLip',(2.27,0,.34),(.34,1.72,.075),BLACK,.025)
+
+          # Rear fascia with thin horizontal lamps.
+          for y in (-.61,.61):
+              box(f'V3_TailHousing_{y}',(-2.34,y,.94),(.11,.56,.16),BLACK,.055)
+              box(f'V3_TailLamp_{y}',(-2.402,y,.965),(.025,.49,.062),TAIL,.025)
+              cyl(f'V3_Exhaust_{y}',(-2.38,y,.42),.082,.18,CHROME,(0,math.pi/2,0),32)
+          box('V3_RearDiffuser',(-2.28,0,.35),(.30,1.62,.08),BLACK,.025)
+
+          # Side trim, mirrors, subtle door gaps and handles.
+          for side in (-1,1):
+              y=.956*side
+              box(f'V3_SideSkirt_{side}',(-.05,y,.36),(3.60,.055,.095),BLACK,.024)
+              box(f'V3_Mirror_{side}',(.62,1.02*side,1.18),(.34,.20,.15),BODY,.065)
+              box(f'V3_MirrorGlass_{side}',(.635,1.126*side,1.18),(.24,.020,.09),GLASS,.020)
+              for x in (.25,-.78): box(f'V3_Handle_{side}_{x}',(x,.965*side,.89),(.22,.025,.032),CHROME,.014)
+              for x in (.47,-.28,-1.24): box(f'V3_Seam_{side}_{x}',(x,.968*side,.75),(.014,.010,.49),BODY_DARK,.004)
+
+          # Realistic 19-inch wheel proportions.
+          def wheel(x,side):
+              y=.985*side; z=.425; tag=f'{x}_{side}'
+              torus(f'V3_Tire_{tag}',(x,y,z),.305,.095,TIRE)
+              torus(f'V3_RimOuter_{tag}',(x,y,z),.245,.026,RIM)
+              cyl(f'V3_BrakeDisc_{tag}',(x,y,z),.225,.055,CHROME,(math.pi/2,0,0),48)
+              cyl(f'V3_Hub_{tag}',(x,y,z),.070,.070,BLACK,(math.pi/2,0,0),32)
+              box(f'V3_Caliper_{tag}',(x+.17,y,z),(.095,.070,.19),BRAKE,.035)
+              for i in range(10):
+                  a=i*math.pi/5
+                  cx=x+math.cos(a)*.125; cz=z+math.sin(a)*.125
+                  box(f'V3_Spoke_{tag}_{i}',(cx,y,cz),(.255,.038,.035),RIM,.012,(0,-a,0))
+              # sidewall/tread hints
+              for i in range(12):
+                  a=i*math.pi/6
+                  cx=x+math.cos(a)*.355; cz=z+math.sin(a)*.355
+                  box(f'V3_Tread_{tag}_{i}',(cx,y,cz),(.060,.31,.018),TIRE,.006,(0,-a,0))
+          for x in (1.55,-1.52):
+              for side in (-1,1): wheel(x,side)
+
+          # Badges, wipers and small trim.
+          cyl('V3_HoodBadge',(1.55,0,1.055),.075,.018,CHROME,(0,0,0),48)
+          cyl('V3_HoodBadgeInner',(1.55,0,1.067),.053,.012,BLACK,(0,0,0),48)
+          box('V3_WiperL',(.69,-.23,1.10),(.40,.018,.018),BLACK,.006,(0,.35,.10))
+          box('V3_WiperR',(.69,.23,1.10),(.40,.018,.018),BLACK,.006,(0,.35,-.10))
+          bpy.ops.mesh.primitive_cone_add(vertices=24,radius1=.08,radius2=.015,depth=.065,location=(-.64,0,1.535))
+          fin=bpy.context.object; fin.name='V3_SharkFin'; finish(fin,BODY)
+
+          scene=bpy.context.scene
+          scene.render.engine='BLENDER_EEVEE'
+          scene.render.resolution_x=1024; scene.render.resolution_y=1024; scene.render.resolution_percentage=100
+          scene.world.color=(.035,.038,.045)
+          scene['ordax_realistic_car_revision']='v3'
+          scene['ordax_realistic_car_target']='low modern premium sport sedan'
+          print({'ok':True,'objects':len(bpy.data.objects),'revision':'v3'})
+          PY
+
+          content="$(cat /tmp/car_v3.py)"
+          write="$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" --arg content "$content" '{project:$p,path:$path,content:$content,create:true}')"
+          retry start blender.live_start "$(jq -cn --arg p "$PROJECT" '{project:$p,wait_seconds:20}')"
+          retry checkpoint blender.live_checkpoint_create "$(jq -cn --arg p "$PROJECT" '{project:$p,label:"before-realistic-car-v3",timeout_seconds:120}')"
+          action write project.text_write "$write"
+          retry run blender.live_run_script "$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" '{project:$p,script_path:$path,timeout_seconds:240}')"
+          retry save blender.live_save "$(jq -cn --arg p "$PROJECT" '{project:$p,target_path:"automation/blender/ordax_car_realistic_v3.blend",timeout_seconds:120}')"
+          retry capture blender.live_multiview_capture "$(jq -cn --arg p "$PROJECT" '{project:$p,views:["front","back","left","right","top","three_quarter"],timeout_seconds:240}')"
+          retry snapshot blender.live_scene_snapshot "$(jq -cn --arg p "$PROJECT" '{project:$p,max_objects:200,timeout_seconds:60}')"
+
+          # Download direct signed captures for visual review.
+          f="results/capture_1.json"
+          jq -r '.job.result.data.uploaded_artifacts[]? | [.storage_path,.signed_url] | @tsv' "$f" | while IFS=$'\t' read -r storage signed; do
+            [[ -n "$signed" ]] || continue
+            raw="$(basename "$storage")"; name="${raw#*-}"
+            curl --fail-with-body --silent --show-error "$signed" -o "captures/$name"
+          done
+      - name: Upload V3 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordax-realistic-car-v3
+          path: |
+            results/
+            captures/*.png
+          if-no-files-found: warn
