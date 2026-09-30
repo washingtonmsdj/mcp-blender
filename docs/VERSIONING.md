@@ -10,7 +10,7 @@ meanings, so each one owns a separate version.
 | Component | Version | Meaning |
 | --- | --- | --- |
 | `mcp-blender-unity` distribution / bridge | `0.3.4` | Python package and Windows ORDAX Studio product release line; preserves the 0.3.3 Blender lifecycle/upgrade behavior and adds fail-closed recovery of an already-enrolled Cloudflare v3 device identity when local metadata is missing |
-| OrdaX Device Agent | `1.30.0` | Product/Cloudflare runtime plus BlenderBench-validated localized boundary-loop hole-fill previews with topology-preservation, exact rollback, MCP and ORDAX Studio exposure |
+| OrdaX Device Agent | `1.30.1` | Product/Cloudflare runtime patch that self-heals an already-enrolled packaged Windows device from its existing credential without silent enrollment; preserves the 1.30.0 BlenderBench/modeling capabilities |
 | Blender Live protocol | `9` | IPC compatibility contract between host bridge and visible Blender companion |
 | Blender companion bundle format | `1` | Manifest/fingerprint format for the multi-file Blender runtime bundle |
 | Reference Contract | `1` | Project-local visual-reference manifest schema |
