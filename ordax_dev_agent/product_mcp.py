@@ -13,15 +13,12 @@ from .product_gateway import (
 
 @dataclass(frozen=True)
 class ProductMcpToolSpec:
-    """Transport-neutral Product MCP tool description.
-
-    The MCP host is responsible for authenticating the Product session and
-    resolving a live ProductGrant before calling this facade.
-    """
+    """Transport-neutral Product MCP tool description."""
 
     name: str
     action: str
     description: str
+    effect: str = "read"
 
 
 PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
@@ -85,6 +82,17 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
         action="artifact.preview",
         description="Read a bounded preview of a granted project artifact.",
     ),
+    ProductMcpToolSpec(name="project_text_write", action="project.text_write", effect="write", description="Write a granted project text file with SHA-256 concurrency protection."),
+    ProductMcpToolSpec(name="project_text_patch", action="project.text_patch", effect="write", description="Patch a granted project text file with exact-match and SHA-256 guards."),
+    ProductMcpToolSpec(name="blender_status", action="blender.live_status", description="Read sanitized live Blender status."),
+    ProductMcpToolSpec(name="blender_scene_snapshot", action="blender.live_scene_snapshot", description="Inspect a bounded live Blender scene snapshot."),
+    ProductMcpToolSpec(name="blender_object_inspect", action="blender.live_object_inspect", description="Inspect one Blender object by name or ORDAX id."),
+    ProductMcpToolSpec(name="blender_modeling_schema", action="blender.live_modeling_schema", description="Read validated Blender modeling contracts."),
+    ProductMcpToolSpec(name="blender_start", action="blender.live_start", effect="write", description="Adopt or start the project's visible Blender session without duplicate windows."),
+    ProductMcpToolSpec(name="blender_transform", action="blender.live_object_transform", effect="write", description="Apply a validated transform to one Blender object."),
+    ProductMcpToolSpec(name="blender_create_primitive", action="blender.live_create_primitive", effect="write", description="Create a bounded validated Blender primitive."),
+    ProductMcpToolSpec(name="blender_apply_material", action="blender.live_material_apply", effect="write", description="Apply a validated material to one Blender object."),
+    ProductMcpToolSpec(name="blender_save", action="blender.live_save", effect="write", description="Save the granted Blender project."),
 )
 
 _TOOL_BY_NAME = {tool.name: tool for tool in PRODUCT_MCP_TOOLS}
@@ -92,21 +100,21 @@ _TOOL_BY_NAME = {tool.name: tool for tool in PRODUCT_MCP_TOOLS}
 
 def product_mcp_tool_catalog(gateway: ProductActionGateway) -> list[dict[str, Any]]:
     """Return only Product MCP tools whose gateway actions are locally available."""
-    available_actions = {entry["name"] for entry in gateway.catalog()}
+    available = {entry["name"]: entry for entry in gateway.catalog()}
     return [
         {
             "name": tool.name,
             "action": tool.action,
-            "effect": "read",
+            "effect": available[tool.action]["effect"],
             "description": tool.description,
         }
         for tool in PRODUCT_MCP_TOOLS
-        if tool.action in available_actions
+        if tool.action in available
     ]
 
 
 class ProductMcpFacade:
-    """Read-only MCP-facing facade over ProductActionGateway.
+    """Typed MCP-facing facade over ProductActionGateway.
 
     This is deliberately not an MCP server and performs no authentication,
     network I/O, grant lookup, or credential handling. A future authenticated

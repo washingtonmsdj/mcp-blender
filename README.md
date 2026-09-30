@@ -154,6 +154,18 @@ docs/
   REFERENCE_CONTRACT.md
 ```
 
+## Instala??o do ORDAX Studio no Windows
+
+Para uso normal do produto, instale uma vez o app e o runtime persistente:
+
+```powershell
+.\scripts\windows\ordax-studio-install.ps1
+```
+
+Isso cria **ORDAX Studio** no Menu Iniciar sobre o runtime gerenciado e mant?m o Device Agent como servi?o de usu?rio via Scheduled Task. `mcp-start.ps1` permanece ferramenta de desenvolvimento/smoke; n?o ? necess?rio por sess?o.
+
+O Product Remote v2 usa grants e auditoria para expor somente opera??es tipadas de projeto e Blender. N?o existe shell remoto nem `action_execute` nessa superf?cie. Veja `docs/PRODUCT_MCP_CONNECT.md`.
+
 ## MCP local
 
 Requer Python 3.11+.

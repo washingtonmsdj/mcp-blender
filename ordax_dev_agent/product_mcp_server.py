@@ -297,6 +297,87 @@ def artifact_preview(
     )
 
 
+@mcp.tool()
+def project_text_write(device_id: str, project: str, path: str, content: str, expected_sha256: str | None = None, create: bool = False, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "path": path, "content": content, "create": create}
+    if expected_sha256 is not None:
+        arguments["expected_sha256"] = expected_sha256
+    return _invoke(device_id=device_id, action="project.text_write", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def project_text_patch(device_id: str, project: str, path: str, expected_sha256: str, replacements: list[dict[str, Any]], space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="project.text_patch", project=project, space_id=space_id, arguments={"project": project, "path": path, "expected_sha256": expected_sha256, "replacements": replacements})
+
+
+@mcp.tool()
+def blender_status(device_id: str, project: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="blender.live_status", project=project, space_id=space_id, arguments={"project": project})
+
+
+@mcp.tool()
+def blender_scene_snapshot(device_id: str, project: str, max_objects: int = 200, object_names: list[str] | None = None, timeout_seconds: float = 45.0, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "max_objects": max_objects, "timeout_seconds": timeout_seconds}
+    if object_names is not None:
+        arguments["object_names"] = object_names
+    return _invoke(device_id=device_id, action="blender.live_scene_snapshot", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def blender_object_inspect(device_id: str, project: str, object_name: str | None = None, ordax_object_id: str | None = None, timeout_seconds: float = 30.0, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "timeout_seconds": timeout_seconds}
+    if object_name is not None:
+        arguments["object_name"] = object_name
+    if ordax_object_id is not None:
+        arguments["ordax_object_id"] = ordax_object_id
+    return _invoke(device_id=device_id, action="blender.live_object_inspect", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def blender_modeling_schema(device_id: str, project: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="blender.live_modeling_schema", project=project, space_id=space_id, arguments={"project": project})
+
+
+@mcp.tool()
+def blender_start(device_id: str, project: str, wait_seconds: float = 60.0, pid: int | None = None, adopt_blank: bool = False, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "wait_seconds": wait_seconds, "adopt_blank": adopt_blank}
+    if pid is not None:
+        arguments["pid"] = pid
+    return _invoke(device_id=device_id, action="blender.live_start", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def blender_transform(device_id: str, project: str, object_name: str | None = None, ordax_object_id: str | None = None, location: list[float] | None = None, rotation_euler: list[float] | None = None, scale: list[float] | None = None, dimensions: list[float] | None = None, timeout_seconds: float = 30.0, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "timeout_seconds": timeout_seconds}
+    values = {"object_name": object_name, "ordax_object_id": ordax_object_id, "location": location, "rotation_euler": rotation_euler, "scale": scale, "dimensions": dimensions}
+    arguments.update({key: value for key, value in values.items() if value is not None})
+    return _invoke(device_id=device_id, action="blender.live_object_transform", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def blender_create_primitive(device_id: str, project: str, name: str, primitive: str, location: list[float] | None = None, size: float | None = None, radius: float | None = None, depth: float | None = None, segments: int | None = None, timeout_seconds: float = 30.0, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "name": name, "primitive": primitive, "timeout_seconds": timeout_seconds}
+    values = {"location": location, "size": size, "radius": radius, "depth": depth, "segments": segments}
+    arguments.update({key: value for key, value in values.items() if value is not None})
+    return _invoke(device_id=device_id, action="blender.live_create_primitive", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def blender_apply_material(device_id: str, project: str, material_name: str, object_name: str | None = None, ordax_object_id: str | None = None, base_color: list[float] | None = None, roughness: float = 0.4, metallic: float = 0.0, transmission: float = 0.0, alpha: float = 1.0, ior: float = 1.45, surface_render_method: str | None = None, transparency_overlap: bool = True, timeout_seconds: float = 30.0, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "material_name": material_name, "roughness": roughness, "metallic": metallic, "transmission": transmission, "alpha": alpha, "ior": ior, "transparency_overlap": transparency_overlap, "timeout_seconds": timeout_seconds}
+    values = {"object_name": object_name, "ordax_object_id": ordax_object_id, "base_color": base_color, "surface_render_method": surface_render_method}
+    arguments.update({key: value for key, value in values.items() if value is not None})
+    return _invoke(device_id=device_id, action="blender.live_material_apply", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def blender_save(device_id: str, project: str, target_path: str | None = None, timeout_seconds: float = 120.0, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "timeout_seconds": timeout_seconds}
+    if target_path is not None:
+        arguments["target_path"] = target_path
+    return _invoke(device_id=device_id, action="blender.live_save", project=project, space_id=space_id, arguments=arguments)
+
+
 def main() -> None:
     mcp.run()
 

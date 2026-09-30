@@ -13,7 +13,8 @@ from .product_gateway import (
 )
 
 
-PRODUCT_REMOTE_CAPABILITY = "ordax.product.read.invoke"
+PRODUCT_REMOTE_CAPABILITY = "ordax.product.invoke"
+PRODUCT_REMOTE_LEGACY_CAPABILITY = "ordax.product.read.invoke"
 
 
 class ProductAuditTransport(Protocol):

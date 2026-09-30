@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import unittest
 
@@ -27,6 +27,17 @@ class _Executor:
             "git.status",
             "git.diff",
             "artifact.preview",
+            "project.text_write",
+            "project.text_patch",
+            "blender.live_status",
+            "blender.live_scene_snapshot",
+            "blender.live_object_inspect",
+            "blender.live_modeling_schema",
+            "blender.live_start",
+            "blender.live_object_transform",
+            "blender.live_create_primitive",
+            "blender.live_material_apply",
+            "blender.live_save",
         ]
 
     @property
@@ -89,9 +100,16 @@ class ProductMcpFacadeTests(unittest.TestCase):
                 "git_status",
                 "git_diff",
                 "artifact_preview",
+                "project_text_write", "project_text_patch", "blender_status",
+                "blender_scene_snapshot", "blender_object_inspect", "blender_modeling_schema",
+                "blender_start", "blender_transform", "blender_create_primitive",
+                "blender_apply_material", "blender_save",
             },
         )
-        self.assertTrue(all(tool["effect"] == "read" for tool in tools))
+        effects = {tool["name"]: tool["effect"] for tool in tools}
+        self.assertEqual(effects["git_status"], "read")
+        self.assertEqual(effects["project_text_write"], "write")
+        self.assertEqual(effects["blender_transform"], "write")
 
     def test_call_routes_through_gateway_and_preserves_audit(self):
         result = self.facade.call(
@@ -118,7 +136,7 @@ class ProductMcpFacadeTests(unittest.TestCase):
         self.assertEqual(self.executor.calls, [])
 
     def test_mutation_and_unknown_tools_are_not_exposed(self):
-        for tool_name in ("project_text_write", "git_sync", "blender_run_python", "shell_exec"):
+        for tool_name in ("git_sync", "blender_run_python", "shell_exec", "action_execute"):
             result = self.facade.call(
                 tool_name,
                 {"project": "demo"},

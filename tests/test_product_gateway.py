@@ -5,6 +5,7 @@ from typing import Any
 
 from ordax_dev_agent.models import ActionResult
 from ordax_dev_agent.product_gateway import (
+    PRODUCT_ACTIONS,
     PRODUCT_READ_ONLY_ACTIONS,
     ProductActionGateway,
     ProductAuditEvent,
@@ -200,7 +201,7 @@ class ProductGatewayTests(unittest.TestCase):
 
     def test_catalog_contains_only_explicit_read_only_surface(self) -> None:
         names = {entry["name"] for entry in product_action_catalog()}
-        self.assertEqual(names, set(PRODUCT_READ_ONLY_ACTIONS))
+        self.assertEqual(names, set(PRODUCT_ACTIONS))
         self.assertIn("workspace.repository_catalog", names)
         self.assertIn("project.text_read", names)
         self.assertIn("project.search_text", names)
@@ -209,10 +210,13 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertIn("agent.project_health", names)
         self.assertIn("git.diff", names)
         self.assertIn("artifacts.list", names)
-        self.assertNotIn("project.text_write", names)
+        self.assertIn("project.text_write", names)
+        self.assertIn("project.text_patch", names)
+        self.assertIn("blender.live_status", names)
+        self.assertIn("blender.live_object_transform", names)
+        self.assertIn("blender.live_save", names)
         self.assertNotIn("git.sync", names)
         self.assertNotIn("artifact.read_chunk", names)
-        self.assertFalse(any(name.startswith("blender.") for name in names))
         self.assertFalse(any(name.startswith("unity.") for name in names))
 
     def test_action_requires_explicit_action_grant_and_denial_is_audited(self) -> None:
@@ -323,10 +327,10 @@ class ProductGatewayTests(unittest.TestCase):
 
     def test_mutating_or_bulk_actions_are_not_exposed_even_if_granted(self) -> None:
         actions = (
-            "project.text_write",
             "git.sync",
             "artifact.read_chunk",
             "blender.live_inspect",
+            "blender.run_python",
         )
         grant = self.grant(*actions)
         for action in actions:

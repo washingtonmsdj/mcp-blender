@@ -397,7 +397,11 @@ def main() -> int:
 
                 try:
                     try:
-                        if job.action == "ordax.product.read.invoke":
+                        from .product_remote import (
+                            PRODUCT_REMOTE_CAPABILITY,
+                            PRODUCT_REMOTE_LEGACY_CAPABILITY,
+                        )
+                        if job.action in {PRODUCT_REMOTE_CAPABILITY, PRODUCT_REMOTE_LEGACY_CAPABILITY}:
                             from .product_remote import execute_product_invocation
                             result = execute_product_invocation(
                                 registry,

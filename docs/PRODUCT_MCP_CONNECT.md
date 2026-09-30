@@ -1,65 +1,29 @@
-# Product MCP — conexão externa
+# ORDAX Studio ? conex?o remota de produto
 
-O host Product MCP é **read-only** e usa o mesmo Control Plane, grants e auditoria do OrdaX Device Agent.
+O ORDAX Studio possui duas superf?cies do mesmo produto: o MCP local (`ordax-studio-mcp`) para clientes autorizados na esta??o e o Product Remote para ChatGPT/servi?os externos atrav?s do Control Plane Cloudflare v3. O usu?rio final n?o deve iniciar `mcp-start.ps1` a cada sess?o.
 
-## Pré-requisitos
+## Windows
 
-- pacote instalado com o entrypoint `ordax-product-mcp`;
-- Cloudflare v3 Product Auth implantado;
-- JWT Product atual em `ORDAX_PRODUCT_ACCESS_TOKEN`;
-- pelo menos um grant Product ativo e explicitamente vinculado a um dispositivo.
+O instalador de produto ? `scripts/windows/ordax-studio-install.ps1`. Ele garante o Device Agent persistente, usa o runtime gerenciado em `%LOCALAPPDATA%\OrdaX\DevAgent\src` e cria **ORDAX Studio** no Menu Iniciar. O Device Agent continua respons?vel por logon, heartbeat, recovery e atualiza??o segura.
 
-## Variáveis
+Depois de instalado, o fluxo normal ? abrir **ORDAX Studio** pelo Menu Iniciar; n?o h? terminal obrigat?rio no uso di?rio.
 
-```text
-ORDAX_PRODUCT_CONTROL_PLANE_URL=https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
-ORDAX_PRODUCT_ACCESS_TOKEN=<JWT atual>
-```
+## Product Remote v2
 
-O token não deve ser salvo no repositório. O host o lê do ambiente a cada chamada.
+A superf?cie remota n?o oferece shell, Python arbitr?rio nem `action_execute`. As opera??es s?o fechadas e tipadas e exigem autentica??o Product, v?nculo de dispositivo, grant por a??o/projeto e auditoria fail-closed.
 
-## Smoke sem mutação
+Al?m das leituras existentes, a v2 permite de forma expl?cita:
 
-```powershell
-python scripts/product_mcp_smoke.py
-```
+- `project.text_write` e `project.text_patch`, com paths relativos e prote??o SHA-256;
+- `blender.live_status`, `blender.live_scene_snapshot`, `blender.live_object_inspect` e `blender.live_modeling_schema`;
+- `blender.live_start`, que adota a janela existente antes de abrir outra;
+- `blender.live_object_transform`, `blender.live_create_primitive` e `blender.live_material_apply`;
+- `blender.live_save`.
 
-Esse smoke chama somente:
+O job remoto can?nico ? `ordax.product.invoke`. `ordax.product.read.invoke` permanece aceito apenas para compatibilidade de jobs antigos em tr?nsito; n?o ? a superf?cie nova do produto.
 
-- `GET /v3/product/session`
-- `GET /v3/product/targets`
+## ChatGPT
 
-Ele não enfileira jobs e não executa ações no dispositivo.
+Plugins do ChatGPT usam um MCP remoto HTTPS. O Control Plane ORDAX ? a fronteira p?blica autenticada; o Device Agent mant?m uma conex?o de sa?da com ele e executa apenas as a??es concedidas. O MCP local `stdio` continua ?til para Codex e desenvolvimento, mas n?o deve ser a rotina do usu?rio remoto.
 
-## Cliente MCP
-
-Use `config/product-mcp.example.json` como referência. O campo do token é apenas um placeholder; substitua-o pelo mecanismo seguro de segredo/ambiente do cliente MCP escolhido.
-
-Ferramentas expostas:
-
-- `product_session`
-- `product_targets`
-- `projects_list`
-- `project_inventory`
-- `project_text_read`
-- `git_status`
-- `git_diff`
-- `artifacts_list`
-- `artifact_preview`
-
-Não existe shell, escrita, `git.sync`, execução Blender/Unity ou ferramenta genérica de action nesse host.
-
-## Fluxo de segurança
-
-```text
-MCP client
-  -> ordax-product-mcp
-  -> ProductRemoteClient
-  -> Product JWT / Cloudflare
-  -> subject-scoped targets
-  -> device-bound grant
-  -> Product read-only job
-  -> ProductActionGateway
-  -> audit
-  -> sanitized result
-```
+A etapa seguinte para publica??o do plugin ? expor o endpoint Streamable HTTP `/mcp` do ORDAX sobre esse mesmo Product Remote e registrar essa URL no ChatGPT. N?o deve ser criado um segundo backend ou um shell proxy.
