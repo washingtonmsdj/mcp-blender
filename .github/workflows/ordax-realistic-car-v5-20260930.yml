@@ -1,0 +1,251 @@
+name: ORDAX Realistic Car V5
+
+on:
+  push:
+    branches: [codex/ordax-car-smoke-20260930]
+    paths: [.github/workflows/ordax-realistic-car-v5-20260930.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      DEVICE_ID: 75d0cda4-95d9-4f3b-9e93-f3645ccc7a19
+      PROJECT: bay-of-all-saints
+      SCRIPT_PATH: automation/blender/ordax_realistic_car_v5.py
+    steps:
+      - name: Build V5, save and capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results captures
+          action(){
+            local label="$1" kind="$2" payload="$3" body response job status ok
+            body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action "$kind" --argjson payload "$payload" '{device_id:$device_id,action:$action,payload:$payload}')"
+            response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" -H 'Content-Type: application/json' -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
+            job="$(jq -er '.job_id' <<<"$response")"
+            for i in $(seq 1 300); do
+              response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$job")"
+              status="$(jq -r '.job.status // "unknown"' <<<"$response")"
+              if [[ "$status" == succeeded ]]; then printf '%s\n' "$response" > "results/$label.json"; ok="$(jq -r '.job.result.ok // false' <<<"$response")"; [[ "$ok" == true ]]; return; fi
+              if [[ "$status" == failed || "$status" == cancelled ]]; then printf '%s\n' "$response" > "results/$label.json"; jq '.job.result' <<<"$response" >&2; return 1; fi
+              sleep 2
+            done
+            return 1
+          }
+          retry(){
+            local l="$1" a="$2" p="$3"
+            for n in 1 2 3; do
+              if action "${l}_${n}" "$a" "$p"; then return 0; fi
+              s="$(jq -r '.job.result.summary // ""' "results/${l}_${n}.json" 2>/dev/null || true)"
+              [[ "$s" == *"WinError 5"* || "$s" == *"PermissionError"* ]] || return 1
+              sleep 1
+            done
+            return 1
+          }
+
+          cat > /tmp/car_v5.py <<'PY'
+          import bpy, math
+          from mathutils import Vector
+
+          bpy.ops.object.select_all(action='SELECT'); bpy.ops.object.delete(use_global=False)
+          for blocks in (bpy.data.meshes,bpy.data.curves,bpy.data.cameras,bpy.data.lights):
+              for b in list(blocks):
+                  if b.users==0: blocks.remove(b)
+
+          def mat(name,c,metal=0,rough=.4,trans=0,emit=None):
+              m=bpy.data.materials.get(name) or bpy.data.materials.new(name); m.use_nodes=True
+              p=m.node_tree.nodes.get('Principled BSDF'); p.inputs['Base Color'].default_value=c; p.inputs['Metallic'].default_value=metal; p.inputs['Roughness'].default_value=rough
+              if 'Transmission Weight' in p.inputs: p.inputs['Transmission Weight'].default_value=trans
+              if trans: p.inputs['IOR'].default_value=1.45
+              if emit and 'Emission Color' in p.inputs: p.inputs['Emission Color'].default_value=emit; p.inputs['Emission Strength'].default_value=4.0
+              return m
+          BODY=mat('V5_Graphite',(0.018,0.025,0.038,1),.86,.145)
+          SHADOW=mat('V5_Shadow',(.004,.006,.010,1),.20,.28)
+          GLASS=mat('V5_Glass',(.014,.030,.048,1),.04,.075,.34)
+          CHROME=mat('V5_Chrome',(.50,.55,.62,1),.96,.085)
+          RIM=mat('V5_Rim',(.11,.13,.17,1),.90,.12)
+          TIRE=mat('V5_Tire',(.004,.005,.006,1),0,.76)
+          BRAKE=mat('V5_Brake',(.52,.014,.006,1),.60,.20)
+          LED=mat('V5_LED',(.60,.82,1,1),.08,.10,0,(.75,.94,1,1))
+          RED=mat('V5_RedLED',(.55,.004,.003,1),.06,.12,0,(1,.012,.006,1))
+          LEATHER=mat('V5_Leather',(.09,.038,.019,1),0,.42)
+          CABIN=mat('V5_Cabin',(.015,.016,.019,1),0,.48)
+
+          def finish(o,m=None,bevel=0,smooth=True):
+              if m and o.type=='MESH': o.data.materials.append(m)
+              if smooth and o.type=='MESH':
+                  for f in o.data.polygons: f.use_smooth=True
+              if bevel and o.type=='MESH': q=o.modifiers.new('SoftEdges','BEVEL'); q.width=bevel; q.segments=3
+              return o
+          def box(name,loc,dims,m,bevel=.02,rot=(0,0,0)):
+              bpy.ops.mesh.primitive_cube_add(location=loc,rotation=rot); o=bpy.context.object; o.name=name; o.dimensions=dims; bpy.ops.object.transform_apply(location=False,rotation=False,scale=True); return finish(o,m,bevel)
+          def cyl_between(name,a,b,r,m,verts=16):
+              a=Vector(a); b=Vector(b); v=b-a
+              bpy.ops.mesh.primitive_cylinder_add(vertices=verts,radius=r,depth=v.length,location=(a+b)/2); o=bpy.context.object; o.name=name; o.rotation_mode='QUATERNION'; o.rotation_quaternion=v.to_track_quat('Z','Y'); o.rotation_mode='XYZ'; return finish(o,m)
+          def torus(name,loc,major,minor,m):
+              bpy.ops.mesh.primitive_torus_add(major_radius=major,minor_radius=minor,major_segments=64,minor_segments=20,location=loc,rotation=(math.pi/2,0,0)); o=bpy.context.object; o.name=name; return finish(o,m)
+          def disc(name,loc,r,depth,m):
+              bpy.ops.mesh.primitive_cylinder_add(vertices=64,radius=r,depth=depth,location=loc,rotation=(math.pi/2,0,0)); o=bpy.context.object; o.name=name; return finish(o,m,.008)
+          def poly(name,coords,m,solid=.010,bevel=.008):
+              me=bpy.data.meshes.new(name+'Mesh'); me.from_pydata(coords,[],[tuple(range(len(coords)))]); me.update(); o=bpy.data.objects.new(name,me); bpy.context.collection.objects.link(o); finish(o,m,bevel)
+              if solid: q=o.modifiers.new('Thickness','SOLIDIFY'); q.thickness=solid; q.offset=0
+              return o
+          def curve(name,pts,m,depth=.006,cyclic=False):
+              cu=bpy.data.curves.new(name+'Curve','CURVE'); cu.dimensions='3D'; cu.bevel_depth=depth; cu.bevel_resolution=2
+              sp=cu.splines.new('POLY'); sp.points.add(len(pts)-1)
+              for p,co in zip(sp.points,pts): p.co=(*co,1)
+              sp.use_cyclic_u=cyclic; o=bpy.data.objects.new(name,cu); bpy.context.collection.objects.link(o); o.data.materials.append(m); return o
+
+          def body_mesh():
+              specs=[(-2.49,.43,.55,.16),(-2.43,.63,.58,.22),(-2.28,.83,.63,.31),(-2.03,.93,.66,.37),(-1.70,.975,.68,.39),(-1.25,.99,.69,.40),(-.75,.995,.69,.405),(-.20,.998,.69,.405),(.35,.998,.69,.405),(.88,.99,.685,.40),(1.32,.975,.67,.385),(1.70,.95,.65,.355),(2.02,.90,.62,.315),(2.28,.80,.59,.255),(2.44,.60,.56,.20),(2.50,.40,.54,.14)]
+              rings=32; verts=[]
+              for x,w,cz,h in specs:
+                  for i in range(rings):
+                      a=2*math.pi*i/rings; s=math.sin(a); z=cz+h*s
+                      if s<-.72: z=max(z,.285)
+                      # upper shoulder is slightly flatter than a pure ellipse
+                      y=w*math.cos(a)
+                      verts.append((x,y,z))
+              faces=[]
+              for k in range(len(specs)-1):
+                  a=k*rings; b=(k+1)*rings
+                  for i in range(rings): faces.append((a+i,a+(i+1)%rings,b+(i+1)%rings,b+i))
+              faces += [tuple(range(rings-1,-1,-1)),tuple((len(specs)-1)*rings+i for i in range(rings))]
+              me=bpy.data.meshes.new('V5_BodyMesh'); me.from_pydata(verts,[],faces); me.update(); o=bpy.data.objects.new('V5_Body',me); bpy.context.collection.objects.link(o); finish(o,BODY)
+              return o
+          body=body_mesh()
+
+          # True wheel arches cut into the body shell.
+          for idx,x in enumerate((1.54,-1.52)):
+              bpy.ops.mesh.primitive_cylinder_add(vertices=64,radius=.465,depth=2.6,location=(x,0,.415),rotation=(math.pi/2,0,0)); cut=bpy.context.object; cut.name=f'V5_ArchCutter_{idx}'
+              bpy.context.view_layer.objects.active=body
+              mod=body.modifiers.new(f'WheelArch_{idx}','BOOLEAN'); mod.operation='DIFFERENCE'; mod.solver='EXACT'; mod.object=cut
+              try: bpy.ops.object.modifier_apply(modifier=mod.name)
+              finally: bpy.data.objects.remove(cut,do_unlink=True)
+
+          # Roof as a smooth body-colour surface, not an external frame.
+          specs=[(-1.06,.62,1.29,1.35),(-.78,.70,1.37,1.45),(-.38,.75,1.42,1.505),(.05,.76,1.43,1.515),(.40,.73,1.39,1.48),(.65,.66,1.32,1.405),(.76,.57,1.26,1.32)]
+          cols=7; verts=[]
+          for x,w,edge,center in specs:
+              for j in range(cols):
+                  t=-1+2*j/(cols-1); y=w*t; z=edge+(center-edge)*(1-abs(t)**1.7); verts.append((x,y,z))
+          faces=[]
+          for i in range(len(specs)-1):
+              for j in range(cols-1):
+                  a=i*cols+j; b=(i+1)*cols+j; faces.append((a,a+1,b+1,b))
+          me=bpy.data.meshes.new('V5_RoofMesh'); me.from_pydata(verts,[],faces); me.update(); roof=bpy.data.objects.new('V5_Roof',me); bpy.context.collection.objects.link(roof); finish(roof,BODY)
+          sol=roof.modifiers.new('RoofThickness','SOLIDIFY'); sol.thickness=.025; sol.offset=0
+
+          # Proper separate automotive glazing.
+          poly('V5_Windshield',[(.76,-.69,1.055),(.76,.69,1.055),(.57,.61,1.36),(.57,-.61,1.36)],GLASS,.012,.010)
+          poly('V5_RearGlass',[(-1.25,-.68,1.045),(-1.25,.68,1.045),(-.99,.60,1.34),(-.99,-.60,1.34)],GLASS,.012,.010)
+          for side in (-1,1):
+              y=.845*side
+              poly(f'V5_FrontGlass_{side}',[(.70,y,1.06),(.54,y,1.33),(.18,y,1.43),(-.22,y,1.42),(-.22,y,1.06)],GLASS,.010,.009)
+              poly(f'V5_RearGlassSide_{side}',[(-.29,y,1.06),(-.29,y,1.42),(-.62,y,1.39),(-1.00,y,1.29),(-1.19,y,1.055)],GLASS,.010,.009)
+              # embedded pillars
+              box(f'V5_Bpillar_{side}',(-.255,.855*side,1.24),(.055,.032,.37),SHADOW,.010)
+              cyl_between(f'V5_Apillar_{side}',(.73,.80*side,1.055),(.55,.65*side,1.36),.025,BODY,14)
+              cyl_between(f'V5_Cpillar_{side}',(-1.20,.80*side,1.055),(-.98,.64*side,1.34),.030,BODY,14)
+          poly('V5_Sunroof',[(-.70,-.43,1.455),(.14,-.46,1.505),(.20,.46,1.505),(-.70,.43,1.455)],GLASS,.009,.010)
+
+          # Cabin visible through tinted glass.
+          box('V5_Dashboard',(.48,0,.99),(.46,1.25,.13),CABIN,.05)
+          for x in (.02,-.68):
+              for y in (-.40,.40):
+                  box(f'V5_SeatBase_{x}_{y}',(x,y,.77),(.42,.41,.13),LEATHER,.06)
+                  box(f'V5_SeatBack_{x}_{y}',(x-.05,y,1.02),(.17,.41,.47),LEATHER,.06,(0,.12,0))
+                  box(f'V5_Headrest_{x}_{y}',(x-.09,y,1.28),(.14,.24,.14),LEATHER,.05)
+          torus('V5_Steering',(.37,-.40,1.12),.135,.023,SHADOW)
+
+          # Panel lines and side character crease.
+          curve('V5_HoodSeam',[(1.05,-.76,1.045),(1.05,0,1.085),(1.05,.76,1.045)],SHADOW,.005)
+          curve('V5_TrunkSeam',[(-1.43,-.74,1.02),(-1.43,0,1.06),(-1.43,.74,1.02)],SHADOW,.005)
+          for side in (-1,1):
+              y=.986*side
+              curve(f'V5_Character_{side}',[(-1.95,y,.84),(-1.0,y,.88),(0,y,.90),(1.0,y,.89),(1.95,y,.83)],CHROME,.004)
+              for x in (.45,-.28,-1.18): curve(f'V5_DoorGap_{side}_{x}',[(x,y,.51),(x,y,.98)],SHADOW,.004)
+              # fender arch lip
+              for wx in (1.54,-1.52):
+                  pts=[]
+                  for k in range(17):
+                      a=math.pi*k/16; pts.append((wx+.475*math.cos(a),.987*side,.415+.475*math.sin(a)))
+                  curve(f'V5_ArchLip_{side}_{wx}',pts,BODY,.010)
+              box(f'V5_SideSkirt_{side}',(-.02,.985*side,.33),(1.95,.040,.070),SHADOW,.016)
+              box(f'V5_Mirror_{side}',(.60,1.055*side,1.15),(.31,.17,.13),BODY,.050)
+              box(f'V5_MirrorGlass_{side}',(.62,1.145*side,1.15),(.21,.016,.075),GLASS,.016)
+              for x in (.24,-.76): box(f'V5_Handle_{side}_{x}',(x,.993*side,.88),(.19,.018,.023),CHROME,.009)
+
+          # Integrated premium front.
+          for y in (-.205,.205):
+              box(f'V5_Kidney_{y}',(2.465,y,.70),(.030,.34,.27),SHADOW,.105)
+              box(f'V5_KidneyTrim_{y}',(2.481,y,.70),(.010,.375,.305),CHROME,.115)
+              for k in range(6):
+                  yy=y+(k-2.5)*.043; box(f'V5_KidneySlat_{y}_{k}',(2.490,yy,.70),(.008,.009,.19),CHROME,.003)
+          for y in (-.62,.62):
+              box(f'V5_HeadHousing_{y}',(2.420,y,.91),(.055,.50,.13),SHADOW,.050)
+              box(f'V5_HeadLED_{y}',(2.451,y,.925),(.017,.42,.047),LED,.018)
+              curve(f'V5_DRL_{y}',[(2.463,y-.16,.96),(2.468,y,.985),(2.463,y+.16,.96)],LED,.008)
+              box(f'V5_AirCurtain_{y}',(2.405,y*1.18,.49),(.040,.22,.16),SHADOW,.045)
+          box('V5_LowerGrille',(2.445,0,.47),(.028,.76,.13),SHADOW,.050)
+          box('V5_FrontLip',(2.28,0,.305),(.29,1.62,.045),SHADOW,.016)
+
+          # Rear lamps moved into the full-width rear shoulder.
+          for y in (-.61,.61):
+              box(f'V5_TailHousing_{y}',(-2.285,y,.91),(.045,.54,.13),SHADOW,.045)
+              box(f'V5_TailLED_{y}',(-2.312,y,.925),(.015,.46,.045),RED,.018)
+              cyl_between(f'V5_Exhaust_{y}',(-2.43,y,.38),(-2.27,y,.38),.065,CHROME,24)
+          box('V5_RearDiffuser',(-2.29,0,.31),(.27,1.52,.055),SHADOW,.018)
+
+          # Wheels inside the real arches, detailed visible outer face.
+          def wheel(x,side):
+              yc=.99*side; out=1.075*side; z=.415; tag=f'{x}_{side}'
+              torus(f'V5_Tire_{tag}',(x,yc,z),.304,.091,TIRE)
+              torus(f'V5_RimLip_{tag}',(x,out,z),.245,.018,CHROME)
+              disc(f'V5_BrakeDisc_{tag}',(x,1.015*side,z),.215,.038,CHROME)
+              disc(f'V5_Hub_{tag}',(x,out,z),.060,.035,SHADOW)
+              box(f'V5_Caliper_{tag}',(x+.16,1.035*side,z),(.078,.045,.17),BRAKE,.025)
+              for i in range(10):
+                  a=i*2*math.pi/10; p0=(x+math.cos(a)*.072,out,z+math.sin(a)*.072); p1=(x+math.cos(a)*.230,out,z+math.sin(a)*.230)
+                  cyl_between(f'V5_Spoke_{tag}_{i}',p0,p1,.012,RIM,10)
+          for x in (1.54,-1.52):
+              for side in (-1,1): wheel(x,side)
+
+          disc('V5_HoodBadge',(1.46,0,1.055),.058,.010,CHROME)
+          disc('V5_HoodBadgeInner',(1.46,0,1.062),.040,.008,SHADOW)
+          box('V5_WiperL',(.67,-.21,1.075),(.32,.012,.012),SHADOW,.003,(0,.28,.08)); box('V5_WiperR',(.67,.21,1.075),(.32,.012,.012),SHADOW,.003,(0,.28,-.08))
+          bpy.ops.mesh.primitive_cone_add(vertices=24,radius1=.060,radius2=.010,depth=.050,location=(-.58,0,1.515)); fin=bpy.context.object; fin.name='V5_SharkFin'; finish(fin,BODY)
+
+          sc=bpy.context.scene; sc.render.engine='BLENDER_EEVEE'; sc.render.resolution_x=1024; sc.render.resolution_y=1024; sc.render.resolution_percentage=100; sc.world.color=(.035,.038,.045)
+          sc['ordax_realistic_car_revision']='v5'; sc['ordax_realistic_car_target']='premium sport sedan with wheel arches and segmented glazing'
+          print({'ok':True,'objects':len(bpy.data.objects),'revision':'v5'})
+          PY
+
+          content="$(cat /tmp/car_v5.py)"
+          write="$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" --arg content "$content" '{project:$p,path:$path,content:$content,create:true}')"
+          retry start blender.live_start "$(jq -cn --arg p "$PROJECT" '{project:$p,wait_seconds:20}')"
+          retry checkpoint blender.live_checkpoint_create "$(jq -cn --arg p "$PROJECT" '{project:$p,label:"before-realistic-car-v5",timeout_seconds:120}')"
+          action write project.text_write "$write"
+          retry run blender.live_run_script "$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" '{project:$p,script_path:$path,timeout_seconds:300}')"
+          retry save blender.live_save "$(jq -cn --arg p "$PROJECT" '{project:$p,target_path:"automation/blender/ordax_car_realistic_v5.blend",timeout_seconds:120}')"
+          retry capture blender.live_multiview_capture "$(jq -cn --arg p "$PROJECT" '{project:$p,views:["front","back","left","right","top","three_quarter"],timeout_seconds:240}')"
+          retry snapshot blender.live_scene_snapshot "$(jq -cn --arg p "$PROJECT" '{project:$p,max_objects:200,timeout_seconds:60}')"
+          jq -r '.job.result.data.uploaded_artifacts[]? | [.storage_path,.signed_url] | @tsv' results/capture_1.json | while IFS=$'\t' read -r storage signed; do
+            [[ -n "$signed" ]] || continue; raw="$(basename "$storage")"; name="${raw#*-}"; curl --fail-with-body --silent --show-error "$signed" -o "captures/$name"
+          done
+      - name: Upload V5 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordax-realistic-car-v5
+          path: |
+            results/
+            captures/*.png
+          if-no-files-found: warn
