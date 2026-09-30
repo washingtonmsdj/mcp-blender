@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <wchar.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #ifndef ORDAX_RUNTIME_LAUNCHER
 #define ORDAX_RUNTIME_LAUNCHER 0
