@@ -1,39 +1,66 @@
 # ORDAX Studio como produto instalado
 
-O fluxo de uso normal não depende de PowerShell, `mcp-start.ps1` ou de um shell remoto.
+O ORDAX Studio é o produto local. ChatGPT, Codex, Claude, Cursor ou qualquer outro cliente compatível com MCP são consumidores opcionais; nenhum deles faz parte do runtime do ORDAX.
 
-## Arquitetura de produto
+## Arquitetura cliente-neutra
 
 ```text
-ChatGPT / Codex
-      |
-      |  plugin ORDAX Studio (MCP Streamable HTTP + OAuth)
-      v
+Cliente MCP compatível
+(ChatGPT / Codex / Claude / Cursor / outro)
+              |
+              | MCP Streamable HTTP + OAuth
+              v
 https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/mcp
-      |
-      |  Control Plane autenticado, grants e auditoria
-      v
-ORDAX Device Agent no Windows
-      |
-      +--> projetos / Git / preview
-      +--> Blender Live
-      +--> Unity / Unreal
+              |
+              | autenticação, grants e auditoria
+              v
+      ORDAX Control Plane
+              |
+              | conexão de saída persistente
+              v
+      ORDAX Device Agent
+         no Windows
+              |
+              +--> projetos / arquivos / Git / preview
+              +--> Blender Live
+              +--> Unity / Unreal
+              +--> adapters futuros
 ```
 
-No Windows, `ordax-studio-install.ps1` é um instalador de produto, não um comando de uso diário. Ele cria **ORDAX Studio** no Menu Iniciar e garante o Device Agent persistente via Scheduled Task. Depois da instalação, o Device Agent sobe no logon e se recupera automaticamente sem exigir terminal aberto.
+O endpoint `/mcp` é a superfície remota canônica e não pertence a um fornecedor de IA. Um cliente pode usar um adaptador próprio de instalação, como o plugin do ChatGPT, ou conectar diretamente ao endpoint quando suportar MCP remoto e OAuth.
 
-O pacote versionado do plugin está em `plugins/ordax-studio/` e aponta somente para o endpoint MCP HTTPS de produção. O endpoint local `stdio` continua disponível para Codex local, testes e desenvolvimento, mas não é a ponte do ChatGPT remoto.
+## Windows
 
-## Regra de produto
+Depois de instalado, o `OrdaX Dev Agent` inicia automaticamente no logon por Scheduled Task e mantém a conexão de saída com o Control Plane. A interface **ORDAX Studio** pode estar fechada; a conectividade remota continua ativa enquanto o Device Agent estiver saudável.
 
-- usuário final não inicia `mcp-start.ps1`;
-- usuário final não precisa manter PowerShell aberto;
-- ChatGPT usa o plugin ORDAX Studio e autenticação OAuth;
-- o Device Agent mantém conexão de saída e executa somente ações tipadas concedidas;
+O usuário final não precisa instalar Codex e não precisa manter PowerShell aberto. Codex local é apenas um cliente opcional do endpoint `stdio` de desenvolvimento.
+
+Hoje `scripts/windows/ordax-studio-install.ps1` faz o bootstrap da instalação gerenciada, cria o app no Menu Iniciar e configura o Device Agent persistente. Esse script é infraestrutura de instalação, não rotina de uso.
+
+A distribuição final do Windows deve ser um instalador clicável **ORDAX Studio Setup.exe** (ou MSIX equivalente) que encapsule esse bootstrap e apresente login, vínculo do dispositivo, atualização e diagnóstico sem terminal. O runtime não deve exigir Codex.
+
+## Clientes
+
+- **ChatGPT:** usa o pacote em `plugins/ordax-studio/`, que aponta para o MCP remoto genérico.
+- **Outros clientes MCP remotos:** conectam ao mesmo `/mcp` e concluem sua própria autorização OAuth.
+- **Clientes locais:** podem usar `ordax-studio-mcp` por `stdio` quando isso fizer sentido para desenvolvimento ou uso local.
+
+Nenhum cliente ganha privilégios por ser ChatGPT ou Codex. As permissões vêm de identidade, dispositivo, projeto, grants e ações tipadas.
+
+## Regras de produto
+
+- o MCP é cliente-neutro;
+- o Device Agent é a ponte persistente entre o PC e o Control Plane;
+- o usuário final não inicia `mcp-start.ps1`;
+- o usuário final não mantém terminal aberto;
+- o app ORDAX Studio é a superfície de configuração, projetos e diagnóstico;
+- a UI não precisa ficar aberta para o acesso remoto funcionar;
 - não existe shell remoto genérico;
-- Blender é acessado pelo companion tipado e pelo fluxo de adoção de janela existente.
+- Blender é acessado pelo companion tipado e pelo fluxo de adoção de janela existente;
+- cada conta/cliente conclui sua própria autorização OAuth e não compartilha tokens.
 
+## Pacote reproduzível do adaptador ChatGPT
 
-## Pacote reproduz?vel do plugin
+A fonte do adaptador ChatGPT vive em `plugins/ordax-studio/`. `python scripts/build_ordax_plugin.py` valida os manifests, rejeita BOM UTF-8, cria um ZIP determinístico em `dist/plugins/` e grava o SHA-256 ao lado.
 
-A fonte do plugin vive em `plugins/ordax-studio/`. Para gerar um pacote instal?vel em outra conta do ChatGPT sem reutilizar tokens ou estado desta conta, execute `python scripts/build_ordax_plugin.py`. O build valida os manifests, rejeita BOM UTF-8, cria um ZIP determin?stico em `dist/plugins/` e grava o SHA-256 ao lado. Cada conta instala o mesmo pacote, mas conclui sua pr?pria autoriza??o OAuth.
+Esse ZIP não contém o ORDAX MCP nem o runtime Windows; ele apenas registra o endpoint MCP remoto no ChatGPT. Outras plataformas podem usar seus próprios adapters sem alterar o núcleo ORDAX.
