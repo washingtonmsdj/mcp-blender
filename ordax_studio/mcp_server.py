@@ -5,6 +5,7 @@ compatibility, but the MCP product exposed to clients is ORDAX Studio.
 """
 from ordax_dev_agent.mcp_server import main, mcp, registry
 
+from .blender_connection import prepare_blender_connection as resolve_blender_connection
 from .project_maintenance import execute_project_file_maintenance
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "project_delete",
     "repository_info",
     "sync_repository",
+    "prepare_blender_connection",
 ]
 
 
@@ -88,6 +90,21 @@ def sync_repository(project: str | None = None, branch: str | None = None) -> di
     if branch:
         payload["branch"] = branch
     return _result(agent.execute("git.sync", payload))
+
+
+@mcp.tool()
+def prepare_blender_connection(
+    project: str | None = None,
+    wait_seconds: float = 4.0,
+) -> dict:
+    """Inspect/adopt an existing Blender session and return actionable state."""
+    agent = registry()
+    selected = agent.select_available_project(project)
+    return resolve_blender_connection(
+        agent,
+        selected,
+        wait_seconds=max(0.5, min(float(wait_seconds), 10.0)),
+    )
 
 
 if __name__ == "__main__":
