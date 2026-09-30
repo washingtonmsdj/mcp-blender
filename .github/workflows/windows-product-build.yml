@@ -71,7 +71,7 @@ jobs:
         with:
           name: ordax-studio-windows-x64
           path: artifact
-      - name: Install, start runtime and verify localhost health
+      - name: Install, start runtime and verify action-ready health
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -102,24 +102,46 @@ jobs:
             }
           }
 
+          $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+          $autoStart = (Get-ItemProperty -Path $runKey -Name "ORDAX Runtime" -ErrorAction Stop)."ORDAX Runtime"
+          if (-not $autoStart -or $autoStart -notlike "*$runtimeExe*") {
+            throw "ORDAX Runtime auto-start does not point to installed runtime: $autoStart"
+          }
+
           & $privatePython -c "import ordax_studio, ordax_dev_agent, ordax_device_agent; print('ORDAX_INSTALLED_RUNTIME_OK')"
           if ($LASTEXITCODE -ne 0) { throw "Installed private runtime import smoke failed" }
 
           $runtime = Start-Process -FilePath $runtimeExe -WorkingDirectory $installRoot -PassThru
           try {
-            $deadline = [DateTime]::UtcNow.AddSeconds(45)
+            $deadline = [DateTime]::UtcNow.AddSeconds(60)
             $status = $null
+            $lastCandidate = $null
             while ([DateTime]::UtcNow -lt $deadline) {
               try {
-                $status = Invoke-RestMethod -Uri "http://127.0.0.1:8765/status" -TimeoutSec 2
-                if ($status) { break }
+                $candidate = Invoke-RestMethod -Uri "http://127.0.0.1:8765/status" -TimeoutSec 2
+                $lastCandidate = $candidate
+                $state = if ($candidate.runtime) { [string]$candidate.runtime.state } else { "" }
+                $actionCount = @($candidate.actions).Count
+                if ($candidate.runtime -and $state -ne "initializing" -and $actionCount -gt 0) {
+                  $status = $candidate
+                  break
+                }
               } catch {
-                Start-Sleep -Milliseconds 750
               }
+              Start-Sleep -Milliseconds 750
             }
-            if (-not $status) { throw "Installed ORDAX Runtime did not expose localhost health" }
-            if (-not $status.runtime) { throw "ORDAX Runtime health payload is missing runtime state" }
-            Write-Host ("ORDAX_RUNTIME_STATE=" + [string]$status.runtime.state)
+            if (-not $status) {
+              if ($lastCandidate) { $lastCandidate | ConvertTo-Json -Depth 8 | Write-Host }
+              throw "Installed ORDAX Runtime did not reach action-ready state"
+            }
+            $finalState = [string]$status.runtime.state
+            if ($finalState -notin @("local-ready", "pairing", "ready")) {
+              throw "Installed ORDAX Runtime reached unexpected state: $finalState"
+            }
+            $finalActionCount = @($status.actions).Count
+            if ($finalActionCount -le 0) { throw "Installed ORDAX Runtime published no actions" }
+            Write-Host ("ORDAX_RUNTIME_STATE=" + $finalState)
+            Write-Host ("ORDAX_RUNTIME_ACTIONS=" + $finalActionCount)
           } finally {
             Stop-Process -Id $runtime.Id -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
@@ -134,4 +156,9 @@ jobs:
           ) -Wait -PassThru
           if ($uninstallProcess.ExitCode -ne 0) {
             throw "ORDAX Studio silent uninstall failed: $($uninstallProcess.ExitCode)"
+          }
+
+          $leftoverAutoStart = (Get-ItemProperty -Path $runKey -Name "ORDAX Runtime" -ErrorAction SilentlyContinue)."ORDAX Runtime"
+          if ($leftoverAutoStart) {
+            throw "ORDAX Runtime auto-start was not removed by uninstall: $leftoverAutoStart"
           }
