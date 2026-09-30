@@ -1,0 +1,68 @@
+name: ORDAX 0.3.4 Car Smoke
+
+on:
+  push:
+    branches:
+      - codex/ordax-car-smoke-20260930
+    paths:
+      - .github/workflows/ordax-car-smoke-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      DEVICE_ID: 75d0cda4-95d9-4f3b-9e93-f3645ccc7a19
+    steps:
+      - name: Queue projects.list
+        id: queue
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(jq -cn --arg device_id "$DEVICE_ID" '{device_id:$device_id,action:"projects.list",payload:{}}')"
+          response="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
+          job_id="$(jq -er '.job_id' <<<"$response")"
+          echo "job_id=$job_id" >> "$GITHUB_OUTPUT"
+          echo "Queued projects.list as $job_id"
+
+      - name: Wait for installed device
+        shell: bash
+        env:
+          JOB_ID: ${{ steps.queue.outputs.job_id }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 180); do
+            response="$(curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
+              "$CONTROL_PLANE_URL/v3/jobs/$JOB_ID")"
+            status="$(jq -r '.job.status // "unknown"' <<<"$response")"
+            if [[ "$status" == "succeeded" ]]; then
+              jq '{job:{id:.job.id,device_id:.job.device_id,capability:.job.capability,status:.job.status,result:.job.result},artifacts:.artifacts}' <<<"$response" | tee result.json
+              exit 0
+            fi
+            if [[ "$status" == "failed" || "$status" == "cancelled" ]]; then
+              jq '{job:{id:.job.id,capability:.job.capability,status:.job.status,error_code:.job.error_code,result:.job.result},events:.events}' <<<"$response" | tee result.json
+              exit 1
+            fi
+            sleep 2
+          done
+          response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$JOB_ID")"
+          jq '{job:.job,events:.events}' <<<"$response" | tee result.json
+          exit 2
+
+      - name: Upload probe result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordax-car-probe
+          path: result.json
+          if-no-files-found: warn
