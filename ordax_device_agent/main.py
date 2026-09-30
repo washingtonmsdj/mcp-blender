@@ -1,9 +1,8 @@
 """Compatibility entrypoint for the OrdaX Device Agent.
 
-The packaged ORDAX Runtime enters here. Before the canonical agent starts, make
-one fail-closed attempt to recover an already-enrolled device identity from its
-existing local credential. Recovery never enrolls a new device and failure does
-not prevent local-only runtime operation.
+The packaged ORDAX Runtime executes this module with ``python -m``. Keep the
+historical ``main`` symbol as the exact canonical agent function while performing
+packaged-only identity recovery immediately before module execution.
 """
 from __future__ import annotations
 
@@ -13,12 +12,21 @@ import time
 from pathlib import Path
 
 from ordax_dev_agent.device_identity_recovery import recover_existing_device_identity
-from ordax_dev_agent.main import main as _agent_main
+from ordax_dev_agent.main import main
 
 __all__ = ["main"]
 
 
-def _recovery_log(result: dict) -> None:
+def _recover_packaged_identity() -> None:
+    try:
+        result = recover_existing_device_identity()
+    except Exception as error:
+        result = {
+            "ok": False,
+            "state": f"recovery-error:{type(error).__name__}",
+            "changed": False,
+        }
+
     try:
         local_app_data = Path(
             os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")
@@ -45,18 +53,6 @@ def _recovery_log(result: dict) -> None:
         pass
 
 
-def main() -> int:
-    try:
-        recovery = recover_existing_device_identity()
-    except Exception as error:
-        recovery = {
-            "ok": False,
-            "state": f"recovery-error:{type(error).__name__}",
-            "changed": False,
-        }
-    _recovery_log(recovery)
-    return _agent_main()
-
-
 if __name__ == "__main__":
+    _recover_packaged_identity()
     raise SystemExit(main())
