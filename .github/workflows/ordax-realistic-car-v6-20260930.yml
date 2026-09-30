@@ -1,0 +1,61 @@
+name: ORDAX Realistic Car V6
+
+on:
+  push:
+    branches: [codex/ordax-car-smoke-20260930]
+    paths: [.github/workflows/ordax-realistic-car-v6-20260930.yml]
+permissions:
+  contents: read
+jobs:
+  refine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      DEVICE_ID: 75d0cda4-95d9-4f3b-9e93-f3645ccc7a19
+      PROJECT: bay-of-all-saints
+      SCRIPT_PATH: automation/blender/ordax_realistic_car_v5.py
+      SCRIPT_SHA: 671b89333456ec0605491709d405a3e10184403b5480d0b8ef67f8458b3d2652
+    steps:
+      - name: Patch body proportions, rerun and capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results captures
+          action(){
+            local label="$1" kind="$2" payload="$3" body response job status ok
+            body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action "$kind" --argjson payload "$payload" '{device_id:$device_id,action:$action,payload:$payload}')"
+            response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" -H 'Content-Type: application/json' -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"; job="$(jq -er '.job_id' <<<"$response")"
+            for i in $(seq 1 300); do
+              response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$job")"; status="$(jq -r '.job.status // "unknown"' <<<"$response")"
+              if [[ "$status" == succeeded ]]; then printf '%s\n' "$response" > "results/$label.json"; ok="$(jq -r '.job.result.ok // false' <<<"$response")"; [[ "$ok" == true ]]; return; fi
+              if [[ "$status" == failed || "$status" == cancelled ]]; then printf '%s\n' "$response" > "results/$label.json"; jq '.job.result' <<<"$response" >&2; return 1; fi
+              sleep 2
+            done; return 1
+          }
+          retry(){ local l="$1" a="$2" p="$3"; for n in 1 2 3; do if action "${l}_${n}" "$a" "$p"; then return 0; fi; s="$(jq -r '.job.result.summary // ""' "results/${l}_${n}.json" 2>/dev/null || true)"; [[ "$s" == *"WinError 5"* || "$s" == *"PermissionError"* ]] || return 1; sleep 1; done; return 1; }
+
+          retry start blender.live_start "$(jq -cn --arg p "$PROJECT" '{project:$p,wait_seconds:20}')"
+          old_specs="specs=[(-2.49,.43,.55,.16),(-2.43,.63,.58,.22),(-2.28,.83,.63,.31),(-2.03,.93,.66,.37),(-1.70,.975,.68,.39),(-1.25,.99,.69,.40),(-.75,.995,.69,.405),(-.20,.998,.69,.405),(.35,.998,.69,.405),(.88,.99,.685,.40),(1.32,.975,.67,.385),(1.70,.95,.65,.355),(2.02,.90,.62,.315),(2.28,.80,.59,.255),(2.44,.60,.56,.20),(2.50,.40,.54,.14)]"
+          new_specs="specs=[(-2.46,.84,.62,.30),(-2.34,.89,.64,.33),(-2.15,.94,.66,.36),(-1.85,.975,.68,.39),(-1.45,.99,.69,.40),(-.90,.998,.69,.405),(-.30,1.00,.69,.405),(.30,1.00,.69,.405),(.90,.995,.685,.40),(1.40,.98,.67,.38),(1.82,.95,.65,.35),(2.15,.90,.62,.31),(2.36,.85,.60,.28),(2.46,.80,.59,.26)]"
+          old_formula=$'a=2*math.pi*i/rings; s=math.sin(a); z=cz+h*s\n                      if s<-.72: z=max(z,.285)\n                      # upper shoulder is slightly flatter than a pure ellipse\n                      y=w*math.cos(a)'
+          new_formula=$'a=2*math.pi*i/rings; s=math.sin(a); c=math.cos(a); n=3.2\n                      y=w*(1 if c>=0 else -1)*(abs(c)**(2/n))\n                      z=cz+h*(1 if s>=0 else -1)*(abs(s)**(2/n))\n                      if s<-.72: z=max(z,.285)'
+          patch="$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" --arg sha "$SCRIPT_SHA" --arg a "$old_specs" --arg b "$new_specs" --arg c "$old_formula" --arg d "$new_formula" '{project:$p,path:$path,expected_sha256:$sha,replacements:[{old:$a,new:$b,expected_count:1},{old:$c,new:$d,expected_count:1},{old:"(-2.285,y,.91)",new:"(-2.425,y,.91)",expected_count:1},{old:"(-2.312,y,.925)",new:"(-2.447,y,.925)",expected_count:1}]}')"
+          action patch project.text_patch "$patch"
+          retry checkpoint blender.live_checkpoint_create "$(jq -cn --arg p "$PROJECT" '{project:$p,label:"before-realistic-car-v6",timeout_seconds:120}')"
+          retry run blender.live_run_script "$(jq -cn --arg p "$PROJECT" --arg path "$SCRIPT_PATH" '{project:$p,script_path:$path,timeout_seconds:300}')"
+          retry save blender.live_save "$(jq -cn --arg p "$PROJECT" '{project:$p,target_path:"automation/blender/ordax_car_realistic_v6.blend",timeout_seconds:120}')"
+          retry capture blender.live_multiview_capture "$(jq -cn --arg p "$PROJECT" '{project:$p,views:["front","back","left","right","top","three_quarter"],timeout_seconds:240}')"
+          retry snapshot blender.live_scene_snapshot "$(jq -cn --arg p "$PROJECT" '{project:$p,max_objects:200,timeout_seconds:60}')"
+          jq -r '.job.result.data.uploaded_artifacts[]? | [.storage_path,.signed_url] | @tsv' results/capture_1.json | while IFS=$'\t' read -r storage signed; do [[ -n "$signed" ]] || continue; raw="$(basename "$storage")"; name="${raw#*-}"; curl --fail-with-body --silent --show-error "$signed" -o "captures/$name"; done
+      - name: Upload V6 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordax-realistic-car-v6
+          path: |
+            results/
+            captures/*.png
+          if-no-files-found: warn
