@@ -5,6 +5,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
+from .capability_snapshot import device_capability_snapshot
+
 
 _DASHBOARD_HTML = """<!doctype html>
 <html lang="pt-BR">
@@ -269,6 +271,22 @@ def start_status_server(
                         "version": status.get("agent_version"),
                     }
                 ).encode("utf-8")
+                self._headers("application/json; charset=utf-8", len(body))
+                self.wfile.write(body)
+                return
+
+            if path == "/capabilities":
+                if self.client_address[0] not in {"127.0.0.1", "::1"}:
+                    self.send_response(403)
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    return
+                status = status_provider()
+                actions = status.get("actions") if isinstance(status, dict) else []
+                snapshot = device_capability_snapshot(
+                    actions if isinstance(actions, list) else []
+                )
+                body = json.dumps(snapshot, separators=(",", ":")).encode("utf-8")
                 self._headers("application/json; charset=utf-8", len(body))
                 self.wfile.write(body)
                 return
