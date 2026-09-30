@@ -1,0 +1,57 @@
+name: ORDAX Realistic Car Review
+
+on:
+  push:
+    branches:
+      - codex/ordax-car-smoke-20260930
+    paths:
+      - .github/workflows/ordax-realistic-car-review-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      DEVICE_ID: 75d0cda4-95d9-4f3b-9e93-f3645ccc7a19
+      PROJECT: bay-of-all-saints
+    steps:
+      - name: Capture and download PNGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p captures
+          payload="$(jq -cn --arg p "$PROJECT" '{project:$p,views:["front","back","left","right","top","three_quarter"],timeout_seconds:240}')"
+          body="$(jq -cn --arg device_id "$DEVICE_ID" --arg action 'blender.live_multiview_capture' --argjson payload "$payload" '{device_id:$device_id,action:$action,payload:$payload}')"
+          response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" -H 'Content-Type: application/json' -d "$body" "$CONTROL_PLANE_URL/v3/jobs")"
+          job_id="$(jq -er '.job_id' <<<"$response")"
+          for attempt in $(seq 1 180); do
+            response="$(curl --fail-with-body --silent --show-error -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" "$CONTROL_PLANE_URL/v3/jobs/$job_id")"
+            status="$(jq -r '.job.status // "unknown"' <<<"$response")"
+            if [[ "$status" == succeeded ]]; then
+              printf '%s\n' "$response" > result.json
+              break
+            fi
+            if [[ "$status" == failed || "$status" == cancelled ]]; then printf '%s\n' "$response" > result.json; exit 1; fi
+            sleep 2
+          done
+          jq -r '.job.result.data.uploaded_artifacts[]? | [.storage_path,.signed_url] | @tsv' result.json | while IFS=$'\t' read -r storage signed; do
+            [[ -n "$signed" ]] || continue
+            name="$(basename "$storage")"
+            name="${name#*-}"
+            curl --fail-with-body --silent --show-error "$signed" -o "captures/$name"
+          done
+          ls -lh captures
+      - name: Upload PNG review
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordax-realistic-car-review
+          path: |
+            result.json
+            captures/*.png
+          if-no-files-found: error
