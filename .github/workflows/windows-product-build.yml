@@ -61,3 +61,57 @@ jobs:
             dist/windows/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
+
+  install-smoke:
+    needs: build-installer
+    runs-on: windows-latest
+    steps:
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: ordax-studio-windows-x64
+          path: artifact
+      - name: Install, start runtime and verify localhost health
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = Get-ChildItem .\artifact\ORDAX-Studio-Setup-*.exe | Select-Object -First 1
+          if (-not $installer) { throw "ORDAX Studio installer artifact is missing" }
+          $installRoot = Join-Path $env:RUNNER_TEMP "ORDAX Studio"
+          & $installer.FullName /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installRoot"
+          if ($LASTEXITCODE -ne 0) { throw "ORDAX Studio silent install failed: $LASTEXITCODE" }
+
+          $studioExe = Join-Path $installRoot "ORDAX Studio.exe"
+          $runtimeExe = Join-Path $installRoot "ORDAX Runtime.exe"
+          $privatePython = Join-Path $installRoot "runtime\python.exe"
+          foreach ($required in @($studioExe, $runtimeExe, $privatePython)) {
+            if (-not (Test-Path $required)) { throw "Installed product file is missing: $required" }
+          }
+
+          & $privatePython -c "import ordax_studio, ordax_dev_agent, ordax_device_agent; print('ORDAX_INSTALLED_RUNTIME_OK')"
+          if ($LASTEXITCODE -ne 0) { throw "Installed private runtime import smoke failed" }
+
+          $runtime = Start-Process -FilePath $runtimeExe -WorkingDirectory $installRoot -PassThru
+          try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(45)
+            $status = $null
+            while ([DateTime]::UtcNow -lt $deadline) {
+              try {
+                $status = Invoke-RestMethod -Uri "http://127.0.0.1:8765/status" -TimeoutSec 2
+                if ($status) { break }
+              } catch {
+                Start-Sleep -Milliseconds 750
+              }
+            }
+            if (-not $status) { throw "Installed ORDAX Runtime did not expose localhost health" }
+            if (-not $status.runtime) { throw "ORDAX Runtime health payload is missing runtime state" }
+            Write-Host ("ORDAX_RUNTIME_STATE=" + [string]$status.runtime.state)
+          } finally {
+            Stop-Process -Id $runtime.Id -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+          }
+
+          $uninstaller = Join-Path $installRoot "unins000.exe"
+          if (-not (Test-Path $uninstaller)) { throw "ORDAX Studio uninstaller is missing" }
+          & $uninstaller /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          if ($LASTEXITCODE -ne 0) { throw "ORDAX Studio silent uninstall failed: $LASTEXITCODE" }
