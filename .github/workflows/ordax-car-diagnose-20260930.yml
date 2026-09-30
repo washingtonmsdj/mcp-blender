@@ -17,16 +17,17 @@ jobs:
     env:
       CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
       ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
-      ARTIFACT_ID: ee314989-ac71-4009-875b-669f8decd549
+      START_JOB_ID: 35b10f5b-85eb-4158-92fc-f41f8bb1674e
     steps:
-      - name: Download Blender startup log from ORDAX Control Plane
+      - name: Resolve signed startup-log URL and download
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail-with-body --silent --show-error \
+          response="$(curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
-            "$CONTROL_PLANE_URL/v3/artifacts/$ARTIFACT_ID" \
-            -o blender-startup.log
+            "$CONTROL_PLANE_URL/v3/jobs/$START_JOB_ID")"
+          signed_url="$(jq -er '.job.result.data.uploaded_artifacts[] | select(.metadata.action == "blender.live_start") | .signed_url' <<<"$response" | head -1)"
+          curl --fail-with-body --silent --show-error "$signed_url" -o blender-startup.log
           test -s blender-startup.log
           sed -E 's/(token|secret|authorization)[=: ][^ ]+/<redacted>/Ig' blender-startup.log | tail -200
       - name: Upload diagnostic
