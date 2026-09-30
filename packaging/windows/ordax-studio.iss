@@ -57,6 +57,111 @@ Filename: "{app}\redist\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /i
 Filename: "{app}\{#RuntimeExeName}"; Description: "Iniciar ORDAX Runtime"; Flags: nowait postinstall skipifsilent
 Filename: "{app}\{#AppExeName}"; Description: "Abrir ORDAX Studio"; Flags: nowait postinstall skipifsilent
 
-[UninstallRun]
-Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM ""{#RuntimeExeName}"""; Flags: runhidden waituntilterminated; RunOnceId: "StopOrdaxRuntime"
-Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM ""{#AppExeName}"""; Flags: runhidden waituntilterminated; RunOnceId: "StopOrdaxStudio"
+[Code]
+const
+  EVENT_MODIFY_STATE = $0002;
+  SYNCHRONIZE = $00100000;
+
+function OpenEvent(dwDesiredAccess: LongWord; bInheritHandle: Boolean; lpName: String): THandle;
+  external 'OpenEventW@kernel32.dll stdcall';
+function SetEvent(hEvent: THandle): Boolean;
+  external 'SetEvent@kernel32.dll stdcall';
+function CloseHandle(hObject: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+function SignalShutdownEvent(const EventName: String): Boolean;
+var
+  EventHandle: THandle;
+begin
+  EventHandle := OpenEvent(EVENT_MODIFY_STATE, False, EventName);
+  if EventHandle = 0 then
+  begin
+    Result := False;
+    Exit;
+  end;
+  Result := SetEvent(EventHandle);
+  CloseHandle(EventHandle);
+end;
+
+function WaitForShutdownEventGone(const EventName: String): Boolean;
+var
+  Attempt: Integer;
+  EventHandle: THandle;
+begin
+  for Attempt := 1 to 50 do
+  begin
+    EventHandle := OpenEvent(SYNCHRONIZE, False, EventName);
+    if EventHandle = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+    CloseHandle(EventHandle);
+    Sleep(100);
+  end;
+  Result := False;
+end;
+
+function StopOrdaxProcess(const EventName, ExeName: String): Boolean;
+var
+  ResultCode: Integer;
+  Started: Boolean;
+begin
+  { Current launchers expose a cooperative shutdown event. }
+  if SignalShutdownEvent(EventName) then
+  begin
+    if WaitForShutdownEventGone(EventName) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+
+  { Compatibility path for 0.3.0/0.3.1, which predate the shutdown event. }
+  Started := Exec(
+    ExpandConstant('{sys}\taskkill.exe'),
+    '/F /T /IM "' + ExeName + '"',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  );
+  if not Started then
+  begin
+    Result := False;
+    Exit;
+  end;
+
+  { taskkill returns 128 when no matching process exists. }
+  Result := (ResultCode = 0) or (ResultCode = 128);
+  if Result then
+    Sleep(500);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  NeedsRestart := False;
+
+  if not StopOrdaxProcess('Local\ORDAXStudioShutdown', '{#AppExeName}') then
+  begin
+    Result := 'Não foi possível encerrar o ORDAX Studio para atualizar os arquivos.';
+    Exit;
+  end;
+
+  if not StopOrdaxProcess('Local\ORDAXRuntimeShutdown', '{#RuntimeExeName}') then
+  begin
+    Result := 'Não foi possível encerrar o ORDAX Runtime para atualizar os arquivos.';
+    Exit;
+  end;
+
+  Result := '';
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    StopOrdaxProcess('Local\ORDAXStudioShutdown', '{#AppExeName}');
+    StopOrdaxProcess('Local\ORDAXRuntimeShutdown', '{#RuntimeExeName}');
+  end;
+end;
