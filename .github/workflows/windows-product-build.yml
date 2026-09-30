@@ -78,8 +78,15 @@ jobs:
           $installer = Get-ChildItem .\artifact\ORDAX-Studio-Setup-*.exe | Select-Object -First 1
           if (-not $installer) { throw "ORDAX Studio installer artifact is missing" }
           $installRoot = Join-Path $env:RUNNER_TEMP "ORDAX Studio"
-          & $installer.FullName /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installRoot"
-          if ($LASTEXITCODE -ne 0) { throw "ORDAX Studio silent install failed: $LASTEXITCODE" }
+          $installProcess = Start-Process -FilePath $installer.FullName -ArgumentList @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/DIR=$installRoot"
+          ) -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) {
+            throw "ORDAX Studio silent install failed: $($installProcess.ExitCode)"
+          }
 
           $studioExe = Join-Path $installRoot "ORDAX Studio.exe"
           $runtimeExe = Join-Path $installRoot "ORDAX Runtime.exe"
@@ -113,5 +120,11 @@ jobs:
 
           $uninstaller = Join-Path $installRoot "unins000.exe"
           if (-not (Test-Path $uninstaller)) { throw "ORDAX Studio uninstaller is missing" }
-          & $uninstaller /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-          if ($LASTEXITCODE -ne 0) { throw "ORDAX Studio silent uninstall failed: $LASTEXITCODE" }
+          $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART"
+          ) -Wait -PassThru
+          if ($uninstallProcess.ExitCode -ne 0) {
+            throw "ORDAX Studio silent uninstall failed: $($uninstallProcess.ExitCode)"
+          }
