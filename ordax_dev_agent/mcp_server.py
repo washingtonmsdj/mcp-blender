@@ -272,13 +272,18 @@ def blender_instances() -> dict:
 
 
 @mcp.tool()
-def adopt_blender(project: str | None = None, pid: int | None = None, wait_seconds: float = 8.0) -> dict:
+def adopt_blender(
+    project: str | None = None,
+    pid: int | None = None,
+    wait_seconds: float = 8.0,
+    allow_blank: bool = False,
+) -> dict:
     """Adopt one already-open Blender window for a registered project without opening another window."""
     agent = registry()
     selected = agent.select_available_project(project)
     result = agent.execute(
         "blender.adopt",
-        {"project": selected, "pid": pid, "wait_seconds": wait_seconds},
+        {"project": selected, "pid": pid, "wait_seconds": wait_seconds, "allow_blank": allow_blank},
     )
     return {"ok": result.ok, "summary": result.summary, "data": result.data}
 
@@ -290,11 +295,19 @@ def get_blender_status(project: str | None = None) -> dict:
 
 
 @mcp.tool()
-def start_blender(project: str | None = None, blend_file: str | None = None, wait_seconds: float = 60.0) -> dict:
-    """Start or attach the typed visible Blender companion for a registered project."""
-    args: dict = {"wait_seconds": wait_seconds}
+def start_blender(
+    project: str | None = None,
+    blend_file: str | None = None,
+    wait_seconds: float = 60.0,
+    pid: int | None = None,
+    adopt_blank: bool = False,
+) -> dict:
+    """Start or adopt a Blender window; never opens a duplicate while Blender is already running."""
+    args: dict = {"wait_seconds": wait_seconds, "adopt_blank": adopt_blank}
     if blend_file:
         args["blend_file"] = blend_file
+    if pid is not None:
+        args["pid"] = pid
     return _blender_action("blender.live_start", project, args)
 
 

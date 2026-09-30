@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import os
@@ -84,6 +85,11 @@ class BlenderAdoptionManager:
         self.companion = (self.assets_root / "blender_live_companion.py").resolve()
         self.bootstrap_source = (self.assets_root / ADDON_SOURCE_FILENAME).resolve()
         self.companion_fingerprint = companion_fingerprint
+        self.addon_fingerprint = (
+            hashlib.sha256(self.bootstrap_source.read_bytes()).hexdigest()
+            if self.bootstrap_source.is_file()
+            else None
+        )
         self.enable_addon = bool(enable_addon)
         roaming = appdata or Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
         self.blender_user_root = roaming / "Blender Foundation" / "Blender"
@@ -116,6 +122,7 @@ class BlenderAdoptionManager:
             "assets_root": str(self.assets_root),
             "companion_path": str(self.companion),
             "companion_fingerprint": self.companion_fingerprint,
+            "addon_fingerprint": self.addon_fingerprint,
             "projects": projects,
         }
 
@@ -216,6 +223,19 @@ class BlenderAdoptionManager:
                     legacy.unlink()
                     removed_legacy.append(str(legacy))
             enabled = self._enable_installed_addon()
+            running = self.instances()
+            restart_required_pids = [
+                int(item["pid"])
+                for item in running
+                if not bool(item.get("addon_current"))
+                and not str(item.get("attached_project") or "").strip()
+            ]
+            attached_stale_pids = [
+                int(item["pid"])
+                for item in running
+                if not bool(item.get("addon_current"))
+                and str(item.get("attached_project") or "").strip()
+            ]
             return ActionResult(
                 True,
                 "ORDAX Blender adoption addon installed",
@@ -224,7 +244,9 @@ class BlenderAdoptionManager:
                     "installed": installed,
                     "removed_legacy": removed_legacy,
                     "enable": enabled,
-                    "restart_required_for_existing_blender": True,
+                    "restart_required_for_existing_blender": bool(restart_required_pids),
+                    "restart_required_pids": restart_required_pids,
+                    "attached_stale_pids": attached_stale_pids,
                     "projects": sorted(self._eligible_projects()),
                 },
             )
@@ -246,7 +268,19 @@ class BlenderAdoptionManager:
             age = now - timestamp
             if age < 0 or age > max_age_seconds:
                 continue
-            data = {**data, "pid": pid, "age_seconds": round(age, 3), "discovery_path": str(path)}
+            loaded_addon_fingerprint = str(data.get("addon_fingerprint") or "").strip() or None
+            data = {
+                **data,
+                "pid": pid,
+                "age_seconds": round(age, 3),
+                "discovery_path": str(path),
+                "expected_addon_fingerprint": self.addon_fingerprint,
+                "addon_current": bool(
+                    loaded_addon_fingerprint
+                    and self.addon_fingerprint
+                    and loaded_addon_fingerprint == self.addon_fingerprint
+                ),
+            }
             found.append(data)
         return found
 
@@ -323,6 +357,7 @@ class BlenderAdoptionManager:
         *,
         pid: int | None = None,
         wait_seconds: float = 8.0,
+        allow_blank: bool = False,
     ) -> ActionResult:
         if project.slug not in self._eligible_projects():
             return ActionResult(False, f"Blender is not enabled for project: {project.slug}")
@@ -331,9 +366,13 @@ class BlenderAdoptionManager:
         except (OSError, ValueError) as error:
             return ActionResult(False, f"Blender bootstrap configuration could not be refreshed: {error}")
 
-        candidates = self.matching_instances(project)
-        if pid is not None:
-            candidates = [item for item in candidates if int(item.get("pid", -1)) == int(pid)]
+        instances = self.instances()
+        explicit_pid = pid is not None
+        candidates = (
+            [item for item in instances if int(item.get("pid", -1)) == int(pid)]
+            if explicit_pid
+            else [item for item in instances if self._instance_matches_project(item, project)]
+        )
         if not candidates:
             return ActionResult(
                 False,
@@ -341,7 +380,7 @@ class BlenderAdoptionManager:
                 {
                     "project": project.slug,
                     "pid": pid,
-                    "instances": self.instances(),
+                    "instances": instances,
                     "retryable": False,
                     "no_match": True,
                 },
@@ -355,6 +394,71 @@ class BlenderAdoptionManager:
 
         selected = candidates[0]
         selected_pid = int(selected["pid"])
+        if not bool(selected.get("addon_current")):
+            return ActionResult(
+                False,
+                "Blender window is running an outdated ORDAX adoption addon; restart that Blender window after syncing the addon",
+                {
+                    "project": project.slug,
+                    "pid": selected_pid,
+                    "restart_required": True,
+                    "install_action": "blender.adoption_install",
+                    "loaded_addon_fingerprint": selected.get("addon_fingerprint"),
+                    "expected_addon_fingerprint": self.addon_fingerprint,
+                },
+            )
+        attached_project = str(selected.get("attached_project") or "").strip()
+        if attached_project and attached_project != project.slug:
+            return ActionResult(
+                False,
+                "Blender window is already attached to another ORDAX project",
+                {
+                    "project": project.slug,
+                    "pid": selected_pid,
+                    "attached_project": attached_project,
+                    "conflict": True,
+                },
+            )
+
+        raw_file = str(selected.get("file") or "").strip()
+        adopting_blank = False
+        if raw_file:
+            if not self._instance_matches_project(selected, project):
+                return ActionResult(
+                    False,
+                    "Blender window has a file outside the requested project",
+                    {
+                        "project": project.slug,
+                        "pid": selected_pid,
+                        "file": raw_file,
+                        "project_mismatch": True,
+                    },
+                )
+        else:
+            if not explicit_pid or not allow_blank:
+                return ActionResult(
+                    False,
+                    "Blank Blender window requires explicit PID opt-in before adoption",
+                    {
+                        "project": project.slug,
+                        "pid": selected_pid,
+                        "blank_window": True,
+                        "requires_allow_blank": True,
+                    },
+                )
+            if bool(selected.get("is_dirty")):
+                return ActionResult(
+                    False,
+                    "Blank Blender window has unsaved changes and cannot be adopted safely",
+                    {
+                        "project": project.slug,
+                        "pid": selected_pid,
+                        "blank_window": True,
+                        "dirty": True,
+                    },
+                )
+            adopting_blank = True
+
         request_id = uuid.uuid4().hex
         request_path = self._request_path(selected_pid)
         request_path.parent.mkdir(parents=True, exist_ok=True)
@@ -366,6 +470,7 @@ class BlenderAdoptionManager:
                 "created_at": time.time(),
                 "project": project.slug,
                 "pid": selected_pid,
+                "allow_blank": adopting_blank,
             },
         )
 

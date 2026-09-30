@@ -148,6 +148,73 @@ class OrdaxStudioWebTests(unittest.TestCase):
                 [call.args[0] for call in execute.call_args_list],
             )
 
+    def test_blender_prepare_auto_adopts_single_clean_blank_window(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            (root / "agent-settings.json").write_text(json.dumps({
+                "default_project": "demo",
+                "projects": {"demo": {"path": str(project), "apps": ["blender"], "blender": {}}},
+            }), encoding="utf-8")
+            env = {"ORDAX_AGENT_STATE_DIR": str(root), "ORDAX_MEMORY_DB": str(root / "memory.db")}
+            with patch.dict(os.environ, env, clear=False):
+                api = StudioApi()
+                with patch.object(api.agent, "execute") as execute:
+                    execute.side_effect = [
+                        ActionResult(False, "not connected", {}),
+                        ActionResult(False, "no match", {"no_match": True}),
+                        ActionResult(True, "instances", {
+                            "ready_pids": [5151],
+                            "restart_required_pids": [],
+                            "unmanaged_blender_pids": [],
+                            "instances": [{
+                                "pid": 5151,
+                                "file": "",
+                                "is_dirty": False,
+                                "attached_project": None,
+                            }],
+                        }),
+                        ActionResult(True, "adopted blank", {
+                            "pid": 5151,
+                            "presence": {"pid": 5151, "file": ""},
+                        }),
+                    ]
+                    result = api.blender_prepare()
+            self.assertTrue(result["ok"])
+            self.assertEqual("adopted_blank", result["data"]["state"])
+            self.assertEqual(5151, result["data"]["pid"])
+            last_payload = execute.call_args_list[-1].args[1]
+            self.assertTrue(last_payload["allow_blank"])
+            self.assertEqual(5151, last_payload["pid"])
+
+    def test_blender_prepare_reports_stale_matching_addon_without_waiting_for_instances(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            (root / "agent-settings.json").write_text(json.dumps({
+                "default_project": "demo",
+                "projects": {"demo": {"path": str(project), "apps": ["blender"], "blender": {}}},
+            }), encoding="utf-8")
+            env = {"ORDAX_AGENT_STATE_DIR": str(root), "ORDAX_MEMORY_DB": str(root / "memory.db")}
+            with patch.dict(os.environ, env, clear=False):
+                api = StudioApi()
+                with patch.object(api.agent, "execute") as execute:
+                    execute.side_effect = [
+                        ActionResult(False, "not connected", {}),
+                        ActionResult(False, "stale addon", {
+                            "restart_required": True,
+                            "pid": 6161,
+                            "install_action": "blender.adoption_install",
+                        }),
+                    ]
+                    result = api.blender_prepare()
+            self.assertTrue(result["ok"])
+            self.assertEqual("restart_required", result["data"]["state"])
+            self.assertEqual([6161], result["data"]["blender_pids"])
+            self.assertEqual(2, execute.call_count)
+
     def test_blender_prepare_reports_running_unmanaged_window(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

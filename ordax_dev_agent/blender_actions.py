@@ -560,11 +560,36 @@ class BlenderActions:
         system_pids = manager.system_blender_pids()
         discovered_pids = {int(item.get("pid", -1)) for item in instances}
         unmanaged_pids = [pid for pid in system_pids if pid not in discovered_pids]
+        attached_pids = [
+            int(item["pid"])
+            for item in instances
+            if str(item.get("attached_project") or "").strip()
+        ]
+        restart_required_pids = [
+            int(item["pid"])
+            for item in instances
+            if not bool(item.get("addon_current"))
+            and not str(item.get("attached_project") or "").strip()
+        ]
+        ready_pids = [
+            int(item["pid"])
+            for item in instances
+            if bool(item.get("addon_current"))
+            and not str(item.get("attached_project") or "").strip()
+        ]
+        summary = (
+            f"Discovered {len(instances)} Blender window(s): "
+            f"{len(attached_pids)} attached, {len(ready_pids)} ready, "
+            f"{len(restart_required_pids)} restart-required, {len(unmanaged_pids)} unmanaged"
+        )
         return ActionResult(
             True,
-            f"Discovered {len(instances)} adoptable Blender window(s)",
+            summary,
             {
                 "instances": instances,
+                "attached_pids": attached_pids,
+                "ready_pids": ready_pids,
+                "restart_required_pids": restart_required_pids,
                 "system_blender_pids": system_pids,
                 "unmanaged_blender_pids": unmanaged_pids,
                 "bootstrap_config": str(manager.config_path),
@@ -579,6 +604,7 @@ class BlenderActions:
             project,
             pid=pid,
             wait_seconds=float(payload.get("wait_seconds", 8.0)),
+            allow_blank=bool(payload.get("allow_blank", False)),
         )
 
     def blender_live_start(self, payload: dict[str, Any]) -> ActionResult:
@@ -600,6 +626,7 @@ class BlenderActions:
                 project,
                 pid=pid,
                 wait_seconds=min(wait_seconds, 10.0),
+                allow_blank=bool(payload.get("adopt_blank", False)),
             )
             if adoption.ok:
                 data = live.status()
@@ -607,16 +634,40 @@ class BlenderActions:
             if not bool(adoption.data.get("no_match")):
                 return adoption
 
-            unmanaged_pids = adoption_manager.system_blender_pids()
-            if unmanaged_pids:
+            instances = adoption_manager.instances()
+            discovered_pids = {int(item.get("pid", -1)) for item in instances}
+            blank_adoptable_pids = [
+                int(item["pid"])
+                for item in instances
+                if not str(item.get("file") or "").strip()
+                and not str(item.get("attached_project") or "").strip()
+                and not bool(item.get("is_dirty"))
+            ]
+            if blank_adoptable_pids:
                 return ActionResult(
                     False,
-                    "Blender is already running but the ORDAX adoption bridge is not active; refusing to open a second window",
+                    "A clean blank Blender window is available; choose its PID explicitly to adopt it instead of opening another window",
                     {
                         "project": project.slug,
-                        "blender_pids": unmanaged_pids,
-                        "unmanaged_blender_running": True,
-                        "install_action": "blender.adoption_install",
+                        "blank_adoptable_pids": blank_adoptable_pids,
+                        "adopt_blank": True,
+                        "retryable": True,
+                    },
+                )
+
+            system_pids = adoption_manager.system_blender_pids()
+            unmanaged_pids = [pid for pid in system_pids if pid not in discovered_pids]
+            if system_pids:
+                return ActionResult(
+                    False,
+                    "Blender is already running; refusing to open a second window",
+                    {
+                        "project": project.slug,
+                        "blender_pids": system_pids,
+                        "discovered_instances": instances,
+                        "unmanaged_blender_pids": unmanaged_pids,
+                        "unmanaged_blender_running": bool(unmanaged_pids),
+                        "install_action": "blender.adoption_install" if unmanaged_pids else None,
                         "retryable": True,
                     },
                 )

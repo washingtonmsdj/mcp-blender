@@ -11,6 +11,7 @@ bl_info = {
     "category": "System",
 }
 
+import hashlib
 import json
 import os
 import runpy
@@ -22,6 +23,7 @@ import bpy
 
 
 BOOTSTRAP_VERSION = 1
+ADDON_FINGERPRINT = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 ATTACHED_KEY = "_ordax_studio_companion_project"
 ERROR_KEY = "_ordax_studio_bootstrap_error"
 REQUEST_MAX_AGE_SECONDS = 30.0
@@ -103,6 +105,7 @@ def _write_discovery(config: dict) -> None:
     scene = getattr(bpy.context, "scene", None)
     payload = {
         "bootstrap_version": BOOTSTRAP_VERSION,
+        "addon_fingerprint": ADDON_FINGERPRINT,
         "pid": os.getpid(),
         "timestamp": time.time(),
         "blender_version": ".".join(str(v) for v in bpy.app.version),
@@ -148,13 +151,19 @@ def _current_file_belongs_to(entry: dict) -> bool:
     return current.is_relative_to(root)
 
 
-def _attach(config: dict, project_slug: str) -> bool:
+def _attach(config: dict, project_slug: str, *, allow_blank: bool = False) -> bool:
     attached = bpy.app.driver_namespace.get(ATTACHED_KEY)
     if attached:
         return attached == project_slug
 
     entry = config["projects"].get(project_slug)
-    if not isinstance(entry, dict) or not _current_file_belongs_to(entry):
+    if not isinstance(entry, dict):
+        return False
+    current = _current_file()
+    if current is None:
+        if not allow_blank or bool(getattr(bpy.data, "is_dirty", False)):
+            return False
+    elif not _current_file_belongs_to(entry):
         return False
 
     companion = config["companion_path"]
@@ -207,7 +216,10 @@ def _tick() -> float:
         if request is not None:
             path = _request_path(config)
             project = str(request["project"])
-            attached = _attach(config, project)
+            allow_blank = request.get("allow_blank", False)
+            if not isinstance(allow_blank, bool):
+                allow_blank = False
+            attached = _attach(config, project, allow_blank=allow_blank)
             try:
                 path.unlink(missing_ok=True)
             except OSError:

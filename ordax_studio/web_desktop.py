@@ -152,10 +152,86 @@ class StudioApi:
                     "file": (adopted.data.get("presence") or {}).get("file"),
                 },
             }
+        if adopted.data.get("restart_required"):
+            return {
+                "ok": True,
+                "summary": adopted.summary,
+                "data": {
+                    "state": "restart_required",
+                    "project": self.project,
+                    "blender_pids": [adopted.data.get("pid")],
+                    "install_action": adopted.data.get("install_action"),
+                },
+            }
+        if adopted.data.get("ambiguous"):
+            return {
+                "ok": True,
+                "summary": "Mais de uma janela Blender corresponde ao projeto",
+                "data": {
+                    "state": "ambiguous",
+                    "project": self.project,
+                    "instances": adopted.data.get("instances", []),
+                },
+            }
         if adopted.data.get("no_match"):
-            instances = self.agent.execute("blender.instances", {})
-            if instances.ok:
-                unmanaged = instances.data.get("unmanaged_blender_pids") or []
+            windows = self.agent.execute("blender.instances", {})
+            if windows.ok:
+                data = windows.data
+                instances = data.get("instances") or []
+                ready_pids = set(data.get("ready_pids") or [])
+                clean_blank = [
+                    item for item in instances
+                    if int(item.get("pid", -1)) in ready_pids
+                    and not str(item.get("file") or "").strip()
+                    and not str(item.get("attached_project") or "").strip()
+                    and not bool(item.get("is_dirty"))
+                ]
+                if len(clean_blank) == 1:
+                    pid = int(clean_blank[0]["pid"])
+                    blank = self.agent.execute(
+                        "blender.adopt",
+                        {
+                            "project": self.project,
+                            "pid": pid,
+                            "allow_blank": True,
+                            "wait_seconds": 4.0,
+                        },
+                    )
+                    if blank.ok:
+                        return {
+                            "ok": True,
+                            "summary": "Janela Blender vazia adotada pelo projeto",
+                            "data": {
+                                "state": "adopted_blank",
+                                "project": self.project,
+                                "pid": pid,
+                                "file": "",
+                            },
+                        }
+                    return self._result(blank)
+                if len(clean_blank) > 1:
+                    return {
+                        "ok": True,
+                        "summary": "Há várias janelas Blender vazias disponíveis",
+                        "data": {
+                            "state": "blank_ambiguous",
+                            "project": self.project,
+                            "blender_pids": [int(item["pid"]) for item in clean_blank],
+                        },
+                    }
+                restart = data.get("restart_required_pids") or []
+                if restart:
+                    return {
+                        "ok": True,
+                        "summary": "Blender aberto com bridge ORDAX desatualizado",
+                        "data": {
+                            "state": "restart_required",
+                            "project": self.project,
+                            "blender_pids": restart,
+                            "install_action": "blender.adoption_install",
+                        },
+                    }
+                unmanaged = data.get("unmanaged_blender_pids") or []
                 if unmanaged:
                     return {
                         "ok": True,
@@ -167,20 +243,24 @@ class StudioApi:
                             "install_action": "blender.adoption_install",
                         },
                     }
+                occupied = [
+                    item for item in instances
+                    if str(item.get("attached_project") or "").strip()
+                ]
+                if occupied:
+                    return {
+                        "ok": True,
+                        "summary": "As janelas Blender abertas já pertencem a outros projetos",
+                        "data": {
+                            "state": "occupied",
+                            "project": self.project,
+                            "instances": occupied,
+                        },
+                    }
             return {
                 "ok": True,
                 "summary": "Nenhuma janela Blender aberta para este projeto",
                 "data": {"state": "idle", "project": self.project},
-            }
-        if adopted.data.get("ambiguous"):
-            return {
-                "ok": True,
-                "summary": "Mais de uma janela Blender corresponde ao projeto",
-                "data": {
-                    "state": "ambiguous",
-                    "project": self.project,
-                    "instances": adopted.data.get("instances", []),
-                },
             }
         return self._result(adopted)
 
