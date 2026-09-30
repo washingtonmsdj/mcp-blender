@@ -163,7 +163,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
     if (!ORDAX_RUNTIME_LAUNCHER) {
         result = run_python_child(
             python,
-            L"ordax_studio.web_desktop",
+            L"ordax_studio.product_web_desktop",
             root,
             job,
             false);
