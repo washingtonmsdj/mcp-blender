@@ -67,6 +67,19 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertTrue((ROOT / "ordax_studio" / "product_web_desktop.py").is_file())
         self.assertTrue((ROOT / "ordax_studio" / "product_auth.py").is_file())
 
+    def test_packaged_runtime_self_heals_only_existing_device_identity(self) -> None:
+        entrypoint = (ROOT / "ordax_device_agent" / "main.py").read_text(encoding="utf-8")
+        recovery = (ROOT / "ordax_dev_agent" / "device_identity_recovery.py").read_text(encoding="utf-8")
+        self.assertIn("from ordax_dev_agent.main import main", entrypoint)
+        self.assertIn("recover_existing_device_identity", entrypoint)
+        self.assertIn("_recover_packaged_identity()", entrypoint)
+        self.assertIn('if __name__ == "__main__":', entrypoint)
+        self.assertIn('"operation": "identify"', recovery)
+        self.assertNotIn('"operation": "enroll"', recovery)
+        self.assertNotIn("github_token(", recovery)
+        self.assertIn("machine-binding-mismatch", recovery)
+        self.assertIn("credential-missing", recovery)
+
     def test_runtime_supervisor_is_not_bound_to_a_chat_client(self) -> None:
         launcher = (ROOT / "packaging" / "windows" / "ordax_launcher.c").read_text(
             encoding="utf-8"

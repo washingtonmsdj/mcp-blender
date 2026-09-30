@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-blender-unity"
-version = "0.3.3"
+# ORDAX Studio 0.3.4 packages fail-closed recovery for an already-enrolled Windows device.
+version = "0.3.4"
 description = "ORDAX Studio runtime and MCP for typed projects, Git, preview, Blender, Unity and extensible adapters"
 readme = "README.md"
 requires-python = ">=3.11"
