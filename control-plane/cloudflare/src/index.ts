@@ -4,6 +4,7 @@ import {
   productAuthConfigured,
   type ProductAuthEnv,
 } from "./product_auth";
+import { handleOrdaxMcp } from "./mcp_http";
 
 interface Env extends ProductAuthEnv {
   DB: D1Database;
@@ -2157,6 +2158,23 @@ export default {
     }
     if (request.method === "DELETE" && parts[0] === "v3" && parts[1] === "devices" && parts.length === 3) {
       return deleteDevice(request, env, parts[2]);
+    }
+    if (request.method === "GET" && url.pathname === "/.well-known/oauth-protected-resource") {
+      const authorizationServers = env.PRODUCT_AUTH_ISSUER ? [env.PRODUCT_AUTH_ISSUER] : [];
+      return json({
+        resource: `${url.origin}/mcp`,
+        authorization_servers: authorizationServers,
+        bearer_methods_supported: ["header"],
+        scopes_supported: ["authenticated"],
+      });
+    }
+    if (url.pathname === "/mcp") {
+      return handleOrdaxMcp(request, {
+        session: (inner) => productSession(inner, env),
+        targets: (inner) => listProductTargets(inner, env),
+        createAction: (inner) => createProductAction(inner, env),
+        getAction: (inner, requestId) => getProductAction(inner, env, requestId),
+      });
     }
     if (request.method === "GET" && url.pathname === "/v3/product/session") {
       return productSession(request, env);
