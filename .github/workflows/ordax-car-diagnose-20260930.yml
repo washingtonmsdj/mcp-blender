@@ -1,0 +1,37 @@
+name: ORDAX Car Smoke Diagnostics
+
+on:
+  push:
+    branches:
+      - codex/ordax-car-smoke-20260930
+    paths:
+      - .github/workflows/ordax-car-diagnose-20260930.yml
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      ARTIFACT_ID: ee314989-ac71-4009-875b-669f8decd549
+    steps:
+      - name: Download Blender startup log from ORDAX Control Plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $ORDAX_OPERATOR_TOKEN" \
+            "$CONTROL_PLANE_URL/v3/artifacts/$ARTIFACT_ID" \
+            -o blender-startup.log
+          test -s blender-startup.log
+          sed -E 's/(token|secret|authorization)[=: ][^ ]+/<redacted>/Ig' blender-startup.log | tail -200
+      - name: Upload diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: ordax-blender-startup-log
+          path: blender-startup.log
+          if-no-files-found: error
