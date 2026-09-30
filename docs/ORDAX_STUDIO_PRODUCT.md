@@ -1,4 +1,4 @@
-﻿# ORDAX Studio como produto instalado
+# ORDAX Studio como produto instalado
 
 O fluxo de uso normal não depende de PowerShell, `mcp-start.ps1` ou de um shell remoto.
 
