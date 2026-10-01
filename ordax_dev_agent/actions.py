@@ -133,6 +133,7 @@ class ActionRegistry(
             "process.status": self.process_status,
             "process.list": self.process_list,
             "process.logs": self.process_logs,
+            "process.write_stdin": self.process_write_stdin,
             "process.stop": self.process_stop,
             "browser.start": self.browser_start,
             "browser.status": self.browser_status,
