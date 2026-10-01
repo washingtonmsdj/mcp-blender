@@ -1,0 +1,117 @@
+name: Provision OpenAI Review Grant
+
+on:
+  workflow_dispatch:
+    inputs:
+      link_id:
+        description: "ORDAX Product device-link UUID created by the dedicated review account"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ordax-openai-review-grant
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: cloudflare-v3
+    env:
+      CONTROL_PLANE_URL: https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev
+      ORDAX_OPERATOR_TOKEN: ${{ secrets.ORDAX_OPERATOR_TOKEN }}
+      REVIEW_LINK_ID: ${{ inputs.link_id }}
+    steps:
+      - name: Validate inputs and secret
+        shell: bash
+        run: |
+          test -n "$ORDAX_OPERATOR_TOKEN" || { echo "Missing ORDAX_OPERATOR_TOKEN"; exit 1; }
+          python - <<'PY'
+          import os, uuid
+          raw = os.environ["REVIEW_LINK_ID"].strip()
+          parsed = uuid.UUID(raw)
+          if str(parsed) != raw.lower():
+              raise SystemExit("link_id must be a canonical UUID")
+          print("Review link id is structurally valid")
+          PY
+
+      - name: Create least-privilege review grant
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+          from datetime import datetime, timedelta, timezone
+
+          base = os.environ["CONTROL_PLANE_URL"].rstrip("/")
+          token = os.environ["ORDAX_OPERATOR_TOKEN"]
+          link_id = os.environ["REVIEW_LINK_ID"].strip().lower()
+          actions = [
+              "git.status",
+              "project.search_text",
+              "project.text_read",
+              "project.text_write",
+              "projects.list",
+          ]
+          expires_at = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+          payload = json.dumps(
+              {
+                  "link_id": link_id,
+                  "actions": actions,
+                  "projects": ["ordax-review-demo"],
+                  "expires_at": expires_at,
+              },
+              separators=(",", ":"),
+          ).encode("utf-8")
+          request = urllib.request.Request(
+              f"{base}/v3/product-grants/from-link",
+              data=payload,
+              method="POST",
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Content-Type": "application/json",
+                  "Accept": "application/json",
+              },
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  body = json.loads(response.read())
+                  status = response.status
+          except urllib.error.HTTPError as error:
+              raw = error.read().decode("utf-8", "replace")
+              raise SystemExit(f"review grant API failed with HTTP {error.code}: {raw[:1000]}")
+          if status != 201 or body.get("ok") is not True:
+              raise SystemExit(f"unexpected review grant response: status={status}")
+          grant = body.get("grant") or {}
+          provenance = body.get("provenance") or {}
+          expected_actions = sorted(actions)
+          if provenance.get("link_id") != link_id:
+              raise SystemExit("review grant provenance link mismatch")
+          if grant.get("projects") != ["ordax-review-demo"]:
+              raise SystemExit("review grant escaped the demo project")
+          if grant.get("actions") != expected_actions:
+              raise SystemExit(
+                  f"review grant action mismatch: {grant.get('actions')!r}"
+              )
+          if "terminal.exec" in grant.get("actions", []):
+              raise SystemExit("terminal.exec must never be present in the review grant")
+          if not grant.get("id") or not grant.get("device_id"):
+              raise SystemExit("review grant response is missing id/device provenance")
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as handle:
+                  handle.write("## ORDAX OpenAI review grant\n\n")
+                  handle.write(f"- Grant: `{grant['id']}`\n")
+                  handle.write(f"- Device: `{grant['device_id']}`\n")
+                  handle.write("- Project: `ordax-review-demo`\n")
+                  handle.write("- Terminal access: **not granted**\n")
+                  handle.write(f"- Expires: `{grant.get('expires_at')}`\n")
+          print("Least-privilege ORDAX review grant created")
+          PY
