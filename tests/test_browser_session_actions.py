@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from ordax_dev_agent.actions import ActionRegistry
+from ordax_dev_agent.browser_session_actions import BrowserSessionActions
 from ordax_dev_agent.browser_capture import find_chromium
 from ordax_dev_agent.config import AgentConfig
 
@@ -30,6 +31,30 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, _format, *_args):
         return
+
+
+class BrowserProviderGuardTests(unittest.TestCase):
+    def test_chatgpt_consumer_pages_are_blocked_from_programmatic_browser_control(self):
+        for url in (
+            "https://chatgpt.com/",
+            "https://chatgpt.com/c/abc",
+            "https://sub.chatgpt.com/path",
+            "https://chat.openai.com/",
+        ):
+            with self.subTest(url=url):
+                self.assertTrue(BrowserSessionActions._is_protected_provider_url(url))
+                with self.assertRaisesRegex(ValueError, "official ORDAX MCP/Web Bridge"):
+                    BrowserSessionActions._assert_automation_url_allowed(url)
+
+    def test_regular_websites_remain_automation_eligible(self):
+        for url in (
+            "https://example.com/",
+            "https://github.com/openai/tunnel-client",
+            "https://developers.openai.com/api/docs/guides/secure-mcp-tunnels",
+        ):
+            with self.subTest(url=url):
+                self.assertFalse(BrowserSessionActions._is_protected_provider_url(url))
+                BrowserSessionActions._assert_automation_url_allowed(url)
 
 
 @unittest.skipIf(find_chromium() is None, "Chrome/Edge not available on CI runner")
