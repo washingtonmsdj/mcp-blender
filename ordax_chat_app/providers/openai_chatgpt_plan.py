@@ -166,14 +166,19 @@ class OpenAIChatGPTPlanProvider:
         response_obj = completed_event.get("response")
         response_id = None
         usage: dict[str, Any] = {}
+        output_items: list[dict[str, Any]] = []
         if isinstance(response_obj, dict):
             response_id = str(response_obj.get("id") or "") or None
             if isinstance(response_obj.get("usage"), dict):
                 usage = dict(response_obj["usage"])
+            raw_output = response_obj.get("output")
+            if isinstance(raw_output, list):
+                output_items = [dict(item) for item in raw_output if isinstance(item, dict)]
         return ChatTurnResult(
             text="".join(text_parts),
             response_id=response_id,
             usage=usage,
+            output_items=output_items,
             raw_completed_event=completed_event,
         )
 
