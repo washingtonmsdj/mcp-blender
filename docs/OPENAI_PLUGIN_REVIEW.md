@@ -34,6 +34,20 @@ Before recording or submitting:
 - `terminal.exec` is NOT granted to the review account.
 - no personal or production project data appears in the review grant.
 
+## Canonical submission package
+
+Do not build the review ZIP manually.
+
+Use the GitHub Actions workflow `.github/workflows/plugin-review-package.yml` on the verified `main` revision and download the artifact:
+
+`ordax-dev-plugin-review-package`
+
+The artifact contains only:
+- `ordax-dev-plugin-0.4.1.zip`;
+- its matching `.sha256` file.
+
+Verify the published SHA-256 before uploading the ZIP to the OpenAI submission UI. The workflow also rejects unexpected files inside the ZIP.
+
 ## Review account
 
 Create a dedicated ORDAX review account in the configured identity provider.
