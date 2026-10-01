@@ -124,7 +124,6 @@
 
   async function pollCommands() {
     const id = conversationId();
-    if (!id) return;
     const response = await chrome.runtime.sendMessage({
       type: "ordax.commands",
       conversationId: id
