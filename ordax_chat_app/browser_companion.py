@@ -172,6 +172,45 @@ class BrowserCompanionStore:
         with self.connect() as connection:
             return int(connection.execute("SELECT COUNT(*) FROM browser_clients").fetchone()[0])
 
+    def preferred_browser_id(self) -> str | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT browser_id FROM browser_clients
+                WHERE browser_id <> ''
+                ORDER BY last_seen_at DESC LIMIT 1
+                """
+            ).fetchone()
+        return str(row["browser_id"]) if row else None
+
+    def enqueue_new_chat(self, text: str, *, browser_id: str | None = None) -> dict[str, Any]:
+        text = str(text or "").strip()
+        if not text:
+            raise ValueError("message text is required")
+        selected = str(browser_id or self.preferred_browser_id() or "").strip()
+        if not selected:
+            raise ValueError("no paired browser is available")
+        command_id = str(uuid.uuid4())
+        created = _now()
+        conversation_key = f"__new__:{selected[:128]}"
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO browser_commands(id,conversation_id,text,state,created_at)
+                VALUES(?,?,?,?,?)
+                """,
+                (command_id, conversation_key, text[:200_000], "queued", created),
+            )
+        return {
+            "id": command_id,
+            "conversation_id": conversation_key,
+            "text": text,
+            "state": "queued",
+            "created_at": created,
+            "browser_id": selected[:128],
+            "new_chat": True,
+        }
+
     def revoke_client(self, token: str) -> bool:
         digest = self._token_hash(str(token or ""))
         with self.connect() as connection:
@@ -566,3 +605,7 @@ class BrowserCompanionServer:
 
     def send(self, conversation_id: str, text: str) -> dict[str, Any]:
         return self.store.enqueue(conversation_id, text)
+
+    def new_chat(self, text: str, *, browser_id: str | None = None) -> dict[str, Any]:
+        return self.store.enqueue_new_chat(text, browser_id=browser_id)
+
