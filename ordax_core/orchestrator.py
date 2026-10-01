@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
@@ -21,6 +22,7 @@ from .memory import resolve_memory_db
 _AGENT_STATES = {"active", "sleeping", "waiting", "stopped"}
 _GOAL_STATES = {"queued", "active", "blocked", "done", "cancelled"}
 _SESSION_STATES = {"active", "rotated", "finished", "failed", "cancelled"}
+_WORK_STATES = {"queued", "leased", "done", "failed", "blocked", "cancelled"}
 
 
 def _now() -> str:
@@ -155,6 +157,30 @@ class OrchestratorStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_agent_messages_recipient
                   ON agent_messages(recipient_agent_id, read_at, id);
+
+                CREATE TABLE IF NOT EXISTS agent_work_items(
+                  id TEXT PRIMARY KEY,
+                  project_slug TEXT NOT NULL,
+                  goal_id TEXT,
+                  assigned_agent_id TEXT NOT NULL,
+                  title TEXT NOT NULL,
+                  instruction TEXT NOT NULL,
+                  state TEXT NOT NULL,
+                  priority INTEGER NOT NULL,
+                  available_at_unix REAL NOT NULL,
+                  lease_owner TEXT,
+                  lease_expires_at_unix REAL,
+                  attempts INTEGER NOT NULL DEFAULT 0,
+                  max_attempts INTEGER NOT NULL,
+                  result TEXT,
+                  error TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(goal_id) REFERENCES agent_goals(id),
+                  FOREIGN KEY(assigned_agent_id) REFERENCES agent_profiles(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_work_ready
+                  ON agent_work_items(assigned_agent_id,state,available_at_unix,priority);
                 """
             )
 
@@ -183,6 +209,10 @@ class OrchestratorStore:
         data["changed_paths"] = _decode_json(data.pop("changed_paths_json"), [])
         data["git_state"] = _decode_json(data.pop("git_state_json"), {})
         return data
+
+    @staticmethod
+    def _work(row: sqlite3.Row) -> dict[str, Any]:
+        return dict(row)
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
         with self._connect() as connection:
@@ -564,6 +594,231 @@ class OrchestratorStore:
             "recent_messages": messages,
         }
 
+    def enqueue_work(
+        self,
+        agent_id: str,
+        title: str,
+        instruction: str,
+        *,
+        goal_id: str | None = None,
+        priority: int = 50,
+        delay_seconds: float = 0,
+        max_attempts: int = 3,
+    ) -> dict[str, Any]:
+        agent = self.get_agent(agent_id)
+        title = title.strip()
+        instruction = instruction.strip()
+        if not title or not instruction:
+            raise ValueError("work title and instruction are required")
+        if not 0 <= int(priority) <= 100:
+            raise ValueError("work priority must be between 0 and 100")
+        if not 1 <= int(max_attempts) <= 20:
+            raise ValueError("max_attempts must be between 1 and 20")
+        if float(delay_seconds) < 0:
+            raise ValueError("delay_seconds cannot be negative")
+        if goal_id is not None:
+            with self._connect() as connection:
+                goal = connection.execute(
+                    "SELECT * FROM agent_goals WHERE id=?", (goal_id,)
+                ).fetchone()
+            if not goal or goal["owner_agent_id"] != agent_id:
+                raise ValueError("work goal does not belong to assigned agent")
+
+        work_id = _uuid()
+        created = _now()
+        available = time.time() + float(delay_seconds)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO agent_work_items(
+                  id,project_slug,goal_id,assigned_agent_id,title,instruction,state,
+                  priority,available_at_unix,max_attempts,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    work_id, agent["project_slug"], goal_id, agent_id, title, instruction,
+                    "queued", int(priority), available, int(max_attempts), created, created,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM agent_work_items WHERE id=?", (work_id,)
+            ).fetchone()
+        return self._work(row)
+
+    def claim_next_work(
+        self,
+        agent_id: str,
+        runner_id: str,
+        *,
+        lease_seconds: int = 300,
+    ) -> dict[str, Any] | None:
+        self.get_agent(agent_id)
+        runner_id = runner_id.strip()
+        if not runner_id or len(runner_id) > 200:
+            raise ValueError("runner_id is required and must be at most 200 characters")
+        lease_seconds = int(lease_seconds)
+        if not 30 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be between 30 and 3600")
+        now_unix = time.time()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT * FROM agent_work_items
+                WHERE assigned_agent_id=?
+                  AND attempts < max_attempts
+                  AND (
+                    (state='queued' AND available_at_unix<=?)
+                    OR
+                    (state='leased' AND lease_expires_at_unix IS NOT NULL AND lease_expires_at_unix<=?)
+                  )
+                ORDER BY priority DESC, available_at_unix ASC, created_at ASC
+                LIMIT 1
+                """,
+                (agent_id, now_unix, now_unix),
+            ).fetchone()
+            if not row:
+                return None
+            work_id = str(row["id"])
+            connection.execute(
+                """
+                UPDATE agent_work_items
+                SET state='leased', lease_owner=?, lease_expires_at_unix=?,
+                    attempts=attempts+1, updated_at=?
+                WHERE id=?
+                """,
+                (runner_id, now_unix + lease_seconds, _now(), work_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM agent_work_items WHERE id=?", (work_id,)
+            ).fetchone()
+        return self._work(row)
+
+    def heartbeat_work(
+        self,
+        work_id: str,
+        runner_id: str,
+        *,
+        lease_seconds: int = 300,
+    ) -> dict[str, Any]:
+        lease_seconds = int(lease_seconds)
+        if not 30 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be between 30 and 3600")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM agent_work_items WHERE id=?", (work_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"work item not found: {work_id}")
+            if row["state"] != "leased" or row["lease_owner"] != runner_id:
+                raise ValueError("work lease is not owned by this runner")
+            connection.execute(
+                """
+                UPDATE agent_work_items
+                SET lease_expires_at_unix=?, updated_at=?
+                WHERE id=?
+                """,
+                (time.time() + lease_seconds, _now(), work_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM agent_work_items WHERE id=?", (work_id,)
+            ).fetchone()
+        return self._work(row)
+
+    def complete_work(self, work_id: str, runner_id: str, *, result: str = "") -> dict[str, Any]:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM agent_work_items WHERE id=?", (work_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"work item not found: {work_id}")
+            if row["state"] != "leased" or row["lease_owner"] != runner_id:
+                raise ValueError("work lease is not owned by this runner")
+            connection.execute(
+                """
+                UPDATE agent_work_items
+                SET state='done', result=?, error=NULL, lease_owner=NULL,
+                    lease_expires_at_unix=NULL, updated_at=?
+                WHERE id=?
+                """,
+                (result.strip() or None, _now(), work_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM agent_work_items WHERE id=?", (work_id,)
+            ).fetchone()
+        return self._work(row)
+
+    def fail_work(
+        self,
+        work_id: str,
+        runner_id: str,
+        *,
+        error: str,
+        retryable: bool = True,
+        retry_delay_seconds: float = 30,
+    ) -> dict[str, Any]:
+        error = error.strip() or "work item failed"
+        if float(retry_delay_seconds) < 0:
+            raise ValueError("retry_delay_seconds cannot be negative")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM agent_work_items WHERE id=?", (work_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"work item not found: {work_id}")
+            if row["state"] != "leased" or row["lease_owner"] != runner_id:
+                raise ValueError("work lease is not owned by this runner")
+            can_retry = bool(retryable) and int(row["attempts"]) < int(row["max_attempts"])
+            new_state = "queued" if can_retry else "failed"
+            available = time.time() + float(retry_delay_seconds) if can_retry else float(row["available_at_unix"])
+            connection.execute(
+                """
+                UPDATE agent_work_items
+                SET state=?, available_at_unix=?, error=?, lease_owner=NULL,
+                    lease_expires_at_unix=NULL, updated_at=?
+                WHERE id=?
+                """,
+                (new_state, available, error, _now(), work_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM agent_work_items WHERE id=?", (work_id,)
+            ).fetchone()
+        return self._work(row)
+
+    def list_work(
+        self,
+        project_slug: str,
+        *,
+        agent_id: str | None = None,
+        states: tuple[str, ...] | list[str] | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(1000, int(limit)))
+        filters = ["project_slug=?"]
+        params: list[Any] = [project_slug]
+        if agent_id:
+            filters.append("assigned_agent_id=?")
+            params.append(agent_id)
+        if states:
+            invalid = [state for state in states if state not in _WORK_STATES]
+            if invalid:
+                raise ValueError("invalid work state(s): " + ", ".join(invalid))
+            placeholders = ",".join("?" for _ in states)
+            filters.append(f"state IN ({placeholders})")
+            params.extend(states)
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT * FROM agent_work_items
+                WHERE {" AND ".join(filters)}
+                ORDER BY priority DESC, created_at ASC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [self._work(row) for row in rows]
+
     def status(self, project_slug: str) -> dict[str, Any]:
         with self._connect() as connection:
             agents = [self._agent(row) for row in connection.execute(
@@ -590,10 +845,21 @@ class OrchestratorStore:
                 """,
                 (project_slug,),
             ).fetchone()[0])
+            work_counts = {
+                str(row["state"]): int(row["count"])
+                for row in connection.execute(
+                    """
+                    SELECT state, COUNT(*) AS count FROM agent_work_items
+                    WHERE project_slug=? GROUP BY state
+                    """,
+                    (project_slug,),
+                ).fetchall()
+            }
         return {
             "project": project_slug,
             "agents": agents,
             "goals": goals,
             "active_sessions": active_sessions,
             "unread_messages": unread,
+            "work_counts": work_counts,
         }
