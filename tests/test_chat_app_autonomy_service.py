@@ -29,7 +29,7 @@ class AutonomyServiceTests(unittest.TestCase):
         FakeSupervisor.calls = 0
         with patch("ordax_chat_app.autonomy_service.AutonomySupervisor", FakeSupervisor):
             service = AutonomyService(FakeRuntime())
-            started = service.start(model="gpt-test", idle_sleep_seconds=0.5)
+            started = service.start(model="gpt-test", project_slugs=["demo"], idle_sleep_seconds=0.5)
             self.assertTrue(started["running"])
             again = service.start(model="gpt-test", idle_sleep_seconds=0.5)
             self.assertTrue(again["running"])
@@ -44,13 +44,25 @@ class AutonomyServiceTests(unittest.TestCase):
             self.assertFalse(stopped["running"])
             self.assertFalse(stopped["thread_alive"])
 
+    def test_project_scope_change_requires_restart(self):
+        with patch("ordax_chat_app.autonomy_service.AutonomySupervisor", FakeSupervisor):
+            service = AutonomyService(FakeRuntime())
+            service.start(model="gpt-a", project_slugs=["demo"], idle_sleep_seconds=0.5)
+            try:
+                status = service.status()
+                self.assertEqual(status["project_slugs"], ("demo",))
+                with self.assertRaisesRegex(RuntimeError, "different model or project scope"):
+                    service.start(model="gpt-a", project_slugs=["other"], idle_sleep_seconds=0.5)
+            finally:
+                service.stop(timeout_seconds=2)
+
     def test_running_model_cannot_change_without_stop(self):
         with patch("ordax_chat_app.autonomy_service.AutonomySupervisor", FakeSupervisor):
             service = AutonomyService(FakeRuntime())
-            service.start(model="gpt-a", idle_sleep_seconds=0.5)
+            service.start(model="gpt-a", project_slugs=["demo"], idle_sleep_seconds=0.5)
             try:
                 with self.assertRaisesRegex(RuntimeError, "already running"):
-                    service.start(model="gpt-b", idle_sleep_seconds=0.5)
+                    service.start(model="gpt-b", project_slugs=["demo"], idle_sleep_seconds=0.5)
             finally:
                 service.stop(timeout_seconds=2)
 
