@@ -26,6 +26,22 @@
         <button id="openNormalChatButton" class="connect">Abrir ChatGPT normal</button>
         <code id="normalMcpEndpoint"></code>
 
+        <div class="handoff-card">
+          <div class="bridge-head">
+            <strong>Continuidade entre chats</strong>
+            <span class="bridge-badge">handoff</span>
+          </div>
+          <small>Salve o ponto atual e continue em uma conversa nova sem reconstruir o projeto.</small>
+          <textarea id="handoffSummary" class="compact-input" rows="3" placeholder="Resumo do ponto atual..."></textarea>
+          <input id="handoffNextAction" class="compact-input" placeholder="Próxima ação">
+          <button id="handoffCreateButton" class="secondary-button">Criar Handoff</button>
+          <div class="bridge-actions">
+            <input id="handoffId" class="compact-input" placeholder="hof_...">
+            <button id="handoffLoadButton" class="secondary-button">Carregar</button>
+          </div>
+          <div id="handoffState" class="muted">Nenhum Handoff nesta sessão.</div>
+        </div>
+
         <div class="bridge-card">
           <div class="bridge-head">
             <strong>ORDAX Web Bridge</strong>
