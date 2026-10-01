@@ -19,8 +19,11 @@ class CloudflareOAuthConsentContractTests(unittest.TestCase):
         self.assertNotIn('scopes_supported: ["authenticated"]', self.worker)
 
     def test_each_remote_tool_declares_oauth_security_scheme(self) -> None:
-        self.assertIn('securitySchemes: [{ type: "oauth2", scopes: ["email"] }]', self.mcp)
-        self.assertIn('_meta: { securitySchemes: [{ type: "oauth2", scopes: ["email"] }] }', self.mcp)
+        scheme = 'securitySchemes: [{ type: "oauth2", scopes: ["email"] }]'
+        self.assertGreaterEqual(self.mcp.count(scheme), 2)
+        self.assertIn("_meta: {", self.mcp)
+        self.assertIn('"openai/toolInvocation/invoking"', self.mcp)
+        self.assertIn('"openai/toolInvocation/invoked"', self.mcp)
 
     def test_consent_uses_pinned_supabase_sdk_and_publishable_key(self) -> None:
         self.assertIn('@supabase/supabase-js@2.117.2/+esm', self.consent)

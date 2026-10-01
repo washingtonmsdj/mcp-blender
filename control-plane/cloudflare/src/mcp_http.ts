@@ -85,6 +85,110 @@ const TOOLS: ToolSpec[] = [
   { name: "blender_save", description: "Save the granted live Blender project.", action: "blender.live_save", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, target_path: STRING, timeout_seconds: NUMBER, wait_for_completion_ms: WAIT }, required: ["device_id", "project"] },
 ];
 
+const READ_ONLY_TOOLS = new Set([
+  "ordax_session",
+  "ordax_targets",
+  "ordax_action_status",
+  "repository_catalog",
+  "handoff_get",
+  "project_inventory",
+  "project_text_read",
+  "projects_list",
+  "project_search",
+  "project_read_batch",
+  "project_health",
+  "project_preview_status",
+  "workspace_file_stat",
+  "workspace_directory_list",
+  "workspace_text_read",
+  "git_status",
+  "git_diff",
+  "artifacts_list",
+  "artifact_preview",
+  "blender_status",
+  "blender_scene_snapshot",
+  "blender_object_inspect",
+  "blender_modeling_schema",
+]);
+
+const DESTRUCTIVE_TOOLS = new Set([
+  "project_text_write",
+  "project_text_patch",
+  "workspace_text_write",
+  "workspace_text_patch",
+  "workspace_path_remove",
+  "workspace_path_move",
+  "git_command",
+  "terminal_exec",
+  "blender_transform",
+  "blender_apply_material",
+  "blender_save",
+]);
+
+const OPEN_WORLD_TOOLS = new Set([
+  "git_command",
+  "terminal_exec",
+]);
+
+const TOOL_TITLES: Record<string, string> = {
+  ordax_session: "Check ORDAX account session",
+  ordax_targets: "List connected ORDAX devices",
+  ordax_action_status: "Check ORDAX action status",
+  repository_catalog: "List device repositories",
+  handoff_get: "Load continuation handoff",
+  handoff_create: "Create continuation handoff",
+  project_inventory: "Inspect project inventory",
+  project_text_read: "Read project text file",
+  project_text_write: "Write project text file",
+  project_text_patch: "Patch project text file",
+  projects_list: "List device projects",
+  project_search: "Search project text",
+  project_read_batch: "Read project files",
+  project_health: "Inspect project health",
+  project_preview_status: "Inspect project preview",
+  workspace_file_stat: "Inspect project path",
+  workspace_directory_list: "List project directory",
+  workspace_text_read: "Read workspace text",
+  workspace_text_write: "Write workspace text",
+  workspace_text_patch: "Patch workspace text",
+  workspace_directory_create: "Create workspace directory",
+  workspace_path_remove: "Remove workspace path",
+  workspace_path_move: "Move workspace path",
+  git_status: "Read Git status",
+  git_diff: "Read Git diff",
+  git_command: "Run Git command",
+  terminal_exec: "Run project command",
+  artifacts_list: "List project artifacts",
+  artifact_preview: "Preview project artifact",
+  blender_status: "Inspect Blender status",
+  blender_scene_snapshot: "Inspect Blender scene",
+  blender_object_inspect: "Inspect Blender object",
+  blender_modeling_schema: "Read Blender modeling capabilities",
+  blender_start: "Start or adopt Blender",
+  blender_transform: "Transform Blender object",
+  blender_create_primitive: "Create Blender primitive",
+  blender_apply_material: "Apply Blender material",
+  blender_save: "Save Blender project",
+};
+
+function toolAnnotations(name: string): JsonObject {
+  const readOnly = READ_ONLY_TOOLS.has(name);
+  return {
+    readOnlyHint: readOnly,
+    destructiveHint: DESTRUCTIVE_TOOLS.has(name),
+    openWorldHint: OPEN_WORLD_TOOLS.has(name),
+    idempotentHint: readOnly,
+  };
+}
+
+function toolInvocationText(name: string): { invoking: string; invoked: string } {
+  const title = TOOL_TITLES[name] ?? name.replace(/_/g, " ");
+  return {
+    invoking: `${title}…`.slice(0, 64),
+    invoked: `${title} complete`.slice(0, 64),
+  };
+}
+
 function responseJson(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8" } });
 }
@@ -106,6 +210,64 @@ async function bodyJson(response: Response): Promise<JsonObject> {
   }
 }
 
+function sanitizeTargets(payload: JsonObject): JsonObject {
+  const rawTargets = Array.isArray(payload.targets) ? payload.targets : [];
+  const targets = rawTargets.flatMap((raw) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+    const target = raw as JsonObject;
+    const rawGrants = Array.isArray(target.grants) ? target.grants : [];
+    const grants = rawGrants.flatMap((rawGrant) => {
+      if (!rawGrant || typeof rawGrant !== "object" || Array.isArray(rawGrant)) return [];
+      const grant = rawGrant as JsonObject;
+      return [{
+        space_id: typeof grant.space_id === "string" ? grant.space_id : null,
+        actions: Array.isArray(grant.actions) ? grant.actions.filter((item) => typeof item === "string") : [],
+        projects: Array.isArray(grant.projects) ? grant.projects.filter((item) => typeof item === "string") : [],
+      }];
+    });
+    return [{
+      device_id: typeof target.device_id === "string" ? target.device_id : "",
+      name: typeof target.name === "string" ? target.name : "ORDAX device",
+      grants,
+    }];
+  });
+  return { ok: payload.ok !== false, targets };
+}
+
+function sanitizeActionPayload(payload: JsonObject, requestId?: string): JsonObject {
+  if (payload.pending === true) {
+    return {
+      ok: payload.ok !== false,
+      pending: true,
+      request_id: requestId ?? (typeof payload.request_id === "string" ? payload.request_id : ""),
+      message: typeof payload.message === "string" ? payload.message : "Action is still running.",
+    };
+  }
+  const rawAction = payload.action;
+  if (rawAction && typeof rawAction === "object" && !Array.isArray(rawAction)) {
+    const action = rawAction as JsonObject;
+    return {
+      ok: payload.ok !== false,
+      pending: false,
+      action: {
+        name: typeof action.action === "string" ? action.action : "",
+        project: typeof action.project === "string" ? action.project : null,
+        status: typeof action.status === "string" ? action.status : "",
+        result: action.result ?? null,
+        error_code: typeof action.error_code === "string" ? action.error_code : null,
+      },
+    };
+  }
+  if (payload.ok === false) {
+    return {
+      ok: false,
+      pending: false,
+      error: typeof payload.error === "string" ? payload.error : "ordax_action_failed",
+    };
+  }
+  return { ok: payload.ok !== false, pending: false };
+}
+
 function textToolResult(payload: unknown, isError = false): JsonObject {
   const text = JSON.stringify(payload, null, 2);
   const structured = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : { value: payload };
@@ -121,18 +283,31 @@ function cloneWithAuth(source: Request, url: string, method: string, body?: unkn
 }
 
 function toolDefinitions(): JsonObject[] {
-  return TOOLS.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    securitySchemes: [{ type: "oauth2", scopes: ["email"] }],
-    _meta: { securitySchemes: [{ type: "oauth2", scopes: ["email"] }] },
-    inputSchema: {
-      type: "object",
-      properties: tool.properties ?? {},
-      required: tool.required ?? [],
-      additionalProperties: false,
-    },
-  }));
+  return TOOLS.map((tool) => {
+    const invocation = toolInvocationText(tool.name);
+    return {
+      name: tool.name,
+      title: TOOL_TITLES[tool.name] ?? tool.name.replace(/_/g, " "),
+      description: tool.description,
+      securitySchemes: [{ type: "oauth2", scopes: ["email"] }],
+      annotations: toolAnnotations(tool.name),
+      _meta: {
+        securitySchemes: [{ type: "oauth2", scopes: ["email"] }],
+        "openai/toolInvocation/invoking": invocation.invoking,
+        "openai/toolInvocation/invoked": invocation.invoked,
+      },
+      inputSchema: {
+        type: "object",
+        properties: tool.properties ?? {},
+        required: tool.required ?? [],
+        additionalProperties: false,
+      },
+      outputSchema: {
+        type: "object",
+        additionalProperties: true,
+      },
+    };
+  });
 }
 
 function specFor(name: string): ToolSpec | undefined {
@@ -149,9 +324,9 @@ async function waitForAction(source: Request, requestId: string, timeoutMs: numb
     const action = payload.action;
     if (action && typeof action === "object" && !Array.isArray(action)) {
       const state = String((action as JsonObject).status ?? "");
-      if (["succeeded", "failed", "cancelled"].includes(state)) return { ...payload, pending: false };
+      if (["succeeded", "failed", "cancelled"].includes(state)) return sanitizeActionPayload({ ...payload, pending: false }, requestId);
     }
-    if (Date.now() >= deadline) return { ok: true, pending: true, request_id: requestId, message: "Action is still running; call ordax_action_status with this request_id." };
+    if (Date.now() >= deadline) return sanitizeActionPayload({ ok: true, pending: true, request_id: requestId, message: "Action is still running; call ordax_action_status with this request_id." }, requestId);
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 }
@@ -159,20 +334,24 @@ async function waitForAction(source: Request, requestId: string, timeoutMs: numb
 async function callTool(source: Request, name: string, args: JsonObject, handlers: OrdaxMcpHandlers): Promise<JsonObject> {
   if (name === "ordax_session") {
     const response = await handlers.session(cloneWithAuth(source, new URL("/v3/product/session", source.url).toString(), "GET"));
-    const payload = await bodyJson(response);
-    return textToolResult(payload, !response.ok);
+    return textToolResult(
+      response.ok
+        ? { ok: true, authenticated: true }
+        : { ok: false, authenticated: false, error: "authentication_required" },
+      !response.ok,
+    );
   }
   if (name === "ordax_targets") {
     const response = await handlers.targets(cloneWithAuth(source, new URL("/v3/product/targets", source.url).toString(), "GET"));
     const payload = await bodyJson(response);
-    return textToolResult(payload, !response.ok);
+    return textToolResult(response.ok ? sanitizeTargets(payload) : { ok: false, error: "targets_unavailable" }, !response.ok);
   }
   if (name === "ordax_action_status") {
     const requestId = typeof args.request_id === "string" ? args.request_id : "";
     if (!requestId) return textToolResult({ ok: false, error: "request_id_required" }, true);
     const response = await handlers.getAction(cloneWithAuth(source, new URL(`/v3/product/actions/${requestId}`, source.url).toString(), "GET"), requestId);
     const payload = await bodyJson(response);
-    return textToolResult(payload, !response.ok);
+    return textToolResult(response.ok ? sanitizeActionPayload(payload, requestId) : { ok: false, error: "action_status_unavailable" }, !response.ok);
   }
 
   const spec = specFor(name);
@@ -231,8 +410,8 @@ export async function handleOrdaxMcp(request: Request, handlers: OrdaxMcpHandler
   if (method === "initialize") return rpcResult(id, {
     protocolVersion: "2025-06-18",
     capabilities: { tools: { listChanged: false } },
-    serverInfo: { name: "ordax-studio-remote", version: "1.0.0" },
-    instructions: "ORDAX Studio remote access. Discover targets first, then use project-scoped typed tools. Writes remain grant- and audit-protected on the Device Agent.",
+    serverInfo: { name: "ORDAX Dev", version: "0.4.0" },
+    instructions: "Use ORDAX Dev only when the user asks to work with a connected ORDAX device or one of its registered projects. List connected devices before project-scoped work when the target is unknown. Respect project boundaries and the user’s explicit intent. Write, execute, Git and Blender mutation tools remain grant- and audit-protected by the ORDAX Runtime.",
   });
   if (method === "tools/list") return rpcResult(id, { tools: toolDefinitions() });
   if (method === "tools/call") {

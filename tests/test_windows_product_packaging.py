@@ -32,6 +32,15 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn("closeapplications=no", installer)
         self.assertIn("software\\microsoft\\windows\\currentversion\\run", installer)
 
+    def test_installer_retires_legacy_scheduled_runtime_without_deleting_state(self) -> None:
+        installer = (ROOT / "packaging" / "windows" / "ordax-studio.iss").read_text(encoding="utf-8")
+        self.assertIn("RetireLegacyScheduledTask", installer)
+        self.assertIn('/Query /TN "OrdaX Dev Agent"', installer)
+        self.assertIn('/End /TN "OrdaX Dev Agent"', installer)
+        self.assertIn('/Delete /F /TN "OrdaX Dev Agent"', installer)
+        self.assertIn('{userstartup}\\OrdaX Dev Agent.lnk', installer)
+        self.assertNotIn('filesandordirs; Name: "{localappdata}\\OrdaX\\DevAgent"', installer)
+
     def test_product_build_bundles_private_runtime(self) -> None:
         build = (ROOT / "scripts" / "windows" / "build-ordax-studio-product.ps1").read_text(encoding="utf-8")
         self.assertIn("python-$PythonVersion-embed-amd64.zip", build)
@@ -62,6 +71,8 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn("Upgrade over running ORDAX Runtime", workflow)
         self.assertIn('Wait-OrdaxReady -Label "ORDAX_UPGRADE_RUNTIME"', workflow)
         self.assertIn("running runtime did not exit during upgrade", workflow)
+        self.assertIn("LEGACY_ORDAX_TASK_REMOVED", workflow)
+        self.assertIn("LEGACY_ORDAX_STARTUP_REMOVED", workflow)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import {
 } from "./product_auth";
 import { handleOrdaxMcp } from "./mcp_http";
 import { oauthConsentResponse } from "./oauth_consent";
+import { openAiAppsChallenge, publicProductPage } from "./public_pages";
 
 interface Env extends ProductAuthEnv {
   DB: D1Database;
@@ -13,6 +14,7 @@ interface Env extends ProductAuthEnv {
   DEVICE_SESSIONS: DurableObjectNamespace<DeviceSession>;
   ENROLLMENT_SESSIONS: DurableObjectNamespace<EnrollmentSession>;
   ORDAX_OPERATOR_TOKEN: string;
+  OPENAI_APPS_CHALLENGE?: string;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -2136,6 +2138,15 @@ export default {
         capabilities: CONTROL_PLANE_CAPABILITIES,
         product_auth_configured: productAuthConfigured(env),
       });
+    }
+
+    if (request.method === "GET" && url.pathname === "/.well-known/openai-apps-challenge") {
+      return openAiAppsChallenge(env);
+    }
+
+    if (request.method === "GET") {
+      const publicPage = publicProductPage(url.pathname);
+      if (publicPage) return publicPage;
     }
 
     if (request.method === "GET" && url.pathname === "/v3/device/ws") {
