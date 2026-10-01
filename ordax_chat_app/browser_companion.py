@@ -561,7 +561,10 @@ class BrowserCompanionServer:
                             """<!doctype html><html><head><meta charset="utf-8"><title>ORDAX Pairing</title>
 <style>body{font-family:system-ui;background:#111;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0}
 main{text-align:center}p{color:#aaa}</style></head>
-<body><main><h1>ORDAX Browser Companion</h1><p>Pairing with ORDAX Dev…</p></main></body></html>""",
+<body><main><h1>ORDAX Browser Companion</h1><p>Pairing with ORDAX Dev…</p></main>
+<script>
+setTimeout(() => { window.location.replace("https://chatgpt.com/"); }, 900);
+</script></body></html>""",
                         )
                         return
                     if parsed.path == "/hello":
