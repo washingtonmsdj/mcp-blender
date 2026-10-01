@@ -211,13 +211,25 @@ function renderManagedChatBrowser(status){
   const running=!!state.managedBrowser.running;
   el("managedChatBrowserStartButton").classList.toggle("hidden",running);
   el("managedChatBrowserStopButton").classList.toggle("hidden",!running);
+  el("managedChatBrowserInstallButton").classList.toggle("hidden",!!state.managedBrowser.managed_runtime_installed);
   const parts=[];
   if(running)parts.push("ativo");
   if(state.managedBrowser.pid)parts.push("PID "+state.managedBrowser.pid);
   if(state.managedBrowser.browser)parts.push(state.managedBrowser.browser.split(/[\\/]/).pop());
+  if(state.managedBrowser.managed_runtime_installed)parts.push("navegador ORDAX pronto");
   if(state.managedBrowser.profile_dir)parts.push("perfil persistente");
+  if(state.managedBrowser.browser_error)parts.push("atenção: "+state.managedBrowser.browser_error);
   el("managedChatBrowserState").textContent=parts.length?parts.join(" · "):"Navegador dedicado parado.";
   el("managedChatBrowserState").className=running?"success":"muted";
+}
+
+async function installManagedChatBrowser(){
+  try{
+    setStatus("Baixando navegador privado oficial do ORDAX…");
+    const data=unwrap(await api().managed_chat_browser_install());
+    renderManagedChatBrowser(data);
+    setStatus("Navegador privado preparado e assinatura validada.","success");
+  }catch(err){setStatus(err.message,"error")}
 }
 
 async function startManagedChatBrowser(){
@@ -723,6 +735,7 @@ el("webBridgeStopButton").onclick=stopWebBridge;
 el("webBridgeTunnelsButton").onclick=openWebBridgeTunnels;
 el("webBridgeApiKeysButton").onclick=openWebBridgeApiKeys;
 el("browserCompanionPairButton").onclick=pairBrowserCompanion;
+el("managedChatBrowserInstallButton").onclick=installManagedChatBrowser;
 el("managedChatBrowserStartButton").onclick=startManagedChatBrowser;
 el("managedChatBrowserStopButton").onclick=stopManagedChatBrowser;
 el("browserCompanionExtensionsButton").onclick=openBrowserCompanionExtensions;
