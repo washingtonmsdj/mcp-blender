@@ -62,7 +62,7 @@ if ($LASTEXITCODE -ne 0) {
 Copy-Item (Join-Path $repoRoot "scripts") (Join-Path $stageRoot "scripts") -Recurse -Force
 
 $privatePython = Join-Path $runtimeRoot "python.exe"
-& $privatePython -c "import ordax_studio, ordax_dev_agent, ordax_device_agent, webview; print('ORDAX_PRIVATE_RUNTIME_OK')"
+& $privatePython -c "import ordax_studio, ordax_chat_app, ordax_dev_agent, ordax_device_agent, webview; print('ORDAX_PRIVATE_RUNTIME_OK')"
 if ($LASTEXITCODE -ne 0) {
     throw "Private ORDAX Python runtime import smoke failed"
 }
