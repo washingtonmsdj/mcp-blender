@@ -161,6 +161,22 @@ class DesktopApi:
             )
         return self._guard(enqueue)
 
+    def capability_status(self, project: str) -> dict[str, Any]:
+        def status():
+            selected = self.runtime.agent.select_available_project(str(project or ""))
+            return self.runtime.policy.project(selected)
+        return self._guard(status)
+
+    def capability_set(self, project: str, capability: str, enabled: bool) -> dict[str, Any]:
+        def update():
+            selected = self.runtime.agent.select_available_project(str(project or ""))
+            result = self.runtime.policy.set(selected, str(capability or ""), bool(enabled))
+            return {
+                "grant": result,
+                "capabilities": self.runtime.policy.project(selected),
+            }
+        return self._guard(update)
+
     def autonomy_status(self) -> dict[str, Any]:
         return self._guard(self.autonomy.status)
 
