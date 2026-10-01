@@ -134,16 +134,20 @@ class AutonomySupervisor:
         model: str,
         context_window_tokens: int = 128000,
         runner_prefix: str | None = None,
+        project_slugs: set[str] | None = None,
     ):
         self.runtime = runtime
         self.model = model
         self.context_window_tokens = context_window_tokens
         self.runner_prefix = runner_prefix or f"ordax-supervisor:{os.getpid()}"
+        self.project_slugs = set(project_slugs) if project_slugs is not None else None
 
     def run_cycle(self) -> list[AutonomousRunResult]:
         results: list[AutonomousRunResult] = []
         for project in self.runtime.projects():
             slug = str(project["slug"])
+            if self.project_slugs is not None and slug not in self.project_slugs:
+                continue
             status = self.runtime.orchestrator.status(slug)
             for agent in status["agents"]:
                 if agent["state"] != "active":
