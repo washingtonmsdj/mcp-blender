@@ -45,6 +45,7 @@ Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 [InstallDelete]
 Type: files; Name: "{app}\ORDAX Studio.exe"
 Type: filesandordirs; Name: "{app}\browser_extension"
+Type: files; Name: "{userstartup}\OrdaX Dev Agent.lnk"
 
 [Icons]
 Name: "{group}\ORDAX Dev"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
@@ -150,6 +151,60 @@ begin
     Sleep(500);
 end;
 
+function LegacyScheduledTaskExists(): Boolean;
+var
+  ResultCode: Integer;
+  Started: Boolean;
+begin
+  Started := Exec(
+    ExpandConstant('{sys}\schtasks.exe'),
+    '/Query /TN "OrdaX Dev Agent"',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  );
+  Result := Started and (ResultCode = 0);
+end;
+
+function RetireLegacyScheduledTask(): Boolean;
+var
+  ResultCode: Integer;
+  Started: Boolean;
+begin
+  if not LegacyScheduledTaskExists() then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  { End the historical Scheduled Task first so its Python child releases
+    localhost:8765 before the packaged ORDAX Runtime starts. The state
+    directory is deliberately preserved because it owns device identity,
+    project registration and local runtime data. }
+  Exec(
+    ExpandConstant('{sys}\schtasks.exe'),
+    '/End /TN "OrdaX Dev Agent"',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  );
+  Sleep(750);
+
+  Started := Exec(
+    ExpandConstant('{sys}\schtasks.exe'),
+    '/Delete /F /TN "OrdaX Dev Agent"',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  );
+  Result := Started and (ResultCode = 0);
+  if Result then
+    Sleep(750);
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   NeedsRestart := False;
@@ -166,6 +221,12 @@ begin
     Exit;
   end;
 
+  if not RetireLegacyScheduledTask() then
+  begin
+    Result := 'Não foi possível aposentar o supervisor legado OrdaX Dev Agent.';
+    Exit;
+  end;
+
   Result := '';
 end;
 
@@ -175,5 +236,6 @@ begin
   begin
     StopOrdaxProcess('Local\ORDAXStudioShutdown', '{#AppExeName}');
     StopOrdaxProcess('Local\ORDAXRuntimeShutdown', '{#RuntimeExeName}');
+    RetireLegacyScheduledTask();
   end;
 end;
