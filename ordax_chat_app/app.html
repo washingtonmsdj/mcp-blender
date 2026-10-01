@@ -42,7 +42,10 @@
           <small>Salve o ponto atual e continue em uma conversa nova sem reconstruir o projeto.</small>
           <textarea id="handoffSummary" class="compact-input" rows="3" placeholder="Resumo do ponto atual..."></textarea>
           <input id="handoffNextAction" class="compact-input" placeholder="Próxima ação">
-          <button id="handoffCreateButton" class="secondary-button">Criar Handoff</button>
+          <div class="bridge-actions">
+            <button id="handoffCreateButton" class="secondary-button">Criar Handoff</button>
+            <button id="normalChatRolloverButton" class="secondary-button">Nova conversa + handoff</button>
+          </div>
           <div class="bridge-actions">
             <input id="handoffId" class="compact-input" placeholder="hof_...">
             <button id="handoffLoadButton" class="secondary-button">Carregar</button>
