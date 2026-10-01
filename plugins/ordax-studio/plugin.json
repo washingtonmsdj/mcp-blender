@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ordax-studio",
-  "version": "0.2.0",
-  "description": "Connect regular ChatGPT to the ORDAX development runtime through authenticated MCP.",
+  "version": "0.3.0",
+  "description": "Connect ChatGPT and other compatible clients to the ORDAX Dev host through authenticated MCP.",
   "author": {
     "name": "ORDAX"
   },
@@ -21,8 +21,8 @@
     "com.openai": {
       "interface": {
         "displayName": "ORDAX Dev",
-        "shortDescription": "Use regular ChatGPT with your ORDAX development runtime.",
-        "longDescription": "Connect regular ChatGPT to the authenticated ORDAX MCP for project files, development workflows, Git, processes and supported adapters. ORDAX runs the local runtime and keeps the model conversation in ChatGPT.",
+        "shortDescription": "Use ChatGPT with your ORDAX Dev host.",
+        "longDescription": "Connect ChatGPT to the authenticated ORDAX MCP for local projects, files, Git, processes, previews and supported adapters. ORDAX Dev is the persistent Windows host; the conversation remains in ChatGPT.",
         "developerName": "ORDAX",
         "category": "Developer Tools",
         "capabilities": [
