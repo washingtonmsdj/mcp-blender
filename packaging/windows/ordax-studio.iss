@@ -53,7 +53,7 @@ Name: "desktopicon"; Description: "Criar atalho do ORDAX Studio na área de trab
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ORDAX Runtime"; ValueData: """{app}\{#RuntimeExeName}"""; Flags: uninsdeletevalue
 
 [Run]
-Filename: "{app}\redist\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Validando Microsoft Edge WebView2..."; Flags: waituntilterminated skipifdoesntexist
+Filename: "{app}\redist\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Instalando Microsoft Edge WebView2..."; Flags: waituntilterminated skipifdoesntexist; Check: NeedsWebView2
 Filename: "{app}\{#RuntimeExeName}"; Description: "Iniciar ORDAX Runtime"; Flags: nowait postinstall skipifsilent
 Filename: "{app}\{#AppExeName}"; Description: "Abrir ORDAX Studio"; Flags: nowait postinstall skipifsilent
 
@@ -68,6 +68,14 @@ function SetEvent(hEvent: THandle): Boolean;
   external 'SetEvent@kernel32.dll stdcall';
 function CloseHandle(hObject: THandle): Boolean;
   external 'CloseHandle@kernel32.dll stdcall';
+
+function NeedsWebView2(): Boolean;
+var
+  WebViewPath: String;
+begin
+  WebViewPath := ExpandConstant('{pf32}\Microsoft\EdgeWebView\Application');
+  Result := not DirExists(WebViewPath);
+end;
 
 function SignalShutdownEvent(const EventName: String): Boolean;
 var
