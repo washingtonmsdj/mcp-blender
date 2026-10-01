@@ -142,14 +142,71 @@ class AutonomySupervisor:
         self.runner_prefix = runner_prefix or f"ordax-supervisor:{os.getpid()}"
         self.project_slugs = set(project_slugs) if project_slugs is not None else None
 
+    def _enqueue_coordinator_followups(self, project_slug: str) -> int:
+        """Turn unread worker reports into durable coordinator work.
+
+        Messages are marked read only after the follow-up work item is persisted,
+        so a crash cannot silently lose a worker result.
+        """
+        created = 0
+        status = self.runtime.orchestrator.status(project_slug)
+        coordinators = [
+            agent
+            for agent in status["agents"]
+            if agent["state"] == "active" and agent.get("parent_agent_id") is None
+        ]
+        for coordinator in coordinators:
+            inbox = self.runtime.orchestrator.inbox(
+                str(coordinator["id"]),
+                unread_only=True,
+                limit=100,
+            )
+            if not inbox:
+                continue
+            lines = [
+                "Review these worker reports, verify the project state, and decide the next actions. "
+                "Delegate follow-up work when useful; otherwise finish the objective."
+            ]
+            for message in inbox:
+                sender = self.runtime.orchestrator.get_agent(str(message["sender_agent_id"]))
+                correlation = str(message.get("correlation_id") or "")
+                prefix = f"[{sender['name']} / {sender['role']}]"
+                if correlation:
+                    prefix += f" task={correlation}"
+                lines.append(prefix + "\n" + str(message["content"]))
+            work = self.runtime.orchestrator.enqueue_work(
+                str(coordinator["id"]),
+                "Review worker results",
+                "\n\n".join(lines),
+                priority=90,
+                max_attempts=3,
+            )
+            if not work.get("id"):
+                continue
+            for message in inbox:
+                self.runtime.orchestrator.mark_message_read(
+                    str(coordinator["id"]),
+                    int(message["id"]),
+                )
+            created += 1
+        return created
+
     def run_cycle(self) -> list[AutonomousRunResult]:
         results: list[AutonomousRunResult] = []
+        selected_projects: list[str] = []
         for project in self.runtime.projects():
             slug = str(project["slug"])
             if self.project_slugs is not None and slug not in self.project_slugs:
                 continue
+            selected_projects.append(slug)
+            # Process coordinator work before workers so a Prime can delegate and
+            # the worker can pick up the task in the same cycle.
             status = self.runtime.orchestrator.status(slug)
-            for agent in status["agents"]:
+            agents = sorted(
+                status["agents"],
+                key=lambda item: (item.get("parent_agent_id") is not None, item["created_at"]),
+            )
+            for agent in agents:
                 if agent["state"] != "active":
                     continue
                 runner = AutonomousAgentRunner(
@@ -162,6 +219,11 @@ class AutonomySupervisor:
                 result = runner.run_once()
                 if result.state != "idle":
                     results.append(result)
+
+        # Worker results produced during this cycle become durable Prime work for
+        # the next cycle. run_forever will immediately continue while activity exists.
+        for slug in selected_projects:
+            self._enqueue_coordinator_followups(slug)
         return results
 
     def run_forever(self, *, stop_event: Event, idle_sleep_seconds: float = 5.0) -> None:
