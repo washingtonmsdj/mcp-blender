@@ -9,6 +9,7 @@
 - The desktop is primarily runtime/dashboard/configuration for regular-chat mode; the embedded chat remains an optional agent surface.
 - Plugin package: `plugins/ordax-studio/`.
 - Production MCP: `https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/mcp`.
+- **ORDAX Web Bridge:** managed OpenAI Secure MCP Tunnel inside the desktop, mirroring the proven OpenChatX transport pattern for connecting regular ChatGPT to a private/local runtime.
 
 
 ## Estado atual — implementado nesta branch
@@ -146,6 +147,13 @@ Ainda neste gate:
 - nenhuma credencial de terceiros exposta ao modelo.
 
 ## Gate 9 — produto desktop
+
+- ORDAX Web Bridge panel ✅ foundation;
+- official `tunnel-client` install from OpenAI release with SHA-256 verification ✅;
+- tunnel ID + runtime key protected locally; key is never passed to the model ✅;
+- init/doctor/run lifecycle from the desktop ✅;
+- next: persist tunnel process independently of the UI and surface detailed health/diagnostics.
+
 
 - instalação única;
 - login/pairing;
