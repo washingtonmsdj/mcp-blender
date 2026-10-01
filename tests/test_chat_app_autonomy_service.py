@@ -32,7 +32,7 @@ class AutonomyServiceTests(unittest.TestCase):
             service = AutonomyService(FakeRuntime())
             started = service.start(model="gpt-test", project_slugs=["demo"], idle_sleep_seconds=0.5)
             self.assertTrue(started["running"])
-            again = service.start(model="gpt-test", idle_sleep_seconds=0.5)
+            again = service.start(model="gpt-test", project_slugs=["demo"], idle_sleep_seconds=0.5)
             self.assertTrue(again["running"])
             self.assertEqual(again["model"], "gpt-test")
 
