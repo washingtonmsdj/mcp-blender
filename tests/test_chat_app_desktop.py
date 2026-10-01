@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from ordax_chat_app.desktop import DesktopApi
 from ordax_chat_app.runtime import RuntimeChatResult
+from ordax_dev_agent.models import ActionResult
 
 
 class FakeConversations:
@@ -171,13 +172,34 @@ class FakeWebBridge:
 
 class FakeRuntime:
     def __init__(self):
+        self.handoffs = {}
         self.agent = types.SimpleNamespace(
             config=types.SimpleNamespace(default_project="demo"),
             select_available_project=lambda project: project if project in {"demo", "other"} else (_ for _ in ()).throw(ValueError("project not registered")),
+            execute=self._execute,
         )
         self.conversations = FakeConversations()
         self.orchestrator = FakeOrchestrator()
         self.policy = FakePolicy()
+
+    def _execute(self, action, payload):
+        if action == "handoff.create":
+            handoff_id = "hof_0123456789abcdef0123456789abcdef"
+            data = {
+                "handoff_id": handoff_id,
+                "project": payload["project"],
+                "summary": payload["summary"],
+                "next_action": payload.get("next_action", ""),
+                "expires_at": "2099-01-01T00:00:00-03:00",
+            }
+            self.handoffs[handoff_id] = data
+            return ActionResult(True, "created", data)
+        if action == "handoff.get":
+            data = self.handoffs.get(payload["handoff_id"])
+            if data is None:
+                return ActionResult(False, "not found", {})
+            return ActionResult(True, "loaded", data)
+        return ActionResult(False, f"unsupported: {action}", {})
 
     def account_status(self):
         return {"connected": True, "account": {"name": "User", "email": "u@example.com"}}
@@ -246,6 +268,25 @@ class DesktopApiTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertTrue(result["data"]["opened"])
         opened.assert_called_once()
+
+    def test_desktop_handoff_fallback_is_project_scoped(self):
+        created = self.api.handoff_create(
+            "demo",
+            "Continue the project",
+            "Run tests",
+            24,
+        )
+        self.assertTrue(created["ok"])
+        handoff_id = created["data"]["handoff_id"]
+        self.assertTrue(handoff_id.startswith("hof_"))
+
+        loaded = self.api.handoff_get("demo", handoff_id)
+        self.assertTrue(loaded["ok"])
+        self.assertEqual(loaded["data"]["summary"], "Continue the project")
+        self.assertEqual(loaded["data"]["next_action"], "Run tests")
+
+        wrong_project = self.api.handoff_get("unknown", handoff_id)
+        self.assertFalse(wrong_project["ok"])
 
     def test_web_bridge_can_be_configured_installed_started_and_stopped(self):
         configured = self.api.web_bridge_configure(
