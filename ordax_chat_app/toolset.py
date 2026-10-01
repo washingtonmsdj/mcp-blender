@@ -152,9 +152,17 @@ DEVELOPMENT_TOOLS: list[dict[str, Any]] = [
             "shell": {"type": "boolean"},
             "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 1800},
             "env": _nullable({
-                "type": "object",
-                "maxProperties": 32,
-                "additionalProperties": {"type": "string"},
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "value": {"type": "string"},
+                    },
+                    "required": ["name", "value"],
+                    "additionalProperties": False,
+                },
             }),
         }),
         "strict": True,
@@ -220,6 +228,17 @@ class DevelopmentToolset:
             )
 
         payload = {key: value for key, value in raw.items() if value is not None}
+        if name == "terminal" and isinstance(payload.get("env"), list):
+            env: dict[str, str] = {}
+            for item in payload["env"]:
+                if not isinstance(item, dict):
+                    return json.dumps({"ok": False, "summary": "terminal env entries must be objects"})
+                key = str(item.get("name") or "")
+                value = item.get("value")
+                if not key or key in env or not isinstance(value, str):
+                    return json.dumps({"ok": False, "summary": "terminal env names must be unique non-empty strings"})
+                env[key] = value
+            payload["env"] = env
         payload["project"] = self.project
         result = self.action_registry.execute(action, payload)
         output = {
