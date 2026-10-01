@@ -85,3 +85,8 @@ select{width:100%;background:var(--panel2);color:var(--text);border:1px solid va
 .bridge-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .bridge-actions .secondary-button{font-size:10px;padding:7px}
 #webBridgeState{font-size:10px;line-height:1.35;word-break:break-word}
+
+.handoff-card{display:flex;flex-direction:column;gap:7px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.handoff-card small{font-size:10px;color:var(--muted);line-height:1.35}
+.handoff-card .bridge-actions{grid-template-columns:minmax(0,1fr) auto}
+#handoffState{font-size:10px;line-height:1.35;word-break:break-word}
