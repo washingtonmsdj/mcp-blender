@@ -72,19 +72,23 @@ class DevelopmentToolsetTests(unittest.TestCase):
     def test_model_cannot_smuggle_project_field(self):
         registry = FakeRegistry()
         toolset = DevelopmentToolset(registry, project="allowed")
-        toolset.execute(
-            "workspace_list",
-            json.dumps(
-                {
-                    "path": ".",
-                    "max_depth": 1,
-                    "max_entries": 10,
-                    "include_hidden": False,
-                    "project": "other",
-                }
-            ),
+        output = json.loads(
+            toolset.execute(
+                "workspace_list",
+                json.dumps(
+                    {
+                        "path": ".",
+                        "max_depth": 1,
+                        "max_entries": 10,
+                        "include_hidden": False,
+                        "project": "other",
+                    }
+                ),
+            )
         )
-        self.assertEqual(registry.calls[0][1]["project"], "other")
+        self.assertFalse(output["ok"])
+        self.assertIn("unsupported tool argument", output["summary"])
+        self.assertEqual(registry.calls, [])
 
 
 if __name__ == "__main__":
