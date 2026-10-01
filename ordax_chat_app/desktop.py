@@ -303,6 +303,9 @@ class DesktopApi:
     def managed_chat_browser_status(self) -> dict[str, Any]:
         return self._guard(self.managed_chat_browser.status)
 
+    def managed_chat_browser_install(self) -> dict[str, Any]:
+        return self._guard(self.managed_chat_browser.install_browser)
+
     def managed_chat_browser_start(self) -> dict[str, Any]:
         def start():
             companion = self._ensure_browser_companion()
