@@ -13,6 +13,16 @@ Ela instala:
 
 O runtime privado inclui CPython e dependências do produto, sem alterar o PATH do usuário.
 
+## Identidade e integrações
+
+A identidade do produto é a **Conta ORDAX**. Hoje ela é autenticada por Supabase Auth e é usada para vincular dispositivos, Spaces e grants.
+
+O **Cloudflare** é infraestrutura do Control Plane/MCP e não exige login do usuário final.
+
+O **GitHub** é opcional e deve ser tratado como provedor de projetos/remotos. Ele não substitui a Conta ORDAX e o plugin GitHub do ChatGPT não é a ponte do ORDAX. A ponte remota é o plugin ORDAX Dev → MCP do Control Plane → ORDAX Runtime.
+
+Contrato detalhado: `docs/ORDAX_IDENTITY_AND_PROVIDERS.md`.
+
 ## Uso diário
 
 1. instalar o ORDAX Dev;

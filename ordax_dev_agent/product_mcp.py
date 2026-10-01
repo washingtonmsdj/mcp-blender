@@ -56,7 +56,7 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
     ProductMcpToolSpec(name="workspace_directory_create", action="workspace.directory_create", effect="write", description="Create a directory inside a granted project."),
     ProductMcpToolSpec(name="workspace_path_remove", action="workspace.path_remove", effect="write", description="Remove a file or directory inside a granted project."),
     ProductMcpToolSpec(name="workspace_path_move", action="workspace.path_move", effect="write", description="Move or rename a path inside a granted project."),
-    ProductMcpToolSpec(name="git_command", action="git.command", effect="execute", description="Run a Git command against a granted project."),
+    ProductMcpToolSpec(name="git_command", action="git.command", effect="execute", description="Run an approved Git subcommand against a granted project without exposing provider credentials."),
     ProductMcpToolSpec(name="terminal_exec", action="terminal.exec", effect="execute", description="Run a foreground terminal command with the local OS user's permissions."),
     ProductMcpToolSpec(
         name="repository_catalog",

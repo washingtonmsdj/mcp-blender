@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import sys
 import uuid
@@ -25,6 +26,50 @@ _MAX_INLINE_BYTES = 2 * 1024 * 1024
 _MAX_WRITE_BYTES = 8 * 1024 * 1024
 _MAX_LIST_ENTRIES = 5000
 _BLOCKED_PARTS = {".git"}
+_ALLOWED_GIT_SUBCOMMANDS = frozenset({
+    "add",
+    "branch",
+    "cat-file",
+    "checkout",
+    "cherry-pick",
+    "commit",
+    "describe",
+    "diff",
+    "fetch",
+    "log",
+    "ls-files",
+    "ls-tree",
+    "merge",
+    "notes",
+    "pull",
+    "push",
+    "rebase",
+    "reflog",
+    "remote",
+    "reset",
+    "restore",
+    "revert",
+    "rev-parse",
+    "show",
+    "stash",
+    "status",
+    "switch",
+    "tag",
+})
+_GIT_URL_USERINFO_RE = re.compile(r"(?P<scheme>https?://)[^\s/@]+@", re.IGNORECASE)
+_GIT_URL_PASSWORD_RE = re.compile(r"(?P<scheme>https?://)[^\s/:@]+:[^\s/@]+@", re.IGNORECASE)
+_GIT_TOKEN_QUERY_RE = re.compile(
+    r"([?&](?:access_token|token|auth|password)=)[^&#\s]+",
+    re.IGNORECASE,
+)
+
+
+def _redact_git_sensitive_text(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    value = _GIT_URL_PASSWORD_RE.sub(r"\g<scheme>***@", value)
+    value = _GIT_URL_USERINFO_RE.sub(r"\g<scheme>***@", value)
+    return _GIT_TOKEN_QUERY_RE.sub(r"\1***", value)
 
 
 def _sha256(data: bytes) -> str:
@@ -597,10 +642,15 @@ class DeveloperActions:
         for index, arg in enumerate(args):
             if arg in forbidden or any(arg.startswith(value + "=") for value in forbidden if value.startswith("--")):
                 return ActionResult(False, f"Git argument may escape project scope: {arg}")
-            if arg == "-c" and index + 1 < len(args):
-                key = args[index + 1].split("=", 1)[0].strip().lower()
-                if key in {"core.sshcommand", "core.hookspath", "alias.exec"}:
-                    return ActionResult(False, f"Git config override is not allowed: {key}")
+            if arg == "-c":
+                return ActionResult(False, "Git config overrides are not allowed through the remote boundary")
+
+        subcommand = args[0].strip().lower()
+        if subcommand not in _ALLOWED_GIT_SUBCOMMANDS:
+            return ActionResult(
+                False,
+                f"Git subcommand is not allowed through the remote boundary: {subcommand}",
+            )
 
         timeout = _bounded_int(
             payload.get("timeout_seconds"),
@@ -612,6 +662,13 @@ class DeveloperActions:
         result = _run(["git", "-C", str(project.root), *args], timeout=timeout)
         data = dict(result.data)
         data.pop("command", None)
+        for field in ("stdout", "stderr"):
+            if field in data:
+                data[field] = _redact_git_sensitive_text(data[field])
         data["project"] = project.slug
         data["git_args"] = args
-        return ActionResult(result.ok, result.summary, data)
+        return ActionResult(
+            result.ok,
+            _redact_git_sensitive_text(result.summary),
+            data,
+        )
