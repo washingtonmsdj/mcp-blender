@@ -229,7 +229,7 @@ class WebBridgeManager:
             console = executable.with_name("python.exe")
             if console.is_file():
                 executable = console
-        return f'"{executable}" -m ordax_studio.mcp_server'
+        return f'"{executable}" -m ordax_chat_app.tunnel_mcp_server'
 
     def _run_checked(self, args: list[str], *, config: dict[str, Any], timeout: int = 60) -> str:
         binary = self.binary()
