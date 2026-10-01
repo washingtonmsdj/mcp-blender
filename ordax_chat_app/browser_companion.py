@@ -331,8 +331,10 @@ class BrowserCompanionStore:
                 raise ValueError("conversation is not attached to ORDAX")
             connection.execute(
                 """
-                INSERT INTO browser_commands(id,conversation_id,text,state,created_at)
-                VALUES(?,?,?,?,?)
+                INSERT INTO browser_commands(
+                  id,conversation_id,text,state,created_at,attempts,max_attempts
+                )
+                VALUES(?,?,?,?,?,?,?)
                 """,
                 (
                     command_id, conversation_id, text[:200_000], "queued", created,
