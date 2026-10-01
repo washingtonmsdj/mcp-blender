@@ -1,5 +1,11 @@
 # ORDAX Studio como produto instalado
 
+> **Direção atual do ORDAX Dev:** para usuários que querem preservar a franquia Work/Codex,
+> o modo principal é o **ChatGPT normal usando o plugin/MCP ORDAX**. O chat embutido via
+> Sign in with ChatGPT/Responses é um modo opcional e usa a franquia aplicável de Work/Codex.
+> O runtime não automatiza cookies, endpoints privados ou extração do site do ChatGPT.
+
+
 O ORDAX Studio é o produto local. ChatGPT, Codex, Claude, Cursor ou qualquer outro cliente compatível com MCP são consumidores opcionais; nenhum deles faz parte do runtime do ORDAX.
 
 ## Arquitetura cliente-neutra
