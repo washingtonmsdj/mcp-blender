@@ -68,3 +68,10 @@ select{width:100%;background:var(--panel2);color:var(--text);border:1px solid va
 .capability-row strong{font-size:12px;font-weight:650}
 .capability-row small{font-size:10px;color:var(--muted)}
 .capability-row input[type="checkbox"]{width:18px;height:18px;accent-color:#8aa4c8}
+
+.mode-card{display:flex;flex-direction:column;gap:8px;margin:12px 0 4px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
+.mode-card strong{font-size:12px}
+.mode-card span{font-size:11px;color:var(--muted);line-height:1.4}
+.mode-card code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}
+.quota-warning{margin:7px 0 10px;padding:8px;border:1px solid #5b4930;border-radius:8px;color:#e8c78f;background:#17130d;font-size:11px;line-height:1.35}
+.icon-button:disabled{opacity:.35;cursor:not-allowed}
