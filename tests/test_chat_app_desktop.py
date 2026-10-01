@@ -118,12 +118,15 @@ class FakeWebBridge:
     def __init__(self):
         self.running = False
         self.configured = False
+        self.enabled = False
         self.installed = False
+        self.startup_installed = False
         self.tunnel_id = None
 
     def status(self):
         return {
             "configured": self.configured,
+            "enabled": self.enabled,
             "tunnel_id": self.tunnel_id,
             "profile": "ordax-dev",
             "initialized": False,
@@ -134,6 +137,7 @@ class FakeWebBridge:
             "chatgpt_url": "https://chatgpt.com/",
             "tunnels_url": "https://platform.openai.com/settings/organization/tunnels",
             "api_keys_url": "https://platform.openai.com/settings/organization/api-keys",
+            "daemon": {"state": "not-running", "heartbeat_fresh": False},
         }
 
     def configure(self, tunnel_id, api_key):
@@ -148,18 +152,46 @@ class FakeWebBridge:
     def start(self):
         if not self.configured:
             raise RuntimeError("not configured")
+        self.enabled = True
         self.running = True
         return self.status()
 
     def stop(self):
+        self.enabled = False
         self.running = False
         return self.status()
 
     def disconnect(self):
         self.running = False
+        self.enabled = False
         self.configured = False
         self.tunnel_id = None
         return self.status()
+
+    def startup_status(self):
+        return {
+            "supported": True,
+            "installed": self.startup_installed,
+            "state": "Ready" if self.startup_installed else "NotInstalled",
+            "task_name": "ORDAX Dev Web Bridge",
+        }
+
+    def install_startup(self, *, start_now=True):
+        self.startup_installed = True
+        return {
+            "installed": True,
+            "state": "Ready",
+            "task_name": "ORDAX Dev Web Bridge",
+            "start_now": start_now,
+        }
+
+    def uninstall_startup(self):
+        self.startup_installed = False
+        return {
+            "installed": False,
+            "state": "NotInstalled",
+            "task_name": "ORDAX Dev Web Bridge",
+        }
 
     @staticmethod
     def open_tunnels_page():
@@ -287,6 +319,20 @@ class DesktopApiTests(unittest.TestCase):
 
         wrong_project = self.api.handoff_get("unknown", handoff_id)
         self.assertFalse(wrong_project["ok"])
+
+    def test_web_bridge_startup_task_is_controllable_from_desktop(self):
+        status = self.api.web_bridge_startup_status()
+        self.assertTrue(status["ok"])
+        self.assertFalse(status["data"]["installed"])
+
+        installed = self.api.web_bridge_install_startup()
+        self.assertTrue(installed["ok"])
+        self.assertTrue(installed["data"]["installed"])
+        self.assertTrue(installed["data"]["start_now"])
+
+        removed = self.api.web_bridge_uninstall_startup()
+        self.assertTrue(removed["ok"])
+        self.assertFalse(removed["data"]["installed"])
 
     def test_web_bridge_can_be_configured_installed_started_and_stopped(self):
         configured = self.api.web_bridge_configure(
