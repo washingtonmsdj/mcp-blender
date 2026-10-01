@@ -116,7 +116,7 @@ jobs:
           # Simulate the historical pre-0.4 supervisor so the product install proves
           # it retires the duplicate runtime without depending on a preconfigured host.
           $legacyTaskName = "OrdaX Dev Agent"
-          $legacyAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 300\""
+          $legacyAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -NonInteractive -Command "Start-Sleep -Seconds 300"'
           $legacyTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(10)
           Register-ScheduledTask -TaskName $legacyTaskName -Action $legacyAction -Trigger $legacyTrigger -Force | Out-Null
           Start-ScheduledTask -TaskName $legacyTaskName
