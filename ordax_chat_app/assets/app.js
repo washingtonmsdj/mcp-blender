@@ -1,4 +1,4 @@
-const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null,webBridge:null,webBridgeStartup:null,browserCompanion:null,browserConversation:null,browserMessageFingerprint:"",managedBrowser:null};
+const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null,webBridge:null,webBridgeStartup:null,browserCompanion:null,browserConversation:null,browserMessageFingerprint:"",managedBrowser:null,browserCommandId:null};
 
 function api(){return window.pywebview.api}
 function el(id){return document.getElementById(id)}
@@ -334,9 +334,30 @@ async function openBrowserConversation(id){
   setStatus("Conversa real do ChatGPT Web anexada ao ORDAX.","success");
 }
 
+async function refreshBrowserCommandStatus(){
+  if(!state.browserCommandId)return;
+  try{
+    const commands=unwrap(await api().browser_companion_commands(null,50));
+    const command=(commands||[]).find(item=>item.id===state.browserCommandId);
+    if(!command)return;
+    if(command.state==="queued"){
+      setStatus("Mensagem enfileirada no Browser Companion…");
+    }else if(command.state==="delivered"){
+      setStatus("Mensagem entregue à extensão · tentativa "+Number(command.attempts||1));
+    }else if(command.state==="sent"){
+      setStatus("Mensagem enviada ao ChatGPT normal.","success");
+      state.browserCommandId=null;
+    }else if(command.state==="failed"){
+      setStatus("Browser Companion falhou: "+String(command.error||"erro desconhecido"),"error");
+      state.browserCommandId=null;
+    }
+  }catch(err){}
+}
+
 async function sendBrowserMessage(text){
   if(!state.browserConversation){
     const created=unwrap(await api().browser_companion_new_chat(text));
+    state.browserCommandId=created.command?.id||null;
     renderManagedChatBrowser(created.managed_browser||state.managedBrowser||{});
     appendMessage("user",text);
     setStatus("Criando conversa normal real no ChatGPT…");
@@ -345,7 +366,8 @@ async function sendBrowserMessage(text){
     setTimeout(refreshBrowserCompanion,5000);
     return true;
   }
-  unwrap(await api().browser_companion_send(state.browserConversation,text));
+  const command=unwrap(await api().browser_companion_send(state.browserConversation,text));
+  state.browserCommandId=command?.id||null;
   appendMessage("user",text);
   setStatus("Mensagem enviada ao Browser Companion…");
   return true;
@@ -725,3 +747,5 @@ window.addEventListener("pywebviewready",bootstrap);
 
 setInterval(refreshBrowserConversationMessages,1200);
 setInterval(()=>{if(state.mode==="normal")refreshBrowserCompanion()},5000);
+
+setInterval(refreshBrowserCommandStatus,900);
