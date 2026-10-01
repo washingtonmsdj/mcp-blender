@@ -60,10 +60,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Copy-Item (Join-Path $repoRoot "scripts") (Join-Path $stageRoot "scripts") -Recurse -Force
-Copy-Item (Join-Path $repoRoot "browser_extension") (Join-Path $stageRoot "browser_extension") -Recurse -Force
 
 $privatePython = Join-Path $runtimeRoot "python.exe"
-& $privatePython -c "import ordax_studio, ordax_chat_app, ordax_dev_agent, ordax_device_agent, webview; print('ORDAX_PRIVATE_RUNTIME_OK')"
+& $privatePython -c "import ordax_studio, ordax_dev_agent, ordax_device_agent, webview; print('ORDAX_PRIVATE_RUNTIME_OK')"
 if ($LASTEXITCODE -ne 0) {
     throw "Private ORDAX Python runtime import smoke failed"
 }
@@ -80,7 +79,7 @@ if (-not $cl) {
     throw "cl.exe was not found. Run from a Visual Studio developer environment."
 }
 $launcherSource = Join-Path $repoRoot "packaging\windows\ordax_launcher.c"
-$studioExe = Join-Path $stageRoot "ORDAX Studio.exe"
+$studioExe = Join-Path $stageRoot "ORDAX Dev.exe"
 $runtimeExe = Join-Path $stageRoot "ORDAX Runtime.exe"
 
 Push-Location $buildRoot
@@ -102,12 +101,12 @@ if (-not (Test-Path $studioExe) -or -not (Test-Path $runtimeExe)) {
 
 $manifest = [ordered]@{
     schema = "ordax.windows-product/1"
-    product = "ORDAX Studio"
+    product = "ORDAX Dev"
     version = $Version
     architecture = "x64"
     python = $PythonVersion
     entrypoints = @{
-        studio = "ORDAX Studio.exe"
+        studio = "ORDAX Dev.exe"
         runtime = "ORDAX Runtime.exe"
     }
     control_plane = "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev"
@@ -136,10 +135,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup compilation failed"
 }
 
-$setup = Get-ChildItem $OutputDirectory -Filter "ORDAX-Studio-Setup-*.exe" | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+$setup = Get-ChildItem $OutputDirectory -Filter "ORDAX-Dev-Setup-*.exe" | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
 if (-not $setup) {
     throw "Installer output was not produced"
 }
 $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $setup.FullName).Hash.ToLowerInvariant()
-Write-Output "ORDAX_STUDIO_SETUP=$($setup.FullName)"
-Write-Output "ORDAX_STUDIO_SETUP_SHA256=$hash"
+Write-Output "ORDAX_DEV_SETUP=$($setup.FullName)"
+Write-Output "ORDAX_DEV_SETUP_SHA256=$hash"
