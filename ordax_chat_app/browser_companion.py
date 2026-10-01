@@ -526,6 +526,11 @@ class BrowserCompanionServer:
             thread.join(timeout=3)
         return self.status()
 
+    def close(self) -> dict[str, Any]:
+        status = self.stop()
+        self.store.close()
+        return status
+
     def new_pairing_code(self) -> dict[str, Any]:
         self.start()
         code = f"{secrets.randbelow(10**8):08d}"
