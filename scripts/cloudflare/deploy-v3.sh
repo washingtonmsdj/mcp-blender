@@ -120,6 +120,7 @@ config = {
     "compatibility_date": "2026-09-27",
     "workers_dev": True,
     "observability": {"enabled": True},
+    "triggers": {"crons": ["17 3 * * *"]},
     "vars": {
         "PRODUCT_AUTH_ISSUER": product_issuer,
         "PRODUCT_AUTH_AUDIENCE": product_audience,
