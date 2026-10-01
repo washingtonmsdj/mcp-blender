@@ -25,6 +25,23 @@
         <span>O ChatGPT normal usa o ORDAX pelo MCP oficial.</span>
         <button id="openNormalChatButton" class="connect">Abrir ChatGPT normal</button>
         <code id="normalMcpEndpoint"></code>
+
+        <div class="bridge-card">
+          <div class="bridge-head">
+            <strong>ORDAX Web Bridge</strong>
+            <span id="webBridgeBadge" class="bridge-badge">desconectado</span>
+          </div>
+          <small>Conecta o ChatGPT Web ao runtime local usando OpenAI Secure MCP Tunnel.</small>
+          <input id="webBridgeTunnelId" class="compact-input" placeholder="tunnel_...">
+          <input id="webBridgeApiKey" class="compact-input" type="password" autocomplete="off" placeholder="Runtime API key">
+          <div class="bridge-actions">
+            <button id="webBridgeTunnelsButton" class="secondary-button">Criar tunnel</button>
+            <button id="webBridgeApiKeysButton" class="secondary-button">Criar chave</button>
+          </div>
+          <button id="webBridgeConnectButton" class="secondary-button">Configurar e conectar</button>
+          <button id="webBridgeStopButton" class="secondary-button hidden">Parar Web Bridge</button>
+          <div id="webBridgeState" class="muted">Web Bridge não configurado.</div>
+        </div>
       </div>
 
       <div id="agentModePanel" class="agent-only hidden">
