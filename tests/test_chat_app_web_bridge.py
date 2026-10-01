@@ -103,6 +103,25 @@ class WebBridgeTests(unittest.TestCase):
         self.assertIsNone(status["pid"])
         self.assertFalse(manager.runtime_path.exists())
 
+    def test_desired_state_is_separate_from_credentials(self):
+        manager = WebBridgeManager(state_dir=self.root, credentials=self.store)
+        status = manager.configure("tunnel_0123456789abcdef", "secret")
+        self.assertTrue(status["configured"])
+        self.assertFalse(status["enabled"])
+
+        enabled = manager.set_enabled(True)
+        self.assertTrue(enabled["enabled"])
+        disabled = manager.set_enabled(False)
+        self.assertFalse(disabled["enabled"])
+        self.assertTrue(disabled["configured"])
+
+    def test_non_windows_startup_status_is_explicitly_unsupported(self):
+        manager = WebBridgeManager(state_dir=self.root, credentials=self.store)
+        with patch("ordax_chat_app.web_bridge.os.name", "posix"):
+            status = manager.startup_status()
+        self.assertFalse(status["supported"])
+        self.assertFalse(status["installed"])
+
     def test_disconnect_clears_credentials(self):
         manager = WebBridgeManager(state_dir=self.root, credentials=self.store)
         manager.configure("tunnel_0123456789abcdef", "secret")
