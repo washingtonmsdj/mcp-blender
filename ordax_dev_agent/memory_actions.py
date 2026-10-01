@@ -61,6 +61,37 @@ class MemoryActions:
         )
 
 
+    def handoff_create(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        data = self._memory_store_instance().create_handoff(
+            project.slug,
+            project.root,
+            str(payload.get("summary") or ""),
+            next_action=str(payload.get("next_action") or ""),
+            completed=payload.get("completed") if isinstance(payload.get("completed"), list) else [],
+            blockers=payload.get("blockers") if isinstance(payload.get("blockers"), list) else [],
+            changed_paths=payload.get("changed_paths") if isinstance(payload.get("changed_paths"), list) else [],
+            ttl_hours=int(payload.get("ttl_hours", 24)),
+        )
+        return ActionResult(
+            True,
+            f"Handoff {data['handoff_id']} created for {project.slug}",
+            data,
+        )
+
+    def handoff_get(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        data = self._memory_store_instance().get_handoff(
+            project.slug,
+            project.root,
+            str(payload.get("handoff_id") or ""),
+        )
+        return ActionResult(
+            True,
+            f"Handoff {data['handoff_id']} loaded for {project.slug}",
+            data,
+        )
+
     def session_resume(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
         data = self._memory_store_instance().start_session(project.slug, project.root)
