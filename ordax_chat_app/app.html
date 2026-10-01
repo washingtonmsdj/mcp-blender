@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ORDAX Dev</title>
+  <link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <header class="brand">
+        <div class="logo">O</div>
+        <div><strong>ORDAX Dev</strong><span>Agentic workspace</span></div>
+      </header>
+
+      <button id="connectButton" class="connect">Continue with ChatGPT</button>
+      <div id="accountCard" class="account hidden"></div>
+
+      <label class="field-label">Projeto</label>
+      <select id="projectSelect"></select>
+
+      <div class="section-head">
+        <span>Conversas</span>
+        <button id="newThreadButton" class="icon-button" title="Nova conversa">+</button>
+      </div>
+      <div id="threadList" class="thread-list"></div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <h1 id="threadTitle">Nova conversa</h1>
+          <p id="statusText">Selecione um projeto e conecte o ChatGPT.</p>
+        </div>
+        <div class="model-wrap">
+          <label for="modelSelect">Modelo</label>
+          <select id="modelSelect"></select>
+        </div>
+      </header>
+
+      <section id="messages" class="messages">
+        <div class="empty-state">
+          <h2>Desenvolva conversando.</h2>
+          <p>O GPT pode ler e editar arquivos, usar Git e executar o terminal no projeto selecionado.</p>
+        </div>
+      </section>
+
+      <footer class="composer">
+        <textarea id="composerInput" rows="3" placeholder="Peça para analisar, implementar, testar ou continuar o projeto..."></textarea>
+        <div class="composer-row">
+          <span id="composerHint">Enter envia · Shift+Enter quebra linha</span>
+          <button id="sendButton">Enviar</button>
+        </div>
+      </footer>
+    </main>
+
+    <aside class="activity">
+      <div class="section-head"><span>Agentes</span><button id="refreshActivity" class="icon-button">↻</button></div>
+      <div id="agentPanel" class="agent-panel"></div>
+      <div class="section-head"><span>Última execução</span></div>
+      <div id="runPanel" class="run-panel muted">Nenhuma execução nesta sessão.</div>
+      <div class="section-head"><span>Arquitetura</span></div>
+      <div class="architecture">
+        <span>ChatGPT</span><b>→</b><span>ORDAX Runtime</span><b>→</b><span>Projeto local</span>
+      </div>
+    </aside>
+  </div>
+  <script src="assets/app.js"></script>
+</body>
+</html>
