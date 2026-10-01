@@ -160,6 +160,8 @@ class ActionRegistry(
             "memory.task_add": self.memory_task_add,
             "memory.task_toggle": self.memory_task_toggle,
             "memory.checkpoint": self.memory_checkpoint,
+            "handoff.create": self.handoff_create,
+            "handoff.get": self.handoff_get,
             "session.resume": self.session_resume,
             "session.finish": self.session_finish,
             "orchestrator.status": self.orchestrator_status,
