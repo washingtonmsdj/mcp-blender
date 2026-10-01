@@ -7,6 +7,7 @@ import {
 import { handleOrdaxMcp } from "./mcp_http";
 import { oauthConsentResponse } from "./oauth_consent";
 import { openAiAppsChallenge, publicProductPage } from "./public_pages";
+import { runProductRetention } from "./retention";
 
 interface Env extends ProductAuthEnv {
   DB: D1Database;
@@ -34,6 +35,7 @@ const CONTROL_PLANE_CAPABILITIES = [
   "product_subject_auth_jwks_v1",
   "product_readonly_actions_v1",
   "product_typed_actions_v2",
+  "product_retention_v1",
 ];
 
 const ACTION_PREFIXES = [
@@ -2127,6 +2129,18 @@ async function downloadArtifact(request: Request, env: Env, artifactId: string):
 }
 
 export default {
+  async scheduled(
+    _controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    ctx.waitUntil(
+      runProductRetention(env).then((stats) => {
+        console.log(JSON.stringify({ event: "product_retention", ...stats }));
+      }),
+    );
+  },
+
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
