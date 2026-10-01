@@ -4,12 +4,9 @@ on:
   pull_request:
     paths:
       - "packaging/windows/**"
-      - "ordax_chat_app/**"
-      - "browser_extension/**"
+      - "ordax_studio/**"
       - "scripts/windows/build-ordax-studio-product.ps1"
       - "tests/test_windows_product_packaging.py"
-      - "tests/test_chat_app_*.py"
-      - "tests/test_browser_companion_extension_contract.py"
       - "pyproject.toml"
       - ".github/workflows/windows-product-build.yml"
   workflow_dispatch:
@@ -46,7 +43,7 @@ jobs:
       - name: Install Inno Setup
         shell: powershell
         run: choco install innosetup --yes --no-progress
-      - name: Build ORDAX Studio product
+      - name: Build ORDAX Dev product
         shell: powershell
         run: .\scripts\windows\build-ordax-studio-product.ps1 -OutputDirectory "$env:GITHUB_WORKSPACE\dist\windows"
       - name: Write checksums
@@ -59,9 +56,9 @@ jobs:
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: ordax-studio-windows-x64
+          name: ordax-dev-windows-x64
           path: |
-            dist/windows/ORDAX-Studio-Setup-*.exe
+            dist/windows/ORDAX-Dev-Setup-*.exe
             dist/windows/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
@@ -73,7 +70,7 @@ jobs:
       - name: Download Windows installer
         uses: actions/download-artifact@v4
         with:
-          name: ordax-studio-windows-x64
+          name: ordax-dev-windows-x64
           path: artifact
       - name: Install, upgrade over running runtime, and verify action-ready health
         shell: powershell
@@ -109,11 +106,11 @@ jobs:
             throw "Installed ORDAX Runtime did not reach action-ready state for $Label"
           }
 
-          $installer = Get-ChildItem .\artifact\ORDAX-Studio-Setup-*.exe | Select-Object -First 1
-          if (-not $installer) { throw "ORDAX Studio installer artifact is missing" }
-          $installRoot = Join-Path $env:RUNNER_TEMP "ordax-studio-install"
-          $installLog = Join-Path $env:RUNNER_TEMP "ordax-studio-install.log"
-          $upgradeLog = Join-Path $env:RUNNER_TEMP "ordax-studio-upgrade.log"
+          $installer = Get-ChildItem .\artifact\ORDAX-Dev-Setup-*.exe | Select-Object -First 1
+          if (-not $installer) { throw "ORDAX Dev installer artifact is missing" }
+          $installRoot = Join-Path $env:RUNNER_TEMP "ordax-dev-install"
+          $installLog = Join-Path $env:RUNNER_TEMP "ordax-dev-install.log"
+          $upgradeLog = Join-Path $env:RUNNER_TEMP "ordax-dev-upgrade.log"
           Remove-Item $installRoot -Recurse -Force -ErrorAction SilentlyContinue
 
           $installProcess = Start-Process -FilePath $installer.FullName -ArgumentList @(
@@ -125,10 +122,10 @@ jobs:
           ) -Wait -PassThru
           if ($installProcess.ExitCode -ne 0) {
             if (Test-Path $installLog) { Get-Content $installLog -Tail 200 }
-            throw "ORDAX Studio silent install failed: $($installProcess.ExitCode)"
+            throw "ORDAX Dev silent install failed: $($installProcess.ExitCode)"
           }
 
-          $studioExe = Join-Path $installRoot "ORDAX Studio.exe"
+          $studioExe = Join-Path $installRoot "ORDAX Dev.exe"
           $runtimeExe = Join-Path $installRoot "ORDAX Runtime.exe"
           $privatePython = Join-Path $installRoot "runtime\python.exe"
           foreach ($required in @($studioExe, $runtimeExe, $privatePython)) {
@@ -162,7 +159,7 @@ jobs:
             ) -Wait -PassThru
             if ($upgradeProcess.ExitCode -ne 0) {
               if (Test-Path $upgradeLog) { Get-Content $upgradeLog -Tail 200 }
-              throw "ORDAX Studio silent upgrade failed: $($upgradeProcess.ExitCode)"
+              throw "ORDAX Dev silent upgrade failed: $($upgradeProcess.ExitCode)"
             }
 
             Start-Sleep -Milliseconds 750
@@ -189,7 +186,7 @@ jobs:
           }
 
           $uninstaller = Join-Path $installRoot "unins000.exe"
-          if (-not (Test-Path $uninstaller)) { throw "ORDAX Studio uninstaller is missing" }
+          if (-not (Test-Path $uninstaller)) { throw "ORDAX Dev uninstaller is missing" }
           $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @(
             "/VERYSILENT",
             "/SUPPRESSMSGBOXES",
