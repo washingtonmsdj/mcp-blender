@@ -256,6 +256,7 @@ async function bootstrap(){
     else setStatus("Pronto.");
     await refreshActivity();
     await refreshAutonomy();
+    await refreshCapabilities();
   }catch(err){setStatus(err.message,"error")}
 }
 
