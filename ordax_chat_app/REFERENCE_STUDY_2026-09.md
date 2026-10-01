@@ -33,6 +33,13 @@ Useful ideas:
 
 The browser-extension approach is useful as a compatibility layer for ChatGPT-side orchestration, but it should not be the authority for local-device permissions.
 
+Observed implementation details worth reusing carefully:
+- a Manifest V3 extension can pair to a loopback desktop service;
+- the extension service worker, not the page content script, should own the bearer token;
+- the browser can observe the real ChatGPT conversation and hand durable events to the desktop;
+- Prime/worker identity can be correlated with real ChatGPT conversations;
+- UI automation is inherently more fragile than MCP and must remain an adapter, not the ORDAX security boundary.
+
 ## OpenAI official MCP/App path
 
 References:
@@ -58,3 +65,21 @@ We will not clone any one project. The target combines:
 7. existing ORDAX device identity, outbound agent connection, grants, audit and revocation.
 
 The key distinction is that capability is broad, but authority is explicit. A file grant does not silently imply terminal or computer control. Once terminal is granted, however, it is a real development terminal rather than a fake subset.
+
+## Combined transport decision
+
+ORDAX uses two complementary normal-ChatGPT paths instead of betting the product on one project pattern:
+
+1. **Secure MCP Web Bridge** — official transport for ChatGPT to invoke ORDAX tools.
+2. **Browser Companion** — optional local browser adapter for showing a real ChatGPT Web conversation inside the ORDAX Dev UI and forwarding explicit user messages through that page.
+
+The Browser Companion:
+- is loopback-only;
+- requires a one-time pairing code;
+- keeps its bearer token in the extension service worker, not in ChatGPT page JavaScript;
+- accepts observations only from ChatGPT conversation URLs;
+- does not call private ChatGPT APIs or read cookies;
+- cannot grant filesystem, terminal, Git or computer permissions;
+- is not used for unattended 24x7 autonomy. Background autonomy stays on explicit model providers/local models.
+
+This gives ORDAX the UX ideas of browser-integrated projects while preserving the stronger MCP/ORDAX capability boundary.
