@@ -120,7 +120,7 @@ async function loadJwk(env: ProductAuthEnv, kid: string, alg: string): Promise<J
   const response = await fetch(parsed.toString(), {
     method: "GET",
     headers: { accept: "application/json" },
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) return null;

@@ -19,6 +19,8 @@ class ProductAuthContractTests(unittest.TestCase):
         self.assertIn("crypto.subtle.verify", self.auth)
         self.assertIn("product_auth_unconfigured", self.auth)
         self.assertIn("product_signature_invalid", self.auth)
+        self.assertIn('redirect: "manual"', self.auth)
+        self.assertNotIn('redirect: "error"', self.auth)
         self.assertNotIn('"none"', self.auth)
         self.assertNotIn('"HS256"', self.auth)
 
