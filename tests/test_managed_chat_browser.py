@@ -136,7 +136,11 @@ class ManagedChatBrowserTests(unittest.TestCase):
         ), patch.object(
             ManagedChatBrowser,
             "_verify_windows_signature",
-            return_value=None,
+            return_value={
+                "status": "Valid",
+                "subject": "CN=Google LLC",
+                "product_version": "153.0.8010.52",
+            },
         ), patch(
             "ordax_chat_app.managed_chat_browser.os.name",
             "nt",
@@ -149,6 +153,63 @@ class ManagedChatBrowserTests(unittest.TestCase):
         stored = json.loads(managed.browser_metadata_path.read_text(encoding="utf-8"))
         self.assertEqual(stored["version"], "153.0.8010.52")
         self.assertEqual(len(calls), 2)
+
+    def test_windows_signature_rejects_hash_mismatch(self):
+        managed = ManagedChatBrowser(
+            extension_dir=self.extension,
+            state_dir=self.root / "state",
+            browser_path=self.browser,
+        )
+        payload = {
+            "Status": "HashMismatch",
+            "Subject": "CN=Google LLC",
+            "ProductVersion": "153.0.8010.52",
+        }
+        result = Mock()
+        result.returncode = 0
+        result.stdout = json.dumps(payload)
+        result.stderr = ""
+        with patch(
+            "ordax_chat_app.managed_chat_browser.os.name",
+            "nt",
+        ), patch(
+            "ordax_chat_app.managed_chat_browser.subprocess.run",
+            return_value=result,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "signature is invalid"):
+                managed._verify_windows_signature(
+                    self.browser,
+                    expected_version="153.0.8010.52",
+                )
+
+    def test_windows_signature_accepts_google_unknown_chain_when_version_matches(self):
+        managed = ManagedChatBrowser(
+            extension_dir=self.extension,
+            state_dir=self.root / "state",
+            browser_path=self.browser,
+        )
+        payload = {
+            "Status": "UnknownError",
+            "Subject": "CN=Google LLC, O=Google LLC",
+            "ProductVersion": "153.0.8010.52",
+        }
+        result = Mock()
+        result.returncode = 0
+        result.stdout = json.dumps(payload)
+        result.stderr = ""
+        with patch(
+            "ordax_chat_app.managed_chat_browser.os.name",
+            "nt",
+        ), patch(
+            "ordax_chat_app.managed_chat_browser.subprocess.run",
+            return_value=result,
+        ):
+            signature = managed._verify_windows_signature(
+                self.browser,
+                expected_version="153.0.8010.52",
+            )
+        self.assertEqual(signature["status"], "UnknownError")
+        self.assertIn("Google", signature["subject"])
 
     def test_untrusted_initial_url_is_rejected(self):
         managed = ManagedChatBrowser(
