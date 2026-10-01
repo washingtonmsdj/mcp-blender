@@ -14,8 +14,24 @@
         <div><strong>ORDAX Dev</strong><span>Agentic workspace</span></div>
       </header>
 
-      <button id="connectButton" class="connect">Continue with ChatGPT</button>
-      <div id="accountCard" class="account hidden"></div>
+      <label class="field-label" for="modeSelect">Modo</label>
+      <select id="modeSelect">
+        <option value="normal">Chat normal · cota normal</option>
+        <option value="agent">Agent / Responses · usa Work/Codex</option>
+      </select>
+
+      <div id="normalModePanel" class="mode-card normal-only">
+        <strong>Chat normal</strong>
+        <span>O ChatGPT normal usa o ORDAX pelo MCP oficial.</span>
+        <button id="openNormalChatButton" class="connect">Abrir ChatGPT normal</button>
+        <code id="normalMcpEndpoint"></code>
+      </div>
+
+      <div id="agentModePanel" class="agent-only hidden">
+        <button id="connectButton" class="connect">Continue with ChatGPT</button>
+        <div class="quota-warning">Este modo usa a cota Work/Codex do seu plano.</div>
+        <div id="accountCard" class="account hidden"></div>
+      </div>
 
       <label class="field-label">Projeto</label>
       <select id="projectSelect"></select>
@@ -33,7 +49,7 @@
           <h1 id="threadTitle">Nova conversa</h1>
           <p id="statusText">Selecione um projeto e conecte o ChatGPT.</p>
         </div>
-        <div class="model-wrap">
+        <div class="model-wrap agent-only hidden">
           <label for="modelSelect">Modelo</label>
           <select id="modelSelect"></select>
         </div>
@@ -41,12 +57,12 @@
 
       <section id="messages" class="messages">
         <div class="empty-state">
-          <h2>Desenvolva conversando.</h2>
-          <p>O GPT pode ler e editar arquivos, usar Git e executar o terminal no projeto selecionado.</p>
+          <h2>Use o ChatGPT normal como cérebro.</h2>
+          <p>O ORDAX fornece arquivos, Git, terminal, processos, navegador e adapters pelo MCP oficial.</p>
         </div>
       </section>
 
-      <footer class="composer">
+      <footer class="composer agent-only hidden">
         <textarea id="composerInput" rows="3" placeholder="Peça para analisar, implementar, testar ou continuar o projeto..."></textarea>
         <div class="composer-row">
           <span id="composerHint">Enter envia · Shift+Enter quebra linha</span>
@@ -86,7 +102,7 @@
       <div id="runPanel" class="run-panel muted">Nenhuma execução nesta sessão.</div>
       <div class="section-head"><span>Arquitetura</span></div>
       <div class="architecture">
-        <span>ChatGPT</span><b>→</b><span>ORDAX Runtime</span><b>→</b><span>Projeto local</span>
+        <span id="architectureClient">ChatGPT normal</span><b>→</b><span>ORDAX MCP/Runtime</span><b>→</b><span>Projeto local</span>
       </div>
     </aside>
   </div>
