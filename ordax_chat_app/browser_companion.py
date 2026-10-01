@@ -287,6 +287,12 @@ class BrowserCompanionServer:
                 def log_message(self, _format, *_args):
                     return
 
+                def _trusted_extension_origin(self) -> bool:
+                    origin = str(self.headers.get("Origin") or "").strip().lower()
+                    if not origin:
+                        return True
+                    return origin.startswith("chrome-extension://") or origin.startswith("extension://")
+
                 def _json(self, status: int, payload: dict[str, Any]):
                     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
                     self.send_response(status)
@@ -351,6 +357,9 @@ class BrowserCompanionServer:
                         return
                     parsed = urlsplit(self.path)
                     if parsed.path == "/pair":
+                        if not self._trusted_extension_origin():
+                            self._json(403, {"ok": False, "error": "untrusted_origin"})
+                            return
                         code = str(payload.get("code") or "").strip()
                         browser_id = str(payload.get("browser_id") or "").strip()
                         with outer._lock:
@@ -371,6 +380,9 @@ class BrowserCompanionServer:
                             "protocol": _PROTOCOL,
                             "browser_id": browser_id[:128],
                         })
+                        return
+                    if not self._trusted_extension_origin():
+                        self._json(403, {"ok": False, "error": "untrusted_origin"})
                         return
                     if not self._authorized():
                         self._json(401, {"ok": False, "error": "unauthorized"})
