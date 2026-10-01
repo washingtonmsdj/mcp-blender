@@ -32,6 +32,8 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
             '"repository_catalog"',
             '"project_text_read"',
             '"project_text_write"',
+            '"handoff_get"',
+            '"handoff_create"',
             '"workspace_text_read"',
             '"workspace_text_write"',
             '"workspace_path_remove"',
