@@ -1,5 +1,16 @@
 # Roadmap — ORDAX Chat App
 
+## Product mode decision — regular ChatGPT first
+
+- **Default:** regular ChatGPT conversation → ORDAX plugin/MCP → local runtime.
+  This keeps model usage on the normal ChatGPT chat allowance when the user's plan/surface supports the required plugin capabilities.
+- **Optional:** embedded Agent / Responses → uses the applicable Work/Codex usage pool.
+- **24x7/headless:** must use an explicitly configured background-capable provider (Responses/API/other/local); it does not automate or scrape consumer ChatGPT conversations.
+- The desktop is primarily runtime/dashboard/configuration for regular-chat mode; the embedded chat remains an optional agent surface.
+- Plugin package: `plugins/ordax-studio/`.
+- Production MCP: `https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/mcp`.
+
+
 ## Estado atual — implementado nesta branch
 
 - runtime geral de desenvolvimento: workspace, escrita/patch, terminal e Git;
@@ -57,7 +68,7 @@ Ainda neste gate:
 - políticas de pausa/horário/custo e limites por projeto;
 - telemetria de disponibilidade/heartbeat do daemon na UI.
 
-## Gate 3 — ChatGPT dentro do app ✅ foundation
+## Gate 3 — Embedded Agent / Responses (optional) ✅ foundation
 
 - **Continue with ChatGPT** conforme o fluxo OSS oficial:
   - dynamic client registration;
