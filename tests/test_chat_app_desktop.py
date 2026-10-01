@@ -202,6 +202,55 @@ class FakeWebBridge:
         return True
 
 
+class FakeBrowserCompanion:
+    def __init__(self):
+        self.running = True
+        self.pairing = None
+        self.items = [{
+            "id": "conversation-12345678",
+            "url": "https://chatgpt.com/c/conversation-12345678",
+            "title": "Normal chat",
+            "browser_id": "browser-a",
+            "updated_at": 1.0,
+            "message_count": 1,
+        }]
+        self.sent = []
+
+    def start(self):
+        return self.status()
+
+    def stop(self):
+        self.running = False
+        return self.status()
+
+    def status(self):
+        return {
+            "running": self.running,
+            "host": "127.0.0.1",
+            "port": 8775,
+            "protocol": 1,
+            "paired_clients": 1,
+            "pairing_active": bool(self.pairing),
+            "pairing_expires_at": None,
+            "conversations": len(self.items),
+        }
+
+    def new_pairing_code(self):
+        self.pairing = "12345678"
+        return {"code": self.pairing, "expires_at": 9999999999, "port": 8775, "protocol": 1}
+
+    def conversations(self):
+        return list(self.items)
+
+    def messages(self, conversation_id):
+        return [{"key": "a1", "role": "assistant", "text": "hello", "observed_at": 1.0}]
+
+    def send(self, conversation_id, text):
+        row = {"id": "cmd-1", "conversation_id": conversation_id, "text": text, "state": "queued"}
+        self.sent.append(row)
+        return row
+
+
 class FakeRuntime:
     def __init__(self):
         self.handoffs = {}
@@ -269,10 +318,12 @@ class DesktopApiTests(unittest.TestCase):
     def setUp(self):
         self.autonomy = FakeAutonomy()
         self.web_bridge = FakeWebBridge()
+        self.browser_companion = FakeBrowserCompanion()
         self.api = DesktopApi(
             FakeRuntime(),
             autonomy=self.autonomy,
             web_bridge=self.web_bridge,
+            browser_companion=self.browser_companion,
             auto_resume=False,
         )
 
@@ -353,6 +404,28 @@ class DesktopApiTests(unittest.TestCase):
         stopped = self.api.web_bridge_stop()
         self.assertTrue(stopped["ok"])
         self.assertFalse(stopped["data"]["running"])
+
+    def test_browser_companion_exposes_real_chat_conversation_and_send_queue(self):
+        status = self.api.browser_companion_status()
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["data"]["paired_clients"], 1)
+
+        pairing = self.api.browser_companion_pair()
+        self.assertTrue(pairing["ok"])
+        self.assertEqual(pairing["data"]["code"], "12345678")
+
+        conversations = self.api.browser_companion_conversations()
+        self.assertTrue(conversations["ok"])
+        self.assertEqual(conversations["data"][0]["title"], "Normal chat")
+
+        messages = self.api.browser_companion_messages("conversation-12345678")
+        self.assertTrue(messages["ok"])
+        self.assertEqual(messages["data"][0]["text"], "hello")
+
+        sent = self.api.browser_companion_send("conversation-12345678", "continue")
+        self.assertTrue(sent["ok"])
+        self.assertEqual(sent["data"]["state"], "queued")
+        self.assertEqual(self.browser_companion.sent[0]["text"], "continue")
 
     def test_create_open_and_send_thread(self):
         created = self.api.create_thread("demo", "gpt-test")
