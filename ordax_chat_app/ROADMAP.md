@@ -149,11 +149,16 @@ Ainda neste gate:
 
 ## Gate 9 — produto desktop
 
-- ORDAX Web Bridge panel ✅ foundation;
+- ORDAX Web Bridge panel ✅;
 - official `tunnel-client` install from OpenAI release with SHA-256 verification ✅;
 - tunnel ID + runtime key protected locally; key is never passed to the model ✅;
 - init/doctor/run lifecycle from the desktop ✅;
-- next: persist tunnel process independently of the UI and surface detailed health/diagnostics.
+- restricted dedicated Tunnel MCP surface without generic `action_execute` ✅;
+- Web Bridge daemon 24/7 with heartbeat, bounded backoff and crash recovery ✅;
+- desired on/off state persists independently from credentials ✅;
+- Windows logon Scheduled Task install/remove controlled from the desktop ✅;
+- process identity survives desktop restart and rejects PID reuse ✅;
+- next: migrate the packaged Windows launcher from legacy ORDAX Studio UI to ORDAX Dev and include the Web Bridge startup task in the final installer.
 
 
 - instalação única;
