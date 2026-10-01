@@ -142,7 +142,10 @@ class BlenderLiveBridge:
     def presence_is_fresh(self, max_age_seconds: float = 5.0) -> bool:
         try:
             age = time.time() - self.presence.stat().st_mtime
-            if not 0 <= age <= max_age_seconds:
+            # Filesystem timestamps can be fractionally ahead of time.time() on
+            # Windows/virtualized runners. Accept only a small bounded future
+            # skew; genuinely stale or implausibly future presence stays invalid.
+            if age < -2.0 or age > max_age_seconds:
                 return False
             presence = self._read_presence()
             pid = presence.get("pid")
