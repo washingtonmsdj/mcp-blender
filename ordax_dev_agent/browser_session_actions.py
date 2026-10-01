@@ -313,13 +313,13 @@ class BrowserSessionActions:
     "[role=button]","[role=link]","[role=checkbox]","[role=radio]",
     "[contenteditable=true]","[tabindex]"
   ].join(",");
-  let next = 1;
+  window.__ordaxNodeCounter = Number(window.__ordaxNodeCounter || 1);
   const elements = [];
   for (const el of document.querySelectorAll(selector)) {
     if (!visible(el)) continue;
     let id = el.getAttribute("data-ordax-node");
     if (!id) {
-      id = "n" + (next++);
+      id = "n" + (window.__ordaxNodeCounter++);
       el.setAttribute("data-ordax-node", id);
     }
     const r = el.getBoundingClientRect();
