@@ -85,6 +85,110 @@ const TOOLS: ToolSpec[] = [
   { name: "blender_save", description: "Save the granted live Blender project.", action: "blender.live_save", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, target_path: STRING, timeout_seconds: NUMBER, wait_for_completion_ms: WAIT }, required: ["device_id", "project"] },
 ];
 
+const READ_ONLY_TOOLS = new Set([
+  "ordax_session",
+  "ordax_targets",
+  "ordax_action_status",
+  "repository_catalog",
+  "handoff_get",
+  "project_inventory",
+  "project_text_read",
+  "projects_list",
+  "project_search",
+  "project_read_batch",
+  "project_health",
+  "project_preview_status",
+  "workspace_file_stat",
+  "workspace_directory_list",
+  "workspace_text_read",
+  "git_status",
+  "git_diff",
+  "artifacts_list",
+  "artifact_preview",
+  "blender_status",
+  "blender_scene_snapshot",
+  "blender_object_inspect",
+  "blender_modeling_schema",
+]);
+
+const DESTRUCTIVE_TOOLS = new Set([
+  "project_text_write",
+  "project_text_patch",
+  "workspace_text_write",
+  "workspace_text_patch",
+  "workspace_path_remove",
+  "workspace_path_move",
+  "git_command",
+  "terminal_exec",
+  "blender_transform",
+  "blender_apply_material",
+  "blender_save",
+]);
+
+const OPEN_WORLD_TOOLS = new Set([
+  "git_command",
+  "terminal_exec",
+]);
+
+const TOOL_TITLES: Record<string, string> = {
+  ordax_session: "Check ORDAX account session",
+  ordax_targets: "List connected ORDAX devices",
+  ordax_action_status: "Check ORDAX action status",
+  repository_catalog: "List device repositories",
+  handoff_get: "Load continuation handoff",
+  handoff_create: "Create continuation handoff",
+  project_inventory: "Inspect project inventory",
+  project_text_read: "Read project text file",
+  project_text_write: "Write project text file",
+  project_text_patch: "Patch project text file",
+  projects_list: "List device projects",
+  project_search: "Search project text",
+  project_read_batch: "Read project files",
+  project_health: "Inspect project health",
+  project_preview_status: "Inspect project preview",
+  workspace_file_stat: "Inspect project path",
+  workspace_directory_list: "List project directory",
+  workspace_text_read: "Read workspace text",
+  workspace_text_write: "Write workspace text",
+  workspace_text_patch: "Patch workspace text",
+  workspace_directory_create: "Create workspace directory",
+  workspace_path_remove: "Remove workspace path",
+  workspace_path_move: "Move workspace path",
+  git_status: "Read Git status",
+  git_diff: "Read Git diff",
+  git_command: "Run Git command",
+  terminal_exec: "Run project command",
+  artifacts_list: "List project artifacts",
+  artifact_preview: "Preview project artifact",
+  blender_status: "Inspect Blender status",
+  blender_scene_snapshot: "Inspect Blender scene",
+  blender_object_inspect: "Inspect Blender object",
+  blender_modeling_schema: "Read Blender modeling capabilities",
+  blender_start: "Start or adopt Blender",
+  blender_transform: "Transform Blender object",
+  blender_create_primitive: "Create Blender primitive",
+  blender_apply_material: "Apply Blender material",
+  blender_save: "Save Blender project",
+};
+
+function toolAnnotations(name: string): JsonObject {
+  const readOnly = READ_ONLY_TOOLS.has(name);
+  return {
+    readOnlyHint: readOnly,
+    destructiveHint: DESTRUCTIVE_TOOLS.has(name),
+    openWorldHint: OPEN_WORLD_TOOLS.has(name),
+    idempotentHint: readOnly,
+  };
+}
+
+function toolInvocationText(name: string): { invoking: string; invoked: string } {
+  const title = TOOL_TITLES[name] ?? name.replace(/_/g, " ");
+  return {
+    invoking: `${title}…`.slice(0, 64),
+    invoked: `${title} complete`.slice(0, 64),
+  };
+}
+
 function responseJson(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json; charset=utf-8" } });
 }
@@ -121,18 +225,31 @@ function cloneWithAuth(source: Request, url: string, method: string, body?: unkn
 }
 
 function toolDefinitions(): JsonObject[] {
-  return TOOLS.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    securitySchemes: [{ type: "oauth2", scopes: ["email"] }],
-    _meta: { securitySchemes: [{ type: "oauth2", scopes: ["email"] }] },
-    inputSchema: {
-      type: "object",
-      properties: tool.properties ?? {},
-      required: tool.required ?? [],
-      additionalProperties: false,
-    },
-  }));
+  return TOOLS.map((tool) => {
+    const invocation = toolInvocationText(tool.name);
+    return {
+      name: tool.name,
+      title: TOOL_TITLES[tool.name] ?? tool.name.replace(/_/g, " "),
+      description: tool.description,
+      securitySchemes: [{ type: "oauth2", scopes: ["email"] }],
+      annotations: toolAnnotations(tool.name),
+      _meta: {
+        securitySchemes: [{ type: "oauth2", scopes: ["email"] }],
+        "openai/toolInvocation/invoking": invocation.invoking,
+        "openai/toolInvocation/invoked": invocation.invoked,
+      },
+      inputSchema: {
+        type: "object",
+        properties: tool.properties ?? {},
+        required: tool.required ?? [],
+        additionalProperties: false,
+      },
+      outputSchema: {
+        type: "object",
+        additionalProperties: true,
+      },
+    };
+  });
 }
 
 function specFor(name: string): ToolSpec | undefined {
@@ -231,8 +348,8 @@ export async function handleOrdaxMcp(request: Request, handlers: OrdaxMcpHandler
   if (method === "initialize") return rpcResult(id, {
     protocolVersion: "2025-06-18",
     capabilities: { tools: { listChanged: false } },
-    serverInfo: { name: "ordax-studio-remote", version: "1.0.0" },
-    instructions: "ORDAX Studio remote access. Discover targets first, then use project-scoped typed tools. Writes remain grant- and audit-protected on the Device Agent.",
+    serverInfo: { name: "ORDAX Dev", version: "0.4.0" },
+    instructions: "Use ORDAX Dev only when the user asks to work with a connected ORDAX device or one of its registered projects. List connected devices before project-scoped work when the target is unknown. Respect project boundaries and the user’s explicit intent. Write, execute, Git and Blender mutation tools remain grant- and audit-protected by the ORDAX Runtime.",
   });
   if (method === "tools/list") return rpcResult(id, { tools: toolDefinitions() });
   if (method === "tools/call") {
