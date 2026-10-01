@@ -19,7 +19,7 @@ class CloudflareOAuthConsentContractTests(unittest.TestCase):
         self.assertNotIn('scopes_supported: ["authenticated"]', self.worker)
 
     def test_each_remote_tool_declares_oauth_security_scheme(self) -> None:
-        self.assertIn('const OAUTH_SCOPES = ["openid", "email"]', self.mcp)
+        self.assertIn('const OAUTH_SCOPES = ["openid", "email", "offline_access"]', self.mcp)
         self.assertGreaterEqual(self.mcp.count('securitySchemes: [{ type: "oauth2", scopes: OAUTH_SCOPES }]'), 2)
         self.assertIn("_meta: {", self.mcp)
         self.assertIn('"openai/toolInvocation/invoking"', self.mcp)
