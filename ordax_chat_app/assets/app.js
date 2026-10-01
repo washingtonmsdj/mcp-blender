@@ -1,4 +1,4 @@
-const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[]};
+const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{}};
 
 function api(){return window.pywebview.api}
 function el(id){return document.getElementById(id)}
@@ -91,6 +91,39 @@ async function refreshActivity(){
   }catch(err){el("agentPanel").innerHTML='<span class="error">'+escapeHtml(err.message)+'</span>'}
 }
 
+async function refreshCapabilities(){
+  if(!state.project)return;
+  try{
+    const caps=unwrap(await api().capability_status(state.project));
+    state.capabilities=caps||{};
+    el("computerObserveToggle").checked=!!state.capabilities["computer.observe"];
+    el("computerInteractToggle").checked=!!state.capabilities["computer.interact"];
+    const enabled=[];
+    if(state.capabilities["computer.observe"])enabled.push("ver tela");
+    if(state.capabilities["computer.interact"])enabled.push("controlar");
+    el("computerCapabilityState").textContent=enabled.length
+      ? "Permitido neste projeto: "+enabled.join(" + ")+"."
+      : "Desativado por padrão.";
+    el("computerCapabilityState").className="muted";
+  }catch(err){
+    el("computerCapabilityState").textContent=err.message;
+    el("computerCapabilityState").className="error";
+  }
+}
+
+async function setComputerCapability(capability,enabled){
+  if(!state.project)return;
+  try{
+    const data=unwrap(await api().capability_set(state.project,capability,enabled));
+    state.capabilities=data.capabilities||{};
+    await refreshCapabilities();
+    setStatus((enabled?"Permissão ativada: ":"Permissão revogada: ")+capability,"success");
+  }catch(err){
+    await refreshCapabilities();
+    setStatus(err.message,"error");
+  }
+}
+
 async function refreshAutonomy(){
   try{
     const status=unwrap(await api().autonomy_status());
@@ -118,6 +151,7 @@ async function createAgent(){
     unwrap(await api().orchestrator_agent_create(state.project,name,role,null));
     await refreshActivity();
     await refreshAutonomy();
+    await refreshCapabilities();
   }catch(err){setStatus(err.message,"error")}
 }
 
@@ -232,6 +266,8 @@ el("refreshActivity").onclick=refreshActivity;
 el("newAgentButton").onclick=createAgent;
 el("queueWorkButton").onclick=queueWork;
 el("autonomyToggle").onclick=toggleAutonomy;
-el("projectSelect").onchange=async e=>{state.project=e.target.value;state.thread=null;el("threadTitle").textContent="Nova conversa";renderMessages([]);await refreshThreads();await refreshActivity();await refreshAutonomy()};
+el("computerObserveToggle").onchange=e=>setComputerCapability("computer.observe",e.target.checked);
+el("computerInteractToggle").onchange=e=>setComputerCapability("computer.interact",e.target.checked);
+el("projectSelect").onchange=async e=>{state.project=e.target.value;state.thread=null;el("threadTitle").textContent="Nova conversa";renderMessages([]);await refreshThreads();await refreshActivity();await refreshAutonomy();await refreshCapabilities()};
 el("composerInput").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}};
 window.addEventListener("pywebviewready",bootstrap);
