@@ -16,6 +16,7 @@ from .blender_actions import BlenderActions
 from .unity_status_actions import UnityStatusActions
 from .unity_actions import UnityActions
 from .agent_actions import AgentActions
+from .agent_orchestration_actions import AgentOrchestrationActions
 from .artifact_actions import ArtifactActions
 from .git_actions import GitActions
 from .developer_actions import DeveloperActions
@@ -67,6 +68,7 @@ class ActionRegistry(
     UnityStatusActions,
     UnityActions,
     AgentActions,
+    AgentOrchestrationActions,
     ArtifactActions,
     GitActions,
     DeveloperActions,
@@ -131,6 +133,19 @@ class ActionRegistry(
             "memory.checkpoint": self.memory_checkpoint,
             "session.resume": self.session_resume,
             "session.finish": self.session_finish,
+            "orchestrator.status": self.orchestrator_status,
+            "orchestrator.agent_create": self.orchestrator_agent_create,
+            "orchestrator.agent_state": self.orchestrator_agent_state,
+            "orchestrator.goal_create": self.orchestrator_goal_create,
+            "orchestrator.goal_state": self.orchestrator_goal_state,
+            "orchestrator.session_start": self.orchestrator_session_start,
+            "orchestrator.session_usage": self.orchestrator_session_usage,
+            "orchestrator.session_checkpoint": self.orchestrator_session_checkpoint,
+            "orchestrator.session_rotate": self.orchestrator_session_rotate,
+            "orchestrator.continuation": self.orchestrator_continuation,
+            "orchestrator.message_send": self.orchestrator_message_send,
+            "orchestrator.inbox": self.orchestrator_inbox,
+            "orchestrator.message_read": self.orchestrator_message_read,
             "project.archive_to_hordax": self.project_archive_to_hordax,
             "project.observe": self.project_observe,
             "project.inventory": self.project_inventory,
@@ -328,7 +343,7 @@ class ActionRegistry(
         self._adapter_contracts = builtin_adapter_contracts()
         available = {entry.name: entry for entry in entry_points(group="ordax_dev_agent.adapters")}
         for name in config.adapters:
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "workspace", "terminal", "observation", "unity", "blender", "game_assets", "geo", "visual", "memory"}:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "workspace", "terminal", "orchestrator", "observation", "unity", "blender", "game_assets", "geo", "visual", "memory"}:
                 raise ValueError(f"invalid or reserved adapter name: {name}")
             if name not in available:
                 raise ValueError(f"configured adapter is not installed: {name}")
