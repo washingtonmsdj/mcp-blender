@@ -8,9 +8,9 @@
   #define OutputDir "."
 #endif
 
-#define AppName "ORDAX Studio"
+#define AppName "ORDAX Dev"
 #define AppPublisher "ORDAX"
-#define AppExeName "ORDAX Studio.exe"
+#define AppExeName "ORDAX Dev.exe"
 #define RuntimeExeName "ORDAX Runtime.exe"
 
 [Setup]
@@ -18,14 +18,14 @@ AppId={{0D31F22D-8451-4CF4-9E34-F0D4D857F55F}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={localappdata}\Programs\ORDAX Studio
+DefaultDirName={localappdata}\Programs\ORDAX Dev
 DefaultGroupName=ORDAX
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
-OutputBaseFilename=ORDAX-Studio-Setup-{#AppVersion}-x64
+OutputBaseFilename=ORDAX-Dev-Setup-{#AppVersion}-x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -42,9 +42,12 @@ VersionInfoProductVersion={#AppVersion}
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+Type: files; Name: "{app}\ORDAX Studio.exe"
+
 [Icons]
-Name: "{group}\ORDAX Studio"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
-Name: "{userdesktop}\ORDAX Studio"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\ORDAX Dev"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+Name: "{userdesktop}\ORDAX Dev"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Criar atalho do ORDAX Studio na área de trabalho"; GroupDescription: "Atalhos adicionais:"; Flags: unchecked
@@ -152,7 +155,7 @@ begin
 
   if not StopOrdaxProcess('Local\ORDAXStudioShutdown', '{#AppExeName}') then
   begin
-    Result := 'Não foi possível encerrar o ORDAX Studio para atualizar os arquivos.';
+    Result := 'Não foi possível encerrar o ORDAX Dev para atualizar os arquivos.';
     Exit;
   end;
 
