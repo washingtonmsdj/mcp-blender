@@ -71,6 +71,8 @@ Quando uma tarefa também precisar do GitHub, o GitHub entra como provedor/repos
 - Manter autenticação do cliente MCP independente da autenticação do Git remoto.
 - Autoridade remota deve continuar limitada por device + project + action grants.
 - Integrações de provedores devem ser adicionadas como módulos independentes, sem alterar o modelo de identidade ORDAX.
+- Credenciais GitHub/GitLab/SSH devem permanecer no computador do usuário; o MCP não pode solicitar `git credential`, ler configuração sensível ou devolver URLs autenticadas sem redação.
+- `fetch`/`pull`/`push` podem usar o Git Credential Manager ou SSH local sem enviar o segredo ao Control Plane.
 - O plugin GitHub do ChatGPT pode complementar o ORDAX, mas o produto não deve depender dele.
 
 ## Estado atual
