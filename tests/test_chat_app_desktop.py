@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import types
 import unittest
+from unittest.mock import patch
 
 from ordax_chat_app.desktop import DesktopApi
 from ordax_chat_app.runtime import RuntimeChatResult
@@ -171,6 +172,22 @@ class DesktopApiTests(unittest.TestCase):
         self.assertEqual(data["models"][0]["id"], "gpt-test")
         self.assertEqual(data["threads"][0]["id"], "thread-1")
         self.assertTrue(data["account"]["connected"])
+        self.assertEqual(data["chat_modes"]["default"], "normal")
+        self.assertFalse(data["chat_modes"]["normal"]["uses_work_codex_quota"])
+        self.assertTrue(data["chat_modes"]["agent"]["uses_work_codex_quota"])
+        self.assertTrue(data["chat_modes"]["normal"]["mcp_endpoint"].endswith("/mcp"))
+
+    def test_normal_chat_info_and_open_use_regular_chat_path(self):
+        info = self.api.normal_chat_info()
+        self.assertEqual(info["mode"], "normal")
+        self.assertFalse(info["uses_work_codex_quota"])
+        self.assertTrue(info["mcp_endpoint"].endswith("/mcp"))
+
+        with patch("ordax_chat_app.desktop.webbrowser.open", return_value=True) as opened:
+            result = self.api.open_normal_chat()
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["data"]["opened"])
+        opened.assert_called_once()
 
     def test_create_open_and_send_thread(self):
         created = self.api.create_thread("demo", "gpt-test")
