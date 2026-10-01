@@ -29,7 +29,7 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertNotIn("browser_extension", build)
         self.assertNotIn("ordax_chat_app", build)
         self.assertIn("microsoftedgewebview2setup.exe", installer)
-        self.assertIn("CloseApplications=no", installer)
+        self.assertIn("closeapplications=no", installer)
         self.assertIn("software\\microsoft\\windows\\currentversion\\run", installer)
 
     def test_product_build_bundles_private_runtime(self) -> None:
