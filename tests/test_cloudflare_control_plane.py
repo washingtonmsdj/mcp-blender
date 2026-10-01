@@ -492,6 +492,47 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertNotIn("/v3/product-actions", worker)
         self.assertIn("deleted: !remaining", worker)
 
+    def test_product_retention_is_scheduled_and_matches_public_policy(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        worker = (
+            root / "control-plane" / "cloudflare" / "src" / "index.ts"
+        ).read_text(encoding="utf-8")
+        retention = (
+            root / "control-plane" / "cloudflare" / "src" / "retention.ts"
+        ).read_text(encoding="utf-8")
+        privacy = (
+            root / "control-plane" / "cloudflare" / "src" / "public_pages.ts"
+        ).read_text(encoding="utf-8")
+        wrangler = (
+            root / "control-plane" / "cloudflare" / "wrangler.toml"
+        ).read_text(encoding="utf-8")
+        ci = (
+            root / "control-plane" / "cloudflare" / "wrangler.ci.toml"
+        ).read_text(encoding="utf-8")
+        deploy = (root / "scripts" / "cloudflare" / "deploy-v3.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("runProductRetention", worker)
+        self.assertIn("async scheduled(", worker)
+        self.assertIn('"product_retention_v1"', worker)
+        self.assertIn("PRODUCT_ARTIFACT_RETENTION_DAYS = 7", retention)
+        self.assertIn("PRODUCT_HISTORY_RETENTION_DAYS = 30", retention)
+        self.assertIn("PRODUCT_INACTIVE_AUTHZ_RETENTION_DAYS = 30", retention)
+        self.assertIn("PRODUCT_MULTIPART_RETENTION_DAYS = 8", retention)
+        self.assertIn("env.ARTIFACTS.delete(row.storage_path)", retention)
+        self.assertIn("capability = 'ordax.product.invoke'", retention)
+        self.assertIn("DELETE FROM ordax_product_audit", retention)
+        self.assertIn("DELETE FROM ordax_product_device_pairings", retention)
+        self.assertIn("DELETE FROM ordax_product_device_links", retention)
+        self.assertIn("DELETE FROM ordax_product_grants AS g", retention)
+        self.assertIn('crons = ["17 3 * * *"]', wrangler)
+        self.assertIn('crons = ["17 3 * * *"]', ci)
+        self.assertIn('"triggers": {"crons": ["17 3 * * *"]}', deploy)
+        self.assertIn("no more than 7 days", privacy)
+        self.assertIn("no more than 30 days", privacy)
+        self.assertIn("signed download links expire after 1 hour", privacy)
+
     def test_job_envelope_uses_provider_neutral_digest_and_action_contract(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
