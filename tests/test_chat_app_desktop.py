@@ -64,6 +64,35 @@ class FakeOrchestrator:
         return item
 
 
+
+class FakeAutonomy:
+    def __init__(self):
+        self.running = False
+        self.resume_calls = 0
+
+    def status(self):
+        return {
+            "running": self.running,
+            "thread_alive": self.running,
+            "persisted_enabled": False,
+        }
+
+    def resume_persisted(self):
+        self.resume_calls += 1
+        return self.status()
+
+    def start(self, *, model, project_slugs):
+        self.running = True
+        return {
+            **self.status(),
+            "model": model,
+            "project_slugs": tuple(project_slugs),
+        }
+
+    def stop(self, *, timeout_seconds=10.0, disable_persisted=True):
+        self.running = False
+        return self.status()
+
 class FakeRuntime:
     def __init__(self):
         self.agent = types.SimpleNamespace(
@@ -107,7 +136,12 @@ class FakeRuntime:
 
 class DesktopApiTests(unittest.TestCase):
     def setUp(self):
-        self.api = DesktopApi(FakeRuntime())
+        self.autonomy = FakeAutonomy()
+        self.api = DesktopApi(
+            FakeRuntime(),
+            autonomy=self.autonomy,
+            auto_resume=False,
+        )
 
     def test_bootstrap_exposes_account_projects_models_and_threads(self):
         result = self.api.bootstrap()
