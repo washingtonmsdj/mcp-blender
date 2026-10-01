@@ -33,8 +33,8 @@ class ManagedChatBrowserTests(unittest.TestCase):
         self.assertTrue(status["running"])
         args = popen.call_args.args[0]
         self.assertIn(f"--user-data-dir={manager.profile_dir}", args)
-        self.assertIn(f"--load-extension={self.extension}", args)
-        self.assertIn(f"--disable-extensions-except={self.extension}", args)
+        self.assertIn(f"--load-extension={manager.extension_dir}", args)
+        self.assertIn(f"--disable-extensions-except={manager.extension_dir}", args)
         self.assertIn("--app=https://chatgpt.com/", args)
         self.assertNotIn("--remote-debugging-port", " ".join(args))
 
