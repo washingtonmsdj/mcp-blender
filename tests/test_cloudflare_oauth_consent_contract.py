@@ -15,15 +15,16 @@ class CloudflareOAuthConsentContractTests(unittest.TestCase):
     def test_worker_serves_ordax_consent_and_standard_scope(self) -> None:
         self.assertIn('import { oauthConsentResponse } from "./oauth_consent";', self.worker)
         self.assertIn('url.pathname === "/oauth/consent"', self.worker)
-        self.assertIn('scopes_supported: ["email"]', self.worker)
+        self.assertIn('scopes_supported: ["openid", "email"]', self.worker)
         self.assertNotIn('scopes_supported: ["authenticated"]', self.worker)
 
     def test_each_remote_tool_declares_oauth_security_scheme(self) -> None:
-        scheme = 'securitySchemes: [{ type: "oauth2", scopes: ["email"] }]'
-        self.assertGreaterEqual(self.mcp.count(scheme), 2)
+        self.assertIn('const OAUTH_SCOPES = ["openid", "email"]', self.mcp)
+        self.assertGreaterEqual(self.mcp.count('securitySchemes: [{ type: "oauth2", scopes: OAUTH_SCOPES }]'), 2)
         self.assertIn("_meta: {", self.mcp)
         self.assertIn('"openai/toolInvocation/invoking"', self.mcp)
         self.assertIn('"openai/toolInvocation/invoked"', self.mcp)
+        self.assertIn('"openai/profile": true', self.mcp)
 
     def test_consent_uses_pinned_supabase_sdk_and_publishable_key(self) -> None:
         self.assertIn('@supabase/supabase-js@2.117.2/+esm', self.consent)
@@ -50,6 +51,7 @@ class CloudflareOAuthConsentContractTests(unittest.TestCase):
         self.assertIn('approveAuthorization', self.consent)
         self.assertIn('denyAuthorization', self.consent)
         self.assertIn('authorization_id', self.consent)
+        self.assertIn("data.scope||'openid email'", self.consent)
 
 
 if __name__ == "__main__":
