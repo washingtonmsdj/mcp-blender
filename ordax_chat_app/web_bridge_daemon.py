@@ -10,6 +10,7 @@ from typing import Any
 
 from .auth import resolve_chat_app_state_dir
 from .auth.local_state import _atomic_write
+from .instance_lock import SingleInstanceLock
 from .web_bridge import WebBridgeManager
 
 
@@ -151,12 +152,19 @@ def main() -> int:
             except (ValueError, OSError):
                 pass
 
+    state_dir = resolve_chat_app_state_dir()
+    lock = SingleInstanceLock(state_dir / "web-bridge-daemon.lock")
+    if not lock.acquire():
+        return 0
+
     daemon = WebBridgeDaemon()
     try:
         daemon.run_forever(stop_event=stop)
     except KeyboardInterrupt:
         stop.set()
         daemon.manager.stop(persist_disabled=False)
+    finally:
+        lock.release()
     return 0
 
 
