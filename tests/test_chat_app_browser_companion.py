@@ -34,6 +34,13 @@ class BrowserCompanionTests(unittest.TestCase):
         with urllib.request.urlopen(request, timeout=3) as response:
             return json.loads(response.read())
 
+    def test_bootstrap_page_redirects_to_chatgpt(self):
+        request = urllib.request.Request(self.base + "/bootstrap?code=12345678")
+        with urllib.request.urlopen(request, timeout=3) as response:
+            html = response.read().decode("utf-8")
+        self.assertIn("Pairing with ORDAX Dev", html)
+        self.assertIn('window.location.replace("https://chatgpt.com/")', html)
+
     def test_pair_observe_send_pull_ack_roundtrip(self):
         hello = self.request("/hello")
         self.assertEqual(hello["protocol"], 1)
