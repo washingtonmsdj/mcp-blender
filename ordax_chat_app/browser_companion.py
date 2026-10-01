@@ -108,6 +108,7 @@ class BrowserCompanionStore:
                   url TEXT NOT NULL,
                   title TEXT,
                   browser_id TEXT,
+                  agent_id TEXT,
                   updated_at REAL NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS browser_messages(
@@ -134,6 +135,14 @@ class BrowserCompanionStore:
                   ON browser_commands(state, conversation_id, created_at);
                 """
             )
+            columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(browser_conversations)").fetchall()
+            }
+            if "agent_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE browser_conversations ADD COLUMN agent_id TEXT"
+                )
             columns = {
                 str(row["name"])
                 for row in connection.execute("PRAGMA table_info(browser_commands)").fetchall()
@@ -289,6 +298,26 @@ class BrowserCompanionStore:
                 )
                 accepted += 1
         return {"conversation_id": conversation_id, "accepted": accepted}
+
+    def bind_agent(self, conversation_id: str, agent_id: str | None) -> dict[str, Any]:
+        conversation_id = str(conversation_id or "").strip()
+        agent_value = str(agent_id or "").strip() or None
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM browser_conversations WHERE id=?",
+                (conversation_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError("conversation is not attached to ORDAX")
+            connection.execute(
+                "UPDATE browser_conversations SET agent_id=?, updated_at=? WHERE id=?",
+                (agent_value, _now(), conversation_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM browser_conversations WHERE id=?",
+                (conversation_id,),
+            ).fetchone()
+        return dict(row)
 
     def conversations(self, *, limit: int = 100) -> list[dict[str, Any]]:
         with self.connect() as connection:
