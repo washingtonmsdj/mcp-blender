@@ -475,7 +475,10 @@ class BrowserSessionActions:
                     timeout=15, shell=False,
                 )
             else:
-                os.kill(pid, 15)
+                try:
+                    os.killpg(pid, 15)
+                except ProcessLookupError:
+                    pass
         except (OSError, subprocess.TimeoutExpired) as error:
             return ActionResult(False, f"browser stop failed: {error}", state)
 
