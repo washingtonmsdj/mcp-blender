@@ -103,3 +103,5 @@ select{width:100%;background:var(--panel2);color:var(--text);border:1px solid va
 .dialog-head strong{font-size:14px}
 .dialog-head span{font-size:10px;color:var(--muted)}
 .dialog-backdrop.hidden{display:none}
+
+.pair-code{font:700 22px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.16em;text-align:center;padding:10px;border:1px dashed var(--line);border-radius:8px;background:#0d0d0d}
