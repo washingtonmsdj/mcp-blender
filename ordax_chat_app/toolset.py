@@ -169,6 +169,65 @@ DEVELOPMENT_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "process_start",
+        "description": "Start a persistent project process such as a dev server, watcher or long-running build. The process survives ORDAX agent restarts and writes logs.",
+        "parameters": _object({
+            "cwd": {"type": "string"},
+            "argv": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 128},
+            "env": _nullable({
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "value": {"type": "string"},
+                    },
+                    "required": ["name", "value"],
+                    "additionalProperties": False,
+                },
+            }),
+            "wait_seconds": {"type": "number", "minimum": 0.1, "maximum": 5.0},
+        }),
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "process_list",
+        "description": "List persistent processes belonging to the selected project.",
+        "parameters": _object({}),
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "process_status",
+        "description": "Inspect one persistent process by its ORDAX process ID.",
+        "parameters": _object({
+            "process_id": {"type": "string"},
+        }),
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "process_logs",
+        "description": "Read the recent log tail from a persistent process.",
+        "parameters": _object({
+            "process_id": {"type": "string"},
+            "max_bytes": {"type": "integer", "minimum": 1024, "maximum": 262144},
+        }),
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "process_stop",
+        "description": "Stop a persistent ORDAX-owned process and its child process tree.",
+        "parameters": _object({
+            "process_id": {"type": "string"},
+        }),
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "preview_status",
         "description": "Inspect the selected project's managed preview/runtime state.",
         "parameters": _object({}),
@@ -189,6 +248,11 @@ _TOOL_ACTIONS = {
     "project_health": "agent.project_health",
     "git": "git.command",
     "terminal": "terminal.exec",
+    "process_start": "process.start",
+    "process_list": "process.list",
+    "process_status": "process.status",
+    "process_logs": "process.logs",
+    "process_stop": "process.stop",
     "preview_status": "project.preview_status",
 }
 
@@ -228,7 +292,7 @@ class DevelopmentToolset:
             )
 
         payload = {key: value for key, value in raw.items() if value is not None}
-        if name == "terminal" and isinstance(payload.get("env"), list):
+        if name in {"terminal", "process_start"} and isinstance(payload.get("env"), list):
             env: dict[str, str] = {}
             for item in payload["env"]:
                 if not isinstance(item, dict):
