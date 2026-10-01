@@ -311,7 +311,7 @@ class DesktopApi:
         return self._guard(self.runtime.account_status)
 
 
-def main() -> int:
+def run_desktop(api_factory=DesktopApi) -> int:
     try:
         import webview
     except ImportError as error:
@@ -321,7 +321,7 @@ def main() -> int:
     lock = SingleInstanceLock(state_dir / "ordax-dev.lock")
     if not lock.acquire():
         return 0
-    api = DesktopApi()
+    api = api_factory()
     try:
         html = Path(__file__).with_name("app.html").resolve()
         webview.create_window(
@@ -337,6 +337,10 @@ def main() -> int:
     finally:
         api.autonomy.stop(timeout_seconds=3.0, disable_persisted=False)
         lock.release()
+
+
+def main() -> int:
+    return run_desktop()
 
 
 if __name__ == "__main__":
