@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -30,14 +31,25 @@ def atomic_json(path: Path, payload: dict) -> None:
 
 
 class ProcessRuntime:
-    def __init__(self, *, state_path: Path, log_path: Path, cwd: Path, command: list[str], env: dict[str, str]):
+    def __init__(
+        self,
+        *,
+        state_path: Path,
+        log_path: Path,
+        stdin_path: Path,
+        cwd: Path,
+        command: list[str],
+        env: dict[str, str],
+    ):
         self.state_path = state_path
         self.log_path = log_path
+        self.stdin_path = stdin_path
         self.cwd = cwd
         self.command = command
         self.env = env
         self.child: subprocess.Popen | None = None
         self._stopping = False
+        self._stdin_thread: threading.Thread | None = None
 
     def load_state(self) -> dict:
         try:
@@ -75,6 +87,45 @@ class ProcessRuntime:
         except Exception:
             pass
 
+    def _pump_stdin(self) -> None:
+        position = 0
+        self.stdin_path.parent.mkdir(parents=True, exist_ok=True)
+        self.stdin_path.touch(exist_ok=True)
+        while not self._stopping:
+            child = self.child
+            if child is None or child.poll() is not None:
+                return
+            try:
+                with self.stdin_path.open("r", encoding="utf-8", errors="replace") as handle:
+                    handle.seek(position)
+                    while True:
+                        line = handle.readline()
+                        if not line:
+                            break
+                        position = handle.tell()
+                        try:
+                            payload = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if not isinstance(payload, dict):
+                            continue
+                        text = payload.get("text")
+                        if not isinstance(text, str):
+                            continue
+                        if payload.get("newline", True):
+                            text += "\n"
+                        stream = child.stdin
+                        if stream is None:
+                            return
+                        try:
+                            stream.write(text)
+                            stream.flush()
+                        except (BrokenPipeError, OSError, ValueError):
+                            return
+            except OSError:
+                pass
+            time.sleep(0.05)
+
     def run(self) -> int:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.update(manager_pid=os.getpid(), manager_ready_at_unix=time.time())
@@ -93,9 +144,12 @@ class ProcessRuntime:
                     self.command,
                     cwd=str(self.cwd),
                     env=child_env,
-                    stdin=subprocess.DEVNULL,
+                    stdin=subprocess.PIPE,
                     stdout=log,
                     stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     shell=False,
                     creationflags=creationflags,
                     start_new_session=start_new_session,
@@ -114,6 +168,12 @@ class ProcessRuntime:
                 child_pid=self.child.pid,
                 running_at_unix=time.time(),
             )
+            self._stdin_thread = threading.Thread(
+                target=self._pump_stdin,
+                name="ordax-process-stdin",
+                daemon=True,
+            )
+            self._stdin_thread.start()
             signal.signal(signal.SIGTERM, self.stop)
             if hasattr(signal, "SIGINT"):
                 signal.signal(signal.SIGINT, self.stop)
@@ -132,6 +192,7 @@ def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ordax-persistent-process-runtime")
     p.add_argument("--state", required=True)
     p.add_argument("--log", required=True)
+    p.add_argument("--stdin-file", required=True)
     p.add_argument("--cwd", required=True)
     p.add_argument("--env-json", default="{}")
     p.add_argument("--token", required=True)
@@ -155,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     runtime = ProcessRuntime(
         state_path=Path(args.state).resolve(),
         log_path=Path(args.log).resolve(),
+        stdin_path=Path(args.stdin_file).resolve(),
         cwd=Path(args.cwd).resolve(),
         command=command,
         env=env,
