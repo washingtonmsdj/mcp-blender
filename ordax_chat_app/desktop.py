@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
+import webbrowser
 from typing import Any, Callable
 
 from .auth import resolve_chat_app_state_dir
@@ -12,6 +13,8 @@ from .runtime import OrdaxChatRuntime
 
 
 APP_NAME = "ORDAX Dev"
+NORMAL_CHAT_URL = "https://chatgpt.com/"
+NORMAL_CHAT_MCP_ENDPOINT = "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/mcp"
 
 
 class DesktopApi:
@@ -65,8 +68,39 @@ class DesktopApi:
                 "threads": self.runtime.threads(default_project) if default_project else [],
                 "autonomy": self.autonomy.status(),
                 "autonomy_resume_error": self.autonomy_resume_error,
+                "chat_modes": {
+                    "default": "normal",
+                    "normal": {
+                        "label": "Chat normal",
+                        "uses_work_codex_quota": False,
+                        "mcp_endpoint": NORMAL_CHAT_MCP_ENDPOINT,
+                        "chat_url": NORMAL_CHAT_URL,
+                    },
+                    "agent": {
+                        "label": "Agent / Responses",
+                        "uses_work_codex_quota": True,
+                    },
+                },
             }
         return self._guard(build)
+
+    def normal_chat_info(self) -> dict[str, Any]:
+        return {
+            "mode": "normal",
+            "chat_url": NORMAL_CHAT_URL,
+            "mcp_endpoint": NORMAL_CHAT_MCP_ENDPOINT,
+            "uses_work_codex_quota": False,
+            "runtime": "ORDAX remote MCP",
+        }
+
+    def open_normal_chat(self) -> dict[str, Any]:
+        def open_chat():
+            opened = webbrowser.open(NORMAL_CHAT_URL, new=2)
+            return {
+                **self.normal_chat_info(),
+                "opened": bool(opened),
+            }
+        return self._guard(open_chat)
 
     def connect_chatgpt(self) -> dict[str, Any]:
         def connect():
