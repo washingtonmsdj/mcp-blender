@@ -14,6 +14,7 @@ from .auth import OpenAISignInClient
 from .conversations import ConversationStore
 from .providers import ModelProvider, OpenAIChatGPTPlanProvider
 from .project_context import ProjectContextLoader
+from .policy import CapabilityPolicyStore
 from .toolset import DevelopmentToolset
 
 
@@ -46,6 +47,7 @@ class OrdaxChatRuntime:
         self.agent = agent or ActionRegistry(AgentConfig.from_env())
         memory = self.agent._memory_store_instance()
         self.orchestrator = OrchestratorStore(memory.db_path)
+        self.policy = CapabilityPolicyStore(memory.db_path)
         self.conversations = conversations or ConversationStore(memory.db_path)
         self.sign_in = sign_in or OpenAISignInClient()
         self.provider_factory = provider_factory
@@ -144,6 +146,7 @@ class OrdaxChatRuntime:
                 project=thread["project_slug"],
                 orchestrator=self.orchestrator,
                 agent_id=thread["agent_id"],
+                policy=self.policy,
             ),
             orchestrator=self.orchestrator,
             session_id=thread["session_id"],
