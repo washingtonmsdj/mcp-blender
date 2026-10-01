@@ -41,6 +41,11 @@ def build_archive(output_dir: Path) -> tuple[Path, str]:
     manifest = validate_package()
     version = str(manifest.get("version") or "0.0.0")
     output_dir.mkdir(parents=True, exist_ok=True)
+    for legacy in (
+        output_dir / f"ordax-studio-plugin-{version}.zip",
+        output_dir / f"ordax-studio-plugin-{version}.zip.sha256",
+    ):
+        legacy.unlink(missing_ok=True)
     archive = output_dir / f"ordax-dev-plugin-{version}.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
         for name in sorted(PACKAGE_FILES):
