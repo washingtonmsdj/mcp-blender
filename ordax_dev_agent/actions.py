@@ -25,6 +25,7 @@ from .project_text_actions import ProjectTextActions
 from .workspace_actions import WorkspaceActions
 from .preview_actions import PreviewActions
 from .browser_session_actions import BrowserSessionActions
+from .computer_control_actions import ComputerControlActions
 from .memory_actions import MemoryActions
 from .component_actions import ComponentActions
 from .game_asset_catalog_actions import GameAssetCatalogActions
@@ -79,6 +80,7 @@ class ActionRegistry(
     WorkspaceActions,
     PreviewActions,
     BrowserSessionActions,
+    ComputerControlActions,
     MemoryActions,
     ComponentActions,
     GameAssetCatalogActions,
@@ -144,6 +146,14 @@ class ActionRegistry(
             "browser.type": self.browser_type,
             "browser.screenshot": self.browser_screenshot,
             "browser.stop": self.browser_stop,
+            "computer.windows": self.computer_windows,
+            "computer.active_window": self.computer_active_window,
+            "computer.screenshot": self.computer_screenshot,
+            "computer.focus_window": self.computer_focus_window,
+            "computer.click": self.computer_click,
+            "computer.type": self.computer_type,
+            "computer.hotkey": self.computer_hotkey,
+            "computer.scroll": self.computer_scroll,
             "memory.status": self.memory_status,
             "memory.context": self.memory_context,
             "memory.remember": self.memory_remember,
