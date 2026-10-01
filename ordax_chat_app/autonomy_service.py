@@ -8,6 +8,8 @@ from typing import Any
 
 from .autonomy import AutonomySupervisor
 from .autonomy_preferences import AutonomyPreferencesStore
+from .auth import resolve_chat_app_state_dir
+from .instance_lock import SingleInstanceLock
 from .runtime import OrdaxChatRuntime
 
 
@@ -21,6 +23,7 @@ class AutonomyServiceState:
     completed_runs: int = 0
     last_activity_at_unix: float | None = None
     last_error: str | None = None
+    external_running: bool = False
 
 
 class AutonomyService:
@@ -31,9 +34,14 @@ class AutonomyService:
         runtime: OrdaxChatRuntime,
         *,
         preferences: AutonomyPreferencesStore | None = None,
+        supervisor_lock: SingleInstanceLock | None = None,
     ):
         self.runtime = runtime
         self.preferences = preferences or AutonomyPreferencesStore()
+        self._supervisor_lock = supervisor_lock or SingleInstanceLock(
+            resolve_chat_app_state_dir() / "autonomy-supervisor.lock"
+        )
+        self._supervisor_lock_held = False
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -89,12 +97,21 @@ class AutonomyService:
                         "autonomy is already running with a different model or project scope"
                     )
                 return self.status()
+
+            if not self._supervisor_lock_held:
+                if not self._supervisor_lock.acquire():
+                    self._state.external_running = True
+                    self._state.last_error = None
+                    return self.status()
+                self._supervisor_lock_held = True
+
             self._stop = threading.Event()
             self._state = AutonomyServiceState(
                 running=True,
                 model=model,
                 project_slugs=normalized_projects,
                 started_at_unix=time.time(),
+                external_running=False,
             )
             self._thread = threading.Thread(
                 target=self._run,
@@ -124,6 +141,11 @@ class AutonomyService:
             thread.join(timeout=max(0.1, timeout_seconds))
         with self._lock:
             self._state.running = bool(thread and thread.is_alive())
+            if not self._state.running and self._supervisor_lock_held:
+                self._supervisor_lock.release()
+                self._supervisor_lock_held = False
+            if not self._state.running:
+                self._state.external_running = False
         return self.status()
 
     def resume_persisted(self) -> dict[str, Any]:
