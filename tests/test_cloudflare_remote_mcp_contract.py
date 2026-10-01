@@ -82,6 +82,14 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
         self.assertIn('required: ["id"]', self.mcp)
         self.assertIn('serverInfo: { name: "ORDAX Dev", version: "0.4.1" }', self.mcp)
 
+    def test_device_enrollment_uses_ordax_product_identity_not_github_admin(self) -> None:
+        self.assertIn('X-Ordax-Product-Subject', self.worker)
+        self.assertIn('owner_product_subject_id', self.worker)
+        self.assertIn('authenticateProductRequest(request, env)', self.worker)
+        self.assertNotIn('verifyGithubRepositoryAdmin', self.worker)
+        self.assertNotIn('repository_admin_required', self.worker)
+        self.assertNotIn('X-Ordax-GitHub-User-Id', self.worker)
+
     def test_worker_exposes_public_plugin_review_routes(self) -> None:
         self.assertIn('openAiAppsChallenge', self.worker)
         self.assertIn('publicProductPage', self.worker)
