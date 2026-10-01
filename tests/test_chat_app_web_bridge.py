@@ -61,6 +61,48 @@ class WebBridgeTests(unittest.TestCase):
         ):
             self.assertEqual(_platform_asset_fragment(), "-linux-arm64.zip")
 
+    def test_status_recovers_owned_runtime_after_desktop_restart(self):
+        manager = WebBridgeManager(state_dir=self.root, credentials=self.store)
+        manager.configure("tunnel_0123456789abcdef", "secret")
+        binary = manager.bin_dir / ("tunnel-client.exe" if __import__("os").name == "nt" else "tunnel-client")
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        binary.write_bytes(b"binary")
+        manager._write_runtime({
+            "schema_version": 1,
+            "pid": 4242,
+            "profile": "ordax-dev",
+            "binary": str(binary),
+            "started_at_unix": 123.0,
+        })
+        with patch.object(manager, "_pid_running", return_value=True), patch.object(
+            manager, "_commandline", return_value=f'"{binary}" run --profile ordax-dev'
+        ):
+            status = manager.status()
+        self.assertTrue(status["running"])
+        self.assertEqual(status["pid"], 4242)
+        self.assertEqual(status["started_at_unix"], 123.0)
+
+    def test_stale_or_reused_pid_is_not_adopted(self):
+        manager = WebBridgeManager(state_dir=self.root, credentials=self.store)
+        manager.configure("tunnel_0123456789abcdef", "secret")
+        binary = manager.bin_dir / ("tunnel-client.exe" if __import__("os").name == "nt" else "tunnel-client")
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        binary.write_bytes(b"binary")
+        manager._write_runtime({
+            "schema_version": 1,
+            "pid": 4242,
+            "profile": "ordax-dev",
+            "binary": str(binary),
+            "started_at_unix": 123.0,
+        })
+        with patch.object(manager, "_pid_running", return_value=True), patch.object(
+            manager, "_commandline", return_value="python unrelated.py"
+        ):
+            status = manager.status()
+        self.assertFalse(status["running"])
+        self.assertIsNone(status["pid"])
+        self.assertFalse(manager.runtime_path.exists())
+
     def test_disconnect_clears_credentials(self):
         manager = WebBridgeManager(state_dir=self.root, credentials=self.store)
         manager.configure("tunnel_0123456789abcdef", "secret")
