@@ -55,11 +55,23 @@ O bootstrap/add-on não recebe Python arbitrário, caminho de companion fornecid
 
 ## Superfície remota
 
-O MCP remoto deve ser comparável a um conector como Desktop Commander em disponibilidade para o cliente, mas não deve copiar um shell genérico.
-Toda chamada passa por autenticação, device binding, Space/grant, allow-list e auditoria.
+O MCP remoto é a base do **ORDAX Chat App**, criado para dar ao ChatGPT normal
+uma superfície comparável a um agente de desenvolvimento completo. Toda chamada
+passa por autenticação, device binding, Space/grant, catálogo explícito e auditoria.
 
-A superfície remota inicial permanece **read-only**. Ela inclui catálogo de repositórios, health, inventário, busca, leitura simples/em lote, preview status, Git e artifacts.
-Ações mutáveis remotas deverão entrar em um contrato posterior com effects/grants próprios; não devem ser liberadas apenas porque a action local existe.
+A superfície é dividida por autoridade, não por uma limitação artificial de
+produto:
+
+- leitura: catálogo, health, inventário, busca, leitura, diff, artifacts e preview;
+- escrita: criação/edição/patch/move/remove dentro de projetos registrados;
+- Git: comandos Git project-scoped por capability própria;
+- terminal: `terminal.exec`, capability privilegiada e explícita que executa com
+  as permissões do usuário local;
+- adapters: Blender, Unity e futuras integrações especializadas;
+- computer/browser control: capability separada, prevista no roadmap.
+
+Não existe um `action_execute` genérico que bypassa grants. Terminal e controle
+do computador não são inferidos a partir de permissões comuns de arquivo.
 
 ## Compatibilidade
 
