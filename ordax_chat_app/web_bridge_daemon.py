@@ -64,12 +64,18 @@ class WebBridgeDaemon:
             self.failures = 0
             return self._write_state(state="unconfigured", bridge=bridge)
 
+        if not bridge.get("enabled"):
+            self.failures = 0
+            if bridge.get("running"):
+                bridge = self.manager.stop(persist_disabled=False)
+            return self._write_state(state="disabled", bridge=bridge)
+
         if bridge.get("running"):
             self.failures = 0
             return self._write_state(state="healthy", bridge=bridge)
 
         try:
-            bridge = self.manager.start()
+            bridge = self.manager.start(persist_enabled=False)
         except Exception as error:
             self.failures += 1
             retry = min(300.0, max(5.0, float(2 ** min(self.failures, 8))))
@@ -117,7 +123,7 @@ class WebBridgeDaemon:
             stop_event.wait(delay)
 
         try:
-            bridge = self.manager.stop()
+            bridge = self.manager.stop(persist_disabled=False)
             self._write_state(state="stopped", bridge=bridge)
         except Exception as error:
             try:
@@ -150,7 +156,7 @@ def main() -> int:
         daemon.run_forever(stop_event=stop)
     except KeyboardInterrupt:
         stop.set()
-        daemon.manager.stop()
+        daemon.manager.stop(persist_disabled=False)
     return 0
 
 
