@@ -496,6 +496,65 @@ class WebBridgeManager:
         }
 
     @staticmethod
+    def _product_root() -> Path:
+        packaged = os.environ.get("ORDAX_PACKAGED_ROOT")
+        if packaged:
+            root = Path(packaged).expanduser().resolve()
+            if root.is_dir():
+                return root
+        return Path(__file__).resolve().parents[1]
+
+    @classmethod
+    def _startup_script(cls) -> Path:
+        return cls._product_root() / "scripts" / "windows" / "ordax-chat-web-bridge-install.ps1"
+
+    @classmethod
+    def _run_startup_script(cls, *arguments: str) -> dict[str, Any]:
+        if os.name != "nt":
+            raise RuntimeError("Web Bridge startup task is only supported on Windows")
+        script = cls._startup_script()
+        if not script.is_file():
+            raise RuntimeError(f"Web Bridge startup installer is missing: {script}")
+        command = [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+            "-RepoRoot",
+            str(cls._product_root()),
+            *arguments,
+        ]
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            shell=False,
+        )
+        if result.returncode != 0:
+            output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()[-4000:]
+            raise RuntimeError(f"Web Bridge startup task failed ({result.returncode}): {output}")
+        lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+        if not lines:
+            raise RuntimeError("Web Bridge startup task returned no status")
+        try:
+            payload = json.loads(lines[-1])
+        except json.JSONDecodeError as error:
+            raise RuntimeError("Web Bridge startup task returned invalid status") from error
+        return payload if isinstance(payload, dict) else {"value": payload}
+
+    @classmethod
+    def install_startup(cls, *, start_now: bool = True) -> dict[str, Any]:
+        arguments = ["-StartNow"] if start_now else []
+        return cls._run_startup_script(*arguments)
+
+    @classmethod
+    def uninstall_startup(cls) -> dict[str, Any]:
+        return cls._run_startup_script("-Uninstall")
+
+    @staticmethod
     def open_tunnels_page() -> bool:
         return bool(webbrowser.open(TUNNELS_URL, new=2))
 
