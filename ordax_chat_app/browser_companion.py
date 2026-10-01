@@ -572,6 +572,21 @@ main{text-align:center}p{color:#aaa}</style></head>
                             "pair_required": True,
                         })
                         return
+                    if parsed.path == "/pairing":
+                        if not self._trusted_extension_origin():
+                            self._json(403, {"ok": False, "error": "untrusted_origin"})
+                            return
+                        with outer._lock:
+                            pairing = outer._pairing
+                            active = bool(pairing and pairing.expires_at >= _now())
+                            self._json(200, {
+                                "ok": True,
+                                "active": active,
+                                "code": pairing.code if active and pairing else None,
+                                "expires_at": pairing.expires_at if active and pairing else None,
+                                "protocol": _PROTOCOL,
+                            })
+                        return
                     if parsed.path == "/commands":
                         if not self._trusted_extension_origin():
                             self._json(403, {"ok": False, "error": "untrusted_origin"})
