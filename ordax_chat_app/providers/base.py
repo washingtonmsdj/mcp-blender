@@ -16,6 +16,7 @@ class ChatTurnResult:
     text: str
     response_id: str | None
     usage: dict[str, Any] = field(default_factory=dict)
+    output_items: list[dict[str, Any]] = field(default_factory=list)
     raw_completed_event: dict[str, Any] = field(default_factory=dict)
 
 
