@@ -46,6 +46,40 @@ def run(base_url: str, operator_token: str) -> None:
         ):
             raise RuntimeError("control-plane required capabilities are missing")
 
+        protected_resource = operator.get("/.well-known/oauth-protected-resource")
+        protected_resource.raise_for_status()
+        resource_metadata = protected_resource.json()
+        scopes = resource_metadata.get("scopes_supported")
+        if not isinstance(scopes, list) or not {"openid", "email"}.issubset(scopes):
+            raise RuntimeError("MCP protected-resource metadata is missing openid/email scopes")
+        authorization_servers = resource_metadata.get("authorization_servers")
+        if not isinstance(authorization_servers, list):
+            raise RuntimeError("MCP protected-resource metadata has invalid authorization_servers")
+        if health_payload.get("product_auth_configured") is True:
+            if len(authorization_servers) != 1 or not isinstance(authorization_servers[0], str):
+                raise RuntimeError("MCP protected-resource metadata has invalid authorization server")
+            issuer = authorization_servers[0].rstrip("/")
+            discovery = httpx.get(
+                f"{issuer}/.well-known/openid-configuration",
+                timeout=20.0,
+                follow_redirects=False,
+            )
+            discovery.raise_for_status()
+            oidc = discovery.json()
+            if oidc.get("issuer") != issuer:
+                raise RuntimeError("OIDC discovery issuer does not match protected resource")
+            oidc_scopes = oidc.get("scopes_supported")
+            if not isinstance(oidc_scopes, list) or not {"openid", "email"}.issubset(oidc_scopes):
+                raise RuntimeError("OIDC provider is missing openid/email scopes")
+            userinfo_endpoint = oidc.get("userinfo_endpoint")
+            if not isinstance(userinfo_endpoint, str) or not userinfo_endpoint.startswith("https://"):
+                raise RuntimeError("OIDC provider is missing HTTPS userinfo_endpoint")
+            pkce_methods = oidc.get("code_challenge_methods_supported")
+            if not isinstance(pkce_methods, list) or "S256" not in pkce_methods:
+                raise RuntimeError("OIDC provider is missing PKCE S256 support")
+        elif authorization_servers:
+            raise RuntimeError("unconfigured local Product auth advertised an authorization server")
+
         provision = operator.post("/v3/devices", json={"name": "ci-e2e-device"})
         provision.raise_for_status()
         provisioned = provision.json()

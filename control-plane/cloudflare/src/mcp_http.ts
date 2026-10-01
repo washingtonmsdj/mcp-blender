@@ -20,6 +20,7 @@ interface ToolSpec {
 }
 
 const STRING = { type: "string" };
+const OAUTH_SCOPES = ["openid", "email"];
 const NUMBER = { type: "number" };
 const BOOLEAN = { type: "boolean" };
 const DEVICE = { type: "string", description: "ORDAX device UUID returned by ordax_targets." };
@@ -45,7 +46,8 @@ const REPLACEMENTS = {
 };
 
 const TOOLS: ToolSpec[] = [
-  { name: "ordax_session", description: "Inspect the authenticated ORDAX Product session." },
+  { name: "ordax_session", description: "Inspect whether the current ORDAX Product connection is authenticated." },
+  { name: "ordax_profile", description: "Return the stable opaque profile id represented by the authenticated ORDAX credentials." },
   { name: "ordax_targets", description: "List ORDAX devices, Spaces and grants visible to the authenticated user." },
   { name: "ordax_action_status", description: "Read the status/result of a previously queued ORDAX action.", properties: { request_id: STRING }, required: ["request_id"] },
   { name: "repository_catalog", description: "List repositories registered on an ORDAX device.", action: "workspace.repository_catalog", properties: { device_id: DEVICE, space_id: SPACE, wait_for_completion_ms: WAIT }, required: ["device_id"] },
@@ -87,6 +89,7 @@ const TOOLS: ToolSpec[] = [
 
 const READ_ONLY_TOOLS = new Set([
   "ordax_session",
+  "ordax_profile",
   "ordax_targets",
   "ordax_action_status",
   "repository_catalog",
@@ -132,6 +135,7 @@ const OPEN_WORLD_TOOLS = new Set([
 
 const TOOL_TITLES: Record<string, string> = {
   ordax_session: "Check ORDAX account session",
+  ordax_profile: "Identify connected ORDAX account",
   ordax_targets: "List connected ORDAX devices",
   ordax_action_status: "Check ORDAX action status",
   repository_catalog: "List device repositories",
@@ -289,10 +293,11 @@ function toolDefinitions(): JsonObject[] {
       name: tool.name,
       title: TOOL_TITLES[tool.name] ?? tool.name.replace(/_/g, " "),
       description: tool.description,
-      securitySchemes: [{ type: "oauth2", scopes: ["email"] }],
+      securitySchemes: [{ type: "oauth2", scopes: OAUTH_SCOPES }],
       annotations: toolAnnotations(tool.name),
       _meta: {
-        securitySchemes: [{ type: "oauth2", scopes: ["email"] }],
+        securitySchemes: [{ type: "oauth2", scopes: OAUTH_SCOPES }],
+        ...(tool.name === "ordax_profile" ? { "openai/profile": true } : {}),
         "openai/toolInvocation/invoking": invocation.invoking,
         "openai/toolInvocation/invoked": invocation.invoked,
       },
@@ -302,10 +307,19 @@ function toolDefinitions(): JsonObject[] {
         required: tool.required ?? [],
         additionalProperties: false,
       },
-      outputSchema: {
-        type: "object",
-        additionalProperties: true,
-      },
+      outputSchema: tool.name === "ordax_profile"
+        ? {
+            type: "object",
+            properties: {
+              id: { type: "string", minLength: 1, pattern: "\\S" },
+            },
+            required: ["id"],
+            additionalProperties: false,
+          }
+        : {
+            type: "object",
+            additionalProperties: true,
+          },
     };
   });
 }
@@ -340,6 +354,18 @@ async function callTool(source: Request, name: string, args: JsonObject, handler
         : { ok: false, authenticated: false, error: "authentication_required" },
       !response.ok,
     );
+  }
+  if (name === "ordax_profile") {
+    const response = await handlers.session(cloneWithAuth(source, new URL("/v3/product/session", source.url).toString(), "GET"));
+    const payload = await bodyJson(response);
+    const session = payload.session;
+    const subjectId = session && typeof session === "object" && !Array.isArray(session)
+      ? (session as JsonObject).subject_id
+      : null;
+    if (!response.ok || typeof subjectId !== "string" || !subjectId.trim()) {
+      return textToolResult({ ok: false, error: "profile_unavailable" }, true);
+    }
+    return textToolResult({ id: subjectId });
   }
   if (name === "ordax_targets") {
     const response = await handlers.targets(cloneWithAuth(source, new URL("/v3/product/targets", source.url).toString(), "GET"));
@@ -410,7 +436,7 @@ export async function handleOrdaxMcp(request: Request, handlers: OrdaxMcpHandler
   if (method === "initialize") return rpcResult(id, {
     protocolVersion: "2025-06-18",
     capabilities: { tools: { listChanged: false } },
-    serverInfo: { name: "ORDAX Dev", version: "0.4.0" },
+    serverInfo: { name: "ORDAX Dev", version: "0.4.1" },
     instructions: "Use ORDAX Dev only when the user asks to work with a connected ORDAX device or one of its registered projects. List connected devices before project-scoped work when the target is unknown. Respect project boundaries and the user’s explicit intent. Write, execute, Git and Blender mutation tools remain grant- and audit-protected by the ORDAX Runtime.",
   });
   if (method === "tools/list") return rpcResult(id, { tools: toolDefinitions() });

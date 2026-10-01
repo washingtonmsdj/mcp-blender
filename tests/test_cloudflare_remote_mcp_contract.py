@@ -28,6 +28,7 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
 
     def test_mcp_exposes_typed_tools_not_generic_shell(self) -> None:
         for tool in (
+            '"ordax_profile"',
             '"ordax_targets"',
             '"repository_catalog"',
             '"project_text_read"',
@@ -77,6 +78,9 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
         self.assertIn("title: TOOL_TITLES[tool.name]", self.mcp)
         self.assertIn('"openai/toolInvocation/invoking"', self.mcp)
         self.assertIn('"openai/toolInvocation/invoked"', self.mcp)
+        self.assertIn('"openai/profile": true', self.mcp)
+        self.assertIn('required: ["id"]', self.mcp)
+        self.assertIn('serverInfo: { name: "ORDAX Dev", version: "0.4.1" }', self.mcp)
 
     def test_worker_exposes_public_plugin_review_routes(self) -> None:
         self.assertIn('openAiAppsChallenge', self.worker)
