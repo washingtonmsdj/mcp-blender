@@ -220,6 +220,7 @@ async function bootstrap(){
     else if(!data.account.connected)setStatus("Conecte o ChatGPT para começar.");
     else setStatus("Pronto.");
     await refreshActivity();
+    await refreshAutonomy();
   }catch(err){setStatus(err.message,"error")}
 }
 
