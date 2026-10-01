@@ -77,6 +77,7 @@ class ProcessRuntime:
 
     def run(self) -> int:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self.update(manager_pid=os.getpid(), manager_ready_at_unix=time.time())
         creationflags = 0
         start_new_session = False
         if os.name == "nt":
@@ -133,6 +134,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--log", required=True)
     p.add_argument("--cwd", required=True)
     p.add_argument("--env-json", default="{}")
+    p.add_argument("--token", required=True)
     p.add_argument("command", nargs=argparse.REMAINDER)
     return p
 
