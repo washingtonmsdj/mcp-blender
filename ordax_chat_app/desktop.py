@@ -10,6 +10,7 @@ from .auth import resolve_chat_app_state_dir
 from .autonomy_service import AutonomyService
 from .instance_lock import SingleInstanceLock
 from .runtime import OrdaxChatRuntime
+from .web_bridge import WebBridgeManager
 
 
 APP_NAME = "ORDAX Dev"
@@ -23,10 +24,12 @@ class DesktopApi:
         runtime: OrdaxChatRuntime | None = None,
         *,
         autonomy: AutonomyService | None = None,
+        web_bridge: WebBridgeManager | None = None,
         auto_resume: bool = True,
     ):
         self.runtime = runtime or OrdaxChatRuntime()
         self.autonomy = autonomy or AutonomyService(self.runtime)
+        self.web_bridge = web_bridge or WebBridgeManager()
         self.autonomy_resume_error: str | None = None
         if auto_resume:
             try:
@@ -75,6 +78,7 @@ class DesktopApi:
                         "uses_work_codex_quota": False,
                         "mcp_endpoint": NORMAL_CHAT_MCP_ENDPOINT,
                         "chat_url": NORMAL_CHAT_URL,
+                        "web_bridge": self.web_bridge.status(),
                     },
                     "agent": {
                         "label": "Agent / Responses",
@@ -101,6 +105,39 @@ class DesktopApi:
                 "opened": bool(opened),
             }
         return self._guard(open_chat)
+
+    def web_bridge_status(self) -> dict[str, Any]:
+        return self._guard(self.web_bridge.status)
+
+    def web_bridge_configure(self, tunnel_id: str, api_key: str) -> dict[str, Any]:
+        return self._guard(
+            lambda: self.web_bridge.configure(
+                str(tunnel_id or ""),
+                str(api_key or ""),
+            )
+        )
+
+    def web_bridge_install(self) -> dict[str, Any]:
+        return self._guard(self.web_bridge.install_client)
+
+    def web_bridge_start(self) -> dict[str, Any]:
+        return self._guard(self.web_bridge.start)
+
+    def web_bridge_stop(self) -> dict[str, Any]:
+        return self._guard(self.web_bridge.stop)
+
+    def web_bridge_disconnect(self) -> dict[str, Any]:
+        return self._guard(self.web_bridge.disconnect)
+
+    def web_bridge_open_tunnels(self) -> dict[str, Any]:
+        return self._guard(
+            lambda: {"opened": self.web_bridge.open_tunnels_page()}
+        )
+
+    def web_bridge_open_api_keys(self) -> dict[str, Any]:
+        return self._guard(
+            lambda: {"opened": self.web_bridge.open_api_keys_page()}
+        )
 
     def connect_chatgpt(self) -> dict[str, Any]:
         def connect():
