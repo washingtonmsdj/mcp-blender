@@ -6,6 +6,9 @@ workers_dev = true
 [observability]
 enabled = true
 
+[triggers]
+crons = ["17 3 * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "ordax-control-plane-v3"

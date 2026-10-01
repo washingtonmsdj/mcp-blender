@@ -38,15 +38,23 @@ class PersistentProcessActions:
             return False
         if os.name == "nt":
             try:
-                result = subprocess.run(
-                    ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-                    capture_output=True,
-                    text=True,
-                    timeout=4,
-                    shell=False,
+                import ctypes
+
+                PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+                SYNCHRONIZE = 0x00100000
+                handle = ctypes.windll.kernel32.OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+                    False,
+                    pid,
                 )
-                return result.returncode == 0 and f'"{pid}"' in result.stdout
-            except (OSError, subprocess.TimeoutExpired):
+                if not handle:
+                    return False
+                try:
+                    WAIT_TIMEOUT = 0x00000102
+                    return ctypes.windll.kernel32.WaitForSingleObject(handle, 0) == WAIT_TIMEOUT
+                finally:
+                    ctypes.windll.kernel32.CloseHandle(handle)
+            except (AttributeError, OSError):
                 return False
         proc_stat = Path(f"/proc/{pid}/stat")
         try:
@@ -103,15 +111,30 @@ class PersistentProcessActions:
     def _owned(self, state: dict[str, Any]) -> bool:
         pid = int(state.get("manager_pid") or 0)
         token = str(state.get("token") or "")
-        if not pid or not token or not self._pid_running(pid):
+        process_id = str(state.get("process_id") or "")
+        if not pid or not token:
+            return False
+
+        # A live Popen handle created by this ActionRegistry is stronger and much
+        # cheaper ownership evidence than spawning tasklist/PowerShell during the
+        # startup hot path. Command-line verification remains the recovery path
+        # after the ORDAX Runtime itself has restarted.
+        handle = getattr(self, "_persistent_process_handles", {}).get(process_id)
+        if handle is not None:
+            return handle.pid == pid and handle.poll() is None
+
+        if not self._pid_running(pid):
             return False
         commandline = self._commandline(pid)
         return "persistent_process_runtime.py" in commandline and token in commandline
 
     def _public_process_state(self, state: dict[str, Any]) -> dict[str, Any]:
         manager_pid = int(state.get("manager_pid") or 0)
-        running = self._pid_running(manager_pid)
-        owned = bool(running and self._owned(state))
+        owned = self._owned(state)
+        # A live managed Popen handle is authoritative for processes launched by
+        # this ActionRegistry. OS process enumeration is only needed for
+        # recovered state after the ORDAX Runtime itself restarts.
+        running = bool(owned or self._pid_running(manager_pid))
         lifecycle = str(state.get("state") or "unknown")
         if running and owned and lifecycle in {"starting", "running"}:
             lifecycle = "running"

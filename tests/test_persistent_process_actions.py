@@ -5,6 +5,8 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
@@ -162,6 +164,25 @@ class PersistentProcessActionsTests(unittest.TestCase):
                 break
             time.sleep(0.1)
         self.assertIn("ORDAX_STDIN_GOT:hello-ordax", tail)
+
+    def test_live_managed_handle_is_authoritative_before_windows_pid_probe(self):
+        process_id = "11111111-1111-4111-8111-111111111111"
+        handle = SimpleNamespace(pid=4242, poll=lambda: None)
+        self.registry._persistent_process_handles = {process_id: handle}
+        state = {
+            "process_id": process_id,
+            "project": "demo",
+            "manager_pid": 4242,
+            "token": "owned-token",
+            "state": "starting",
+        }
+
+        with patch.object(self.registry, "_pid_running", return_value=False):
+            public = self.registry._public_process_state(state)
+
+        self.assertTrue(public["running"])
+        self.assertTrue(public["ownership_valid"])
+        self.assertEqual("running", public["state"])
 
     def test_process_id_is_project_scoped(self):
         result = self.registry.execute(
