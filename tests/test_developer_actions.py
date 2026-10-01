@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -135,6 +136,50 @@ class DeveloperActionsTests(unittest.TestCase):
         )
         self.assertFalse(refused.ok)
         self.assertIn("shell=true", refused.summary)
+
+    def test_git_command_blocks_provider_credential_and_config_access(self) -> None:
+        for args in (
+            ["credential", "fill"],
+            ["credential-store", "get"],
+            ["config", "--list"],
+        ):
+            with self.subTest(args=args):
+                refused = self.registry.execute(
+                    "git.command",
+                    {"project": "project", "args": args},
+                )
+                self.assertFalse(refused.ok)
+                self.assertIn("not allowed through the remote boundary", refused.summary)
+
+    def test_git_command_redacts_authenticated_remote_urls(self) -> None:
+        subprocess.run(
+            ["git", "-C", str(self.project), "init"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.project),
+                "remote",
+                "add",
+                "origin",
+                "https://user:super-secret@github.com/example/project.git",
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        result = self.registry.execute(
+            "git.command",
+            {"project": "project", "args": ["remote", "get-url", "origin"]},
+        )
+        self.assertTrue(result.ok)
+        self.assertNotIn("super-secret", result.data["stdout"])
+        self.assertNotIn("user:", result.data["stdout"])
+        self.assertIn("https://***@github.com/example/project.git", result.data["stdout"])
 
     def test_git_command_cannot_redirect_git_to_another_worktree(self) -> None:
         refused = self.registry.execute(
