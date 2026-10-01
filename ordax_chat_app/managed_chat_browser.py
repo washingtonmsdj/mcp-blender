@@ -68,7 +68,18 @@ class ManagedChatBrowser:
             "chat_url": CHATGPT_URL,
         }
 
-    def start(self) -> dict[str, Any]:
+    @staticmethod
+    def _safe_initial_url(initial_url: str | None) -> str:
+        value = str(initial_url or CHATGPT_URL).strip()
+        if value == CHATGPT_URL:
+            return value
+        if value.startswith("http://127.0.0.1:8775/bootstrap?code="):
+            code = value.split("=", 1)[1]
+            if code.isdigit() and len(code) == 8:
+                return value
+        raise ValueError("unsupported managed ChatGPT browser initial URL")
+
+    def start(self, *, initial_url: str | None = None) -> dict[str, Any]:
         with self._lock:
             if self._process is not None and self._process.poll() is None:
                 return self.status()
@@ -81,6 +92,7 @@ class ManagedChatBrowser:
             flags = 0
             if os.name == "nt":
                 flags = subprocess.CREATE_NEW_PROCESS_GROUP
+            target_url = self._safe_initial_url(initial_url)
             args = [
                 str(browser),
                 f"--user-data-dir={self.profile_dir}",
@@ -88,7 +100,7 @@ class ManagedChatBrowser:
                 f"--load-extension={self.extension_dir}",
                 "--no-first-run",
                 "--no-default-browser-check",
-                f"--app={CHATGPT_URL}",
+                f"--app={target_url}",
             ]
             self._process = subprocess.Popen(
                 args,
