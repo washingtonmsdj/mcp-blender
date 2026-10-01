@@ -120,9 +120,18 @@
       button.classList.add('connected');
       button.title=connectedEmail?`Conectado como ${connectedEmail}`:'Conta ORDAX conectada';
       status.className='accountStatus success';
-      status.textContent=connectedEmail?`Computador vinculado a ${connectedEmail}.`:'Computador vinculado à conta ORDAX.';
-      setGlobalStatus('ORDAX conectado à conta');
-      setTimeout(close,900);
+      const enrolledNow=Boolean(result.data?.enrolled_now);
+      const restarted=Boolean(result.data?.runtime_restarted);
+      const restartRequired=Boolean(result.data?.runtime_restart_required);
+      if(enrolledNow&&restarted){
+        status.textContent=connectedEmail?`Computador registrado e vinculado a ${connectedEmail}. Runtime reiniciado.`:'Computador registrado e vinculado à conta ORDAX. Runtime reiniciado.';
+      }else if(enrolledNow&&restartRequired){
+        status.textContent='Computador registrado. Feche e abra o ORDAX Dev ou reinicie o Runtime para concluir a conexão remota.';
+      }else{
+        status.textContent=connectedEmail?`Computador vinculado a ${connectedEmail}.`:'Computador vinculado à conta ORDAX.';
+      }
+      setGlobalStatus(restartRequired?'ORDAX registrado · Runtime precisa reiniciar':'ORDAX conectado à conta');
+      setTimeout(close,restartRequired?2400:1100);
     });
   }
 
