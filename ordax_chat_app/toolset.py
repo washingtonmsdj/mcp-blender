@@ -270,6 +270,34 @@ DEVELOPMENT_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "computer",
+        "description": "Observe or interact with the Windows desktop when explicitly granted for this project. Take a screenshot or inspect windows before interacting.",
+        "parameters": _object({
+            "operation": {
+                "type": "string",
+                "enum": ["windows", "active_window", "screenshot", "focus", "click", "type", "hotkey", "scroll"],
+            },
+            "mode": _nullable({"type": "string", "enum": ["desktop", "active_window"]}),
+            "max_items": _nullable({"type": "integer", "minimum": 1, "maximum": 500}),
+            "handle": _nullable({"type": "string"}),
+            "x": _nullable({"type": "integer"}),
+            "y": _nullable({"type": "integer"}),
+            "button": _nullable({"type": "string", "enum": ["left", "right", "middle"]}),
+            "clicks": _nullable({"type": "integer", "minimum": 1, "maximum": 3}),
+            "text": _nullable({"type": "string"}),
+            "keys": _nullable({
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "maxItems": 6,
+            }),
+            "amount": _nullable({"type": "integer", "minimum": -100, "maximum": 100}),
+            "horizontal": _nullable({"type": "boolean"}),
+        }),
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "preview_status",
         "description": "Inspect the selected project's managed preview/runtime state.",
         "parameters": _object({}),
@@ -329,16 +357,35 @@ class DevelopmentToolset:
         max_output_bytes: int = 512 * 1024,
         orchestrator=None,
         agent_id: str | None = None,
+        policy=None,
     ):
         self.action_registry = action_registry
         self.project = project
         self.max_output_bytes = max_output_bytes
         self.orchestrator = orchestrator
         self.agent_id = agent_id
+        self.policy = policy
 
     @property
     def definitions(self) -> list[dict[str, Any]]:
-        return [dict(item) for item in DEVELOPMENT_TOOLS]
+        definitions = [dict(item) for item in DEVELOPMENT_TOOLS if item["name"] != "computer"]
+        observe = bool(self.policy and self.policy.enabled(self.project, "computer.observe"))
+        interact = bool(self.policy and self.policy.enabled(self.project, "computer.interact"))
+        if observe or interact:
+            computer = next(dict(item) for item in DEVELOPMENT_TOOLS if item["name"] == "computer")
+            properties = dict(computer["parameters"]["properties"])
+            allowed_operations: list[str] = []
+            if observe:
+                allowed_operations.extend(["windows", "active_window", "screenshot"])
+            if interact:
+                allowed_operations.extend(["focus", "click", "type", "hotkey", "scroll"])
+            properties["operation"] = {"type": "string", "enum": allowed_operations}
+            computer["parameters"] = {
+                **computer["parameters"],
+                "properties": properties,
+            }
+            definitions.append(computer)
+        return definitions
 
     def execute_with_followups(self, name: str, arguments_json: str) -> ToolExecutionResult:
         raw_output = self.execute(name, arguments_json)
@@ -426,6 +473,36 @@ class DevelopmentToolset:
         action = _TOOL_ACTIONS.get(name)
         if name == "agents":
             return self._execute_agents(raw)
+        if name == "computer":
+            operation = str(raw.get("operation") or "")
+            action = {
+                "windows": "computer.windows",
+                "active_window": "computer.active_window",
+                "screenshot": "computer.screenshot",
+                "focus": "computer.focus_window",
+                "click": "computer.click",
+                "type": "computer.type",
+                "hotkey": "computer.hotkey",
+                "scroll": "computer.scroll",
+            }.get(operation)
+            required_capability = (
+                "computer.observe"
+                if operation in {"windows", "active_window", "screenshot"}
+                else "computer.interact"
+            )
+            if (
+                action is None
+                or self.policy is None
+                or not self.policy.enabled(self.project, required_capability)
+            ):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "summary": f"computer capability is not enabled for this project: {required_capability}",
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
         if name == "browser":
             operation = str(raw.get("operation") or "")
             action = {
@@ -456,6 +533,29 @@ class DevelopmentToolset:
             )
 
         payload = {key: value for key, value in raw.items() if value is not None}
+        if name == "computer":
+            payload.pop("operation", None)
+            allowed_by_operation = {
+                "computer.windows": {"max_items"},
+                "computer.active_window": set(),
+                "computer.screenshot": {"mode"},
+                "computer.focus_window": {"handle"},
+                "computer.click": {"x", "y", "button", "clicks"},
+                "computer.type": {"text"},
+                "computer.hotkey": {"keys"},
+                "computer.scroll": {"amount", "horizontal"},
+            }
+            allowed_payload = allowed_by_operation.get(action, set())
+            unexpected = sorted(set(payload) - allowed_payload)
+            if unexpected:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "summary": "unsupported computer argument(s) for operation: " + ", ".join(unexpected),
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
         if name == "browser":
             payload.pop("operation", None)
             allowed_by_operation = {
