@@ -35,6 +35,7 @@ ordax-device-pair = "ordax_dev_agent.product_pair_cli:main"
 ordax-studio = "ordax_studio.cli:main"
 ordax-studio-desktop = "ordax_studio.desktop:main"
 ordax-studio-web = "ordax_studio.web_desktop:main"
+ordax-dev = "ordax_chat_app.desktop:main"
 
 [tool.setuptools.packages.find]
 include = ["mcp_blender_unity*", "ordax_core*", "ordax_studio*", "ordax_dev_agent*", "ordax_device_agent*", "ordax_chat_app*"]
@@ -42,3 +43,4 @@ include = ["mcp_blender_unity*", "ordax_core*", "ordax_studio*", "ordax_dev_agen
 [tool.setuptools.package-data]
 ordax_dev_agent = ["assets/*.py", "assets/*.cs", "assets/*.json"]
 ordax_studio = ["*.html", "assets/*.js", "assets/*.css"]
+ordax_chat_app = ["*.html", "assets/*.js", "assets/*.css"]
