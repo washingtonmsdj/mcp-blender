@@ -466,12 +466,58 @@ class OpenAISignInClient:
                 raise error
 
             token = response.json()
-            refreshed = self._account_from_token(
-                token,
+            access_token = str(token.get("access_token") or "")
+            replacement_refresh = str(token.get("refresh_token") or "")
+            if not access_token or not replacement_refresh:
+                raise SignInError(
+                    "ChatGPT refresh response is missing replacement credentials",
+                    code="invalid_refresh_response",
+                )
+            raw_scope = str(token.get("scope") or "").strip()
+            scopes = sorted({item for item in raw_scope.split() if item}) if raw_scope else list(latest.scopes)
+            if "chatgpt.tokens.use.direct" not in scopes:
+                raise SignInError(
+                    "ChatGPT plan usage permission is no longer granted",
+                    code="plan_scope_missing",
+                )
+
+            replacement_id_token = str(token.get("id_token") or "")
+            if replacement_id_token:
+                claims = self.validate_id_token(
+                    replacement_id_token,
+                    client_id=latest.client_id,
+                    nonce=None,
+                )
+                if str(claims.get("sub") or "") != latest.subject:
+                    raise SignInError(
+                        "ChatGPT account changed during token refresh",
+                        code="account_mismatch",
+                    )
+                id_token = replacement_id_token
+                email = str(claims.get("email") or "") or latest.email
+                name = str(claims.get("name") or "") or latest.name
+                issuer = str(claims.get("iss") or latest.issuer)
+            else:
+                id_token = latest.id_token
+                email = latest.email
+                name = latest.name
+                issuer = latest.issuer
+
+            refreshed = ChatGPTAccount(
+                subject=latest.subject,
+                email=email,
+                name=name,
+                issuer=issuer,
                 client_id=latest.client_id,
-                host_id=latest.ext_agent_host_id,
-                nonce=None,
-                expected_subject=latest.subject,
+                ext_agent_host_id=latest.ext_agent_host_id,
+                id_token=id_token,
+                access_token=access_token,
+                refresh_token=replacement_refresh,
+                token_type=str(token.get("token_type") or latest.token_type or "Bearer"),
+                expires_in=int(token.get("expires_in") or 3600),
+                earliest_refresh_at=int(token["earliest_refresh_at"]) if token.get("earliest_refresh_at") is not None else None,
+                scopes=scopes,
+                saved_at_unix=int(time.time()),
             )
             return self.account_store.save(refreshed, select=True)
 
@@ -510,6 +556,7 @@ class OpenAISignInClient:
         if not discovery.revocation_endpoint or not account.refresh_token:
             self.account_store.clear_tokens(account.key)
             return False
+        confirmed = False
         try:
             with self._client() as client:
                 response = client.post(
@@ -521,6 +568,8 @@ class OpenAISignInClient:
                     },
                 )
             confirmed = response.status_code == 200
+        except httpx.HTTPError:
+            confirmed = False
         finally:
             self.account_store.clear_tokens(account.key)
         return confirmed
