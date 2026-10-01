@@ -309,6 +309,7 @@ class BrowserSessionActions:
             "--disable-extensions",
             f"--user-data-dir={profile}",
             f"--remote-debugging-port={port}",
+            "--remote-debugging-address=127.0.0.1",
             url,
         ]
         if bool(payload.get("headless", False)):
@@ -348,11 +349,32 @@ class BrowserSessionActions:
         handles[session_id] = process
 
         try:
-            target = self._browser_target(
-                state,
-                timeout_seconds=max(30.0, min(float(payload.get("wait_seconds", 8)), 60.0)),
-                create_url=url,
+            deadline = time.monotonic() + max(
+                30.0,
+                min(float(payload.get("wait_seconds", 8)), 60.0),
             )
+            target = None
+            last_error = None
+            while time.monotonic() < deadline:
+                exit_code = process.poll()
+                if exit_code is not None:
+                    raise BrowserCaptureError(
+                        f"Chromium exited before CDP became ready (exit code {exit_code})"
+                    )
+                try:
+                    target = self._browser_target(
+                        state,
+                        timeout_seconds=min(2.0, max(0.2, deadline - time.monotonic())),
+                        create_url=url,
+                    )
+                    break
+                except BrowserCaptureError as error:
+                    last_error = error
+                    time.sleep(0.1)
+            if target is None:
+                raise last_error or BrowserCaptureError(
+                    "Chromium CDP page target is unavailable"
+                )
         except BrowserCaptureError as error:
             try:
                 if os.name == "nt":
