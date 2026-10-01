@@ -185,6 +185,31 @@ class StudioProductAccountTests(unittest.TestCase):
             )
             self.assertNotIn("sensitive-jwt", repr(result))
 
+    def test_product_api_restarts_packaged_runtime_after_first_enrollment(self) -> None:
+        api = object.__new__(StudioProductApi)
+        api.agent = SimpleNamespace(config=SimpleNamespace())
+        with (
+            patch(
+                "ordax_studio.product_web_desktop.connect_existing_device",
+                return_value={
+                    "email": "user@example.com",
+                    "link": {"device_id": "dev-1"},
+                    "device_id": "dev-1",
+                    "enrolled_now": True,
+                },
+            ),
+            patch(
+                "ordax_studio.product_web_desktop._restart_packaged_runtime_after_enrollment",
+                return_value=True,
+            ) as restart,
+        ):
+            result = api.connect_product_account("user@example.com", "secret")
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["data"]["runtime_restarted"])
+        self.assertFalse(result["data"]["runtime_restart_required"])
+        restart.assert_called_once_with()
+
     def test_product_api_returns_safe_error_shape(self) -> None:
         api = object.__new__(StudioProductApi)
         api.agent = SimpleNamespace(config=SimpleNamespace())
