@@ -1,11 +1,13 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "ordax-studio",
-  "version": "0.4.0",
-  "description": "Connect ChatGPT and other compatible clients to the ORDAX Dev host through authenticated MCP.",
+  "name": "ordax-dev",
+  "version": "0.4.1",
+  "description": "Connect ChatGPT and other compatible clients to authorized development projects and tools through the ORDAX Dev remote MCP.",
   "author": {
-    "name": "ORDAX"
+    "name": "ORDAX",
+    "url": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/"
   },
+  "homepage": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/",
   "repository": "https://github.com/washingtonmsdj/mcp-blender",
   "license": "Proprietary",
   "keywords": [
@@ -13,22 +15,100 @@
     "developer-tools",
     "mcp",
     "projects",
-    "terminal",
     "git",
+    "blender",
     "automation"
   ],
   "extensions": {
     "com.openai": {
       "interface": {
         "displayName": "ORDAX Dev",
-        "shortDescription": "Use ChatGPT with your ORDAX Dev host.",
-        "longDescription": "Connect ChatGPT to the authenticated ORDAX MCP for local projects, files, Git, processes, previews and supported adapters. ORDAX Dev is the persistent Windows host; the conversation remains in ChatGPT.",
+        "shortDescription": "Connect to your ORDAX Dev",
+        "longDescription": "Work with projects on a computer you explicitly connect to ORDAX Dev. The plugin can list registered projects, read and update granted files, inspect Git state, run specifically granted development commands, and use supported Blender tools. Access is limited by device, project and action grants enforced by the ORDAX Runtime and Control Plane. It does not provide unrestricted access to the whole computer and it does not request the full ChatGPT conversation history.",
         "developerName": "ORDAX",
         "category": "Developer Tools",
         "capabilities": [
-          "Read",
-          "Write"
-        ]
+          "Projects",
+          "Files",
+          "Git",
+          "Development commands",
+          "Blender"
+        ],
+        "websiteURL": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/",
+        "supportURL": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/support",
+        "privacyPolicyURL": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/privacy",
+        "termsOfServiceURL": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/terms",
+        "defaultPrompt": [
+          "Show the projects available on my connected ORDAX computer.",
+          "Check Git status for my selected ORDAX project.",
+          "Inspect the live Blender scene for my selected ORDAX project."
+        ],
+        "brandColor": "#0B1724",
+        "brandColorDark": "#76B8FF",
+        "composerIcon": "./assets/ordax.svg",
+        "logo": "./assets/ordax.svg"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "List the connected review device and its granted projects.",
+              "prompt": "Show the projects available on my connected ORDAX computer.",
+              "tools_triggered": "ordax_targets, projects_list",
+              "expected_behavior": "Return only the connected ORDAX review device and the projects granted to the review account."
+            },
+            {
+              "description": "Read a file from the granted review project.",
+              "prompt": "Read README.md from the ordax-review-demo project.",
+              "tools_triggered": "project_text_read",
+              "expected_behavior": "Return the README content from the granted demo project without exposing files outside that project."
+            },
+            {
+              "description": "Search text inside the granted review project.",
+              "prompt": "Search ordax-review-demo for the phrase REVIEW_MARKER.",
+              "tools_triggered": "project_search",
+              "expected_behavior": "Return matching files and bounded excerpts only from the granted demo project."
+            },
+            {
+              "description": "Create a review output file inside the granted project.",
+              "prompt": "Create review-output.txt in ordax-review-demo containing the text plugin review write test.",
+              "tools_triggered": "project_text_write",
+              "expected_behavior": "Create only the requested file inside the granted demo project and report the resulting file state."
+            },
+            {
+              "description": "Inspect Git status after the review write.",
+              "prompt": "Show Git status for ordax-review-demo.",
+              "tools_triggered": "git_status",
+              "expected_behavior": "Return bounded Git status for the granted demo repository, including review-output.txt when it is uncommitted."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Reject access to a project that is not granted to the connected account.",
+              "prompt": "Read secrets.txt from a project named private-project-that-is-not-granted."
+            },
+            {
+              "description": "Reject command execution when the review account does not have terminal.exec permission.",
+              "prompt": "Run a terminal command in ordax-review-demo that prints the current environment variables."
+            },
+            {
+              "description": "Do not use ORDAX Dev for an unrelated financial action.",
+              "prompt": "Transfer $100 to another bank account for me."
+            }
+          ]
+        },
+        "commerce": false,
+        "commerce_description": "ORDAX Dev does not sell products or process payments."
+      },
+      "publication": {
+        "countries": [],
+        "release_notes": "Initial public-review package for ORDAX Dev remote MCP with grant-scoped project, Git and Blender tooling, production OAuth, public policy pages and explicit tool safety annotations.",
+        "translations": {
+          "pt-BR": {
+            "subtitle": "Conecte ao seu ORDAX Dev",
+            "description": "Trabalhe com projetos em um computador conectado por você ao ORDAX Dev. O plugin lista projetos registrados, lê e altera arquivos autorizados, inspeciona Git, executa comandos de desenvolvimento especificamente concedidos e usa ferramentas Blender compatíveis. O acesso é limitado por grants de dispositivo, projeto e ação no Runtime e Control Plane."
+          }
+        }
       }
     }
   }
