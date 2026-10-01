@@ -254,6 +254,7 @@ class FakeBrowserCompanion:
 class FakeManagedBrowser:
     def __init__(self):
         self.running = False
+        self.initial_url = None
 
     def status(self):
         return {
@@ -266,7 +267,8 @@ class FakeManagedBrowser:
             "chat_url": "https://chatgpt.com/",
         }
 
-    def start(self):
+    def start(self, *, initial_url=None):
+        self.initial_url = initial_url
         self.running = True
         return self.status()
 
@@ -436,6 +438,13 @@ class DesktopApiTests(unittest.TestCase):
         self.assertTrue(started["ok"])
         self.assertTrue(started["data"]["running"])
         self.assertEqual(started["data"]["pid"], 321)
+        self.assertTrue(started["data"]["auto_pair"])
+        self.assertTrue(
+            self.managed_browser.initial_url.startswith(
+                "http://127.0.0.1:8775/bootstrap?code="
+            )
+        )
+        self.assertNotIn("chatgpt.com", self.managed_browser.initial_url)
 
         stopped = self.api.managed_chat_browser_stop()
         self.assertTrue(stopped["ok"])
