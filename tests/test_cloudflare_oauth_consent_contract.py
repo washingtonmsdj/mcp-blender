@@ -15,7 +15,7 @@ class CloudflareOAuthConsentContractTests(unittest.TestCase):
     def test_worker_serves_ordax_consent_and_standard_scope(self) -> None:
         self.assertIn('import { oauthConsentResponse } from "./oauth_consent";', self.worker)
         self.assertIn('url.pathname === "/oauth/consent"', self.worker)
-        self.assertIn('scopes_supported: ["openid", "email"]', self.worker)
+        self.assertIn('scopes_supported: ["openid", "email", "offline_access"]', self.worker)
         self.assertNotIn('scopes_supported: ["authenticated"]', self.worker)
 
     def test_each_remote_tool_declares_oauth_security_scheme(self) -> None:
