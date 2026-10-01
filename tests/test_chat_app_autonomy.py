@@ -117,6 +117,45 @@ class AutonomousAgentRunnerTests(unittest.TestCase):
         messages = self.runtime.messages(result.thread_id)
         self.assertEqual([m["role"] for m in messages], ["user", "assistant"])
 
+    def test_supervisor_turns_worker_report_into_durable_prime_followup(self):
+        work = self.runtime.orchestrator.enqueue_work(
+            self.worker["id"],
+            "Fix backend",
+            "Inspect the backend and report the result.",
+            priority=80,
+        )
+        supervisor = AutonomySupervisor(
+            self.runtime,
+            model="gpt-test",
+            context_window_tokens=10000,
+            runner_prefix="supervisor-test",
+            project_slugs={"demo"},
+        )
+        first = supervisor.run_cycle()
+        self.assertEqual(len(first), 1)
+        self.assertEqual(first[0].work_id, work["id"])
+
+        self.assertEqual(self.runtime.orchestrator.inbox(self.prime["id"]), [])
+        prime_work = self.runtime.orchestrator.list_work(
+            "demo",
+            agent_id=self.prime["id"],
+            states=["queued"],
+        )
+        self.assertEqual(len(prime_work), 1)
+        self.assertEqual(prime_work[0]["title"], "Review worker results")
+        self.assertIn("Backend", prime_work[0]["instruction"])
+        self.assertIn("tests are green", prime_work[0]["instruction"])
+
+        second = supervisor.run_cycle()
+        prime_result = next(item for item in second if item.agent_id == self.prime["id"])
+        self.assertEqual(prime_result.state, "done")
+        final = self.runtime.orchestrator.list_work(
+            "demo",
+            agent_id=self.prime["id"],
+        )
+        reviewed = next(item for item in final if item["id"] == prime_work[0]["id"])
+        self.assertEqual(reviewed["state"], "done")
+
     def test_supervisor_idle_cycle_does_not_call_provider(self):
         supervisor = AutonomySupervisor(
             self.runtime,
