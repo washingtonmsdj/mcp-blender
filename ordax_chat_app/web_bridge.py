@@ -58,7 +58,7 @@ class WebBridgeCredentialStore:
 
     def load(self) -> dict[str, Any]:
         if not self.path.is_file():
-            return {"version": 1, "tunnel_id": None, "api_key": None, "profile": "ordax-dev", "initialized": False}
+            return {"version": 1, "tunnel_id": None, "api_key": None, "profile": "ordax-dev", "initialized": False, "enabled": False}
         payload = json.loads(self._unprotect(self.path.read_bytes()).decode("utf-8"))
         if not isinstance(payload, dict) or payload.get("version") != 1:
             raise ValueError("unsupported ORDAX Web Bridge credential format")
@@ -111,6 +111,7 @@ class WebBridgeManager:
         self.credentials = credentials or WebBridgeCredentialStore(self.state_dir / "web-bridge.dat")
         self.bin_dir = self.state_dir / "web-bridge" / "bin"
         self.runtime_path = self.state_dir / "web-bridge-runtime.json"
+        self.daemon_state_path = self.state_dir / "web-bridge-daemon.json"
         self._process: subprocess.Popen | None = None
 
     @staticmethod
@@ -208,8 +209,17 @@ class WebBridgeManager:
             "api_key": api_key,
             "profile": "ordax-dev",
             "initialized": initialized,
+            "enabled": bool(previous.get("enabled", False)) if previous.get("tunnel_id") == tunnel_id else False,
         }
         self.credentials.save(payload)
+        return self.status()
+
+    def set_enabled(self, enabled: bool) -> dict[str, Any]:
+        config = self._configured()
+        if enabled and not (config.get("tunnel_id") and config.get("api_key")):
+            raise RuntimeError("ORDAX Web Bridge is not configured")
+        config["enabled"] = bool(enabled)
+        self.credentials.save(config)
         return self.status()
 
     def disconnect(self) -> dict[str, Any]:
@@ -362,8 +372,11 @@ class WebBridgeManager:
         )
         return self.status()
 
-    def start(self) -> dict[str, Any]:
+    def start(self, *, persist_enabled: bool = True) -> dict[str, Any]:
         config = self._configured()
+        if persist_enabled and not bool(config.get("enabled", False)):
+            config["enabled"] = True
+            self.credentials.save(config)
         self.initialize()
         current = self.status()
         if current.get("running"):
@@ -392,8 +405,11 @@ class WebBridgeManager:
         })
         return self.status()
 
-    def stop(self) -> dict[str, Any]:
+    def stop(self, *, persist_disabled: bool = True) -> dict[str, Any]:
         config = self._configured()
+        if persist_disabled and bool(config.get("enabled", False)):
+            config["enabled"] = False
+            self.credentials.save(config)
         runtime = self._load_runtime()
         process = self._process
         pid = int(runtime.get("pid") or 0) if runtime else 0
@@ -427,6 +443,28 @@ class WebBridgeManager:
             pass
         return self.status()
 
+    def _daemon_status(self) -> dict[str, Any]:
+        if not self.daemon_state_path.is_file():
+            return {"state": "not-running", "heartbeat_fresh": False}
+        try:
+            payload = json.loads(self.daemon_state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"state": "invalid", "heartbeat_fresh": False}
+        if not isinstance(payload, dict):
+            return {"state": "invalid", "heartbeat_fresh": False}
+        try:
+            heartbeat = float(payload.get("heartbeat_unix") or 0)
+        except (TypeError, ValueError):
+            heartbeat = 0.0
+        age = max(0.0, time.time() - heartbeat) if heartbeat > 0 else None
+        return {
+            "state": str(payload.get("state") or "unknown"),
+            "heartbeat_fresh": age is not None and age <= 20.0,
+            "heartbeat_age_seconds": round(age, 1) if age is not None else None,
+            "failures": int(payload.get("failures") or 0),
+            "last_error": payload.get("last_error"),
+        }
+
     def status(self) -> dict[str, Any]:
         config = self._configured()
         runtime = self._load_runtime()
@@ -442,6 +480,7 @@ class WebBridgeManager:
                 pass
         return {
             "configured": bool(config.get("tunnel_id") and config.get("api_key")),
+            "enabled": bool(config.get("enabled", False)),
             "tunnel_id": config.get("tunnel_id"),
             "profile": config.get("profile") or "ordax-dev",
             "initialized": bool(config.get("initialized")),
@@ -453,6 +492,7 @@ class WebBridgeManager:
             "chatgpt_url": CHATGPT_URL,
             "tunnels_url": TUNNELS_URL,
             "api_keys_url": API_KEYS_URL,
+            "daemon": self._daemon_status(),
         }
 
     @staticmethod
