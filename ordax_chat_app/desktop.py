@@ -281,7 +281,24 @@ class DesktopApi:
         return self._guard(self.managed_chat_browser.status)
 
     def managed_chat_browser_start(self) -> dict[str, Any]:
-        return self._guard(self.managed_chat_browser.start)
+        def start():
+            companion = self._ensure_browser_companion()
+            if not companion.get("running"):
+                raise RuntimeError(
+                    companion.get("start_error") or "Browser Companion is unavailable"
+                )
+            pairing = self.browser_companion.new_pairing_code()
+            bootstrap_url = "http://127.0.0.1:%d/bootstrap?code=%s" % (
+                int(pairing["port"]),
+                str(pairing["code"]),
+            )
+            browser = self.managed_chat_browser.start(initial_url=bootstrap_url)
+            return {
+                **browser,
+                "auto_pair": True,
+                "pairing_expires_at": pairing["expires_at"],
+            }
+        return self._guard(start)
 
     def managed_chat_browser_stop(self) -> dict[str, Any]:
         return self._guard(self.managed_chat_browser.stop)
@@ -302,10 +319,11 @@ class DesktopApi:
         return data
 
     def browser_companion_open_extensions_page(self) -> dict[str, Any]:
-        browser = find_chromium()
-        if browser is None:
+        status = self.managed_chat_browser.status()
+        browser = status.get("browser")
+        if not browser:
             raise RuntimeError("Chrome or Edge was not found")
-        name = Path(browser).name.lower()
+        name = Path(str(browser)).name.lower()
         url = "edge://extensions/" if "edge" in name else "chrome://extensions/"
         subprocess.Popen([str(browser), url], shell=False)
         return {"browser": str(browser), "url": url}
