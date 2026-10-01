@@ -419,7 +419,7 @@ type ProductGrantInput = {
 
 function parseProductGrantInput(body: JsonObject): ProductGrantInput | null {
   const actions = normalizedStringArray(body.actions, {
-    maxItems: 32,
+    maxItems: 128,
     validator: (item) => PRODUCT_ID_RE.test(item),
     allowed: PRODUCT_ACTIONS,
   });
