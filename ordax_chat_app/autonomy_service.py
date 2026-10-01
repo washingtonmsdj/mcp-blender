@@ -14,6 +14,7 @@ from .runtime import OrdaxChatRuntime
 class AutonomyServiceState:
     running: bool = False
     model: str | None = None
+    project_slugs: tuple[str, ...] = ()
     started_at_unix: float | None = None
     cycles: int = 0
     completed_runs: int = 0
@@ -41,12 +42,16 @@ class AutonomyService:
         self,
         *,
         model: str,
+        project_slugs: list[str] | tuple[str, ...] | set[str],
         context_window_tokens: int = 128000,
         idle_sleep_seconds: float = 5.0,
     ) -> dict[str, Any]:
         model = model.strip()
         if not model:
             raise ValueError("model is required")
+        normalized_projects = tuple(sorted({str(item).strip() for item in project_slugs if str(item).strip()}))
+        if not normalized_projects:
+            raise ValueError("at least one project must be enabled for autonomy")
         if idle_sleep_seconds < 0.5 or idle_sleep_seconds > 300:
             raise ValueError("idle_sleep_seconds must be between 0.5 and 300")
         if context_window_tokens < 4096:
@@ -54,21 +59,23 @@ class AutonomyService:
 
         with self._lock:
             if self._thread and self._thread.is_alive():
-                if self._state.model != model:
+                if self._state.model != model or self._state.project_slugs != normalized_projects:
                     raise RuntimeError(
-                        f"autonomy is already running with model {self._state.model}"
+                        "autonomy is already running with a different model or project scope"
                     )
                 return self.status()
             self._stop = threading.Event()
             self._state = AutonomyServiceState(
                 running=True,
                 model=model,
+                project_slugs=normalized_projects,
                 started_at_unix=time.time(),
             )
             self._thread = threading.Thread(
                 target=self._run,
                 kwargs={
                     "model": model,
+                    "project_slugs": set(normalized_projects),
                     "context_window_tokens": int(context_window_tokens),
                     "idle_sleep_seconds": float(idle_sleep_seconds),
                 },
@@ -91,6 +98,7 @@ class AutonomyService:
         self,
         *,
         model: str,
+        project_slugs: set[str],
         context_window_tokens: int,
         idle_sleep_seconds: float,
     ) -> None:
@@ -98,6 +106,7 @@ class AutonomyService:
             self.runtime,
             model=model,
             context_window_tokens=context_window_tokens,
+            project_slugs=project_slugs,
         )
         while not self._stop.is_set():
             try:
