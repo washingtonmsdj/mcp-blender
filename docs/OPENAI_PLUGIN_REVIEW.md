@@ -63,6 +63,22 @@ The account should:
 
 Record the username/password only in the private reviewer credential fields supplied by the OpenAI submission UI.
 
+## Provision the review grant
+
+After the dedicated review account connects the review computer and creates a Product device link, copy only that link UUID into the GitHub Actions workflow:
+
+`Provision OpenAI Review Grant`
+
+The workflow uses the protected `cloudflare-v3` Environment and its existing `ORDAX_OPERATOR_TOKEN`. Do not copy the operator token into chat, issue comments or workflow inputs.
+
+The grant is intentionally fixed to:
+- project: `ordax-review-demo`;
+- actions: `projects.list`, `project.text_read`, `project.search_text`, `project.text_write`, `git.status`;
+- expiry: 30 days;
+- terminal access: not granted.
+
+If the reviewer account or device link changes, provision a new review grant from the new link rather than editing D1 directly.
+
 ## Review project
 
 Canonical project slug:
