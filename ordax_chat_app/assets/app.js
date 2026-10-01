@@ -184,11 +184,13 @@ function renderBrowserCompanion(status){
   el("browserCompanionBadge").textContent=paired?"pareado":"aguardando";
   el("browserCompanionBadge").classList.toggle("success",paired);
   const parts=[
+    state.browserCompanion.start_error?("erro: "+state.browserCompanion.start_error):null,
     state.browserCompanion.running?"serviço local ativo":null,
     paired?(state.browserCompanion.paired_clients+" navegador(es) pareado(s)"):null,
     Number(state.browserCompanion.conversations||0)?(state.browserCompanion.conversations+" conversa(s) anexada(s)"):null
   ].filter(Boolean);
   el("browserCompanionState").textContent=parts.length?parts.join(" · "):"Extensão ainda não pareada.";
+  el("browserCompanionState").className=state.browserCompanion.start_error?"error":"muted";
 }
 
 async function openBrowserCompanionExtensions(){
