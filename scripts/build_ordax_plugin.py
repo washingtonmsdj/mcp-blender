@@ -8,7 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = ROOT / "plugins" / "ordax-studio"
-REQUIRED_FILES = ("plugin.json", "mcp.json", "assets/ordax.svg")
+JSON_FILES = ("plugin.json", "mcp.json")
+PACKAGE_FILES = ("plugin.json", "mcp.json", "assets/ordax.svg")
 FIXED_ZIP_TIME = (2026, 1, 1, 0, 0, 0)
 
 
@@ -24,11 +25,12 @@ def load_manifest() -> dict:
 
 def validate_package() -> dict:
     manifest = load_manifest()
-    for name in REQUIRED_FILES:
+    for name in PACKAGE_FILES:
         path = PLUGIN_ROOT / name
         if not path.is_file():
             raise FileNotFoundError(path)
-        raw = path.read_bytes()
+    for name in JSON_FILES:
+        raw = (PLUGIN_ROOT / name).read_bytes()
         if raw.startswith(b"\xef\xbb\xbf"):
             raise ValueError(f"{name} must be UTF-8 without BOM")
         json.loads(raw.decode("utf-8"))
@@ -41,7 +43,7 @@ def build_archive(output_dir: Path) -> tuple[Path, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
     archive = output_dir / f"ordax-studio-plugin-{version}.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
-        for name in sorted(REQUIRED_FILES):
+        for name in sorted(PACKAGE_FILES):
             data = (PLUGIN_ROOT / name).read_bytes()
             info = zipfile.ZipInfo(name.replace("\\", "/"), date_time=FIXED_ZIP_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
