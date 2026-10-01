@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from ordax_chat_app.toolset import DEVELOPMENT_TOOLS, DevelopmentToolset
+from ordax_core import OrchestratorStore
 from ordax_dev_agent.models import ActionResult
 
 
@@ -47,6 +50,7 @@ class DevelopmentToolsetTests(unittest.TestCase):
         self.assertIn("terminal", names)
         self.assertIn("git", names)
         self.assertIn("workspace_patch", names)
+        self.assertIn("agents", names)
         for tool in DEVELOPMENT_TOOLS:
             self.assertTrue(tool["strict"])
             parameters = tool["parameters"]
@@ -138,6 +142,93 @@ class DevelopmentToolsetTests(unittest.TestCase):
             registry.calls[0][1],
             {"project": "demo", "session_id": "session-1", "max_elements": 120},
         )
+
+    def test_prime_can_create_and_delegate_to_worker_through_single_agents_tool(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = OrchestratorStore(Path(directory) / "state.db")
+            prime = store.create_agent("demo", "Prime", "chat coordinator")
+            toolset = DevelopmentToolset(
+                FakeRegistry(),
+                project="demo",
+                orchestrator=store,
+                agent_id=prime["id"],
+            )
+            created = json.loads(
+                toolset.execute(
+                    "agents",
+                    json.dumps(
+                        {
+                            "operation": "create_worker",
+                            "worker_id": None,
+                            "name": "QA",
+                            "role": "quality worker",
+                            "title": None,
+                            "instruction": None,
+                            "priority": None,
+                            "message": None,
+                            "unread_only": None,
+                        }
+                    ),
+                )
+            )
+            self.assertTrue(created["ok"])
+            worker_id = created["data"]["id"]
+
+            delegated = json.loads(
+                toolset.execute(
+                    "agents",
+                    json.dumps(
+                        {
+                            "operation": "delegate",
+                            "worker_id": worker_id,
+                            "name": None,
+                            "role": None,
+                            "title": "Run regression tests",
+                            "instruction": "Run the suite and report failures.",
+                            "priority": 90,
+                            "message": None,
+                            "unread_only": None,
+                        }
+                    ),
+                )
+            )
+            self.assertTrue(delegated["ok"])
+            queued = store.list_work("demo", agent_id=worker_id, states=["queued"])
+            self.assertEqual(len(queued), 1)
+            self.assertEqual(queued[0]["title"], "Run regression tests")
+
+    def test_worker_cannot_spawn_or_delegate_to_sibling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = OrchestratorStore(Path(directory) / "state.db")
+            prime = store.create_agent("demo", "Prime", "chat coordinator")
+            worker = store.create_agent("demo", "Backend", "backend worker", parent_agent_id=prime["id"])
+            sibling = store.create_agent("demo", "QA", "quality worker", parent_agent_id=prime["id"])
+            toolset = DevelopmentToolset(
+                FakeRegistry(),
+                project="demo",
+                orchestrator=store,
+                agent_id=worker["id"],
+            )
+            delegated = json.loads(
+                toolset.execute(
+                    "agents",
+                    json.dumps(
+                        {
+                            "operation": "delegate",
+                            "worker_id": sibling["id"],
+                            "name": None,
+                            "role": None,
+                            "title": "Do work",
+                            "instruction": "Run tests",
+                            "priority": 50,
+                            "message": None,
+                            "unread_only": None,
+                        }
+                    ),
+                )
+            )
+            self.assertFalse(delegated["ok"])
+            self.assertIn("only a coordinator", delegated["summary"])
 
     def test_model_cannot_smuggle_project_field(self):
         registry = FakeRegistry()
