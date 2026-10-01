@@ -36,13 +36,33 @@ class DesktopApi:
         self.autonomy = autonomy or AutonomyService(self.runtime)
         self.web_bridge = web_bridge or WebBridgeManager()
         self.browser_companion = browser_companion or BrowserCompanionServer()
-        self.browser_companion.start()
+        self.browser_companion_start_error: str | None = None
+        try:
+            self.browser_companion.start()
+        except OSError as error:
+            self.browser_companion_start_error = f"{type(error).__name__}: {error}"
         self.autonomy_resume_error: str | None = None
         if auto_resume:
             try:
                 self.autonomy.resume_persisted()
             except Exception as error:
                 self.autonomy_resume_error = f"{type(error).__name__}: {error}"
+
+    def _ensure_browser_companion(self) -> dict[str, Any]:
+        status = self.browser_companion.status()
+        if status.get("running"):
+            self.browser_companion_start_error = None
+            return status
+        try:
+            status = self.browser_companion.start()
+            self.browser_companion_start_error = None
+            return status
+        except OSError as error:
+            self.browser_companion_start_error = f"{type(error).__name__}: {error}"
+            return {
+                **self.browser_companion.status(),
+                "start_error": self.browser_companion_start_error,
+            }
 
     @staticmethod
     def _guard(fn: Callable[[], Any]) -> dict[str, Any]:
@@ -86,7 +106,7 @@ class DesktopApi:
                         "mcp_endpoint": NORMAL_CHAT_MCP_ENDPOINT,
                         "chat_url": NORMAL_CHAT_URL,
                         "web_bridge": self.web_bridge.status(),
-                        "browser_companion": self.browser_companion.status(),
+                        "browser_companion": self._ensure_browser_companion(),
                     },
                     "agent": {
                         "label": "Agent / Responses",
@@ -192,26 +212,38 @@ class DesktopApi:
         )
 
     def browser_companion_status(self) -> dict[str, Any]:
-        return self._guard(self.browser_companion.status)
+        return self._guard(self._ensure_browser_companion)
 
     def browser_companion_pair(self) -> dict[str, Any]:
-        return self._guard(self.browser_companion.new_pairing_code)
+        def pair():
+            status = self._ensure_browser_companion()
+            if not status.get("running"):
+                raise RuntimeError(status.get("start_error") or "Browser Companion is unavailable")
+            return self.browser_companion.new_pairing_code()
+        return self._guard(pair)
 
     def browser_companion_conversations(self) -> dict[str, Any]:
-        return self._guard(self.browser_companion.conversations)
+        def conversations():
+            self._ensure_browser_companion()
+            return self.browser_companion.conversations()
+        return self._guard(conversations)
 
     def browser_companion_messages(self, conversation_id: str) -> dict[str, Any]:
-        return self._guard(
-            lambda: self.browser_companion.messages(str(conversation_id or ""))
-        )
+        def messages():
+            self._ensure_browser_companion()
+            return self.browser_companion.messages(str(conversation_id or ""))
+        return self._guard(messages)
 
     def browser_companion_send(self, conversation_id: str, text: str) -> dict[str, Any]:
-        return self._guard(
-            lambda: self.browser_companion.send(
+        def send():
+            status = self._ensure_browser_companion()
+            if not status.get("running"):
+                raise RuntimeError(status.get("start_error") or "Browser Companion is unavailable")
+            return self.browser_companion.send(
                 str(conversation_id or ""),
                 str(text or ""),
             )
-        )
+        return self._guard(send)
 
     def browser_companion_extension_path(self) -> dict[str, Any]:
         packaged = os.environ.get("ORDAX_PACKAGED_ROOT")
