@@ -27,12 +27,6 @@ class SetupTests(unittest.TestCase):
         self.offline = False
         self.lost_ack = False
         self.mismatch = False
-        self.auth = patch(
-            "ordax_dev_agent.device_setup.github_token",
-            return_value="github-private",
-        )
-        self.auth_mock = self.auth.start()
-        self.addCleanup(self.auth.stop)
         self.acl = patch(
             "ordax_dev_agent.device_setup.private_directory",
             side_effect=lambda p: p.mkdir(exist_ok=True),
@@ -49,7 +43,7 @@ class SetupTests(unittest.TestCase):
         self.calls.append(body)
         self.last_request_path = req.url.path
         if body["operation"] == "enroll":
-            self.assertEqual("Bearer github-private", req.headers["Authorization"])
+            self.assertEqual("Bearer ordax-product-session", req.headers["Authorization"])
             self.assertNotIn("token", body)
             self.credential_hash = body["token_sha256"]
             self.enrollments += 1
@@ -77,6 +71,7 @@ class SetupTests(unittest.TestCase):
 
     def run_setup(self, **kwargs):
         kwargs.setdefault("control_plane_url", "https://control.example")
+        kwargs.setdefault("product_access_token", "ordax-product-session")
         return configure(
             self.state,
             client=self.client,
@@ -93,13 +88,19 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(self.device, self.run_setup()["device_id"])
         self.assertEqual(1, self.enrollments)
         self.assertEqual(token, token_path.read_text())
-        self.assertEqual(1, self.auth_mock.call_count)
+        self.assertNotIn("ordax-product-session", (self.state / "agent-settings.json").read_text())
         settings = json.loads((self.state / "agent-settings.json").read_text())
         self.assertEqual("cloudflare-v3", settings["control_plane_protocol"])
         self.assertEqual("https://control.example", settings["control_plane_url"])
         self.assertEqual(self.device, settings["device_id"])
         self.assertIn("cerco-no-interior-mvp", settings["projects"])
         self.assertEqual("/v3/device/setup", self.last_request_path)
+
+    def test_new_machine_requires_explicit_ordax_account_session(self):
+        with self.assertRaisesRegex(SetupError, "PRODUCT_ACCOUNT_LOGIN_REQUIRED"):
+            self.run_setup(product_access_token=None)
+        self.assertFalse((self.state / "device-token.cloudflare-v3.txt").exists())
+        self.assertFalse((self.state / "device-token.cloudflare-v3.txt.pending-setup").exists())
 
     def test_lost_response_reuses_committed_pending_token(self):
         self.lost_ack = True
