@@ -239,6 +239,18 @@ class DesktopApi:
             return self.browser_companion.messages(str(conversation_id or ""))
         return self._guard(messages)
 
+    def browser_companion_commands(
+        self,
+        conversation_id: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        return self._guard(
+            lambda: self.browser_companion.commands(
+                str(conversation_id or "") or None,
+                limit=int(limit),
+            )
+        )
+
     def browser_companion_new_chat(self, text: str) -> dict[str, Any]:
         def create():
             status = self._ensure_browser_companion()
