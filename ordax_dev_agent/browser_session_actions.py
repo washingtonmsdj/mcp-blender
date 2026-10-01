@@ -122,6 +122,64 @@ class BrowserSessionActions:
             raise ValueError("browser session identity mismatch")
         return state
 
+    def _discover_browser_pid(self, project, state: dict[str, Any]) -> int | None:
+        profile = str(self._browser_profile_path(project, str(state["session_id"])))
+        port_switch = f"--remote-debugging-port={int(state.get('debug_port') or 0)}"
+        if os.name == "nt":
+            escaped_profile = profile.replace("'", "''")
+            escaped_port = port_switch.replace("'", "''")
+            script = (
+                f"$profile='{escaped_profile}';$port='{escaped_port}';"
+                "Get-CimInstance Win32_Process | "
+                "Where-Object { ($_.Name -eq 'chrome.exe' -or $_.Name -eq 'msedge.exe') "
+                "-and $_.CommandLine -like ('*' + $profile + '*') "
+                "-and $_.CommandLine -like ('*' + $port + '*') } | "
+                "Select-Object -ExpandProperty ProcessId"
+            )
+            try:
+                result = subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-Command", script],
+                    capture_output=True, text=True, timeout=6, shell=False,
+                )
+                for line in (result.stdout or "").splitlines():
+                    try:
+                        pid = int(line.strip())
+                    except ValueError:
+                        continue
+                    if self._pid_running(pid):
+                        return pid
+            except (OSError, subprocess.TimeoutExpired):
+                return None
+            return None
+
+        proc_root = Path("/proc")
+        if not proc_root.is_dir():
+            return None
+        for entry in proc_root.iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+            except OSError:
+                continue
+            if profile in raw and port_switch in raw:
+                pid = int(entry.name)
+                if self._pid_running(pid):
+                    return pid
+        return None
+
+    def _refresh_browser_pid(self, project, state: dict[str, Any]) -> dict[str, Any]:
+        if self._browser_owned(project, state):
+            return state
+        discovered = self._discover_browser_pid(project, state)
+        if discovered is None:
+            return state
+        if int(state.get("pid") or 0) != discovered:
+            state = dict(state)
+            state["pid"] = discovered
+            self._write_browser_state(project, state)
+        return state
+
     def _browser_owned(self, project, state: dict[str, Any]) -> bool:
         pid = int(state.get("pid") or 0)
         if not self._pid_running(pid):
@@ -150,7 +208,7 @@ class BrowserSessionActions:
         raise BrowserCaptureError("Chromium CDP page target is unavailable")
 
     def _with_page(self, project, session_id: str, fn):
-        state = self._load_browser_state(project, session_id)
+        state = self._refresh_browser_pid(project, self._load_browser_state(project, session_id))
         if not self._browser_owned(project, state):
             raise ValueError("browser session is not running or is not owned by ORDAX")
         target = self._browser_target(state)
@@ -231,6 +289,7 @@ class BrowserSessionActions:
             target = self._browser_target(state, timeout_seconds=max(2.0, min(float(payload.get("wait_seconds", 8)), 20.0)))
         except BrowserCaptureError as error:
             return ActionResult(False, str(error), {**state, "running": self._pid_running(process.pid)})
+        state = self._refresh_browser_pid(project, state)
         return ActionResult(True, "browser session started", {
             **state,
             "running": True,
@@ -242,7 +301,7 @@ class BrowserSessionActions:
     def browser_status(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
         session_id = str(payload.get("session_id") or "")
-        state = self._load_browser_state(project, session_id)
+        state = self._refresh_browser_pid(project, self._load_browser_state(project, session_id))
         running = self._browser_owned(project, state)
         data = {**state, "running": running, "ownership_valid": running}
         if running:
@@ -461,7 +520,7 @@ class BrowserSessionActions:
     def browser_stop(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
         session_id = str(payload.get("session_id") or "")
-        state = self._load_browser_state(project, session_id)
+        state = self._refresh_browser_pid(project, self._load_browser_state(project, session_id))
         pid = int(state.get("pid") or 0)
         if not self._pid_running(pid):
             return ActionResult(True, "browser session is already stopped", {**state, "running": False})
