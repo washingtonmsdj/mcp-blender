@@ -113,6 +113,17 @@ jobs:
           $upgradeLog = Join-Path $env:RUNNER_TEMP "ordax-dev-upgrade.log"
           Remove-Item $installRoot -Recurse -Force -ErrorAction SilentlyContinue
 
+          # Simulate the historical pre-0.4 supervisor so the product install proves
+          # it retires the duplicate runtime without depending on a preconfigured host.
+          $legacyTaskName = "OrdaX Dev Agent"
+          $legacyAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -NonInteractive -Command \"Start-Sleep -Seconds 300\""
+          $legacyTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(10)
+          Register-ScheduledTask -TaskName $legacyTaskName -Action $legacyAction -Trigger $legacyTrigger -Force | Out-Null
+          Start-ScheduledTask -TaskName $legacyTaskName
+          $startup = [Environment]::GetFolderPath("Startup")
+          $legacyStartup = Join-Path $startup "OrdaX Dev Agent.lnk"
+          Set-Content -Path $legacyStartup -Value "legacy" -Encoding ascii
+
           $installProcess = Start-Process -FilePath $installer.FullName -ArgumentList @(
             "/VERYSILENT",
             "/SUPPRESSMSGBOXES",
@@ -124,6 +135,15 @@ jobs:
             if (Test-Path $installLog) { Get-Content $installLog -Tail 200 }
             throw "ORDAX Dev silent install failed: $($installProcess.ExitCode)"
           }
+
+          if (Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue) {
+            throw "legacy OrdaX Dev Agent scheduled task survived product install"
+          }
+          Write-Host "LEGACY_ORDAX_TASK_REMOVED"
+          if (Test-Path $legacyStartup) {
+            throw "legacy OrdaX Dev Agent startup link survived product install"
+          }
+          Write-Host "LEGACY_ORDAX_STARTUP_REMOVED"
 
           $studioExe = Join-Path $installRoot "ORDAX Dev.exe"
           $runtimeExe = Join-Path $installRoot "ORDAX Runtime.exe"
