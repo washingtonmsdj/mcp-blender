@@ -208,16 +208,18 @@ class PersistentProcessActions:
             state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
             return ActionResult(False, f"cannot start persistent process: {error}", state)
 
-        state["manager_pid"] = manager.pid
-        temp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-        temp.replace(state_path)
-
-        deadline = time.monotonic() + min(max(float(payload.get("wait_seconds", 0.5)), 0.0), 5.0)
+        deadline = time.monotonic() + min(max(float(payload.get("wait_seconds", 0.5)), 0.1), 5.0)
         while time.monotonic() < deadline:
             time.sleep(0.05)
             current = self._load_process_state(project, process_id)
             if current.get("state") != "starting":
                 break
+        current_raw = self._load_process_state(project, process_id)
+        if not current_raw.get("manager_pid") and manager.poll() is None:
+            current_raw["manager_pid"] = manager.pid
+            temp = state_path.with_suffix(".tmp")
+            temp.write_text(json.dumps(current_raw, ensure_ascii=False, indent=2), encoding="utf-8")
+            temp.replace(state_path)
         current = self._public_process_state(self._load_process_state(project, process_id))
         return ActionResult(
             current.get("state") in {"starting", "running"},
