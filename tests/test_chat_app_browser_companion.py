@@ -160,6 +160,33 @@ class BrowserCompanionTests(unittest.TestCase):
             )
         self.assertEqual(rejected.exception.code, 401)
 
+    def test_new_chat_command_is_scoped_to_most_recent_paired_browser(self):
+        first = self.server.new_pairing_code()
+        self.request(
+            "/pair",
+            method="POST",
+            payload={"code": first["code"], "browser_id": "browser-old"},
+        )
+        second = self.server.new_pairing_code()
+        token = self.request(
+            "/pair",
+            method="POST",
+            payload={"code": second["code"], "browser_id": "browser-new"},
+        )["token"]
+
+        queued = self.server.new_chat("continue from checkpoint")
+        self.assertTrue(queued["new_chat"])
+        self.assertEqual(queued["browser_id"], "browser-new")
+        self.assertEqual(queued["conversation_id"], "__new__:browser-new")
+
+        pulled = self.request(
+            "/commands",
+            token=token,
+            headers={"X-ORDAX-Conversation": "__new__:browser-new"},
+        )
+        self.assertEqual(len(pulled["commands"]), 1)
+        self.assertEqual(pulled["commands"][0]["text"], "continue from checkpoint")
+
     def test_http_webpage_origin_cannot_pair_or_poll_commands(self):
         pairing = self.server.new_pairing_code()
         with self.assertRaises(urllib.error.HTTPError) as blocked_pair:
