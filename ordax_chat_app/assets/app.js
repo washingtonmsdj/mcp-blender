@@ -294,7 +294,11 @@ async function refreshBrowserCompanion(){
     const status=unwrap(await api().browser_companion_status());
     renderBrowserCompanion(status);
     if(state.mode==="normal"){
-      renderBrowserConversations(unwrap(await api().browser_companion_conversations()));
+      const conversations=unwrap(await api().browser_companion_conversations());
+      renderBrowserConversations(conversations);
+      if(!state.browserConversation && (conversations||[]).length){
+        await openBrowserConversation(conversations[0].id);
+      }
     }
   }catch(err){
     el("browserCompanionState").textContent=err.message;
@@ -332,8 +336,14 @@ async function openBrowserConversation(id){
 
 async function sendBrowserMessage(text){
   if(!state.browserConversation){
-    setStatus("Abra uma conversa no ChatGPT Web e selecione-a no ORDAX.","error");
-    return false;
+    const created=unwrap(await api().browser_companion_new_chat(text));
+    renderManagedChatBrowser(created.managed_browser||state.managedBrowser||{});
+    appendMessage("user",text);
+    setStatus("Criando conversa normal real no ChatGPT…");
+    setTimeout(refreshBrowserCompanion,1000);
+    setTimeout(refreshBrowserCompanion,2500);
+    setTimeout(refreshBrowserCompanion,5000);
+    return true;
   }
   unwrap(await api().browser_companion_send(state.browserConversation,text));
   appendMessage("user",text);
