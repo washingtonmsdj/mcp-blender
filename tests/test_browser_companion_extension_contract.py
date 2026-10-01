@@ -18,6 +18,19 @@ class BrowserCompanionExtensionContractTests(unittest.TestCase):
         self.assertFalse(any(host == "<all_urls>" for host in hosts))
         self.assertEqual(set(manifest["permissions"]), {"storage"})
 
+    def test_loopback_bootstrap_script_is_declared(self):
+        manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
+        scripts = manifest.get("content_scripts", [])
+        bootstrap = [
+            item for item in scripts
+            if "bootstrap.js" in item.get("js", [])
+        ]
+        self.assertEqual(len(bootstrap), 1)
+        self.assertIn(
+            "http://127.0.0.1:8775/bootstrap*",
+            bootstrap[0].get("matches", []),
+        )
+
     def test_background_owns_pairing_token(self):
         background = (EXT / "background.js").read_text(encoding="utf-8")
         content = (EXT / "content.js").read_text(encoding="utf-8")
