@@ -82,6 +82,71 @@ class BrowserCompanionTests(unittest.TestCase):
         )
         self.assertEqual(acked["state"], "sent")
 
+    def test_existing_conversation_enqueue_uses_delivery_retry_columns(self):
+        pairing = self.server.new_pairing_code()
+        token = self.request(
+            "/pair",
+            method="POST",
+            payload={"code": pairing["code"], "browser_id": "browser-a"},
+        )["token"]
+        self.request(
+            "/events",
+            method="POST",
+            token=token,
+            payload={
+                "url": "https://chatgpt.com/c/conversation-87654321",
+                "title": "Retry test",
+                "browser_id": "browser-a",
+                "messages": [{"key": "u1", "role": "user", "text": "hello"}],
+            },
+        )
+
+        queued = self.server.send("conversation-87654321", "continue")
+        commands = self.server.commands("conversation-87654321")
+        self.assertEqual(commands[0]["id"], queued["id"])
+        self.assertEqual(commands[0]["attempts"], 0)
+        self.assertEqual(commands[0]["max_attempts"], 5)
+
+    def test_delivered_command_without_ack_is_recoverable(self):
+        pairing = self.server.new_pairing_code()
+        token = self.request(
+            "/pair",
+            method="POST",
+            payload={"code": pairing["code"], "browser_id": "browser-a"},
+        )["token"]
+        self.request(
+            "/events",
+            method="POST",
+            token=token,
+            payload={
+                "url": "https://chatgpt.com/c/conversation-retry123",
+                "title": "Retry test",
+                "browser_id": "browser-a",
+                "messages": [{"key": "u1", "role": "user", "text": "hello"}],
+            },
+        )
+        queued = self.server.send("conversation-retry123", "continue")
+        first = self.request(
+            "/commands",
+            token=token,
+            headers={"X-ORDAX-Conversation": "conversation-retry123"},
+        )
+        self.assertEqual(first["commands"][0]["attempts"], 1)
+
+        with self.server.store.connect() as connection:
+            connection.execute(
+                "UPDATE browser_commands SET delivered_at=? WHERE id=?",
+                (0.0, queued["id"]),
+            )
+
+        second = self.request(
+            "/commands",
+            token=token,
+            headers={"X-ORDAX-Conversation": "conversation-retry123"},
+        )
+        self.assertEqual(second["commands"][0]["id"], queued["id"])
+        self.assertEqual(second["commands"][0]["attempts"], 2)
+
     def test_pairing_code_is_one_time_and_protected_routes_require_bearer(self):
         pairing = self.server.new_pairing_code()
         paired = self.request(
