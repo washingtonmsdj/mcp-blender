@@ -29,6 +29,9 @@ class PersistentProcessActions:
     def _process_log_path(self, project, process_id: str) -> Path:
         return self._process_root(project) / f"{process_id}.log"
 
+    def _process_stdin_path(self, project, process_id: str) -> Path:
+        return self._process_root(project) / f"{process_id}.stdin.jsonl"
+
     @staticmethod
     def _pid_running(pid: int) -> bool:
         if pid <= 0:
@@ -161,12 +164,15 @@ class PersistentProcessActions:
         root.mkdir(parents=True, exist_ok=True)
         state_path = self._process_state_path(project, process_id)
         log_path = self._process_log_path(project, process_id)
+        stdin_path = self._process_stdin_path(project, process_id)
+        stdin_path.touch(exist_ok=True)
         runtime = Path(__file__).with_name("persistent_process_runtime.py").resolve()
         manager_command = [
             sys.executable,
             str(runtime),
             "--state", str(state_path),
             "--log", str(log_path),
+            "--stdin-file", str(stdin_path),
             "--cwd", str(cwd),
             "--env-json", json.dumps(env, ensure_ascii=False, separators=(",", ":")),
             "--token", token,
@@ -285,6 +291,46 @@ class PersistentProcessActions:
             "size_bytes": size,
             "truncated": offset > 0,
         })
+
+    def process_write_stdin(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        process_id = str(payload.get("process_id") or "")
+        state = self._public_process_state(self._load_process_state(project, process_id))
+        if not state.get("running") or not state.get("ownership_valid"):
+            return ActionResult(False, "persistent process is not running or not owned by ORDAX", state)
+
+        text = payload.get("text")
+        if not isinstance(text, str):
+            return ActionResult(False, "text must be a string")
+        encoded = text.encode("utf-8")
+        if len(encoded) > 64 * 1024:
+            return ActionResult(False, "stdin payload exceeds 65536 bytes")
+        newline = bool(payload.get("newline", True))
+
+        path = self._process_stdin_path(project, process_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        entry = json.dumps(
+            {"text": text, "newline": newline, "created_at_unix": time.time()},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        try:
+            with path.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write(entry + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+        except OSError as error:
+            return ActionResult(False, f"persistent process stdin write failed: {error}", state)
+
+        return ActionResult(
+            True,
+            "persistent process stdin queued",
+            {
+                "process_id": process_id,
+                "queued_bytes": len(encoded),
+                "newline": newline,
+            },
+        )
 
     def process_stop(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
