@@ -56,16 +56,48 @@ def _blob(data: bytes) -> tuple[_DATA_BLOB, Any]:
     return _DATA_BLOB(len(data), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_byte))), buffer
 
 
+def _windows_crypto():
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    crypt32.CryptProtectData.argtypes = [
+        ctypes.POINTER(_DATA_BLOB),
+        wintypes.LPCWSTR,
+        ctypes.POINTER(_DATA_BLOB),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(_DATA_BLOB),
+    ]
+    crypt32.CryptProtectData.restype = wintypes.BOOL
+    crypt32.CryptUnprotectData.argtypes = [
+        ctypes.POINTER(_DATA_BLOB),
+        ctypes.c_void_p,
+        ctypes.POINTER(_DATA_BLOB),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(_DATA_BLOB),
+    ]
+    crypt32.CryptUnprotectData.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [wintypes.HLOCAL]
+    kernel32.LocalFree.restype = wintypes.HLOCAL
+    return crypt32, kernel32
+
+
+def _free_blob(kernel32, result: _DATA_BLOB) -> None:
+    if bool(result.pbData):
+        kernel32.LocalFree(ctypes.cast(result.pbData, wintypes.HLOCAL))
+
+
 def _windows_protect(data: bytes) -> bytes:
-    crypt32 = ctypes.windll.crypt32
-    kernel32 = ctypes.windll.kernel32
+    crypt32, kernel32 = _windows_crypto()
     source, source_buffer = _blob(data)
     result = _DATA_BLOB()
     CRYPTPROTECT_UI_FORBIDDEN = 0x1
-    description = "OrdaX Chat App credentials"
     if not crypt32.CryptProtectData(
         ctypes.byref(source),
-        description,
+        "OrdaX Chat App credentials",
         None,
         None,
         None,
@@ -76,20 +108,18 @@ def _windows_protect(data: bytes) -> bytes:
     try:
         return ctypes.string_at(result.pbData, result.cbData)
     finally:
-        kernel32.LocalFree(result.pbData)
+        _free_blob(kernel32, result)
         del source_buffer
 
 
 def _windows_unprotect(data: bytes) -> bytes:
-    crypt32 = ctypes.windll.crypt32
-    kernel32 = ctypes.windll.kernel32
+    crypt32, kernel32 = _windows_crypto()
     source, source_buffer = _blob(data)
     result = _DATA_BLOB()
-    description = wintypes.LPWSTR()
     CRYPTPROTECT_UI_FORBIDDEN = 0x1
     if not crypt32.CryptUnprotectData(
         ctypes.byref(source),
-        ctypes.byref(description),
+        None,
         None,
         None,
         None,
@@ -100,7 +130,7 @@ def _windows_unprotect(data: bytes) -> bytes:
     try:
         return ctypes.string_at(result.pbData, result.cbData)
     finally:
-        kernel32.LocalFree(result.pbData)
+        _free_blob(kernel32, result)
         del source_buffer
 
 
