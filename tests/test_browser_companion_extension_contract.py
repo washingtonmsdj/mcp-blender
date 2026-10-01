@@ -32,6 +32,21 @@ class BrowserCompanionExtensionContractTests(unittest.TestCase):
         self.assertNotIn("/backend-api/", content)
         self.assertNotIn("Authorization", content)
 
+    def test_loopback_bootstrap_is_versioned_and_scoped(self):
+        manifest = json.loads((EXT / "manifest.json").read_text(encoding="utf-8"))
+        bootstrap = next(
+            item for item in manifest["content_scripts"]
+            if "bootstrap.js" in item.get("js", [])
+        )
+        self.assertEqual(
+            bootstrap["matches"],
+            ["http://127.0.0.1:8775/bootstrap*"],
+        )
+        source = (EXT / "bootstrap.js").read_text(encoding="utf-8")
+        self.assertIn('type: "ordax.pair"', source)
+        self.assertIn('location.replace("https://chatgpt.com/")', source)
+        self.assertNotIn("/backend-api/", source)
+
     def test_windows_product_includes_extension(self):
         script = (ROOT / "scripts" / "windows" / "build-ordax-studio-product.ps1").read_text(
             encoding="utf-8"
