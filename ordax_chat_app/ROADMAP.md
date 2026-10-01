@@ -1,42 +1,100 @@
 # Roadmap — ORDAX Chat App
 
-## Gate 1 — coding runtime completo
+## Estado atual — implementado nesta branch
+
+- runtime geral de desenvolvimento: workspace, escrita/patch, terminal e Git;
+- Product/MCP remoto como porta secundária;
+- `OrchestratorStore` persistente com agentes, Prime/workers, goals e mensagens;
+- sessões encadeadas com estimativa de contexto, threshold configurável, checkpoint e rollover;
+- fila persistente de trabalho com prioridade, delay, leases, retry e recuperação após crash;
+- `WorkerLoop` 24/7 que não chama modelo quando está idle;
+- provider `OpenAIChatGPTPlanProvider` para catálogo de modelos e Responses streaming;
+- contrato do provider independente para receber outros modelos no futuro.
+
+## Gate 1 — coding runtime completo ✅
+
 - workspace amplo dentro de projetos registrados: stat/list/read/write/patch/mkdir/move/remove;
 - terminal foreground com argv ou shell explícito;
 - Git genérico project-scoped;
-- busca, batch read, diff, health, artifacts e preview expostos no MCP remoto;
-- OAuth, device binding, grants e audit obrigatórios.
+- busca, batch read, diff, health, artifacts e preview;
+- OAuth/grants/audit mantidos para a superfície remota.
 
-## Gate 2 — processos persistentes
+## Gate 2 — orquestração contínua ✅ foundation
+
+- Prime + workers persistentes;
+- goals;
+- inbox Prime↔worker;
+- checkpoints;
+- rollover de contexto para nova sessão;
+- work queue crash-safe;
+- loop 24/7 idle-safe.
+
+Ainda neste gate:
+- ligar execução real do modelo à fila;
+- scheduler de múltiplos agentes;
+- políticas de pausa/horário/custo e limites por projeto;
+- recovery service no startup do produto.
+
+## Gate 3 — ChatGPT dentro do app
+
+- implementar **Continue with ChatGPT** conforme o fluxo OSS oficial:
+  - dynamic client registration;
+  - OAuth Authorization Code + PKCE;
+  - callback loopback em `127.0.0.1`;
+  - validação do ID token/JWKS;
+  - scopes `offline_access resource.invoke chatgpt.tokens.use.direct`;
+  - refresh token rotativo;
+  - credenciais protegidas e múltiplas contas;
+- model picker usando `GET /v1/models`;
+- Responses em `store=false, stream=true` (provider já implementado);
+- streaming na UI;
+- tratamento explícito de usage-limit, revogação e reauth.
+
+## Gate 4 — tool loop do agente
+
+- expor filesystem, terminal, Git, processos, preview e adapters como tools;
+- tool-call/result loop com cancellation e timeout;
+- policy engine por capability;
+- checkpoint automático antes de rollover;
+- compaction/continuation bundle sem depender de histórico do ChatGPT.
+
+## Gate 5 — processos persistentes
+
 - start/status/logs/stdin/stop;
 - identidade persistente do processo para evitar PID reuse;
 - recuperação após restart do Device Agent;
 - portas/preview vinculados ao projeto.
 
-## Gate 3 — computer/browser control
+## Gate 6 — computer/browser control
+
 - screenshot/capture;
 - janela ativa e catálogo de aplicações;
 - click/type/hotkey/scroll;
 - navegador com navegação e leitura estruturada;
 - grants próprios e confirmação para efeitos de alto impacto.
 
-## Gate 4 — contexto de agente
+## Gate 7 — contexto de agente
+
 - Project Rules e Skills versionados;
-- checkpoints e task state;
+- AGENTS.md e arquivos equivalentes;
 - resumos de sessão;
 - contexto recuperável entre conversas;
 - toolbox por projeto/Space.
 
-## Gate 5 — subagentes e MCP aggregation
-- delegação opcional para modelos externos/local;
+## Gate 8 — subagentes e MCP aggregation
+
+- delegação para workers/modelos externos/local;
 - servidores MCP adicionais como adapters;
 - orçamento, cancelamento e auditoria por subtarefa;
 - nenhuma credencial de terceiros exposta ao modelo.
 
-## Gate 6 — produto desktop
+## Gate 9 — produto desktop
+
 - instalação única;
 - login/pairing;
-- status do dispositivo e conexão ChatGPT;
+- chat central;
+- projetos/arquivos/terminal/Git/preview;
+- status dos agentes e fila;
 - grants por projeto/capability;
-- revogação e histórico de ações;
+- revogação e histórico;
 - updates assinados.
