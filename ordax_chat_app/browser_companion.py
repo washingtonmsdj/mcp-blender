@@ -359,7 +359,10 @@ class BrowserCompanionServer:
                     self.send_header("Access-Control-Allow-Headers", "authorization, content-type")
                     self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
                     self.end_headers()
-                    self.wfile.write(body)
+                    try:
+                        self.wfile.write(body)
+                    except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                        return
 
                 def do_OPTIONS(self):
                     self._json(200, {"ok": True})
