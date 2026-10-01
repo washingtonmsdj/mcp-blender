@@ -128,6 +128,13 @@ const DESTRUCTIVE_TOOLS = new Set([
   "blender_save",
 ]);
 
+const NON_DESTRUCTIVE_WRITE_TOOLS = new Set([
+  "handoff_create",
+  "workspace_directory_create",
+  "blender_start",
+  "blender_create_primitive",
+]);
+
 const OPEN_WORLD_TOOLS = new Set([
   "git_command",
   "terminal_exec",
@@ -177,9 +184,15 @@ const TOOL_TITLES: Record<string, string> = {
 
 function toolAnnotations(name: string): JsonObject {
   const readOnly = READ_ONLY_TOOLS.has(name);
+  const destructive = DESTRUCTIVE_TOOLS.has(name);
+  const nonDestructiveWrite = NON_DESTRUCTIVE_WRITE_TOOLS.has(name);
+  const effectClassCount = Number(readOnly) + Number(destructive) + Number(nonDestructiveWrite);
+  if (effectClassCount !== 1) {
+    throw new Error(`MCP tool must have exactly one explicit effect classification: ${name}`);
+  }
   return {
     readOnlyHint: readOnly,
-    destructiveHint: DESTRUCTIVE_TOOLS.has(name),
+    destructiveHint: destructive,
     openWorldHint: OPEN_WORLD_TOOLS.has(name),
     idempotentHint: readOnly,
   };

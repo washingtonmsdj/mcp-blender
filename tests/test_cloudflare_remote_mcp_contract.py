@@ -72,7 +72,9 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
     def test_mcp_advertises_public_review_metadata(self) -> None:
         self.assertIn("annotations: toolAnnotations(tool.name)", self.mcp)
         self.assertIn("readOnlyHint: readOnly", self.mcp)
-        self.assertIn("destructiveHint: DESTRUCTIVE_TOOLS.has(name)", self.mcp)
+        self.assertIn("destructiveHint: destructive", self.mcp)
+        self.assertIn("NON_DESTRUCTIVE_WRITE_TOOLS", self.mcp)
+        self.assertIn("effectClassCount !== 1", self.mcp)
         self.assertIn("openWorldHint: OPEN_WORLD_TOOLS.has(name)", self.mcp)
         self.assertIn("outputSchema:", self.mcp)
         self.assertIn("title: TOOL_TITLES[tool.name]", self.mcp)
