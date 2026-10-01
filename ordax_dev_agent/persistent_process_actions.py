@@ -130,8 +130,11 @@ class PersistentProcessActions:
 
     def _public_process_state(self, state: dict[str, Any]) -> dict[str, Any]:
         manager_pid = int(state.get("manager_pid") or 0)
-        running = self._pid_running(manager_pid)
-        owned = bool(running and self._owned(state))
+        owned = self._owned(state)
+        # A live managed Popen handle is authoritative for processes launched by
+        # this ActionRegistry. OS process enumeration is only needed for
+        # recovered state after the ORDAX Runtime itself restarts.
+        running = bool(owned or self._pid_running(manager_pid))
         lifecycle = str(state.get("state") or "unknown")
         if running and owned and lifecycle in {"starting", "running"}:
             lifecycle = "running"
