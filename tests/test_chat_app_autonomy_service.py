@@ -1,14 +1,25 @@
 from __future__ import annotations
 
+import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+from ordax_chat_app.autonomy_preferences import AutonomyPreferencesStore
 from ordax_chat_app.autonomy_service import AutonomyService
 
 
 class FakeRuntime:
-    pass
+    def __init__(self, *, connected=True, projects=None):
+        self.connected = connected
+        self._projects = projects or [{"slug": "demo"}]
+
+    def account_status(self):
+        return {"connected": self.connected}
+
+    def projects(self):
+        return list(self._projects)
 
 
 class FakeSupervisor:
@@ -26,10 +37,18 @@ class FakeSupervisor:
 
 
 class AutonomyServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.preferences = AutonomyPreferencesStore(Path(self.temp.name) / "autonomy.json")
+
+    def service(self, runtime=None):
+        return AutonomyService(runtime or FakeRuntime(), preferences=self.preferences)
+
     def test_start_is_idempotent_and_stop_is_clean(self):
         FakeSupervisor.calls = 0
         with patch("ordax_chat_app.autonomy_service.AutonomySupervisor", FakeSupervisor):
-            service = AutonomyService(FakeRuntime())
+            service = self.service()
             started = service.start(model="gpt-test", project_slugs=["demo"], idle_sleep_seconds=0.5)
             self.assertTrue(started["running"])
             again = service.start(model="gpt-test", project_slugs=["demo"], idle_sleep_seconds=0.5)
@@ -47,7 +66,7 @@ class AutonomyServiceTests(unittest.TestCase):
 
     def test_project_scope_change_requires_restart(self):
         with patch("ordax_chat_app.autonomy_service.AutonomySupervisor", FakeSupervisor):
-            service = AutonomyService(FakeRuntime())
+            service = self.service()
             service.start(model="gpt-a", project_slugs=["demo"], idle_sleep_seconds=0.5)
             try:
                 status = service.status()
@@ -57,9 +76,53 @@ class AutonomyServiceTests(unittest.TestCase):
             finally:
                 service.stop(timeout_seconds=2)
 
+    def test_start_persists_and_user_stop_disables_autonomy(self):
+        with patch("ordax_chat_app.autonomy_service.AutonomySupervisor", FakeSupervisor):
+            service = self.service()
+            service.start(model="gpt-a", project_slugs=["demo"], idle_sleep_seconds=0.5)
+            persisted = self.preferences.load()
+            self.assertTrue(persisted["enabled"])
+            self.assertEqual(persisted["model"], "gpt-a")
+            self.assertEqual(persisted["project_slugs"], ["demo"])
+
+            service.stop(timeout_seconds=2)
+            self.assertFalse(self.preferences.load()["enabled"])
+
+    def test_process_shutdown_can_preserve_persisted_autonomy(self):
+        with patch("ordax_chat_app.autonomy_service.AutonomySupervisor", FakeSupervisor):
+            service = self.service()
+            service.start(model="gpt-a", project_slugs=["demo"], idle_sleep_seconds=0.5)
+            service.stop(timeout_seconds=2, disable_persisted=False)
+            self.assertTrue(self.preferences.load()["enabled"])
+
+    def test_resume_persisted_restarts_only_when_account_and_project_are_available(self):
+        self.preferences.save(
+            enabled=True,
+            model="gpt-a",
+            project_slugs=["demo"],
+            context_window_tokens=64000,
+            idle_sleep_seconds=0.5,
+        )
+        with patch("ordax_chat_app.autonomy_service.AutonomySupervisor", FakeSupervisor):
+            service = self.service(FakeRuntime(connected=True, projects=[{"slug": "demo"}]))
+            status = service.resume_persisted()
+            try:
+                self.assertTrue(status["running"])
+                self.assertEqual(status["model"], "gpt-a")
+                self.assertEqual(status["project_slugs"], ("demo",))
+                self.assertTrue(status["persisted_enabled"])
+            finally:
+                service.stop(timeout_seconds=2, disable_persisted=False)
+
+            disconnected = self.service(FakeRuntime(connected=False, projects=[{"slug": "demo"}]))
+            status = disconnected.resume_persisted()
+            self.assertFalse(status["running"])
+            self.assertIn("disconnected", status["last_error"])
+            self.assertTrue(status["persisted_enabled"])
+
     def test_running_model_cannot_change_without_stop(self):
         with patch("ordax_chat_app.autonomy_service.AutonomySupervisor", FakeSupervisor):
-            service = AutonomyService(FakeRuntime())
+            service = self.service()
             service.start(model="gpt-a", project_slugs=["demo"], idle_sleep_seconds=0.5)
             try:
                 with self.assertRaisesRegex(RuntimeError, "already running"):
