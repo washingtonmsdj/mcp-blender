@@ -240,9 +240,33 @@ class PersistentProcessActions:
             temp.write_text(json.dumps(current_raw, ensure_ascii=False, indent=2), encoding="utf-8")
             temp.replace(state_path)
         current = self._public_process_state(self._load_process_state(project, process_id))
+        started_ok = bool(
+            current.get("state") in {"starting", "running"}
+            and current.get("ownership_valid")
+        )
+        if not started_ok and manager.poll() is None:
+            try:
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/PID", str(manager.pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=15,
+                        shell=False,
+                    )
+                else:
+                    try:
+                        os.killpg(manager.pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                manager.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            getattr(self, "_persistent_process_handles", {}).pop(process_id, None)
+            current = self._public_process_state(self._load_process_state(project, process_id))
         return ActionResult(
-            current.get("state") in {"starting", "running"},
-            "persistent process started" if current.get("state") in {"starting", "running"} else "persistent process failed to start",
+            started_ok,
+            "persistent process started" if started_ok else "persistent process failed to start",
             current,
         )
 
