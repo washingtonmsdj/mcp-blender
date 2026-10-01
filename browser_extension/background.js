@@ -85,8 +85,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       } else if (message?.type === "ordax.ack") {
         sendResponse({ok: true, data: await ack(String(message.id || ""), !!message.ok, String(message.error || ""))});
       } else if (message?.type === "ordax.disconnect") {
-        token = null;
-        await chrome.storage.local.remove("token");
+        try {
+          if (token) {
+            await api("/disconnect", {
+              method: "POST",
+              body: JSON.stringify({})
+            });
+          }
+        } finally {
+          token = null;
+          await chrome.storage.local.remove("token");
+        }
         sendResponse({ok: true, data: {paired: false}});
       } else {
         sendResponse({ok: false, error: "unsupported_message"});
