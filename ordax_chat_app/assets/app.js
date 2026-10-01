@@ -1,4 +1,4 @@
-const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null,webBridge:null,webBridgeStartup:null};
+const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null,webBridge:null,webBridgeStartup:null,browserCompanion:null,browserConversation:null};
 
 function api(){return window.pywebview.api}
 function el(id){return document.getElementById(id)}
@@ -15,12 +15,16 @@ function renderMode(){
   el("newThreadButton").disabled=normal;
   if(normal){
     state.thread=null;
-    el("threadTitle").textContent="Chat normal via ORDAX";
-    renderMessages([]);
     const endpoint=state.normalChat?.mcp_endpoint||"";
     el("normalMcpEndpoint").textContent=endpoint;
-    setStatus("Modo Chat normal · usa a cota normal do ChatGPT. Abra o ChatGPT e use o plugin ORDAX.");
+    el("composerInput").placeholder="Escreva aqui; o Browser Companion envia para a conversa real do ChatGPT Web…";
+    if(!state.browserConversation){
+      el("threadTitle").textContent="Chat normal via ORDAX";
+      renderMessages([]);
+    }
+    setStatus("Modo Chat normal · Browser Companion + MCP ORDAX.");
   }else{
+    el("composerInput").placeholder="Peça para analisar, implementar, testar ou continuar o projeto...";
     setStatus(state.connected?"Modo Agent / Responses · usa cota Work/Codex.":"Conecte o ChatGPT para usar Agent / Responses.");
   }
 }
@@ -174,6 +178,80 @@ async function openNormalChat(){
   }catch(err){setStatus(err.message,"error")}
 }
 
+function renderBrowserCompanion(status){
+  state.browserCompanion=status||{};
+  const paired=Number(state.browserCompanion.paired_clients||0)>0;
+  el("browserCompanionBadge").textContent=paired?"pareado":"aguardando";
+  el("browserCompanionBadge").classList.toggle("success",paired);
+  const parts=[
+    state.browserCompanion.running?"serviço local ativo":null,
+    paired?(state.browserCompanion.paired_clients+" navegador(es) pareado(s)"):null,
+    Number(state.browserCompanion.conversations||0)?(state.browserCompanion.conversations+" conversa(s) anexada(s)"):null
+  ].filter(Boolean);
+  el("browserCompanionState").textContent=parts.length?parts.join(" · "):"Extensão ainda não pareada.";
+}
+
+async function pairBrowserCompanion(){
+  try{
+    const data=unwrap(await api().browser_companion_pair());
+    renderBrowserCompanion(unwrap(await api().browser_companion_status()));
+    const box=el("browserCompanionPairCode");
+    box.textContent=data.code;
+    box.classList.remove("hidden");
+    setStatus("Digite este código na extensão ORDAX Browser Companion: "+data.code,"success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
+function renderBrowserConversations(items){
+  const list=el("threadList");list.innerHTML="";
+  for(const conversation of items||[]){
+    const item=document.createElement("div");
+    item.className="thread"+(conversation.id===state.browserConversation?" active":"");
+    item.textContent=conversation.title||("ChatGPT · "+conversation.id.slice(0,8));
+    item.title=conversation.url||"";
+    item.onclick=()=>openBrowserConversation(conversation.id);
+    list.appendChild(item);
+  }
+  if(!(items||[]).length){
+    list.innerHTML='<span class="muted">Abra uma conversa no ChatGPT Web e pareie a extensão.</span>';
+  }
+}
+
+async function refreshBrowserCompanion(){
+  try{
+    const status=unwrap(await api().browser_companion_status());
+    renderBrowserCompanion(status);
+    if(state.mode==="normal"){
+      renderBrowserConversations(unwrap(await api().browser_companion_conversations()));
+    }
+  }catch(err){
+    el("browserCompanionState").textContent=err.message;
+    el("browserCompanionState").className="error";
+  }
+}
+
+async function openBrowserConversation(id){
+  state.browserConversation=id;
+  const conversations=unwrap(await api().browser_companion_conversations());
+  const current=(conversations||[]).find(item=>item.id===id);
+  el("threadTitle").textContent=current?.title||"ChatGPT Web";
+  const messages=unwrap(await api().browser_companion_messages(id));
+  renderMessages(messages);
+  renderBrowserConversations(conversations);
+  setStatus("Conversa real do ChatGPT Web anexada ao ORDAX.","success");
+}
+
+async function sendBrowserMessage(text){
+  if(!state.browserConversation){
+    setStatus("Abra uma conversa no ChatGPT Web e selecione-a no ORDAX.","error");
+    return false;
+  }
+  unwrap(await api().browser_companion_send(state.browserConversation,text));
+  appendMessage("user",text);
+  setStatus("Mensagem enviada ao Browser Companion…");
+  return true;
+}
+
 
 async function refreshOrdaxAccount(){
   const card=el("ordaxAccountCard");
@@ -291,6 +369,10 @@ function appendMessage(role,text,scroll=true){
 }
 
 async function refreshThreads(){
+  if(state.mode==="normal"){
+    renderBrowserConversations(unwrap(await api().browser_companion_conversations()));
+    return;
+  }
   if(!state.project)return;
   renderThreads(unwrap(await api().threads(state.project)));
 }
@@ -432,9 +514,18 @@ async function createThread(){
 }
 
 async function send(){
-  if(state.mode==="normal"){setStatus("No modo Chat normal, envie a mensagem na janela do ChatGPT.","error");return}
   if(state.busy)return;
   const input=el("composerInput");const text=input.value.trim();
+  if(state.mode==="normal"){
+    if(!text)return;
+    state.busy=true;el("sendButton").disabled=true;input.value="";
+    try{
+      await sendBrowserMessage(text);
+      setTimeout(()=>openBrowserConversation(state.browserConversation),1200);
+    }catch(err){setStatus(err.message,"error")}
+    finally{state.busy=false;el("sendButton").disabled=false;input.focus()}
+    return;
+  }
   if(!text)return;
   if(!state.thread){await createThread();if(!state.thread)return}
   state.busy=true;el("sendButton").disabled=true;input.value="";
@@ -483,10 +574,13 @@ async function bootstrap(){
     renderThreads(data.threads||[]);
     state.normalChat=data.chat_modes?.normal||null;
     state.webBridge=state.normalChat?.web_bridge||null;
+    state.browserCompanion=state.normalChat?.browser_companion||null;
     state.mode=data.chat_modes?.default||"normal";
     if(data.model_error&&state.mode==="agent")setStatus(data.model_error,"error");
     renderMode();
     renderWebBridge(state.webBridge||{});
+    renderBrowserCompanion(state.browserCompanion||{});
+    await refreshBrowserCompanion();
     await refreshWebBridgeStartup();
     await refreshOrdaxAccount();
     await refreshActivity();
@@ -505,11 +599,12 @@ el("webBridgeConnectButton").onclick=connectWebBridge;
 el("webBridgeStopButton").onclick=stopWebBridge;
 el("webBridgeTunnelsButton").onclick=openWebBridgeTunnels;
 el("webBridgeApiKeysButton").onclick=openWebBridgeApiKeys;
+el("browserCompanionPairButton").onclick=pairBrowserCompanion;
 el("webBridgeStartupButton").onclick=installWebBridgeStartup;
 el("webBridgeStartupRemoveButton").onclick=uninstallWebBridgeStartup;
 el("handoffCreateButton").onclick=createHandoff;
 el("handoffLoadButton").onclick=loadHandoff;
-el("modeSelect").onchange=e=>{state.mode=e.target.value;renderMode()};
+el("modeSelect").onchange=async e=>{state.mode=e.target.value;state.thread=null;state.browserConversation=null;renderMode();await refreshThreads()};
 el("newThreadButton").onclick=createThread;
 el("sendButton").onclick=send;
 el("refreshActivity").onclick=refreshActivity;
@@ -518,6 +613,6 @@ el("queueWorkButton").onclick=queueWork;
 el("autonomyToggle").onclick=toggleAutonomy;
 el("computerObserveToggle").onchange=e=>setComputerCapability("computer.observe",e.target.checked);
 el("computerInteractToggle").onchange=e=>setComputerCapability("computer.interact",e.target.checked);
-el("projectSelect").onchange=async e=>{state.project=e.target.value;state.thread=null;el("threadTitle").textContent="Nova conversa";renderMessages([]);await refreshThreads();await refreshActivity();await refreshAutonomy();await refreshCapabilities()};
+el("projectSelect").onchange=async e=>{state.project=e.target.value;state.thread=null;if(state.mode!=="normal"){el("threadTitle").textContent="Nova conversa";renderMessages([])}await refreshThreads();await refreshActivity();await refreshAutonomy();await refreshCapabilities()};
 el("composerInput").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}};
 window.addEventListener("pywebviewready",bootstrap);
