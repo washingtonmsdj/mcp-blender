@@ -51,7 +51,7 @@ class CloudflareOAuthConsentContractTests(unittest.TestCase):
         self.assertIn('approveAuthorization', self.consent)
         self.assertIn('denyAuthorization', self.consent)
         self.assertIn('authorization_id', self.consent)
-        self.assertIn("data.scope||'openid email'", self.consent)
+        self.assertIn("data.scope||'openid email offline_access'", self.consent)
 
 
 if __name__ == "__main__":
