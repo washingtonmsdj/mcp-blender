@@ -10,6 +10,7 @@
 - Plugin package: `plugins/ordax-studio/`.
 - Production MCP: `https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/mcp`.
 - **ORDAX Web Bridge:** managed OpenAI Secure MCP Tunnel inside the desktop, mirroring the proven OpenChatX transport pattern for connecting regular ChatGPT to a private/local runtime.
+- **cross-chat Handoff:** expiring project-scoped continuation IDs available through local and remote MCP, avoiding browser scraping while preserving long-running work.
 
 
 ## Estado atual — implementado nesta branch
