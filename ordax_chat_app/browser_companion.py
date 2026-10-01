@@ -9,6 +9,7 @@ Security boundary:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import sqlite3
@@ -75,6 +76,12 @@ class BrowserCompanionStore:
         with self.connect() as connection:
             connection.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS browser_clients(
+                  token_hash TEXT PRIMARY KEY,
+                  browser_id TEXT NOT NULL,
+                  created_at REAL NOT NULL,
+                  last_seen_at REAL NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS browser_conversations(
                   id TEXT PRIMARY KEY,
                   url TEXT NOT NULL,
@@ -104,6 +111,47 @@ class BrowserCompanionStore:
                   ON browser_commands(state, conversation_id, created_at);
                 """
             )
+
+    @staticmethod
+    def _token_hash(token: str) -> str:
+        return hashlib.sha256(str(token).encode("utf-8")).hexdigest()
+
+    def authorize_client(self, token: str) -> bool:
+        token = str(token or "")
+        if not token:
+            return False
+        digest = self._token_hash(token)
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT browser_id FROM browser_clients WHERE token_hash=?",
+                (digest,),
+            ).fetchone()
+            if not row:
+                return False
+            connection.execute(
+                "UPDATE browser_clients SET last_seen_at=? WHERE token_hash=?",
+                (_now(), digest),
+            )
+        return True
+
+    def register_client(self, token: str, browser_id: str) -> None:
+        now = _now()
+        digest = self._token_hash(token)
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO browser_clients(token_hash,browser_id,created_at,last_seen_at)
+                VALUES(?,?,?,?)
+                ON CONFLICT(token_hash) DO UPDATE SET
+                  browser_id=excluded.browser_id,
+                  last_seen_at=excluded.last_seen_at
+                """,
+                (digest, str(browser_id or "")[:128], now, now),
+            )
+
+    def paired_client_count(self) -> int:
+        with self.connect() as connection:
+            return int(connection.execute("SELECT COUNT(*) FROM browser_clients").fetchone()[0])
 
     def observe(
         self,
@@ -272,7 +320,6 @@ class BrowserCompanionServer:
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._pairing: PairingState | None = None
-        self._tokens: set[str] = set()
         self._lock = threading.RLock()
 
     def start(self) -> dict[str, Any]:
@@ -324,8 +371,7 @@ class BrowserCompanionServer:
                 def _authorized(self) -> bool:
                     header = str(self.headers.get("Authorization") or "")
                     token = header[7:] if header.startswith("Bearer ") else ""
-                    with outer._lock:
-                        return bool(token and token in outer._tokens)
+                    return outer.store.authorize_client(token)
 
                 def do_GET(self):
                     parsed = urlsplit(self.path)
@@ -375,7 +421,7 @@ class BrowserCompanionServer:
                                 self._json(403, {"ok": False, "error": "invalid_or_expired_pairing_code"})
                                 return
                             token = secrets.token_urlsafe(_TOKEN_BYTES)
-                            outer._tokens.add(token)
+                            outer.store.register_client(token, browser_id)
                             outer._pairing = None
                         self._json(200, {
                             "ok": True,
@@ -435,7 +481,6 @@ class BrowserCompanionServer:
             thread = self._thread
             self._server = None
             self._thread = None
-            self._tokens.clear()
             self._pairing = None
         if server is not None:
             server.shutdown()
@@ -465,7 +510,7 @@ class BrowserCompanionServer:
                 "host": self.host,
                 "port": self.port,
                 "protocol": _PROTOCOL,
-                "paired_clients": len(self._tokens),
+                "paired_clients": self.store.paired_client_count(),
                 "pairing_active": bool(pairing and pairing.expires_at >= _now()),
                 "pairing_expires_at": pairing.expires_at if pairing else None,
                 "conversations": len(self.store.conversations(limit=500)),
