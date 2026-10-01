@@ -1,0 +1,313 @@
+"""Persistent project process manager for ORDAX Dev."""
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import uuid
+from pathlib import Path
+from typing import Any
+
+from .models import ActionResult
+
+
+class PersistentProcessActions:
+    def _process_root(self, project) -> Path:
+        return (self.config.state_dir / "processes" / project.slug).resolve()
+
+    def _process_state_path(self, project, process_id: str) -> Path:
+        try:
+            uuid.UUID(process_id)
+        except ValueError as error:
+            raise ValueError("process_id must be a UUID") from error
+        return self._process_root(project) / f"{process_id}.json"
+
+    def _process_log_path(self, project, process_id: str) -> Path:
+        return self._process_root(project) / f"{process_id}.log"
+
+    @staticmethod
+    def _pid_running(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        if os.name == "nt":
+            try:
+                result = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                    capture_output=True,
+                    text=True,
+                    timeout=4,
+                    shell=False,
+                )
+                return result.returncode == 0 and f'"{pid}"' in result.stdout
+            except (OSError, subprocess.TimeoutExpired):
+                return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    @staticmethod
+    def _commandline(pid: int) -> str:
+        if pid <= 0:
+            return ""
+        if os.name == "nt":
+            script = (
+                "$ErrorActionPreference='SilentlyContinue';"
+                f"(Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\").CommandLine"
+            )
+            try:
+                result = subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-Command", script],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    shell=False,
+                )
+                return (result.stdout or "").strip()
+            except (OSError, subprocess.TimeoutExpired):
+                return ""
+        path = Path(f"/proc/{pid}/cmdline")
+        try:
+            return path.read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+        except OSError:
+            return ""
+
+    def _load_process_state(self, project, process_id: str) -> dict[str, Any]:
+        path = self._process_state_path(project, process_id)
+        if not path.is_file():
+            raise ValueError(f"persistent process not found: {process_id}")
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ValueError(f"persistent process state is invalid: {process_id}") from error
+        if not isinstance(state, dict) or state.get("process_id") != process_id or state.get("project") != project.slug:
+            raise ValueError("persistent process state identity mismatch")
+        return state
+
+    def _owned(self, state: dict[str, Any]) -> bool:
+        pid = int(state.get("manager_pid") or 0)
+        token = str(state.get("token") or "")
+        if not pid or not token or not self._pid_running(pid):
+            return False
+        commandline = self._commandline(pid)
+        return "persistent_process_runtime.py" in commandline and token in commandline
+
+    def _public_process_state(self, state: dict[str, Any]) -> dict[str, Any]:
+        manager_pid = int(state.get("manager_pid") or 0)
+        running = self._pid_running(manager_pid)
+        owned = bool(running and self._owned(state))
+        lifecycle = str(state.get("state") or "unknown")
+        if running and owned and lifecycle in {"starting", "running"}:
+            lifecycle = "running"
+        elif running and not owned:
+            lifecycle = "stale"
+        elif not running and lifecycle in {"starting", "running", "stopping"}:
+            lifecycle = "stopped"
+        result = dict(state)
+        result.update({
+            "state": lifecycle,
+            "running": bool(running and owned),
+            "ownership_valid": owned,
+        })
+        return result
+
+    def process_start(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        argv = payload.get("argv")
+        if (
+            not isinstance(argv, list)
+            or not argv
+            or len(argv) > 128
+            or not all(isinstance(item, str) and item and "\x00" not in item and len(item) <= 8192 for item in argv)
+        ):
+            return ActionResult(False, "argv must contain 1..128 valid strings")
+
+        cwd_raw = str(payload.get("cwd") or ".")
+        cwd = project.path(cwd_raw, must_exist=True)
+        if not cwd.is_dir():
+            return ActionResult(False, "cwd is not a directory")
+
+        env_raw = payload.get("env")
+        env: dict[str, str] = {}
+        if env_raw is not None:
+            if not isinstance(env_raw, dict) or len(env_raw) > 64:
+                return ActionResult(False, "env must be an object with at most 64 entries")
+            for key, value in env_raw.items():
+                if not isinstance(key, str) or not key or "\x00" in key or not isinstance(value, str) or "\x00" in value:
+                    return ActionResult(False, "env contains an invalid key or value")
+                env[key] = value
+
+        command = list(argv)
+        resolved = shutil.which(command[0])
+        if resolved:
+            command[0] = resolved
+
+        process_id = str(uuid.uuid4())
+        token = uuid.uuid4().hex
+        root = self._process_root(project)
+        root.mkdir(parents=True, exist_ok=True)
+        state_path = self._process_state_path(project, process_id)
+        log_path = self._process_log_path(project, process_id)
+        runtime = Path(__file__).with_name("persistent_process_runtime.py").resolve()
+        manager_command = [
+            sys.executable,
+            str(runtime),
+            "--state", str(state_path),
+            "--log", str(log_path),
+            "--cwd", str(cwd),
+            "--env-json", json.dumps(env, ensure_ascii=False, separators=(",", ":")),
+            "--token", token,
+            "--",
+            *command,
+        ]
+
+        creationflags = 0
+        start_new_session = False
+        if os.name == "nt":
+            creationflags = (
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                | getattr(subprocess, "DETACHED_PROCESS", 0)
+                | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
+        else:
+            start_new_session = True
+
+        state = {
+            "schema_version": 1,
+            "process_id": process_id,
+            "project": project.slug,
+            "token": token,
+            "state": "starting",
+            "cwd": cwd.relative_to(project.root.resolve()).as_posix() if cwd != project.root.resolve() else ".",
+            "argv": argv,
+            "log_path": str(log_path),
+            "started_at_unix": time.time(),
+        }
+        temp = state_path.with_suffix(".tmp")
+        temp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp.replace(state_path)
+
+        try:
+            manager = subprocess.Popen(
+                manager_command,
+                cwd=str(project.root),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                shell=False,
+                creationflags=creationflags,
+                start_new_session=start_new_session,
+            )
+        except OSError as error:
+            state.update({"state": "failed", "error": str(error), "ended_at_unix": time.time()})
+            state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+            return ActionResult(False, f"cannot start persistent process: {error}", state)
+
+        state["manager_pid"] = manager.pid
+        temp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp.replace(state_path)
+
+        deadline = time.monotonic() + min(max(float(payload.get("wait_seconds", 0.5)), 0.0), 5.0)
+        while time.monotonic() < deadline:
+            time.sleep(0.05)
+            current = self._load_process_state(project, process_id)
+            if current.get("state") != "starting":
+                break
+        current = self._public_process_state(self._load_process_state(project, process_id))
+        return ActionResult(
+            current.get("state") in {"starting", "running"},
+            "persistent process started" if current.get("state") in {"starting", "running"} else "persistent process failed to start",
+            current,
+        )
+
+    def process_status(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        process_id = str(payload.get("process_id") or "")
+        state = self._public_process_state(self._load_process_state(project, process_id))
+        return ActionResult(True, "persistent process status ready", state)
+
+    def process_list(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        root = self._process_root(project)
+        items: list[dict[str, Any]] = []
+        if root.is_dir():
+            for path in sorted(root.glob("*.json")):
+                try:
+                    raw = json.loads(path.read_text(encoding="utf-8"))
+                    process_id = str(raw.get("process_id") or "")
+                    if process_id:
+                        items.append(self._public_process_state(self._load_process_state(project, process_id)))
+                except Exception:
+                    continue
+        return ActionResult(True, "persistent process list ready", {"project": project.slug, "processes": items})
+
+    def process_logs(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        process_id = str(payload.get("process_id") or "")
+        state = self._public_process_state(self._load_process_state(project, process_id))
+        max_bytes = int(payload.get("max_bytes", 65536))
+        if not 1024 <= max_bytes <= 262144:
+            return ActionResult(False, "max_bytes must be between 1024 and 262144")
+        path = self._process_log_path(project, process_id)
+        if not path.is_file():
+            return ActionResult(True, "persistent process has no logs yet", {"process": state, "tail": ""})
+        size = path.stat().st_size
+        offset = max(0, size - max_bytes)
+        with path.open("rb") as handle:
+            handle.seek(offset)
+            chunk = handle.read(max_bytes)
+        text = chunk.decode("utf-8", "replace")
+        if offset and "\n" in text:
+            text = text.split("\n", 1)[1]
+        return ActionResult(True, "persistent process logs ready", {
+            "process": state,
+            "tail": text,
+            "size_bytes": size,
+            "truncated": offset > 0,
+        })
+
+    def process_stop(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        process_id = str(payload.get("process_id") or "")
+        state = self._public_process_state(self._load_process_state(project, process_id))
+        pid = int(state.get("manager_pid") or 0)
+        if not state.get("running"):
+            if state.get("state") == "stale":
+                return ActionResult(False, "refusing to stop a process not owned by ORDAX", state)
+            return ActionResult(True, "persistent process is already stopped", state)
+        if not state.get("ownership_valid"):
+            return ActionResult(False, "refusing to stop a process not owned by ORDAX", state)
+
+        try:
+            if os.name == "nt":
+                completed = subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    shell=False,
+                )
+                if completed.returncode != 0 and self._pid_running(pid):
+                    return ActionResult(False, "persistent process stop failed", {
+                        **state,
+                        "stderr": (completed.stderr or "")[-2000:],
+                    })
+            else:
+                os.kill(pid, signal.SIGTERM)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return ActionResult(False, f"persistent process stop failed: {error}", state)
+
+        deadline = time.monotonic() + 5.0
+        while self._pid_running(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        final = self._public_process_state(self._load_process_state(project, process_id))
+        final["running"] = False
+        final["ownership_valid"] = False
+        if final.get("state") in {"starting", "running", "stopping"}:
+            final["state"] = "stopped"
+        return ActionResult(not self._pid_running(pid), "persistent process stopped", final)
