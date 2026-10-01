@@ -199,11 +199,18 @@ class ProductGatewayTests(unittest.TestCase):
             expires_at_unix=expires_at_unix,
         )
 
-    def test_catalog_contains_only_explicit_read_only_surface(self) -> None:
+    def test_catalog_contains_explicit_capability_surface(self) -> None:
         names = {entry["name"] for entry in product_action_catalog()}
         self.assertEqual(names, set(PRODUCT_ACTIONS))
         self.assertIn("workspace.repository_catalog", names)
         self.assertIn("project.text_read", names)
+        self.assertIn("workspace.file_stat", names)
+        self.assertIn("workspace.directory_list", names)
+        self.assertIn("workspace.text_read", names)
+        self.assertIn("workspace.text_write", names)
+        self.assertIn("workspace.path_remove", names)
+        self.assertIn("git.command", names)
+        self.assertIn("terminal.exec", names)
         self.assertIn("project.search_text", names)
         self.assertIn("project.text_read_batch", names)
         self.assertIn("project.preview_status", names)
