@@ -1,21 +1,34 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ordax-studio",
-  "version": "0.1.1",
-  "description": "Connect MCP clients to ORDAX Studio for authenticated project and Blender workflows.",
-  "author": {"name": "ORDAX"},
+  "version": "0.2.0",
+  "description": "Connect regular ChatGPT to the ORDAX development runtime through authenticated MCP.",
+  "author": {
+    "name": "ORDAX"
+  },
   "repository": "https://github.com/washingtonmsdj/mcp-blender",
   "license": "Proprietary",
-  "keywords": ["ordax", "blender", "studio", "mcp", "development"],
+  "keywords": [
+    "ordax",
+    "developer-tools",
+    "mcp",
+    "projects",
+    "terminal",
+    "git",
+    "automation"
+  ],
   "extensions": {
     "com.openai": {
       "interface": {
-        "displayName": "ORDAX Studio",
-        "shortDescription": "Connect ChatGPT to your ORDAX Studio workstation through the generic ORDAX MCP.",
-        "longDescription": "Use the authenticated ORDAX Studio MCP to inspect and update registered projects and work with Blender through typed, audited actions. The ORDAX MCP is client-neutral; this package is only the ChatGPT distribution adapter.",
+        "displayName": "ORDAX Dev",
+        "shortDescription": "Use regular ChatGPT with your ORDAX development runtime.",
+        "longDescription": "Connect regular ChatGPT to the authenticated ORDAX MCP for project files, development workflows, Git, processes and supported adapters. ORDAX runs the local runtime and keeps the model conversation in ChatGPT.",
         "developerName": "ORDAX",
         "category": "Developer Tools",
-        "capabilities": ["Read", "Write"]
+        "capabilities": [
+          "Read",
+          "Write"
+        ]
       }
     }
   }
