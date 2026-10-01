@@ -108,6 +108,37 @@ class DevelopmentToolsetTests(unittest.TestCase):
             {"MODE": "test", "CI": "1"},
         )
 
+
+    def test_browser_tool_routes_operation_without_exposing_project(self):
+        registry = FakeRegistry()
+        toolset = DevelopmentToolset(registry, project="demo")
+        output = json.loads(
+            toolset.execute(
+                "browser",
+                json.dumps(
+                    {
+                        "operation": "snapshot",
+                        "session_id": "session-1",
+                        "url": None,
+                        "headless": None,
+                        "wait_seconds": None,
+                        "node_id": None,
+                        "text": None,
+                        "clear": None,
+                        "max_elements": 120,
+                        "width": None,
+                        "height": None,
+                    }
+                ),
+            )
+        )
+        self.assertTrue(output["ok"])
+        self.assertEqual(registry.calls[0][0], "browser.snapshot")
+        self.assertEqual(
+            registry.calls[0][1],
+            {"project": "demo", "session_id": "session-1", "max_elements": 120},
+        )
+
     def test_model_cannot_smuggle_project_field(self):
         registry = FakeRegistry()
         toolset = DevelopmentToolset(registry, project="allowed")
