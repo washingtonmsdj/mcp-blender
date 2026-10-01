@@ -29,13 +29,13 @@ OutputBaseFilename=ORDAX-Dev-Setup-{#AppVersion}-x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-CloseApplications=yes
+CloseApplications=no
 RestartApplications=no
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExeName}
 VersionInfoVersion={#AppVersion}
 VersionInfoCompany={#AppPublisher}
-VersionInfoDescription=ORDAX Studio installer
+VersionInfoDescription=ORDAX Dev installer
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#AppVersion}
 
@@ -50,7 +50,7 @@ Name: "{group}\ORDAX Dev"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
 Name: "{userdesktop}\ORDAX Dev"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Tasks]
-Name: "desktopicon"; Description: "Criar atalho do ORDAX Studio na área de trabalho"; GroupDescription: "Atalhos adicionais:"; Flags: unchecked
+Name: "desktopicon"; Description: "Criar atalho do ORDAX Dev na área de trabalho"; GroupDescription: "Atalhos adicionais:"; Flags: unchecked
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ORDAX Runtime"; ValueData: """{app}\{#RuntimeExeName}"""; Flags: uninsdeletevalue
@@ -58,7 +58,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 Filename: "{app}\redist\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Instalando Microsoft Edge WebView2..."; Flags: waituntilterminated skipifdoesntexist; Check: NeedsWebView2
 Filename: "{app}\{#RuntimeExeName}"; Description: "Iniciar ORDAX Runtime"; Flags: nowait postinstall skipifsilent
-Filename: "{app}\{#AppExeName}"; Description: "Abrir ORDAX Studio"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Description: "Abrir ORDAX Dev"; Flags: nowait postinstall skipifsilent
 
 [Code]
 const
