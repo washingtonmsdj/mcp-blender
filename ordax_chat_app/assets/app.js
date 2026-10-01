@@ -1,4 +1,4 @@
-const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null};
+const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null,webBridge:null};
 
 function api(){return window.pywebview.api}
 function el(id){return document.getElementById(id)}
@@ -23,6 +23,73 @@ function renderMode(){
   }else{
     setStatus(state.connected?"Modo Agent / Responses · usa cota Work/Codex.":"Conecte o ChatGPT para usar Agent / Responses.");
   }
+}
+
+function renderWebBridge(status){
+  state.webBridge=status||{};
+  const running=!!state.webBridge.running;
+  const configured=!!state.webBridge.configured;
+  const installed=!!state.webBridge.client_installed;
+  el("webBridgeBadge").textContent=running?"conectado":(configured?"configurado":"desconectado");
+  el("webBridgeBadge").classList.toggle("success",running);
+  el("webBridgeConnectButton").textContent=running
+    ?"Web Bridge conectado"
+    :(!installed?"Instalar e conectar":"Configurar e conectar");
+  el("webBridgeConnectButton").disabled=running;
+  el("webBridgeStopButton").classList.toggle("hidden",!running);
+  const details=[];
+  if(state.webBridge.tunnel_id)details.push(state.webBridge.tunnel_id);
+  if(installed)details.push("tunnel-client instalado");
+  if(state.webBridge.initialized)details.push("profile pronto");
+  if(running)details.push("PID "+state.webBridge.pid);
+  el("webBridgeState").textContent=details.length?details.join(" · "):"Web Bridge não configurado.";
+  el("webBridgeState").className=running?"success":"muted";
+}
+
+async function refreshWebBridge(){
+  try{renderWebBridge(unwrap(await api().web_bridge_status()))}
+  catch(err){el("webBridgeState").textContent=err.message;el("webBridgeState").className="error"}
+}
+
+async function connectWebBridge(){
+  const tunnelId=el("webBridgeTunnelId").value.trim();
+  const apiKey=el("webBridgeApiKey").value.trim();
+  if(!tunnelId){setStatus("Informe o Tunnel ID (tunnel_...).","error");return}
+  if(!apiKey && !state.webBridge?.configured){setStatus("Informe a Runtime API key.","error");return}
+  try{
+    setStatus("Configurando ORDAX Web Bridge…");
+    if(apiKey){
+      renderWebBridge(unwrap(await api().web_bridge_configure(tunnelId,apiKey)));
+      el("webBridgeApiKey").value="";
+    }
+    if(!state.webBridge?.client_installed){
+      setStatus("Instalando tunnel-client oficial da OpenAI…");
+      renderWebBridge(unwrap(await api().web_bridge_install()));
+    }
+    setStatus("Validando e conectando Secure MCP Tunnel…");
+    renderWebBridge(unwrap(await api().web_bridge_start()));
+    setStatus("ORDAX Web Bridge conectado.","success");
+  }catch(err){
+    await refreshWebBridge();
+    setStatus(err.message,"error");
+  }
+}
+
+async function stopWebBridge(){
+  try{
+    renderWebBridge(unwrap(await api().web_bridge_stop()));
+    setStatus("ORDAX Web Bridge parado.","success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
+async function openWebBridgeTunnels(){
+  try{unwrap(await api().web_bridge_open_tunnels())}
+  catch(err){setStatus(err.message,"error")}
+}
+
+async function openWebBridgeApiKeys(){
+  try{unwrap(await api().web_bridge_open_api_keys())}
+  catch(err){setStatus(err.message,"error")}
 }
 
 async function openNormalChat(){
@@ -287,9 +354,11 @@ async function bootstrap(){
     renderModels(data.models||[]);
     renderThreads(data.threads||[]);
     state.normalChat=data.chat_modes?.normal||null;
+    state.webBridge=state.normalChat?.web_bridge||null;
     state.mode=data.chat_modes?.default||"normal";
     if(data.model_error&&state.mode==="agent")setStatus(data.model_error,"error");
     renderMode();
+    renderWebBridge(state.webBridge||{});
     await refreshActivity();
     await refreshAutonomy();
     await refreshCapabilities();
@@ -298,6 +367,10 @@ async function bootstrap(){
 
 el("connectButton").onclick=connect;
 el("openNormalChatButton").onclick=openNormalChat;
+el("webBridgeConnectButton").onclick=connectWebBridge;
+el("webBridgeStopButton").onclick=stopWebBridge;
+el("webBridgeTunnelsButton").onclick=openWebBridgeTunnels;
+el("webBridgeApiKeysButton").onclick=openWebBridgeApiKeys;
 el("modeSelect").onchange=e=>{state.mode=e.target.value;renderMode()};
 el("newThreadButton").onclick=createThread;
 el("sendButton").onclick=send;
