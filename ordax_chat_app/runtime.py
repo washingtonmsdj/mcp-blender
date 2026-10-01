@@ -139,7 +139,12 @@ class OrdaxChatRuntime:
         provider = self._provider()
         engine = AgentChatEngine(
             provider,
-            DevelopmentToolset(self.agent, project=thread["project_slug"]),
+            DevelopmentToolset(
+                self.agent,
+                project=thread["project_slug"],
+                orchestrator=self.orchestrator,
+                agent_id=thread["agent_id"],
+            ),
             orchestrator=self.orchestrator,
             session_id=thread["session_id"],
         )
