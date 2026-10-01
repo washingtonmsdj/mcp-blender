@@ -14,6 +14,14 @@
         <div><strong>ORDAX Dev</strong><span>Agentic workspace</span></div>
       </header>
 
+      <div id="ordaxAccountCard" class="ordax-account-card hidden">
+        <div>
+          <strong>Conta ORDAX</strong>
+          <span id="ordaxDeviceState">Verificando dispositivo…</span>
+        </div>
+        <button id="ordaxAccountButton" class="secondary-button">Conectar</button>
+      </div>
+
       <label class="field-label" for="modeSelect">Modo</label>
       <select id="modeSelect">
         <option value="normal">Chat normal · cota normal</option>
@@ -144,6 +152,25 @@
       </div>
     </aside>
   </div>
+
+  <div id="ordaxAccountDialog" class="dialog-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="ordaxAccountTitle">
+    <section class="dialog-card">
+      <div class="dialog-head">
+        <div>
+          <strong id="ordaxAccountTitle">Conectar conta ORDAX</strong>
+          <span>Vincule este computador à sua conta ORDAX.</span>
+        </div>
+        <button id="ordaxAccountClose" class="icon-button" type="button">×</button>
+      </div>
+      <label class="field-label" for="ordaxAccountEmail">E-mail</label>
+      <input id="ordaxAccountEmail" class="compact-input" type="email" autocomplete="username">
+      <label class="field-label" for="ordaxAccountPassword">Senha</label>
+      <input id="ordaxAccountPassword" class="compact-input" type="password" autocomplete="current-password">
+      <button id="ordaxAccountSubmit" class="connect" type="button">Conectar computador</button>
+      <div id="ordaxAccountStatus" class="muted">A senha não é armazenada pelo ORDAX Dev.</div>
+    </section>
+  </div>
+
   <script src="assets/app.js"></script>
 </body>
 </html>
