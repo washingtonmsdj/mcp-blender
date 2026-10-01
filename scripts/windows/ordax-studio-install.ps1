@@ -18,7 +18,7 @@ if (-not $task) {
 }
 if (-not (Test-Path (Join-Path $ManagedRepo '.git'))) { throw "ORDAX managed runtime is missing: $ManagedRepo" }
 $Pythonw = Join-Path $ManagedRepo '.venv\Scripts\pythonw.exe'
-if (-not (Test-Path $Pythonw)) { throw "ORDAX Studio runtime is missing: $Pythonw" }
+if (-not (Test-Path $Pythonw)) { throw "ORDAX Dev runtime is missing: $Pythonw" }
 $Programs = [Environment]::GetFolderPath('Programs')
 $OrdaxMenu = Join-Path $Programs 'ORDAX'
 New-Item -ItemType Directory -Force -Path $OrdaxMenu | Out-Null
@@ -26,18 +26,18 @@ $Shell = New-Object -ComObject WScript.Shell
 function New-OrdaxShortcut([string]$Path) {
     $Shortcut = $Shell.CreateShortcut($Path)
     $Shortcut.TargetPath = $Pythonw
-    $Shortcut.Arguments = '-m ordax_studio.web_desktop'
+    $Shortcut.Arguments = '-m ordax_studio.product_web_desktop'
     $Shortcut.WorkingDirectory = $ManagedRepo
-    $Shortcut.Description = 'ORDAX Studio'
+    $Shortcut.Description = 'ORDAX Dev'
     $Shortcut.Save()
 }
-$StartMenuLink = Join-Path $OrdaxMenu 'ORDAX Studio.lnk'
+$StartMenuLink = Join-Path $OrdaxMenu 'ORDAX Dev.lnk'
 New-OrdaxShortcut $StartMenuLink
-if ($DesktopShortcut) { New-OrdaxShortcut (Join-Path ([Environment]::GetFolderPath('Desktop')) 'ORDAX Studio.lnk') }
-$StudioState = Join-Path $env:LOCALAPPDATA 'OrdaX\Studio'
+if ($DesktopShortcut) { New-OrdaxShortcut (Join-Path ([Environment]::GetFolderPath('Desktop')) 'ORDAX Dev.lnk') }
+$StudioState = Join-Path $env:LOCALAPPDATA 'OrdaX\Dev'
 New-Item -ItemType Directory -Force -Path $StudioState | Out-Null
 @{ installed_at=[DateTimeOffset]::UtcNow.ToString('o'); runtime=$ManagedRepo; start_menu=$StartMenuLink; background_task=$TaskName } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $StudioState 'installation.json') -Encoding UTF8
-if (-not $NoLaunch) { Start-Process -FilePath $Pythonw -ArgumentList @('-m','ordax_studio.web_desktop') -WorkingDirectory $ManagedRepo }
-Write-Output 'ORDAX_STUDIO=INSTALLED'
+if (-not $NoLaunch) { Start-Process -FilePath $Pythonw -ArgumentList @('-m','ordax_studio.product_web_desktop') -WorkingDirectory $ManagedRepo }
+Write-Output 'ORDAX_DEV=INSTALLED'
 Write-Output ("START_MENU=" + $StartMenuLink)
 Write-Output ("BACKGROUND_TASK=" + $TaskName)
