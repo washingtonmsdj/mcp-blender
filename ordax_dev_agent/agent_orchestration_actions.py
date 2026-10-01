@@ -161,3 +161,69 @@ class AgentOrchestrationActions:
         if not updated:
             return ActionResult(False, "Unread message not found for agent")
         return ActionResult(True, "Agent message marked read", {"message_id": int(payload.get("message_id"))})
+
+
+    def orchestrator_work_enqueue(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        store = self._orchestrator_store_instance()
+        agent = store.get_agent(str(payload.get("agent_id") or ""))
+        if agent["project_slug"] != project.slug:
+            return ActionResult(False, "agent does not belong to the requested project")
+        data = store.enqueue_work(
+            agent["id"],
+            str(payload.get("title") or ""),
+            str(payload.get("instruction") or ""),
+            goal_id=payload.get("goal_id") or None,
+            priority=int(payload.get("priority", 50)),
+            delay_seconds=float(payload.get("delay_seconds", 0)),
+            max_attempts=int(payload.get("max_attempts", 3)),
+        )
+        return ActionResult(True, "Agent work item queued", data)
+
+    def orchestrator_work_claim(self, payload: dict[str, Any]) -> ActionResult:
+        data = self._orchestrator_store_instance().claim_next_work(
+            str(payload.get("agent_id") or ""),
+            str(payload.get("runner_id") or ""),
+            lease_seconds=int(payload.get("lease_seconds", 300)),
+        )
+        if data is None:
+            return ActionResult(True, "No work ready", {"work": None})
+        return ActionResult(True, "Agent work item leased", {"work": data})
+
+    def orchestrator_work_heartbeat(self, payload: dict[str, Any]) -> ActionResult:
+        data = self._orchestrator_store_instance().heartbeat_work(
+            str(payload.get("work_id") or ""),
+            str(payload.get("runner_id") or ""),
+            lease_seconds=int(payload.get("lease_seconds", 300)),
+        )
+        return ActionResult(True, "Agent work lease renewed", data)
+
+    def orchestrator_work_complete(self, payload: dict[str, Any]) -> ActionResult:
+        data = self._orchestrator_store_instance().complete_work(
+            str(payload.get("work_id") or ""),
+            str(payload.get("runner_id") or ""),
+            result=str(payload.get("result") or ""),
+        )
+        return ActionResult(True, "Agent work item completed", data)
+
+    def orchestrator_work_fail(self, payload: dict[str, Any]) -> ActionResult:
+        data = self._orchestrator_store_instance().fail_work(
+            str(payload.get("work_id") or ""),
+            str(payload.get("runner_id") or ""),
+            error=str(payload.get("error") or ""),
+            retryable=bool(payload.get("retryable", True)),
+            retry_delay_seconds=float(payload.get("retry_delay_seconds", 30)),
+        )
+        return ActionResult(True, f"Agent work item is {data['state']}", data)
+
+    def orchestrator_work_list(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        raw_states = payload.get("states")
+        states = raw_states if isinstance(raw_states, list) else None
+        data = self._orchestrator_store_instance().list_work(
+            project.slug,
+            agent_id=payload.get("agent_id") or None,
+            states=states,
+            limit=int(payload.get("limit", 200)),
+        )
+        return ActionResult(True, "Agent work queue ready", {"work": data})
