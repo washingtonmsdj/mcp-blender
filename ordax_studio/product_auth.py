@@ -87,7 +87,7 @@ def sign_in_with_password(
                     "authorization": f"Bearer {publishable_key}",
                     "accept": "application/json",
                     "content-type": "application/json",
-                    "user-agent": "ORDAX-Studio/0.3",
+                    "user-agent": "ORDAX-Dev/0.4",
                 },
                 json={"email": email, "password": password},
             )
