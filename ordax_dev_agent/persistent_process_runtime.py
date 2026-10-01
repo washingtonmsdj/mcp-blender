@@ -1,0 +1,164 @@
+"""Detached supervised process runtime used by ORDAX persistent processes."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+
+def atomic_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    temp = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+    finally:
+        try:
+            temp.unlink()
+        except FileNotFoundError:
+            pass
+
+
+class ProcessRuntime:
+    def __init__(self, *, state_path: Path, log_path: Path, cwd: Path, command: list[str], env: dict[str, str]):
+        self.state_path = state_path
+        self.log_path = log_path
+        self.cwd = cwd
+        self.command = command
+        self.env = env
+        self.child: subprocess.Popen | None = None
+        self._stopping = False
+
+    def load_state(self) -> dict:
+        try:
+            return json.loads(self.state_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def update(self, **changes) -> None:
+        state = self.load_state()
+        state.update(changes)
+        atomic_json(self.state_path, state)
+
+    def stop(self, *_args) -> None:
+        if self._stopping:
+            return
+        self._stopping = True
+        child = self.child
+        self.update(state="stopping", stopping_at_unix=time.time())
+        if child is None or child.poll() is not None:
+            return
+        try:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(child.pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=15,
+                    shell=False,
+                )
+            else:
+                try:
+                    os.killpg(child.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+        except Exception:
+            pass
+
+    def run(self) -> int:
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        creationflags = 0
+        start_new_session = False
+        if os.name == "nt":
+            creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        else:
+            start_new_session = True
+        child_env = os.environ.copy()
+        child_env.update(self.env)
+        with self.log_path.open("a", encoding="utf-8", errors="replace", buffering=1) as log:
+            log.write(f"\n[ORDAX] starting: {self.command!r}\n")
+            try:
+                self.child = subprocess.Popen(
+                    self.command,
+                    cwd=str(self.cwd),
+                    env=child_env,
+                    stdin=subprocess.DEVNULL,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    shell=False,
+                    creationflags=creationflags,
+                    start_new_session=start_new_session,
+                )
+            except Exception as error:
+                self.update(
+                    state="failed",
+                    error=f"{type(error).__name__}: {error}",
+                    ended_at_unix=time.time(),
+                )
+                log.write(f"[ORDAX] start failed: {type(error).__name__}: {error}\n")
+                return 127
+
+            self.update(
+                state="running",
+                child_pid=self.child.pid,
+                running_at_unix=time.time(),
+            )
+            signal.signal(signal.SIGTERM, self.stop)
+            if hasattr(signal, "SIGINT"):
+                signal.signal(signal.SIGINT, self.stop)
+            returncode = int(self.child.wait())
+            final_state = "stopped" if self._stopping else ("exited" if returncode == 0 else "failed")
+            self.update(
+                state=final_state,
+                returncode=returncode,
+                ended_at_unix=time.time(),
+            )
+            log.write(f"[ORDAX] process ended with code {returncode}\n")
+            return returncode
+
+
+def parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="ordax-persistent-process-runtime")
+    p.add_argument("--state", required=True)
+    p.add_argument("--log", required=True)
+    p.add_argument("--cwd", required=True)
+    p.add_argument("--env-json", default="{}")
+    p.add_argument("command", nargs=argparse.REMAINDER)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parser().parse_args(argv)
+    command = list(args.command)
+    if command and command[0] == "--":
+        command = command[1:]
+    if not command:
+        raise SystemExit("persistent process command is required")
+    try:
+        env = json.loads(args.env_json)
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"invalid env JSON: {error}") from error
+    if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+        raise SystemExit("env JSON must be an object of strings")
+    runtime = ProcessRuntime(
+        state_path=Path(args.state).resolve(),
+        log_path=Path(args.log).resolve(),
+        cwd=Path(args.cwd).resolve(),
+        command=command,
+        env=env,
+    )
+    return runtime.run()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
