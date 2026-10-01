@@ -6,7 +6,7 @@
   let sending = false;
 
   function conversationId() {
-    const match = location.pathname.match(/^\/c\/([^/?#]+)/);
+    const match = location.pathname.match(/\/c\/([^/?#]+)/);
     return match ? match[1] : null;
   }
 
@@ -15,6 +15,8 @@
   }
 
   function roleFor(node) {
+    const direct = node.getAttribute("data-message-author-role");
+    if (direct === "user" || direct === "assistant") return direct;
     const author = node.querySelector("[data-message-author-role]");
     const role = author?.getAttribute("data-message-author-role");
     if (role === "user" || role === "assistant") return role;
@@ -25,7 +27,9 @@
   }
 
   function textFor(node) {
-    const markdown = node.querySelector(".markdown, [data-message-author-role]") || node;
+    const markdown = node.matches?.(".markdown, [data-message-author-role]")
+      ? node
+      : (node.querySelector(".markdown, [data-message-author-role]") || node);
     return normalize(markdown.innerText || markdown.textContent || "");
   }
 
