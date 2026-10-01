@@ -1,4 +1,4 @@
-const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null,webBridge:null};
+const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null,webBridge:null,webBridgeStartup:null};
 
 function api(){return window.pywebview.api}
 function el(id){return document.getElementById(id)}
@@ -29,21 +29,37 @@ function renderWebBridge(status){
   state.webBridge=status||{};
   const running=!!state.webBridge.running;
   const configured=!!state.webBridge.configured;
+  const enabled=!!state.webBridge.enabled;
   const installed=!!state.webBridge.client_installed;
-  el("webBridgeBadge").textContent=running?"conectado":(configured?"configurado":"desconectado");
+  const daemon=state.webBridge.daemon||{};
+  el("webBridgeBadge").textContent=running?"conectado":(enabled?"iniciando":(configured?"parado":"desconectado"));
   el("webBridgeBadge").classList.toggle("success",running);
   el("webBridgeConnectButton").textContent=running
     ?"Web Bridge conectado"
-    :(!installed?"Instalar e conectar":"Configurar e conectar");
+    :(!installed?"Instalar e conectar":"Conectar Web Bridge");
   el("webBridgeConnectButton").disabled=running;
-  el("webBridgeStopButton").classList.toggle("hidden",!running);
+  el("webBridgeStopButton").classList.toggle("hidden",!enabled&&!running);
   const details=[];
   if(state.webBridge.tunnel_id)details.push(state.webBridge.tunnel_id);
   if(installed)details.push("tunnel-client instalado");
   if(state.webBridge.initialized)details.push("profile pronto");
   if(running)details.push("PID "+state.webBridge.pid);
+  if(daemon.heartbeat_fresh)details.push("supervisor ativo");
+  else if(daemon.state&&daemon.state!=="not-running")details.push("supervisor "+daemon.state);
   el("webBridgeState").textContent=details.length?details.join(" · "):"Web Bridge não configurado.";
   el("webBridgeState").className=running?"success":"muted";
+}
+
+function renderWebBridgeStartup(status){
+  state.webBridgeStartup=status||{};
+  const supported=state.webBridgeStartup.supported!==false;
+  const installed=!!state.webBridgeStartup.installed;
+  el("webBridgeStartupButton").classList.toggle("hidden",!supported||installed);
+  el("webBridgeStartupRemoveButton").classList.toggle("hidden",!supported||!installed);
+  el("webBridgeStartupState").textContent=!supported
+    ?"Startup automático disponível somente no Windows."
+    :(installed?"Inicia com o Windows · "+(state.webBridgeStartup.state||"registrado"):"Não inicia automaticamente com o Windows.");
+  el("webBridgeStartupState").className=installed?"success":"muted";
 }
 
 async function createHandoff(){
@@ -78,6 +94,28 @@ async function loadHandoff(){
     el("handoffState").textContent=parts.join(" · ");
     el("handoffState").className="success";
     setStatus("Handoff carregado.","success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
+async function refreshWebBridgeStartup(){
+  try{renderWebBridgeStartup(unwrap(await api().web_bridge_startup_status()))}
+  catch(err){el("webBridgeStartupState").textContent=err.message;el("webBridgeStartupState").className="error"}
+}
+
+async function installWebBridgeStartup(){
+  try{
+    const data=unwrap(await api().web_bridge_install_startup());
+    renderWebBridgeStartup({...data,supported:true});
+    await refreshWebBridge();
+    setStatus("Web Bridge configurado para iniciar com o Windows.","success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
+async function uninstallWebBridgeStartup(){
+  try{
+    const data=unwrap(await api().web_bridge_uninstall_startup());
+    renderWebBridgeStartup({...data,supported:true});
+    setStatus("Inicialização automática do Web Bridge removida.","success");
   }catch(err){setStatus(err.message,"error")}
 }
 
@@ -394,6 +432,7 @@ async function bootstrap(){
     if(data.model_error&&state.mode==="agent")setStatus(data.model_error,"error");
     renderMode();
     renderWebBridge(state.webBridge||{});
+    await refreshWebBridgeStartup();
     await refreshActivity();
     await refreshAutonomy();
     await refreshCapabilities();
@@ -406,6 +445,8 @@ el("webBridgeConnectButton").onclick=connectWebBridge;
 el("webBridgeStopButton").onclick=stopWebBridge;
 el("webBridgeTunnelsButton").onclick=openWebBridgeTunnels;
 el("webBridgeApiKeysButton").onclick=openWebBridgeApiKeys;
+el("webBridgeStartupButton").onclick=installWebBridgeStartup;
+el("webBridgeStartupRemoveButton").onclick=uninstallWebBridgeStartup;
 el("handoffCreateButton").onclick=createHandoff;
 el("handoffLoadButton").onclick=loadHandoff;
 el("modeSelect").onchange=e=>{state.mode=e.target.value;renderMode()};
