@@ -18,21 +18,57 @@ class FakeConversations:
 
 
 class FakeOrchestrator:
+    def __init__(self):
+        self.agents = {}
+        self.work = []
+
     def status(self, project):
         return {
             "project": project,
-            "agents": [],
+            "agents": list(self.agents.values()),
             "goals": [],
             "active_sessions": [],
             "unread_messages": 0,
-            "work_counts": {},
+            "work_counts": {"queued": len(self.work)},
         }
+
+    def create_agent(self, project, name, role, parent_agent_id=None):
+        agent = {
+            "id": f"agent-{len(self.agents)+1}",
+            "project_slug": project,
+            "name": name,
+            "role": role,
+            "parent_agent_id": parent_agent_id,
+            "state": "active",
+        }
+        self.agents[agent["id"]] = agent
+        return agent
+
+    def get_agent(self, agent_id):
+        return self.agents[agent_id]
+
+    def set_agent_state(self, agent_id, state):
+        self.agents[agent_id]["state"] = state
+        return self.agents[agent_id]
+
+    def enqueue_work(self, agent_id, title, instruction, priority=50):
+        item = {
+            "id": f"work-{len(self.work)+1}",
+            "assigned_agent_id": agent_id,
+            "title": title,
+            "instruction": instruction,
+            "priority": priority,
+            "state": "queued",
+        }
+        self.work.append(item)
+        return item
 
 
 class FakeRuntime:
     def __init__(self):
         self.agent = types.SimpleNamespace(
-            config=types.SimpleNamespace(default_project="demo")
+            config=types.SimpleNamespace(default_project="demo"),
+            select_available_project=lambda project: project if project in {"demo", "other"} else (_ for _ in ()).throw(ValueError("project not registered")),
         )
         self.conversations = FakeConversations()
         self.orchestrator = FakeOrchestrator()
@@ -100,6 +136,40 @@ class DesktopApiTests(unittest.TestCase):
         status = self.api.orchestrator_status("demo")
         self.assertTrue(status["ok"])
         self.assertEqual(status["data"]["project"], "demo")
+
+    def test_agent_creation_and_work_queue_are_project_scoped(self):
+        created = self.api.orchestrator_agent_create(
+            "demo", "Backend", "implementation worker", None
+        )
+        self.assertTrue(created["ok"])
+        agent = created["data"]
+        self.assertEqual(agent["project_slug"], "demo")
+
+        queued = self.api.orchestrator_work_enqueue(
+            "demo",
+            agent["id"],
+            "Fix backend",
+            "Inspect and fix the backend, then run tests.",
+            80,
+        )
+        self.assertTrue(queued["ok"])
+        self.assertEqual(queued["data"]["assigned_agent_id"], agent["id"])
+        self.assertEqual(queued["data"]["priority"], 80)
+
+        wrong_project = self.api.orchestrator_work_enqueue(
+            "other",
+            agent["id"],
+            "Wrong",
+            "This must be rejected.",
+            50,
+        )
+        self.assertFalse(wrong_project["ok"])
+        self.assertIn("selected project", wrong_project["summary"])
+
+    def test_autonomy_status_starts_stopped(self):
+        status = self.api.autonomy_status()
+        self.assertTrue(status["ok"])
+        self.assertFalse(status["data"]["running"])
 
 
 if __name__ == "__main__":
