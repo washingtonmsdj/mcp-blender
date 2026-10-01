@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+body{font-family:system-ui,sans-serif;width:280px;padding:14px;background:#111;color:#eee}
+h1{font-size:15px;margin:0 0 10px}p{font-size:12px;color:#aaa}
+input,button{width:100%;box-sizing:border-box;margin-top:8px;padding:9px;border-radius:7px;border:1px solid #444;background:#1b1b1b;color:#eee}
+button{cursor:pointer;background:#242424}#status{margin-top:10px;font-size:12px}.ok{color:#7edb9a}.bad{color:#ff9d9d}
+</style>
+</head>
+<body>
+<h1>ORDAX Browser Companion</h1>
+<p>Abra o ORDAX Dev, gere um código de pareamento e informe abaixo.</p>
+<input id="code" inputmode="numeric" maxlength="8" placeholder="Código de 8 dígitos">
+<button id="pair">Parear com ORDAX</button>
+<button id="disconnect">Desconectar</button>
+<div id="status">Verificando…</div>
+<script src="popup.js"></script>
+</body>
+</html>
