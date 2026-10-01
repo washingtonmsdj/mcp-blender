@@ -407,6 +407,19 @@ class BrowserCompanionServer:
                         return True
                     return origin.startswith("chrome-extension://") or origin.startswith("extension://")
 
+                def _html(self, status: int, html: str):
+                    body = html.encode("utf-8")
+                    self.send_response(status)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+                    self.end_headers()
+                    try:
+                        self.wfile.write(body)
+                    except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                        return
+
                 def _json(self, status: int, payload: dict[str, Any]):
                     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
                     self.send_response(status)
@@ -445,6 +458,15 @@ class BrowserCompanionServer:
 
                 def do_GET(self):
                     parsed = urlsplit(self.path)
+                    if parsed.path == "/bootstrap":
+                        self._html(
+                            200,
+                            """<!doctype html><html><head><meta charset="utf-8"><title>ORDAX Pairing</title>
+<style>body{font-family:system-ui;background:#111;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0}
+main{text-align:center}p{color:#aaa}</style></head>
+<body><main><h1>ORDAX Browser Companion</h1><p>Pairing with ORDAX Dev…</p></main></body></html>""",
+                        )
+                        return
                     if parsed.path == "/hello":
                         self._json(200, {
                             "ok": True,
