@@ -1,0 +1,493 @@
+"""Persistent Chromium CDP sessions for ORDAX Dev browser tools."""
+from __future__ import annotations
+
+import base64
+import json
+import os
+import shutil
+import socket
+import subprocess
+import time
+import urllib.parse
+import urllib.request
+import uuid
+from pathlib import Path
+from typing import Any
+
+from websockets.sync.client import connect
+
+from .browser_capture import BrowserCaptureError, _cdp_call, find_chromium
+from .models import ActionResult
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def _http_json(url: str, timeout: float = 2.0) -> Any:
+    with urllib.request.urlopen(url, timeout=timeout) as response:
+        return json.loads(response.read())
+
+
+class BrowserSessionActions:
+    def _browser_root(self, project) -> Path:
+        return (self.config.state_dir / "browser-sessions" / project.slug).resolve()
+
+    def _browser_state_path(self, project, session_id: str) -> Path:
+        try:
+            uuid.UUID(session_id)
+        except ValueError as error:
+            raise ValueError("session_id must be a UUID") from error
+        return self._browser_root(project) / f"{session_id}.json"
+
+    def _browser_profile_path(self, project, session_id: str) -> Path:
+        return self._browser_root(project) / f"{session_id}-profile"
+
+    @staticmethod
+    def _valid_url(raw: str, *, allow_blank: bool = False) -> str:
+        value = raw.strip()
+        if allow_blank and value == "about:blank":
+            return value
+        parsed = urllib.parse.urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("browser URL must use http or https")
+        return value
+
+    @staticmethod
+    def _pid_running(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        if os.name == "nt":
+            try:
+                result = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                    capture_output=True, text=True, timeout=4, shell=False,
+                )
+                return result.returncode == 0 and f'"{pid}"' in result.stdout
+            except (OSError, subprocess.TimeoutExpired):
+                return False
+        try:
+            raw = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+            parts = raw.split()
+            if len(parts) >= 3 and parts[2] == "Z":
+                return False
+        except OSError:
+            pass
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    @staticmethod
+    def _commandline(pid: int) -> str:
+        if pid <= 0:
+            return ""
+        if os.name == "nt":
+            script = (
+                "$ErrorActionPreference='SilentlyContinue';"
+                f"(Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\").CommandLine"
+            )
+            try:
+                result = subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-Command", script],
+                    capture_output=True, text=True, timeout=5, shell=False,
+                )
+                return (result.stdout or "").strip()
+            except (OSError, subprocess.TimeoutExpired):
+                return ""
+        try:
+            return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+        except OSError:
+            return ""
+
+    def _write_browser_state(self, project, state: dict[str, Any]) -> None:
+        path = self._browser_state_path(project, str(state["session_id"]))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp = path.with_suffix(".tmp")
+        temp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp.replace(path)
+
+    def _load_browser_state(self, project, session_id: str) -> dict[str, Any]:
+        path = self._browser_state_path(project, session_id)
+        if not path.is_file():
+            raise ValueError(f"browser session not found: {session_id}")
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ValueError(f"browser session state is invalid: {session_id}") from error
+        if not isinstance(state, dict) or state.get("session_id") != session_id or state.get("project") != project.slug:
+            raise ValueError("browser session identity mismatch")
+        return state
+
+    def _browser_owned(self, project, state: dict[str, Any]) -> bool:
+        pid = int(state.get("pid") or 0)
+        if not self._pid_running(pid):
+            return False
+        profile = str(self._browser_profile_path(project, str(state["session_id"])))
+        port = int(state.get("debug_port") or 0)
+        commandline = self._commandline(pid)
+        return bool(profile in commandline and f"--remote-debugging-port={port}" in commandline)
+
+    def _browser_target(self, state: dict[str, Any], *, timeout_seconds: float = 5.0) -> dict[str, Any]:
+        port = int(state.get("debug_port") or 0)
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            try:
+                items = _http_json(f"http://127.0.0.1:{port}/json/list")
+                pages = [
+                    item for item in items if isinstance(item, dict)
+                    and item.get("type") == "page"
+                    and item.get("webSocketDebuggerUrl")
+                ] if isinstance(items, list) else []
+                if pages:
+                    return pages[0]
+            except Exception:
+                pass
+            time.sleep(0.1)
+        raise BrowserCaptureError("Chromium CDP page target is unavailable")
+
+    def _with_page(self, project, session_id: str, fn):
+        state = self._load_browser_state(project, session_id)
+        if not self._browser_owned(project, state):
+            raise ValueError("browser session is not running or is not owned by ORDAX")
+        target = self._browser_target(state)
+        with connect(str(target["webSocketDebuggerUrl"]), open_timeout=3, close_timeout=1) as ws:
+            return fn(ws, state, target)
+
+    @staticmethod
+    def _eval(ws, request_id: int, expression: str, *, await_promise: bool = False) -> Any:
+        result = _cdp_call(ws, request_id, "Runtime.evaluate", {
+            "expression": expression,
+            "returnByValue": True,
+            "awaitPromise": await_promise,
+        })
+        remote = result.get("result") or {}
+        if remote.get("subtype") == "error":
+            raise BrowserCaptureError(str(remote.get("description") or "browser JavaScript failed"))
+        return remote.get("value")
+
+    def browser_start(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        browser = find_chromium()
+        if browser is None:
+            return ActionResult(False, "Chrome or Edge executable not found")
+
+        url = self._valid_url(str(payload.get("url") or "about:blank"), allow_blank=True)
+        session_id = str(uuid.uuid4())
+        port = _free_port()
+        profile = self._browser_profile_path(project, session_id)
+        profile.mkdir(parents=True, exist_ok=True)
+        command = [
+            str(browser),
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-background-networking",
+            "--disable-sync",
+            "--disable-extensions",
+            f"--user-data-dir={profile}",
+            f"--remote-debugging-port={port}",
+            url,
+        ]
+        if bool(payload.get("headless", False)):
+            command.insert(1, "--headless=new")
+
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        start_new_session = os.name != "nt"
+        try:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                shell=False,
+                creationflags=creationflags,
+                start_new_session=start_new_session,
+            )
+        except OSError as error:
+            return ActionResult(False, f"cannot start browser session: {error}")
+
+        state = {
+            "schema_version": 1,
+            "session_id": session_id,
+            "project": project.slug,
+            "pid": process.pid,
+            "debug_port": port,
+            "profile": str(profile),
+            "browser": str(browser),
+            "headless": bool(payload.get("headless", False)),
+            "started_at_unix": time.time(),
+        }
+        self._write_browser_state(project, state)
+        handles = getattr(self, "_browser_process_handles", None)
+        if handles is None:
+            handles = {}
+            self._browser_process_handles = handles
+        handles[session_id] = process
+
+        try:
+            target = self._browser_target(state, timeout_seconds=max(2.0, min(float(payload.get("wait_seconds", 8)), 20.0)))
+        except BrowserCaptureError as error:
+            return ActionResult(False, str(error), {**state, "running": self._pid_running(process.pid)})
+        return ActionResult(True, "browser session started", {
+            **state,
+            "running": True,
+            "ownership_valid": self._browser_owned(project, state),
+            "url": str(target.get("url") or url),
+            "title": str(target.get("title") or ""),
+        })
+
+    def browser_status(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        session_id = str(payload.get("session_id") or "")
+        state = self._load_browser_state(project, session_id)
+        running = self._browser_owned(project, state)
+        data = {**state, "running": running, "ownership_valid": running}
+        if running:
+            try:
+                target = self._browser_target(state)
+                data.update({"url": target.get("url"), "title": target.get("title")})
+            except BrowserCaptureError:
+                pass
+        return ActionResult(True, "browser session status ready", data)
+
+    def browser_list(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        root = self._browser_root(project)
+        sessions: list[dict[str, Any]] = []
+        if root.is_dir():
+            for path in sorted(root.glob("*.json")):
+                try:
+                    session_id = str(json.loads(path.read_text(encoding="utf-8")).get("session_id") or "")
+                    if session_id:
+                        sessions.append(self.browser_status({"project": project.slug, "session_id": session_id}).data)
+                except Exception:
+                    continue
+        return ActionResult(True, "browser sessions ready", {"project": project.slug, "sessions": sessions})
+
+    def browser_navigate(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        session_id = str(payload.get("session_id") or "")
+        url = self._valid_url(str(payload.get("url") or ""))
+
+        def run(ws, state, _target):
+            _cdp_call(ws, 1, "Page.enable")
+            _cdp_call(ws, 2, "Page.navigate", {"url": url})
+            deadline = time.monotonic() + max(2.0, min(float(payload.get("wait_seconds", 15)), 30.0))
+            request_id = 3
+            while time.monotonic() < deadline:
+                ready = self._eval(ws, request_id, "document.readyState")
+                request_id += 1
+                if ready in {"interactive", "complete"}:
+                    break
+                time.sleep(0.1)
+            return {
+                "session_id": session_id,
+                "url": self._eval(ws, request_id, "location.href"),
+                "title": self._eval(ws, request_id + 1, "document.title"),
+            }
+
+        try:
+            data = self._with_page(project, session_id, run)
+        except (ValueError, BrowserCaptureError) as error:
+            return ActionResult(False, f"browser navigation failed: {error}")
+        return ActionResult(True, "browser navigation complete", data)
+
+    def browser_snapshot(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        session_id = str(payload.get("session_id") or "")
+        max_elements = max(20, min(int(payload.get("max_elements", 200)), 500))
+
+        script = r"""
+(() => {
+  const clean = (v, n=500) => String(v || "").replace(/\s+/g, " ").trim().slice(0,n);
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none";
+  };
+  const selector = [
+    "a[href]","button","input","textarea","select","summary",
+    "[role=button]","[role=link]","[role=checkbox]","[role=radio]",
+    "[contenteditable=true]","[tabindex]"
+  ].join(",");
+  let next = 1;
+  const elements = [];
+  for (const el of document.querySelectorAll(selector)) {
+    if (!visible(el)) continue;
+    let id = el.getAttribute("data-ordax-node");
+    if (!id) {
+      id = "n" + (next++);
+      el.setAttribute("data-ordax-node", id);
+    }
+    const r = el.getBoundingClientRect();
+    elements.push({
+      id,
+      tag: el.tagName.toLowerCase(),
+      role: clean(el.getAttribute("role"), 80),
+      text: clean(el.innerText || el.getAttribute("aria-label") || el.getAttribute("title"), 300),
+      value: clean(el.value, 300),
+      type: clean(el.getAttribute("type"), 80),
+      href: clean(el.href, 500),
+      disabled: !!el.disabled,
+      x: Math.round(r.x), y: Math.round(r.y),
+      width: Math.round(r.width), height: Math.round(r.height)
+    });
+  }
+  return {
+    url: location.href,
+    title: document.title,
+    text: clean(document.body ? document.body.innerText : "", 16000),
+    elements
+  };
+})()
+"""
+        try:
+            data = self._with_page(
+                project,
+                session_id,
+                lambda ws, _state, _target: self._eval(ws, 1, script),
+            )
+        except (ValueError, BrowserCaptureError) as error:
+            return ActionResult(False, f"browser snapshot failed: {error}")
+        if not isinstance(data, dict):
+            return ActionResult(False, "browser snapshot returned invalid data")
+        elements = data.get("elements") if isinstance(data.get("elements"), list) else []
+        data["elements"] = elements[:max_elements]
+        data["elements_truncated"] = len(elements) > max_elements
+        data["session_id"] = session_id
+        return ActionResult(True, "browser snapshot ready", data)
+
+    def browser_click(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        session_id = str(payload.get("session_id") or "")
+        node_id = str(payload.get("node_id") or "").strip()
+        if not node_id or len(node_id) > 100:
+            return ActionResult(False, "node_id is required")
+        literal = json.dumps(node_id)
+        script = f"""
+(() => {{
+  const el = document.querySelector('[data-ordax-node=' + CSS.escape({literal}) + ']');
+  if (!el) return {{ok:false,error:"node not found; take a new snapshot"}};
+  el.scrollIntoView({{block:"center",inline:"center"}});
+  el.click();
+  return {{ok:true,url:location.href}};
+}})()
+"""
+        try:
+            data = self._with_page(project, session_id, lambda ws, _state, _target: self._eval(ws, 1, script))
+        except (ValueError, BrowserCaptureError) as error:
+            return ActionResult(False, f"browser click failed: {error}")
+        if not isinstance(data, dict) or not data.get("ok"):
+            return ActionResult(False, str((data or {}).get("error") or "browser node click failed"))
+        return ActionResult(True, "browser node clicked", {"session_id": session_id, **data})
+
+    def browser_type(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        session_id = str(payload.get("session_id") or "")
+        node_id = str(payload.get("node_id") or "").strip()
+        text = str(payload.get("text") or "")
+        if not node_id:
+            return ActionResult(False, "node_id is required")
+        if len(text) > 10000:
+            return ActionResult(False, "browser type text is too large")
+        node_literal = json.dumps(node_id)
+        text_literal = json.dumps(text)
+        clear = "true" if bool(payload.get("clear", True)) else "false"
+        script = f"""
+(() => {{
+  const el = document.querySelector('[data-ordax-node=' + CSS.escape({node_literal}) + ']');
+  if (!el) return {{ok:false,error:"node not found; take a new snapshot"}};
+  el.focus();
+  if ({clear} && ("value" in el)) el.value = "";
+  if ("value" in el) {{
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
+    if (setter) setter.call(el, ({clear} ? "" : el.value) + {text_literal});
+    else el.value = ({clear} ? "" : el.value) + {text_literal};
+    el.dispatchEvent(new Event("input", {{bubbles:true}}));
+    el.dispatchEvent(new Event("change", {{bubbles:true}}));
+  }} else if (el.isContentEditable) {{
+    if ({clear}) el.textContent = "";
+    el.textContent += {text_literal};
+    el.dispatchEvent(new InputEvent("input", {{bubbles:true,inputType:"insertText",data:{text_literal}}}));
+  }} else return {{ok:false,error:"node is not text-editable"}};
+  return {{ok:true,value:("value" in el)?el.value:el.textContent}};
+}})()
+"""
+        try:
+            data = self._with_page(project, session_id, lambda ws, _state, _target: self._eval(ws, 1, script))
+        except (ValueError, BrowserCaptureError) as error:
+            return ActionResult(False, f"browser type failed: {error}")
+        if not isinstance(data, dict) or not data.get("ok"):
+            return ActionResult(False, str((data or {}).get("error") or "browser type failed"))
+        return ActionResult(True, "browser text entered", {"session_id": session_id, **data})
+
+    def browser_screenshot(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        session_id = str(payload.get("session_id") or "")
+        width = max(320, min(int(payload.get("width", 1440)), 2560))
+        height = max(240, min(int(payload.get("height", 900)), 1600))
+        output = (self.config.state_dir / "artifacts" / project.slug / f"browser-{session_id}.png").resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+        def run(ws, _state, _target):
+            _cdp_call(ws, 1, "Emulation.setDeviceMetricsOverride", {
+                "width": width, "height": height, "deviceScaleFactor": 1, "mobile": False,
+            })
+            shot = _cdp_call(ws, 2, "Page.captureScreenshot", {
+                "format": "png", "captureBeyondViewport": False,
+            })
+            data = base64.b64decode(str(shot.get("data") or ""))
+            if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise BrowserCaptureError("Chromium returned an invalid PNG")
+            output.write_bytes(data)
+            return {
+                "session_id": session_id,
+                "artifact_name": output.name,
+                "width": width,
+                "height": height,
+                "size_bytes": len(data),
+            }
+
+        try:
+            data = self._with_page(project, session_id, run)
+        except (ValueError, BrowserCaptureError) as error:
+            return ActionResult(False, f"browser screenshot failed: {error}")
+        return ActionResult(True, "browser screenshot captured", data)
+
+    def browser_stop(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        session_id = str(payload.get("session_id") or "")
+        state = self._load_browser_state(project, session_id)
+        pid = int(state.get("pid") or 0)
+        if not self._pid_running(pid):
+            return ActionResult(True, "browser session is already stopped", {**state, "running": False})
+        if not self._browser_owned(project, state):
+            return ActionResult(False, "refusing to stop a browser process not owned by ORDAX", state)
+
+        try:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=15, shell=False,
+                )
+            else:
+                os.kill(pid, 15)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return ActionResult(False, f"browser stop failed: {error}", state)
+
+        deadline = time.monotonic() + 5.0
+        while self._pid_running(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        handle = getattr(self, "_browser_process_handles", {}).pop(session_id, None)
+        if handle is not None:
+            try:
+                handle.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        state.update({"stopped_at_unix": time.time(), "running": False})
+        self._write_browser_state(project, state)
+        return ActionResult(not self._pid_running(pid), "browser session stopped", state)
