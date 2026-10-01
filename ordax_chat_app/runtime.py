@@ -13,6 +13,7 @@ from .agent_engine import AgentChatEngine, AgentChatResult
 from .auth import OpenAISignInClient
 from .conversations import ConversationStore
 from .providers import ModelProvider, OpenAIChatGPTPlanProvider
+from .project_context import ProjectContextLoader
 from .toolset import DevelopmentToolset
 
 
@@ -48,6 +49,7 @@ class OrdaxChatRuntime:
         self.conversations = conversations or ConversationStore(memory.db_path)
         self.sign_in = sign_in or OpenAISignInClient()
         self.provider_factory = provider_factory
+        self.project_context = ProjectContextLoader()
 
     def account_status(self) -> dict[str, Any]:
         selected = self.sign_in.account_store.selected()
@@ -235,9 +237,13 @@ class OrdaxChatRuntime:
         return successor["id"]
 
     def _instructions(self, project_slug: str) -> str:
-        return (
+        project = self.agent._project({"project": project_slug})
+        context = self.project_context.load(project.root)
+        base = (
             "You are the development agent inside ORDAX Dev. Work directly on the selected project using the supplied tools. "
             "Inspect before editing, preserve existing architecture, fix root causes, run relevant tests/builds, and verify your changes. "
             "Never pretend a tool ran. The project scope is enforced by ORDAX and must not be bypassed. "
             f"Selected project: {project_slug}."
         )
+        extra = context.instructions_block()
+        return base if not extra else base + "\n\n" + extra
