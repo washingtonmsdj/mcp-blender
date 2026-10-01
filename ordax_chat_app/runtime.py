@@ -12,7 +12,7 @@ from ordax_dev_agent.config import AgentConfig
 from .agent_engine import AgentChatEngine, AgentChatResult
 from .auth import OpenAISignInClient
 from .conversations import ConversationStore
-from .providers import OpenAIChatGPTPlanProvider
+from .providers import ModelProvider, OpenAIChatGPTPlanProvider
 from .toolset import DevelopmentToolset
 
 
@@ -40,12 +40,14 @@ class OrdaxChatRuntime:
         agent: ActionRegistry | None = None,
         sign_in: OpenAISignInClient | None = None,
         conversations: ConversationStore | None = None,
+        provider_factory: Callable[[], ModelProvider] | None = None,
     ):
         self.agent = agent or ActionRegistry(AgentConfig.from_env())
         memory = self.agent._memory_store_instance()
         self.orchestrator = OrchestratorStore(memory.db_path)
         self.conversations = conversations or ConversationStore(memory.db_path)
         self.sign_in = sign_in or OpenAISignInClient()
+        self.provider_factory = provider_factory
 
     def account_status(self) -> dict[str, Any]:
         selected = self.sign_in.account_store.selected()
@@ -80,7 +82,9 @@ class OrdaxChatRuntime:
     def projects(self) -> list[dict[str, Any]]:
         return [project.public() for project in self.agent.projects.values() if project.root.is_dir()]
 
-    def _provider(self) -> OpenAIChatGPTPlanProvider:
+    def _provider(self) -> ModelProvider:
+        if self.provider_factory is not None:
+            return self.provider_factory()
         return OpenAIChatGPTPlanProvider(lambda: self.sign_in.access_token())
 
     def _coordinator(self, project_slug: str) -> dict[str, Any]:
@@ -185,7 +189,7 @@ class OrdaxChatRuntime:
         *,
         thread_id: str,
         thread: dict[str, Any],
-        provider: OpenAIChatGPTPlanProvider,
+        provider: ModelProvider,
         items: list[dict[str, Any]],
     ) -> str:
         compact_input = [dict(item) for item in items]
