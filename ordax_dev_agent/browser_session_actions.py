@@ -189,23 +189,66 @@ class BrowserSessionActions:
         commandline = self._commandline(pid)
         return bool(profile in commandline and f"--remote-debugging-port={port}" in commandline)
 
-    def _browser_target(self, state: dict[str, Any], *, timeout_seconds: float = 5.0) -> dict[str, Any]:
+    @staticmethod
+    def _create_browser_target(state: dict[str, Any], url: str) -> dict[str, Any] | None:
+        port = int(state.get("debug_port") or 0)
+        encoded = urllib.parse.quote(url, safe=":/?&=#%")
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/json/new?{encoded}",
+            method="PUT",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=2.0) as response:
+                payload = json.loads(response.read())
+        except Exception:
+            return None
+        if (
+            isinstance(payload, dict)
+            and payload.get("type") == "page"
+            and payload.get("webSocketDebuggerUrl")
+        ):
+            return payload
+        return None
+
+    def _browser_target(
+        self,
+        state: dict[str, Any],
+        *,
+        timeout_seconds: float = 5.0,
+        create_url: str | None = None,
+    ) -> dict[str, Any]:
         port = int(state.get("debug_port") or 0)
         deadline = time.monotonic() + timeout_seconds
+        cdp_ready = False
+        target_create_attempted = False
         while time.monotonic() < deadline:
             try:
-                items = _http_json(f"http://127.0.0.1:{port}/json/list")
-                pages = [
-                    item for item in items if isinstance(item, dict)
-                    and item.get("type") == "page"
-                    and item.get("webSocketDebuggerUrl")
-                ] if isinstance(items, list) else []
-                if pages:
-                    return pages[0]
+                version = _http_json(f"http://127.0.0.1:{port}/json/version")
+                cdp_ready = isinstance(version, dict) and bool(version.get("webSocketDebuggerUrl"))
             except Exception:
-                pass
+                cdp_ready = False
+
+            if cdp_ready:
+                try:
+                    items = _http_json(f"http://127.0.0.1:{port}/json/list")
+                    pages = [
+                        item for item in items if isinstance(item, dict)
+                        and item.get("type") == "page"
+                        and item.get("webSocketDebuggerUrl")
+                    ] if isinstance(items, list) else []
+                    if pages:
+                        return pages[0]
+                except Exception:
+                    pass
+
+                if create_url and not target_create_attempted:
+                    target_create_attempted = True
+                    created = self._create_browser_target(state, create_url)
+                    if created is not None:
+                        return created
             time.sleep(0.1)
-        raise BrowserCaptureError("Chromium CDP page target is unavailable")
+        detail = "CDP ready but no page target" if cdp_ready else "CDP endpoint unavailable"
+        raise BrowserCaptureError(f"Chromium CDP page target is unavailable ({detail})")
 
     def _with_page(self, project, session_id: str, fn):
         state = self._refresh_browser_pid(project, self._load_browser_state(project, session_id))
@@ -286,7 +329,11 @@ class BrowserSessionActions:
         handles[session_id] = process
 
         try:
-            target = self._browser_target(state, timeout_seconds=max(2.0, min(float(payload.get("wait_seconds", 8)), 20.0)))
+            target = self._browser_target(
+                state,
+                timeout_seconds=max(2.0, min(float(payload.get("wait_seconds", 8)), 20.0)),
+                create_url=url,
+            )
         except BrowserCaptureError as error:
             return ActionResult(False, str(error), {**state, "running": self._pid_running(process.pid)})
         state = self._refresh_browser_pid(project, state)
