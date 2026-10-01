@@ -255,7 +255,12 @@ def _redact_local_result_paths(value: Any) -> Any:
         return [_redact_local_result_paths(item) for item in value]
     return value
 
-def _sanitize_product_result(action: str, result: ActionResult) -> ActionResult:
+def _sanitize_product_result(
+    action: str,
+    result: ActionResult,
+    *,
+    allowed_projects: frozenset[str] | None = None,
+) -> ActionResult:
     data = dict(result.data) if isinstance(result.data, dict) else {}
 
     def public_project(item: dict[str, Any]) -> dict[str, Any]:
@@ -268,13 +273,34 @@ def _sanitize_product_result(action: str, result: ActionResult) -> ActionResult:
     if action == "projects.list":
         projects = data.get("projects")
         if isinstance(projects, list):
-            data["projects"] = [public_project(item) for item in projects if isinstance(item, dict)]
+            data["projects"] = [
+                public_project(item)
+                for item in projects
+                if isinstance(item, dict)
+                and (
+                    allowed_projects is None
+                    or item.get("slug") in allowed_projects
+                )
+            ]
+        default_project = data.get("default_project")
+        if (
+            isinstance(default_project, str)
+            and allowed_projects is not None
+            and default_project not in allowed_projects
+        ):
+            data.pop("default_project", None)
     elif action == "workspace.repository_catalog":
         projects = data.get("projects")
         if isinstance(projects, list):
             safe_projects: list[dict[str, Any]] = []
             for item in projects:
-                if not isinstance(item, dict):
+                if (
+                    not isinstance(item, dict)
+                    or (
+                        allowed_projects is not None
+                        and item.get("slug") not in allowed_projects
+                    )
+                ):
                     continue
                 safe = public_project(item)
                 repository = item.get("repository")
@@ -289,6 +315,13 @@ def _sanitize_product_result(action: str, result: ActionResult) -> ActionResult:
                     }
                 safe_projects.append(safe)
             data["projects"] = safe_projects
+        active_project = data.get("active_project")
+        if (
+            isinstance(active_project, str)
+            and allowed_projects is not None
+            and active_project not in allowed_projects
+        ):
+            data.pop("active_project", None)
     elif action == "project.inventory":
         data.pop("project_root", None)
     elif action == "agent.project_health":
@@ -608,6 +641,7 @@ class ProductActionGateway:
         result = _sanitize_product_result(
             action,
             self.executor.execute(spec.local_action, body),
+            allowed_projects=grant.projects,
         )
 
         try:

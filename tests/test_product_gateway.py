@@ -428,36 +428,57 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertEqual(before.grant_id, "grant-1")
         self.assertEqual(before.subject_id, "user:123")
 
-    def test_global_project_catalog_redacts_workstation_paths_and_private_adapter_config(self) -> None:
+    def test_global_project_catalog_redacts_and_filters_to_grant_projects(self) -> None:
         result = self.gateway.execute(
+            "projects.list",
+            {},
+            context=self.context,
+            grant=self.grant("projects.list", projects=("scene",)),
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual([item["slug"] for item in result.data["projects"]], ["scene"])
+        project = result.data["projects"][0]
+        self.assertNotIn("path", project)
+        self.assertNotIn("unity", project)
+        self.assertNotIn("blender", project)
+
+        empty = self.gateway.execute(
             "projects.list",
             {},
             context=self.context,
             grant=self.grant("projects.list", projects=()),
         )
+        self.assertTrue(empty.ok)
+        self.assertEqual(empty.data["projects"], [])
+        self.assertNotIn("default_project", empty.data)
 
-        self.assertTrue(result.ok)
-        project = result.data["projects"][0]
-        self.assertEqual(project["slug"], "scene")
-        self.assertNotIn("path", project)
-        self.assertNotIn("unity", project)
-        self.assertNotIn("blender", project)
-
-    def test_repository_catalog_redacts_local_roots_but_keeps_studio_identity(self) -> None:
+    def test_repository_catalog_redacts_and_filters_to_grant_projects(self) -> None:
         result = self.gateway.execute(
             "workspace.repository_catalog",
             {},
             context=self.context,
-            grant=self.grant("workspace.repository_catalog", projects=()),
+            grant=self.grant("workspace.repository_catalog", projects=("scene",)),
         )
 
         self.assertTrue(result.ok)
+        self.assertEqual([item["slug"] for item in result.data["projects"]], ["scene"])
         project = result.data["projects"][0]
         self.assertEqual(project["preview_mode"], "blender")
         self.assertNotIn("path", project)
         self.assertNotIn("root", project["repository"])
         self.assertNotIn("path", project["repository"])
         self.assertEqual(project["repository"]["branch"], "main")
+
+        empty = self.gateway.execute(
+            "workspace.repository_catalog",
+            {},
+            context=self.context,
+            grant=self.grant("workspace.repository_catalog", projects=()),
+        )
+        self.assertTrue(empty.ok)
+        self.assertEqual(empty.data["projects"], [])
+        self.assertNotIn("active_project", empty.data)
 
     def test_project_health_and_preview_redact_local_runtime_details(self) -> None:
         health = self.gateway.execute(
