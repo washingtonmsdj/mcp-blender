@@ -1,4 +1,4 @@
-const state={project:null,thread:null,models:[],connected:false,busy:false};
+const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[]};
 
 function api(){return window.pywebview.api}
 function el(id){return document.getElementById(id)}
@@ -76,16 +76,75 @@ async function refreshActivity(){
   try{
     const status=unwrap(await api().orchestrator_status(state.project));
     const panel=el("agentPanel");panel.innerHTML="";
-    for(const agent of status.agents||[]){
+    state.agents=status.agents||[];
+    const agentSelect=el("agentSelect");agentSelect.innerHTML="";
+    for(const agent of state.agents){
       const card=document.createElement("div");card.className="agent-card";
       card.innerHTML="<strong>"+escapeHtml(agent.name)+"</strong><span>"+escapeHtml(agent.role)+" · "+escapeHtml(agent.state)+"</span>";
       panel.appendChild(card);
+      const option=document.createElement("option");option.value=agent.id;option.textContent=agent.name+" · "+agent.role;agentSelect.appendChild(option);
     }
     if(!(status.agents||[]).length)panel.innerHTML='<span class="muted">Nenhum agente iniciado.</span>';
     panel.insertAdjacentHTML("beforeend",
       '<div class="metric"><span>Mensagens</span><b>'+Number(status.unread_messages||0)+'</b></div>'+
       '<div class="metric"><span>Fila</span><b>'+Number((status.work_counts||{}).queued||0)+'</b></div>');
   }catch(err){el("agentPanel").innerHTML='<span class="error">'+escapeHtml(err.message)+'</span>'}
+}
+
+async function refreshAutonomy(){
+  try{
+    const status=unwrap(await api().autonomy_status());
+    state.autonomy=!!status.running;
+    el("autonomyToggle").textContent=state.autonomy?"Parar 24/7":"Iniciar 24/7";
+    const details=[];
+    if(status.model)details.push(status.model);
+    if(status.completed_runs)details.push(status.completed_runs+" execução(ões)");
+    if(status.last_error)details.push("erro: "+status.last_error);
+    el("autonomyState").textContent=(state.autonomy?"Supervisor ativo":"Supervisor parado")+(details.length?" · "+details.join(" · "):".");
+    el("autonomyState").className=status.last_error?"error":"muted";
+  }catch(err){
+    el("autonomyState").textContent=err.message;el("autonomyState").className="error";
+  }
+}
+
+async function createAgent(){
+  if(!state.project)return;
+  const name=window.prompt("Nome do agente","Worker");
+  if(!name)return;
+  const role=window.prompt("Função do agente","implementation worker");
+  if(!role)return;
+  try{
+    unwrap(await api().orchestrator_agent_create(state.project,name,role,null));
+    await refreshActivity();
+    await refreshAutonomy();
+  }catch(err){setStatus(err.message,"error")}
+}
+
+async function queueWork(){
+  if(!state.project)return;
+  const agentId=el("agentSelect").value;
+  const title=el("workTitle").value.trim();
+  const instruction=el("workInstruction").value.trim();
+  if(!agentId){setStatus("Crie ou selecione um agente.","error");return}
+  if(!title||!instruction){setStatus("Informe título e instrução da tarefa.","error");return}
+  try{
+    unwrap(await api().orchestrator_work_enqueue(state.project,agentId,title,instruction,50));
+    el("workTitle").value="";el("workInstruction").value="";
+    await refreshActivity();
+    setStatus("Tarefa adicionada à fila.","success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
+async function toggleAutonomy(){
+  const model=el("modelSelect").value;
+  if(!state.connected){setStatus("Conecte o ChatGPT primeiro.","error");return}
+  if(!model){setStatus("Selecione um modelo.","error");return}
+  try{
+    if(state.autonomy)unwrap(await api().autonomy_stop());
+    else unwrap(await api().autonomy_start(model));
+    await refreshAutonomy();
+    await refreshActivity();
+  }catch(err){setStatus(err.message,"error")}
 }
 
 async function openThread(id){
@@ -168,6 +227,9 @@ el("connectButton").onclick=connect;
 el("newThreadButton").onclick=createThread;
 el("sendButton").onclick=send;
 el("refreshActivity").onclick=refreshActivity;
-el("projectSelect").onchange=async e=>{state.project=e.target.value;state.thread=null;el("threadTitle").textContent="Nova conversa";renderMessages([]);await refreshThreads();await refreshActivity()};
+el("newAgentButton").onclick=createAgent;
+el("queueWorkButton").onclick=queueWork;
+el("autonomyToggle").onclick=toggleAutonomy;
+el("projectSelect").onchange=async e=>{state.project=e.target.value;state.thread=null;el("threadTitle").textContent="Nova conversa";renderMessages([]);await refreshThreads();await refreshActivity();await refreshAutonomy()};
 el("composerInput").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}};
 window.addEventListener("pywebviewready",bootstrap);
