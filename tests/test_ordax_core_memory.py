@@ -80,6 +80,51 @@ class OrdaxCoreMemoryTests(unittest.TestCase):
             self.assertTrue(reopened.finish_session(second["session_id"]))
             self.assertEqual(reopened.status()["counts"]["sessions"], 2)
 
+    def test_expiring_handoff_round_trip_is_project_scoped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first_project = root / "first"
+            second_project = root / "second"
+            first_project.mkdir()
+            second_project.mkdir()
+            store = MemoryStore(root / "state.db")
+
+            handoff = store.create_handoff(
+                "first",
+                first_project,
+                "Backend refactor is complete",
+                next_action="Run regression tests",
+                completed=["refactor complete"],
+                blockers=["none"],
+                changed_paths=["src/backend.py"],
+                ttl_hours=24,
+            )
+            self.assertTrue(handoff["handoff_id"].startswith("hof_"))
+            loaded = store.get_handoff("first", first_project, handoff["handoff_id"])
+            self.assertEqual(loaded["summary"], "Backend refactor is complete")
+            self.assertEqual(loaded["next_action"], "Run regression tests")
+            self.assertEqual(loaded["completed"], ["refactor complete"])
+            self.assertEqual(loaded["changed_paths"], ["src/backend.py"])
+            self.assertIn("git", loaded)
+
+            with self.assertRaisesRegex(ValueError, "not found for project"):
+                store.get_handoff("second", second_project, handoff["handoff_id"])
+
+            self.assertEqual(store.status()["counts"]["handoffs"], 1)
+
+    def test_handoff_rejects_invalid_id_and_bounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            store = MemoryStore(root / "state.db")
+            with self.assertRaisesRegex(ValueError, "summary"):
+                store.create_handoff("demo", project, "")
+            with self.assertRaisesRegex(ValueError, "ttl_hours"):
+                store.create_handoff("demo", project, "summary", ttl_hours=0)
+            with self.assertRaisesRegex(ValueError, "invalid handoff id"):
+                store.get_handoff("demo", project, "bad")
+
     def test_start_session_closes_previous_project_session(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
