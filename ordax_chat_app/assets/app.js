@@ -1,4 +1,4 @@
-const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null,webBridge:null,webBridgeStartup:null,browserCompanion:null,browserConversation:null,browserMessageFingerprint:""};
+const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null,webBridge:null,webBridgeStartup:null,browserCompanion:null,browserConversation:null,browserMessageFingerprint:"",managedBrowser:null};
 
 function api(){return window.pywebview.api}
 function el(id){return document.getElementById(id)}
@@ -203,6 +203,36 @@ async function openNormalChat(){
     state.normalChat=data;
     el("normalMcpEndpoint").textContent=data.mcp_endpoint||"";
     setStatus(data.opened?"ChatGPT normal aberto. Use o ORDAX pelo plugin/MCP.":"Abra o ChatGPT e use o plugin ORDAX.","success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
+function renderManagedChatBrowser(status){
+  state.managedBrowser=status||{};
+  const running=!!state.managedBrowser.running;
+  el("managedChatBrowserStartButton").classList.toggle("hidden",running);
+  el("managedChatBrowserStopButton").classList.toggle("hidden",!running);
+  const parts=[];
+  if(running)parts.push("ativo");
+  if(state.managedBrowser.pid)parts.push("PID "+state.managedBrowser.pid);
+  if(state.managedBrowser.browser)parts.push(state.managedBrowser.browser.split(/[\\/]/).pop());
+  if(state.managedBrowser.profile_dir)parts.push("perfil persistente");
+  el("managedChatBrowserState").textContent=parts.length?parts.join(" · "):"Navegador dedicado parado.";
+  el("managedChatBrowserState").className=running?"success":"muted";
+}
+
+async function startManagedChatBrowser(){
+  try{
+    const data=unwrap(await api().managed_chat_browser_start());
+    renderManagedChatBrowser(data);
+    setStatus("ChatGPT dedicado aberto com o Browser Companion carregado.","success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
+async function stopManagedChatBrowser(){
+  try{
+    const data=unwrap(await api().managed_chat_browser_stop());
+    renderManagedChatBrowser(data);
+    setStatus("Navegador dedicado fechado.","success");
   }catch(err){setStatus(err.message,"error")}
 }
 
@@ -634,11 +664,13 @@ async function bootstrap(){
     state.normalChat=data.chat_modes?.normal||null;
     state.webBridge=state.normalChat?.web_bridge||null;
     state.browserCompanion=state.normalChat?.browser_companion||null;
+    state.managedBrowser=state.normalChat?.managed_browser||null;
     state.mode=data.chat_modes?.default||"normal";
     if(data.model_error&&state.mode==="agent")setStatus(data.model_error,"error");
     renderMode();
     renderWebBridge(state.webBridge||{});
     renderBrowserCompanion(state.browserCompanion||{});
+    renderManagedChatBrowser(state.managedBrowser||{});
     await refreshBrowserCompanion();
     await refreshWebBridgeStartup();
     await refreshOrdaxAccount();
@@ -659,6 +691,8 @@ el("webBridgeStopButton").onclick=stopWebBridge;
 el("webBridgeTunnelsButton").onclick=openWebBridgeTunnels;
 el("webBridgeApiKeysButton").onclick=openWebBridgeApiKeys;
 el("browserCompanionPairButton").onclick=pairBrowserCompanion;
+el("managedChatBrowserStartButton").onclick=startManagedChatBrowser;
+el("managedChatBrowserStopButton").onclick=stopManagedChatBrowser;
 el("browserCompanionExtensionsButton").onclick=openBrowserCompanionExtensions;
 el("browserCompanionFolderButton").onclick=openBrowserCompanionFolder;
 el("webBridgeStartupButton").onclick=installWebBridgeStartup;
