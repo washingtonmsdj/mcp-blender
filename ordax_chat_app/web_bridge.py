@@ -546,6 +546,19 @@ class WebBridgeManager:
         return payload if isinstance(payload, dict) else {"value": payload}
 
     @classmethod
+    def startup_status(cls) -> dict[str, Any]:
+        if os.name != "nt":
+            return {
+                "supported": False,
+                "installed": False,
+                "state": "Unsupported",
+                "task_name": "ORDAX Dev Web Bridge",
+            }
+        payload = cls._run_startup_script("-Status")
+        payload["supported"] = True
+        return payload
+
+    @classmethod
     def install_startup(cls, *, start_now: bool = True) -> dict[str, Any]:
         arguments = ["-StartNow"] if start_now else []
         return cls._run_startup_script(*arguments)
