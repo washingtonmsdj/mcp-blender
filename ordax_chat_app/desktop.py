@@ -141,6 +141,15 @@ class DesktopApi:
             return result.data
         return self._guard(load)
 
+    def web_bridge_startup_status(self) -> dict[str, Any]:
+        return self._guard(self.web_bridge.startup_status)
+
+    def web_bridge_install_startup(self) -> dict[str, Any]:
+        return self._guard(lambda: self.web_bridge.install_startup(start_now=True))
+
+    def web_bridge_uninstall_startup(self) -> dict[str, Any]:
+        return self._guard(self.web_bridge.uninstall_startup)
+
     def web_bridge_status(self) -> dict[str, Any]:
         return self._guard(self.web_bridge.status)
 
