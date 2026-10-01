@@ -5,8 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mcp-blender-unity"
 # ORDAX Studio 0.3.4 packages fail-closed recovery for an already-enrolled Windows device.
-version = "0.3.4"
-description = "ORDAX Studio runtime and MCP for typed projects, Git, preview, Blender, Unity and extensible adapters"
+version = "0.4.0"
+description = "ORDAX Dev host and MCP runtime for projects, Git, preview, Blender, Unity and extensible adapters"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,7 +15,6 @@ dependencies = [
   "websockets>=14.0,<16.0",
   "Pillow>=10.0.0,<12.0.0",
   "pywebview>=5.0,<7.0",
-  "PyJWT[crypto]>=2.9.0,<3.0.0"
 ]
 
 [project.scripts]
@@ -35,15 +34,11 @@ ordax-device-pair = "ordax_dev_agent.product_pair_cli:main"
 ordax-studio = "ordax_studio.cli:main"
 ordax-studio-desktop = "ordax_studio.desktop:main"
 ordax-studio-web = "ordax_studio.web_desktop:main"
-ordax-dev = "ordax_chat_app.desktop:main"
-ordax-dev-autonomy = "ordax_chat_app.autonomy_daemon:main"
-ordax-web-bridge-mcp = "ordax_chat_app.tunnel_mcp_server:main"
-ordax-dev-web-bridge = "ordax_chat_app.web_bridge_daemon:main"
+ordax-dev = "ordax_studio.product_web_desktop:main"
 
 [tool.setuptools.packages.find]
-include = ["mcp_blender_unity*", "ordax_core*", "ordax_studio*", "ordax_dev_agent*", "ordax_device_agent*", "ordax_chat_app*"]
+include = ["mcp_blender_unity*", "ordax_core*", "ordax_studio*", "ordax_dev_agent*", "ordax_device_agent*"]
 
 [tool.setuptools.package-data]
 ordax_dev_agent = ["assets/*.py", "assets/*.cs", "assets/*.json"]
 ordax_studio = ["*.html", "assets/*.js", "assets/*.css"]
-ordax_chat_app = ["*.html", "assets/*.js", "assets/*.css"]
