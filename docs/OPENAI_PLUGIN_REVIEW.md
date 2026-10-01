@@ -26,7 +26,10 @@ Before recording or submitting:
 - `main` Bridge CI is green.
 - Cloudflare production deploy is green.
 - `/.well-known/oauth-protected-resource` advertises `openid` and `email`.
-- OIDC discovery exposes HTTPS `userinfo_endpoint`, `email`, `email_verified` and PKCE `S256`.
+- Supabase OAuth 2.1 Server is enabled for the ORDAX project.
+- OAuth discovery is available at `https://<project-ref>.supabase.co/.well-known/oauth-authorization-server/auth/v1`.
+- discovery advertises HTTPS authorization/token/registration endpoints, PKCE `S256`, and a token endpoint authentication method.
+- dynamic client registration is enabled so ChatGPT can register the MCP OAuth client automatically.
 - unauthenticated `/mcp` returns 401 with protected-resource metadata challenge.
 - ORDAX Runtime is online on the review computer.
 - only the isolated `ordax-review-demo` project is granted to the review account.
@@ -153,7 +156,19 @@ When OpenAI supplies the challenge:
 4. complete domain verification in the OpenAI UI;
 5. do not commit the challenge value to Git.
 
+## OAuth readiness check
+
+Run this before recording or submitting:
+
+```bash
+python scripts/cloudflare/verify_product_oauth_server.py \
+  https://eobcxuyvhkvdmkbaihwh.supabase.co/auth/v1
+```
+
+A 404 from the discovery endpoint means the Supabase OAuth 2.1 Server is not enabled yet. Enable it in **Authentication → OAuth Server** and enable dynamic client registration before continuing.
+
 ## Submission blockers
+
 
 Do not submit while any of these is true:
 
