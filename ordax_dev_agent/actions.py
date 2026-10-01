@@ -18,6 +18,7 @@ from .unity_actions import UnityActions
 from .agent_actions import AgentActions
 from .artifact_actions import ArtifactActions
 from .git_actions import GitActions
+from .developer_actions import DeveloperActions
 from .project_text_actions import ProjectTextActions
 from .workspace_actions import WorkspaceActions
 from .preview_actions import PreviewActions
@@ -68,6 +69,7 @@ class ActionRegistry(
     AgentActions,
     ArtifactActions,
     GitActions,
+    DeveloperActions,
     ProjectTextActions,
     WorkspaceActions,
     PreviewActions,
@@ -99,7 +101,7 @@ class ActionRegistry(
     AlephActions,
     AlephSceneActions,
 ):
-    """Strict allow-list. No arbitrary remote shell command is accepted."""
+    """Canonical typed action registry for local and remote ORDAX capabilities."""
 
     def __init__(self, config: AgentConfig):
         self.config = config
@@ -111,6 +113,16 @@ class ActionRegistry(
             "workspace.repository_catalog": self.workspace_repository_catalog,
             "workspace.list_projects": self.workspace_list_projects,
             "workspace.bind_project": self.workspace_bind_project,
+            "workspace.file_stat": self.workspace_file_stat,
+            "workspace.directory_list": self.workspace_directory_list,
+            "workspace.text_read": self.workspace_text_read,
+            "workspace.text_write": self.workspace_text_write,
+            "workspace.text_patch": self.workspace_text_patch,
+            "workspace.directory_create": self.workspace_directory_create,
+            "workspace.path_remove": self.workspace_path_remove,
+            "workspace.path_move": self.workspace_path_move,
+            "terminal.exec": self.terminal_exec,
+            "git.command": self.git_command,
             "memory.status": self.memory_status,
             "memory.context": self.memory_context,
             "memory.remember": self.memory_remember,
@@ -316,7 +328,7 @@ class ActionRegistry(
         self._adapter_contracts = builtin_adapter_contracts()
         available = {entry.name: entry for entry in entry_points(group="ordax_dev_agent.adapters")}
         for name in config.adapters:
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets", "geo", "visual", "memory"}:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "workspace", "terminal", "observation", "unity", "blender", "game_assets", "geo", "visual", "memory"}:
                 raise ValueError(f"invalid or reserved adapter name: {name}")
             if name not in available:
                 raise ValueError(f"configured adapter is not installed: {name}")
