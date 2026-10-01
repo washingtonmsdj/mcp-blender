@@ -158,6 +158,10 @@ class BrowserCompanionStore:
         digest = self._token_hash(token)
         with self.connect() as connection:
             connection.execute(
+                "DELETE FROM browser_clients WHERE browser_id=? AND token_hash<>?",
+                (str(browser_id or "")[:128], digest),
+            )
+            connection.execute(
                 """
                 INSERT INTO browser_clients(token_hash,browser_id,created_at,last_seen_at)
                 VALUES(?,?,?,?)
