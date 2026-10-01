@@ -425,7 +425,7 @@ def run_desktop(api_factory=DesktopApi) -> int:
     finally:
         api.autonomy.stop(timeout_seconds=3.0, disable_persisted=False)
         try:
-            api.browser_companion.stop()
+            api.browser_companion.close()
         except Exception:
             pass
         lock.release()
