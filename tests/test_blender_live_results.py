@@ -91,6 +91,27 @@ class BlenderLiveResultTests(unittest.TestCase):
             with patch("ordax_dev_agent.blender_live_bridge._process_is_running", return_value=False):
                 self.assertFalse(bridge.presence_is_fresh())
 
+    def test_presence_fresh_tolerates_small_future_mtime_but_not_large_skew(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            bridge = self.make_bridge(Path(raw))
+            bridge._ensure_dirs()
+            bridge.presence.write_text(json.dumps({"pid": os.getpid()}), encoding="utf-8")
+            now = bridge.presence.stat().st_mtime
+
+            os.utime(bridge.presence, (now + 1.0, now + 1.0))
+            with (
+                patch("ordax_dev_agent.blender_live_bridge.time.time", return_value=now),
+                patch("ordax_dev_agent.blender_live_bridge._process_is_running", return_value=True),
+            ):
+                self.assertTrue(bridge.presence_is_fresh())
+
+            os.utime(bridge.presence, (now + 3.0, now + 3.0))
+            with (
+                patch("ordax_dev_agent.blender_live_bridge.time.time", return_value=now),
+                patch("ordax_dev_agent.blender_live_bridge._process_is_running", return_value=True),
+            ):
+                self.assertFalse(bridge.presence_is_fresh())
+
     def test_status_retries_transient_presence_permission_error(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             bridge = self.make_bridge(Path(raw))
