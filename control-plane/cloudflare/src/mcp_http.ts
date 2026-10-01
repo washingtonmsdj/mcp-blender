@@ -210,6 +210,64 @@ async function bodyJson(response: Response): Promise<JsonObject> {
   }
 }
 
+function sanitizeTargets(payload: JsonObject): JsonObject {
+  const rawTargets = Array.isArray(payload.targets) ? payload.targets : [];
+  const targets = rawTargets.flatMap((raw) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+    const target = raw as JsonObject;
+    const rawGrants = Array.isArray(target.grants) ? target.grants : [];
+    const grants = rawGrants.flatMap((rawGrant) => {
+      if (!rawGrant || typeof rawGrant !== "object" || Array.isArray(rawGrant)) return [];
+      const grant = rawGrant as JsonObject;
+      return [{
+        space_id: typeof grant.space_id === "string" ? grant.space_id : null,
+        actions: Array.isArray(grant.actions) ? grant.actions.filter((item) => typeof item === "string") : [],
+        projects: Array.isArray(grant.projects) ? grant.projects.filter((item) => typeof item === "string") : [],
+      }];
+    });
+    return [{
+      device_id: typeof target.device_id === "string" ? target.device_id : "",
+      name: typeof target.name === "string" ? target.name : "ORDAX device",
+      grants,
+    }];
+  });
+  return { ok: payload.ok !== false, targets };
+}
+
+function sanitizeActionPayload(payload: JsonObject, requestId?: string): JsonObject {
+  if (payload.pending === true) {
+    return {
+      ok: payload.ok !== false,
+      pending: true,
+      request_id: requestId ?? (typeof payload.request_id === "string" ? payload.request_id : ""),
+      message: typeof payload.message === "string" ? payload.message : "Action is still running.",
+    };
+  }
+  const rawAction = payload.action;
+  if (rawAction && typeof rawAction === "object" && !Array.isArray(rawAction)) {
+    const action = rawAction as JsonObject;
+    return {
+      ok: payload.ok !== false,
+      pending: false,
+      action: {
+        name: typeof action.action === "string" ? action.action : "",
+        project: typeof action.project === "string" ? action.project : null,
+        status: typeof action.status === "string" ? action.status : "",
+        result: action.result ?? null,
+        error_code: typeof action.error_code === "string" ? action.error_code : null,
+      },
+    };
+  }
+  if (payload.ok === false) {
+    return {
+      ok: false,
+      pending: false,
+      error: typeof payload.error === "string" ? payload.error : "ordax_action_failed",
+    };
+  }
+  return { ok: payload.ok !== false, pending: false };
+}
+
 function textToolResult(payload: unknown, isError = false): JsonObject {
   const text = JSON.stringify(payload, null, 2);
   const structured = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : { value: payload };
@@ -266,9 +324,9 @@ async function waitForAction(source: Request, requestId: string, timeoutMs: numb
     const action = payload.action;
     if (action && typeof action === "object" && !Array.isArray(action)) {
       const state = String((action as JsonObject).status ?? "");
-      if (["succeeded", "failed", "cancelled"].includes(state)) return { ...payload, pending: false };
+      if (["succeeded", "failed", "cancelled"].includes(state)) return sanitizeActionPayload({ ...payload, pending: false }, requestId);
     }
-    if (Date.now() >= deadline) return { ok: true, pending: true, request_id: requestId, message: "Action is still running; call ordax_action_status with this request_id." };
+    if (Date.now() >= deadline) return sanitizeActionPayload({ ok: true, pending: true, request_id: requestId, message: "Action is still running; call ordax_action_status with this request_id." }, requestId);
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 }
@@ -276,20 +334,24 @@ async function waitForAction(source: Request, requestId: string, timeoutMs: numb
 async function callTool(source: Request, name: string, args: JsonObject, handlers: OrdaxMcpHandlers): Promise<JsonObject> {
   if (name === "ordax_session") {
     const response = await handlers.session(cloneWithAuth(source, new URL("/v3/product/session", source.url).toString(), "GET"));
-    const payload = await bodyJson(response);
-    return textToolResult(payload, !response.ok);
+    return textToolResult(
+      response.ok
+        ? { ok: true, authenticated: true }
+        : { ok: false, authenticated: false, error: "authentication_required" },
+      !response.ok,
+    );
   }
   if (name === "ordax_targets") {
     const response = await handlers.targets(cloneWithAuth(source, new URL("/v3/product/targets", source.url).toString(), "GET"));
     const payload = await bodyJson(response);
-    return textToolResult(payload, !response.ok);
+    return textToolResult(response.ok ? sanitizeTargets(payload) : { ok: false, error: "targets_unavailable" }, !response.ok);
   }
   if (name === "ordax_action_status") {
     const requestId = typeof args.request_id === "string" ? args.request_id : "";
     if (!requestId) return textToolResult({ ok: false, error: "request_id_required" }, true);
     const response = await handlers.getAction(cloneWithAuth(source, new URL(`/v3/product/actions/${requestId}`, source.url).toString(), "GET"), requestId);
     const payload = await bodyJson(response);
-    return textToolResult(payload, !response.ok);
+    return textToolResult(response.ok ? sanitizeActionPayload(payload, requestId) : { ok: false, error: "action_status_unavailable" }, !response.ok);
   }
 
   const spec = specFor(name);
