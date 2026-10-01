@@ -5,6 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 import os
 import subprocess
+import time
 import webbrowser
 from typing import Any, Callable
 
@@ -319,9 +320,21 @@ class DesktopApi:
                 str(pairing["code"]),
             )
             browser = self.managed_chat_browser.start(initial_url=bootstrap_url)
+            paired = False
+            paired_clients = int(companion.get("paired_clients") or 0)
+            deadline = time.monotonic() + 8.0
+            while time.monotonic() < deadline:
+                status = self.browser_companion.status()
+                paired_clients = int(status.get("paired_clients") or 0)
+                if paired_clients > 0:
+                    paired = True
+                    break
+                time.sleep(0.2)
             return {
                 **browser,
                 "auto_pair": True,
+                "paired": paired,
+                "paired_clients": paired_clients,
                 "pairing_expires_at": pairing["expires_at"],
             }
         return self._guard(start)
