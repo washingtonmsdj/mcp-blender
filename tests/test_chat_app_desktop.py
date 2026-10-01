@@ -251,6 +251,30 @@ class FakeBrowserCompanion:
         return row
 
 
+class FakeManagedBrowser:
+    def __init__(self):
+        self.running = False
+
+    def status(self):
+        return {
+            "running": self.running,
+            "pid": 321 if self.running else None,
+            "browser": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+            "profile_dir": "C:/ORDAX/profile",
+            "extension_dir": "C:/ORDAX/browser_extension",
+            "extension_available": True,
+            "chat_url": "https://chatgpt.com/",
+        }
+
+    def start(self):
+        self.running = True
+        return self.status()
+
+    def stop(self):
+        self.running = False
+        return self.status()
+
+
 class FakeRuntime:
     def __init__(self):
         self.handoffs = {}
@@ -319,11 +343,13 @@ class DesktopApiTests(unittest.TestCase):
         self.autonomy = FakeAutonomy()
         self.web_bridge = FakeWebBridge()
         self.browser_companion = FakeBrowserCompanion()
+        self.managed_browser = FakeManagedBrowser()
         self.api = DesktopApi(
             FakeRuntime(),
             autonomy=self.autonomy,
             web_bridge=self.web_bridge,
             browser_companion=self.browser_companion,
+            managed_chat_browser=self.managed_browser,
             auto_resume=False,
         )
 
@@ -402,6 +428,16 @@ class DesktopApiTests(unittest.TestCase):
         self.assertTrue(started["data"]["running"])
 
         stopped = self.api.web_bridge_stop()
+        self.assertTrue(stopped["ok"])
+        self.assertFalse(stopped["data"]["running"])
+
+    def test_managed_chat_browser_can_start_and_stop(self):
+        started = self.api.managed_chat_browser_start()
+        self.assertTrue(started["ok"])
+        self.assertTrue(started["data"]["running"])
+        self.assertEqual(started["data"]["pid"], 321)
+
+        stopped = self.api.managed_chat_browser_stop()
         self.assertTrue(stopped["ok"])
         self.assertFalse(stopped["data"]["running"])
 
