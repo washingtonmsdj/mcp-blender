@@ -153,6 +153,15 @@ class BrowserCompanionStore:
         with self.connect() as connection:
             return int(connection.execute("SELECT COUNT(*) FROM browser_clients").fetchone()[0])
 
+    def revoke_client(self, token: str) -> bool:
+        digest = self._token_hash(str(token or ""))
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM browser_clients WHERE token_hash=?",
+                (digest,),
+            )
+            return cursor.rowcount > 0
+
     def observe(
         self,
         *,
@@ -435,6 +444,12 @@ class BrowserCompanionServer:
                         return
                     if not self._authorized():
                         self._json(401, {"ok": False, "error": "unauthorized"})
+                        return
+                    if parsed.path == "/disconnect":
+                        header = str(self.headers.get("Authorization") or "")
+                        token = header[7:] if header.startswith("Bearer ") else ""
+                        outer.store.revoke_client(token)
+                        self._json(200, {"ok": True, "paired": False})
                         return
                     if parsed.path == "/events":
                         url = str(payload.get("url") or "")
