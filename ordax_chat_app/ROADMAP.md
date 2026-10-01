@@ -17,6 +17,9 @@
 - painel de agentes, fila e supervisor 24/7 no desktop;
 - ferramenta `agents` no chat para Prime criar workers, delegar e consultar equipe;
 - feedback loop persistente Prime → worker → resultado → Prime;
+- autonomia persistida entre reinícios;
+- daemon headless `ordax-dev-autonomy` com lock global anti-duplicação;
+- instalador Windows Scheduled Task para iniciar autonomia no logon;
 - contrato do provider independente para receber outros modelos no futuro.
 
 ## Gate 1 — coding runtime completo ✅
@@ -43,9 +46,16 @@ Entregue também:
 - Prime cria/delega para workers pelo próprio tool loop;
 - resultado de worker vira follow-up durável do Prime sem polling do modelo quando idle.
 
+Entregue também:
+- preferência 24/7 persistente;
+- auto-resume após restart quando conta/projeto continuam válidos;
+- daemon headless independente da janela;
+- lock cross-process para impedir desktop + daemon executarem a mesma fila;
+- Scheduled Task Windows para iniciar o daemon no logon.
+
 Ainda neste gate:
 - políticas de pausa/horário/custo e limites por projeto;
-- recovery service no startup do produto.
+- telemetria de disponibilidade/heartbeat do daemon na UI.
 
 ## Gate 3 — ChatGPT dentro do app ✅ foundation
 
