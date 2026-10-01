@@ -59,21 +59,25 @@ class BrowserCompanionStore:
             else resolve_chat_app_state_dir() / "browser-companion.db"
         )
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._db_lock = threading.RLock()
         self._init_schema()
 
     @contextmanager
     def connect(self):
-        connection = sqlite3.connect(self.path, timeout=10)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
-        try:
-            yield connection
-            connection.commit()
-        finally:
-            connection.close()
+        with self._db_lock:
+            connection = sqlite3.connect(self.path, timeout=10)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA busy_timeout=10000")
+            try:
+                yield connection
+                connection.commit()
+            finally:
+                connection.close()
 
     def _init_schema(self) -> None:
         with self.connect() as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=NORMAL")
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS browser_clients(
