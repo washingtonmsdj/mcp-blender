@@ -338,6 +338,9 @@ class BrowserCompanionServer:
                         })
                         return
                     if parsed.path == "/commands":
+                        if not self._trusted_extension_origin():
+                            self._json(403, {"ok": False, "error": "untrusted_origin"})
+                            return
                         if not self._authorized():
                             self._json(401, {"ok": False, "error": "unauthorized"})
                             return
