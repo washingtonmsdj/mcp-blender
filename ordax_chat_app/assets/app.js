@@ -191,6 +191,18 @@ function renderBrowserCompanion(status){
   el("browserCompanionState").textContent=parts.length?parts.join(" · "):"Extensão ainda não pareada.";
 }
 
+async function openBrowserCompanionExtensions(){
+  try{unwrap(await api().browser_companion_open_extensions_page())}
+  catch(err){setStatus(err.message,"error")}
+}
+
+async function openBrowserCompanionFolder(){
+  try{
+    const data=unwrap(await api().browser_companion_open_extension_folder());
+    setStatus("Pasta da extensão aberta: "+data.path,"success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
 async function pairBrowserCompanion(){
   try{
     const data=unwrap(await api().browser_companion_pair());
@@ -600,6 +612,8 @@ el("webBridgeStopButton").onclick=stopWebBridge;
 el("webBridgeTunnelsButton").onclick=openWebBridgeTunnels;
 el("webBridgeApiKeysButton").onclick=openWebBridgeApiKeys;
 el("browserCompanionPairButton").onclick=pairBrowserCompanion;
+el("browserCompanionExtensionsButton").onclick=openBrowserCompanionExtensions;
+el("browserCompanionFolderButton").onclick=openBrowserCompanionFolder;
 el("webBridgeStartupButton").onclick=installWebBridgeStartup;
 el("webBridgeStartupRemoveButton").onclick=uninstallWebBridgeStartup;
 el("handoffCreateButton").onclick=createHandoff;
