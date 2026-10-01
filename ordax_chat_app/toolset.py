@@ -228,6 +228,28 @@ DEVELOPMENT_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "browser",
+        "description": "Operate an ORDAX-owned Chromium session. Use snapshot before click/type so node IDs are current. Operations: start, list, status, navigate, snapshot, click, type, screenshot, stop.",
+        "parameters": _object({
+            "operation": {
+                "type": "string",
+                "enum": ["start", "list", "status", "navigate", "snapshot", "click", "type", "screenshot", "stop"],
+            },
+            "session_id": _nullable({"type": "string"}),
+            "url": _nullable({"type": "string"}),
+            "headless": _nullable({"type": "boolean"}),
+            "wait_seconds": _nullable({"type": "number", "minimum": 0.1, "maximum": 30.0}),
+            "node_id": _nullable({"type": "string"}),
+            "text": _nullable({"type": "string"}),
+            "clear": _nullable({"type": "boolean"}),
+            "max_elements": _nullable({"type": "integer", "minimum": 20, "maximum": 500}),
+            "width": _nullable({"type": "integer", "minimum": 320, "maximum": 2560}),
+            "height": _nullable({"type": "integer", "minimum": 240, "maximum": 1600}),
+        }),
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "preview_status",
         "description": "Inspect the selected project's managed preview/runtime state.",
         "parameters": _object({}),
@@ -268,15 +290,29 @@ class DevelopmentToolset:
         return [dict(item) for item in DEVELOPMENT_TOOLS]
 
     def execute(self, name: str, arguments_json: str) -> str:
-        action = _TOOL_ACTIONS.get(name)
-        if action is None:
-            return json.dumps({"ok": False, "summary": f"unknown ORDAX tool: {name}"})
         try:
             raw = json.loads(arguments_json or "{}")
         except json.JSONDecodeError as error:
             return json.dumps({"ok": False, "summary": f"invalid tool arguments: {error}"})
         if not isinstance(raw, dict):
             return json.dumps({"ok": False, "summary": "tool arguments must be an object"})
+
+        action = _TOOL_ACTIONS.get(name)
+        if name == "browser":
+            operation = str(raw.get("operation") or "")
+            action = {
+                "start": "browser.start",
+                "list": "browser.list",
+                "status": "browser.status",
+                "navigate": "browser.navigate",
+                "snapshot": "browser.snapshot",
+                "click": "browser.click",
+                "type": "browser.type",
+                "screenshot": "browser.screenshot",
+                "stop": "browser.stop",
+            }.get(operation)
+        if action is None:
+            return json.dumps({"ok": False, "summary": f"unknown ORDAX tool or operation: {name}"})
 
         definition = next((item for item in DEVELOPMENT_TOOLS if item["name"] == name), None)
         allowed = set((definition or {}).get("parameters", {}).get("properties", {}))
@@ -292,6 +328,30 @@ class DevelopmentToolset:
             )
 
         payload = {key: value for key, value in raw.items() if value is not None}
+        if name == "browser":
+            payload.pop("operation", None)
+            allowed_by_operation = {
+                "browser.start": {"url", "headless", "wait_seconds"},
+                "browser.list": set(),
+                "browser.status": {"session_id"},
+                "browser.navigate": {"session_id", "url", "wait_seconds"},
+                "browser.snapshot": {"session_id", "max_elements"},
+                "browser.click": {"session_id", "node_id"},
+                "browser.type": {"session_id", "node_id", "text", "clear"},
+                "browser.screenshot": {"session_id", "width", "height"},
+                "browser.stop": {"session_id"},
+            }
+            allowed_payload = allowed_by_operation[action]
+            unexpected = sorted(set(payload) - allowed_payload)
+            if unexpected:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "summary": "unsupported browser argument(s) for operation: " + ", ".join(unexpected),
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
         if name in {"terminal", "process_start"} and isinstance(payload.get("env"), list):
             env: dict[str, str] = {}
             for item in payload["env"]:
