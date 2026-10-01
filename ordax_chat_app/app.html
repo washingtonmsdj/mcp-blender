@@ -71,6 +71,17 @@
           <div id="webBridgeState" class="muted">Web Bridge não configurado.</div>
           <div id="webBridgeStartupState" class="muted">Startup não verificado.</div>
         </div>
+
+        <div class="bridge-card">
+          <div class="bridge-head">
+            <strong>Browser Companion</strong>
+            <span id="browserCompanionBadge" class="bridge-badge">aguardando</span>
+          </div>
+          <small>Espelha uma conversa real do ChatGPT Web dentro do ORDAX Dev e envia mensagens pela própria página.</small>
+          <button id="browserCompanionPairButton" class="secondary-button">Gerar código de pareamento</button>
+          <div id="browserCompanionPairCode" class="pair-code hidden"></div>
+          <div id="browserCompanionState" class="muted">Extensão ainda não pareada.</div>
+        </div>
       </div>
 
       <div id="agentModePanel" class="agent-only hidden">
@@ -108,7 +119,7 @@
         </div>
       </section>
 
-      <footer class="composer agent-only hidden">
+      <footer class="composer">
         <textarea id="composerInput" rows="3" placeholder="Peça para analisar, implementar, testar ou continuar o projeto..."></textarea>
         <div class="composer-row">
           <span id="composerHint">Enter envia · Shift+Enter quebra linha</span>
