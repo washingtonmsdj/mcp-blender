@@ -106,6 +106,41 @@ class DesktopApi:
             }
         return self._guard(open_chat)
 
+    def handoff_create(
+        self,
+        project: str,
+        summary: str,
+        next_action: str = "",
+        ttl_hours: int = 24,
+    ) -> dict[str, Any]:
+        def create():
+            selected = self.runtime.agent.select_available_project(str(project or ""))
+            result = self.runtime.agent.execute(
+                "handoff.create",
+                {
+                    "project": selected,
+                    "summary": str(summary or ""),
+                    "next_action": str(next_action or ""),
+                    "ttl_hours": int(ttl_hours),
+                },
+            )
+            if not result.ok:
+                raise RuntimeError(result.summary)
+            return result.data
+        return self._guard(create)
+
+    def handoff_get(self, project: str, handoff_id: str) -> dict[str, Any]:
+        def load():
+            selected = self.runtime.agent.select_available_project(str(project or ""))
+            result = self.runtime.agent.execute(
+                "handoff.get",
+                {"project": selected, "handoff_id": str(handoff_id or "")},
+            )
+            if not result.ok:
+                raise RuntimeError(result.summary)
+            return result.data
+        return self._guard(load)
+
     def web_bridge_status(self) -> dict[str, Any]:
         return self._guard(self.web_bridge.status)
 
