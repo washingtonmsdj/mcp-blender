@@ -150,6 +150,9 @@ Ainda neste gate:
 ## Gate 9 — produto desktop
 
 - Browser Companion ✅ foundation;
+- private Chrome for Testing runtime for the managed ChatGPT browser ✅ foundation;
+- primary Google Chrome profile is never modified; ORDAX uses its own persistent browser profile;
+- managed browser download restricted to the official Chrome for Testing origin, with local SHA-256 recording, Authenticode signer inspection and release-version matching;
 - loopback pareado em 127.0.0.1, código one-time e bearer isolado no service worker ✅;
 - extensão Chrome/Edge empacotada com o produto ✅;
 - conversa real do ChatGPT Web espelhada na UI do ORDAX ✅;
