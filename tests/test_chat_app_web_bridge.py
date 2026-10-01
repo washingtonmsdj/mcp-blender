@@ -122,6 +122,19 @@ class WebBridgeTests(unittest.TestCase):
         self.assertFalse(status["supported"])
         self.assertFalse(status["installed"])
 
+    def test_headless_environment_injects_packaged_runtime_paths(self):
+        manager = WebBridgeManager(state_dir=self.root, credentials=self.store)
+        with patch.object(manager, "_product_root", return_value=self.root / "product"), patch.dict(
+            "ordax_chat_app.web_bridge.os.environ",
+            {"PATH": "test"},
+            clear=True,
+        ):
+            env = manager._env({"api_key": "runtime-secret"})
+        self.assertEqual(env["CONTROL_PLANE_API_KEY"], "runtime-secret")
+        self.assertEqual(env["ORDAX_PACKAGED_ROOT"], str(self.root / "product"))
+        self.assertEqual(env["ORDAX_AGENT_REPO_PATH"], str(self.root / "product"))
+        self.assertEqual(env["ORDAX_BRIDGE_PATH"], str(self.root / "product"))
+
     def test_disconnect_clears_credentials(self):
         manager = WebBridgeManager(state_dir=self.root, credentials=self.store)
         manager.configure("tunnel_0123456789abcdef", "secret")
