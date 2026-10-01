@@ -17,7 +17,7 @@ class BrowserCompanionTests(unittest.TestCase):
         store = BrowserCompanionStore(Path(self.temp.name) / "companion.db")
         self.server = BrowserCompanionServer(store=store, port=0)
         self.server.start()
-        self.addCleanup(self.server.stop)
+        self.addCleanup(self.server.close)
         self.base = f"http://127.0.0.1:{self.server.port}"
 
     def request(self, path, *, method="GET", payload=None, token=None, headers=None):
@@ -134,7 +134,7 @@ class BrowserCompanionTests(unittest.TestCase):
             self.assertNotEqual(stored, token)
             self.assertEqual(len(stored), 64)
         finally:
-            replacement.stop()
+            replacement.close()
 
     def test_explicit_disconnect_revokes_persisted_client(self):
         pairing = self.server.new_pairing_code()
