@@ -51,8 +51,10 @@ async function observe(payload) {
 
 async function commands(conversationId) {
   if (!token) return [];
+  await ready;
+  const key = conversationId || `__new__:${browserId}`;
   const body = await api("/commands", {
-    headers: {"X-ORDAX-Conversation": conversationId}
+    headers: {"X-ORDAX-Conversation": key}
   });
   return Array.isArray(body.commands) ? body.commands : [];
 }
