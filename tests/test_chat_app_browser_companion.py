@@ -103,6 +103,63 @@ class BrowserCompanionTests(unittest.TestCase):
             self.request("/commands", headers={"X-ORDAX-Conversation": "anything"})
         self.assertEqual(unauthorized.exception.code, 401)
 
+    def test_pairing_survives_server_restart_without_storing_raw_token(self):
+        pairing = self.server.new_pairing_code()
+        token = self.request(
+            "/pair",
+            method="POST",
+            payload={"code": pairing["code"], "browser_id": "browser-persisted"},
+        )["token"]
+        db_path = self.server.store.path
+        self.server.stop()
+
+        replacement = BrowserCompanionServer(
+            store=BrowserCompanionStore(db_path),
+            port=0,
+        )
+        replacement.start()
+        try:
+            self.assertEqual(replacement.status()["paired_clients"], 1)
+            base_before = self.base
+            self.base = f"http://127.0.0.1:{replacement.port}"
+            response = self.request(
+                "/commands",
+                token=token,
+                headers={"X-ORDAX-Conversation": "none"},
+            )
+            self.assertEqual(response["commands"], [])
+            self.base = base_before
+            with replacement.store.connect() as connection:
+                stored = connection.execute("SELECT token_hash FROM browser_clients").fetchone()[0]
+            self.assertNotEqual(stored, token)
+            self.assertEqual(len(stored), 64)
+        finally:
+            replacement.stop()
+
+    def test_explicit_disconnect_revokes_persisted_client(self):
+        pairing = self.server.new_pairing_code()
+        token = self.request(
+            "/pair",
+            method="POST",
+            payload={"code": pairing["code"], "browser_id": "browser-a"},
+        )["token"]
+        self.assertEqual(self.server.status()["paired_clients"], 1)
+        disconnected = self.request(
+            "/disconnect",
+            method="POST",
+            token=token,
+            payload={},
+        )
+        self.assertFalse(disconnected["paired"])
+        self.assertEqual(self.server.status()["paired_clients"], 0)
+        with self.assertRaises(urllib.error.HTTPError) as rejected:
+            self.request(
+                "/commands",
+                token=token,
+                headers={"X-ORDAX-Conversation": "anything"},
+            )
+        self.assertEqual(rejected.exception.code, 401)
+
     def test_http_webpage_origin_cannot_pair_or_poll_commands(self):
         pairing = self.server.new_pairing_code()
         with self.assertRaises(urllib.error.HTTPError) as blocked_pair:
