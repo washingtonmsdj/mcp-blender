@@ -35,6 +35,15 @@ class CloudflareDeployScriptTests(unittest.TestCase):
         self.assertIn("steps.deploy.outputs.control_plane_url", workflow)
         self.assertIn("scripts/verify_cloudflare_v3.py", workflow)
 
+        verify = (root / "scripts" / "verify_cloudflare_v3.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"/.well-known/oauth-protected-resource"', verify)
+        self.assertIn('".well-known/openid-configuration"', verify)
+        self.assertIn('{"openid", "email"}.issubset', verify)
+        self.assertIn('"userinfo_endpoint"', verify)
+        self.assertIn('"S256"', verify)
+
 
 if __name__ == "__main__":
     unittest.main()
