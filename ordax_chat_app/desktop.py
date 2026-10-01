@@ -234,6 +234,20 @@ class DesktopApi:
             return self.browser_companion.messages(str(conversation_id or ""))
         return self._guard(messages)
 
+    def browser_companion_new_chat(self, text: str) -> dict[str, Any]:
+        def create():
+            status = self._ensure_browser_companion()
+            if not status.get("running"):
+                raise RuntimeError(status.get("start_error") or "Browser Companion is unavailable")
+            command = self.browser_companion.new_chat(str(text or ""))
+            opened = webbrowser.open(NORMAL_CHAT_URL, new=2)
+            return {
+                "command": command,
+                "opened": bool(opened),
+                "chat_url": NORMAL_CHAT_URL,
+            }
+        return self._guard(create)
+
     def browser_companion_send(self, conversation_id: str, text: str) -> dict[str, Any]:
         def send():
             status = self._ensure_browser_companion()
