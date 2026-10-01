@@ -110,6 +110,59 @@ class PersistentProcessActionsTests(unittest.TestCase):
         self.assertFalse(status.data["running"])
         self.assertFalse(status.data["ownership_valid"])
 
+    def test_write_stdin_reaches_managed_child(self):
+        started = self.registry.execute(
+            "process.start",
+            {
+                "project": "demo",
+                "cwd": ".",
+                "argv": [
+                    sys.executable,
+                    "-u",
+                    "-c",
+                    (
+                        "import sys,time; "
+                        "print('ORDAX_STDIN_READY', flush=True); "
+                        "value=sys.stdin.readline().rstrip('\\r\\n'); "
+                        "print('ORDAX_STDIN_GOT:'+value, flush=True); "
+                        "time.sleep(5)"
+                    ),
+                ],
+                "wait_seconds": 1.5,
+            },
+        )
+        self.assertTrue(started.ok, started.summary)
+        self.process_id = started.data["process_id"]
+
+        written = self.registry.execute(
+            "process.write_stdin",
+            {
+                "project": "demo",
+                "process_id": self.process_id,
+                "text": "hello-ordax",
+                "newline": True,
+            },
+        )
+        self.assertTrue(written.ok, written.summary)
+
+        tail = ""
+        deadline = time.monotonic() + 6.0
+        while time.monotonic() < deadline:
+            logs = self.registry.execute(
+                "process.logs",
+                {
+                    "project": "demo",
+                    "process_id": self.process_id,
+                    "max_bytes": 32768,
+                },
+            )
+            self.assertTrue(logs.ok, logs.summary)
+            tail = logs.data["tail"]
+            if "ORDAX_STDIN_GOT:hello-ordax" in tail:
+                break
+            time.sleep(0.1)
+        self.assertIn("ORDAX_STDIN_GOT:hello-ordax", tail)
+
     def test_process_id_is_project_scoped(self):
         result = self.registry.execute(
             "process.status",
