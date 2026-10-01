@@ -28,6 +28,20 @@ class FakeRegistry:
 
 class DevelopmentToolsetTests(unittest.TestCase):
     def test_initial_toolbox_is_small_strict_and_project_is_not_model_controlled(self):
+        def assert_strict_object(schema):
+            if not isinstance(schema, dict):
+                return
+            if schema.get("type") == "object":
+                self.assertFalse(schema.get("additionalProperties", True))
+                properties = schema.get("properties", {})
+                self.assertEqual(set(properties), set(schema.get("required", [])))
+                for child in properties.values():
+                    assert_strict_object(child)
+            if schema.get("type") == "array":
+                assert_strict_object(schema.get("items"))
+            for option in schema.get("anyOf", []):
+                assert_strict_object(option)
+
         self.assertLessEqual(len(DEVELOPMENT_TOOLS), 20)
         names = {item["name"] for item in DEVELOPMENT_TOOLS}
         self.assertIn("terminal", names)
@@ -36,12 +50,8 @@ class DevelopmentToolsetTests(unittest.TestCase):
         for tool in DEVELOPMENT_TOOLS:
             self.assertTrue(tool["strict"])
             parameters = tool["parameters"]
-            self.assertFalse(parameters["additionalProperties"])
             self.assertNotIn("project", parameters["properties"])
-            self.assertEqual(
-                set(parameters["properties"]),
-                set(parameters["required"]),
-            )
+            assert_strict_object(parameters)
 
     def test_executor_injects_selected_project_and_removes_null_optionals(self):
         registry = FakeRegistry()
@@ -67,6 +77,35 @@ class DevelopmentToolsetTests(unittest.TestCase):
                 "path": "src/app.ts",
                 "start_line": 1,
             },
+        )
+
+
+    def test_terminal_env_is_converted_from_strict_pairs(self):
+        registry = FakeRegistry()
+        toolset = DevelopmentToolset(registry, project="demo")
+        output = json.loads(
+            toolset.execute(
+                "terminal",
+                json.dumps(
+                    {
+                        "cwd": ".",
+                        "argv": ["python", "-V"],
+                        "command": None,
+                        "shell": False,
+                        "timeout_seconds": 30,
+                        "env": [
+                            {"name": "MODE", "value": "test"},
+                            {"name": "CI", "value": "1"},
+                        ],
+                    }
+                ),
+            )
+        )
+        self.assertTrue(output["ok"])
+        self.assertEqual(registry.calls[0][0], "terminal.exec")
+        self.assertEqual(
+            registry.calls[0][1]["env"],
+            {"MODE": "test", "CI": "1"},
         )
 
     def test_model_cannot_smuggle_project_field(self):
