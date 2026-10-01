@@ -103,6 +103,53 @@ def repository_catalog(
 
 
 @mcp.tool()
+def handoff_get(
+    device_id: str,
+    project: str,
+    handoff_id: str,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Load one expiring ORDAX continuation handoff for a granted project."""
+    return _invoke(
+        device_id=device_id,
+        action="handoff.get",
+        project=project,
+        space_id=space_id,
+        arguments={"project": project, "handoff_id": handoff_id},
+    )
+
+
+@mcp.tool()
+def handoff_create(
+    device_id: str,
+    project: str,
+    summary: str,
+    next_action: str = "",
+    completed: list[str] | None = None,
+    blockers: list[str] | None = None,
+    changed_paths: list[str] | None = None,
+    ttl_hours: int = 24,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a bounded expiring handoff for continuing work in a fresh chat."""
+    return _invoke(
+        device_id=device_id,
+        action="handoff.create",
+        project=project,
+        space_id=space_id,
+        arguments={
+            "project": project,
+            "summary": summary,
+            "next_action": next_action,
+            "completed": list(completed or []),
+            "blockers": list(blockers or []),
+            "changed_paths": list(changed_paths or []),
+            "ttl_hours": ttl_hours,
+        },
+    )
+
+
+@mcp.tool()
 def project_inventory(
     device_id: str,
     project: str,
