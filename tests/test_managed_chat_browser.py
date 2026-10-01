@@ -141,9 +141,10 @@ class ManagedChatBrowserTests(unittest.TestCase):
                 "subject": "CN=Google LLC",
                 "product_version": "153.0.8010.52",
             },
-        ), patch(
-            "ordax_chat_app.managed_chat_browser.os.name",
-            "nt",
+        ), patch.object(
+            ManagedChatBrowser,
+            "_is_windows",
+            return_value=True,
         ):
             result = managed.install_browser()
 
@@ -169,9 +170,10 @@ class ManagedChatBrowserTests(unittest.TestCase):
         result.returncode = 0
         result.stdout = json.dumps(payload)
         result.stderr = ""
-        with patch(
-            "ordax_chat_app.managed_chat_browser.os.name",
-            "nt",
+        with patch.object(
+            ManagedChatBrowser,
+            "_is_windows",
+            return_value=True,
         ), patch(
             "ordax_chat_app.managed_chat_browser.subprocess.run",
             return_value=result,
@@ -197,9 +199,10 @@ class ManagedChatBrowserTests(unittest.TestCase):
         result.returncode = 0
         result.stdout = json.dumps(payload)
         result.stderr = ""
-        with patch(
-            "ordax_chat_app.managed_chat_browser.os.name",
-            "nt",
+        with patch.object(
+            ManagedChatBrowser,
+            "_is_windows",
+            return_value=True,
         ), patch(
             "ordax_chat_app.managed_chat_browser.subprocess.run",
             return_value=result,
