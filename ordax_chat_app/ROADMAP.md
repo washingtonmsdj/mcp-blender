@@ -67,20 +67,26 @@ O fluxo base já está implementado; faltam provas de login real em conta elegí
 - checkpoint automático antes de rollover;
 - compaction/continuation bundle sem depender de histórico do ChatGPT.
 
-## Gate 5 — processos persistentes ✅ foundation
+## Gate 5 — processos persistentes ✅
 
-- start/status/logs/stop implementados;
-- stdin interativo ainda pendente;
+- start/status/logs/stdin/stop implementados;
+- stdin usa fila persistente project-scoped com pump para o processo filho;
+- recuperação e cleanup validados no Windows real.
 - identidade persistente do processo para evitar PID reuse;
 - recuperação após restart do Device Agent;
 - portas/preview vinculados ao projeto.
 
-## Gate 6 — computer/browser control
+## Gate 6 — browser control ✅ foundation / computer control pendente
 
-- screenshot/capture;
+Browser implementado e validado no Windows real:
+- Chromium ORDAX-owned com profile isolado e CDP;
+- navigate/snapshot/click/type/screenshot/stop;
+- cleanup de toda a árvore da sessão sem tocar em outros Chromes;
+- screenshot pode voltar ao modelo como evidência visual.
+
+Ainda pendente para computer control geral:
 - janela ativa e catálogo de aplicações;
-- click/type/hotkey/scroll;
-- navegador com navegação e leitura estruturada;
+- click/type/hotkey/scroll fora do navegador;
 - grants próprios e confirmação para efeitos de alto impacto.
 
 ## Gate 7 — contexto de agente ✅ foundation
