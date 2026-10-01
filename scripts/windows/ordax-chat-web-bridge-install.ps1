@@ -2,11 +2,22 @@ param(
     [string]$RepoRoot = "",
     [string]$TaskName = "ORDAX Dev Web Bridge",
     [switch]$StartNow,
+    [switch]$Status,
     [switch]$Uninstall
 )
 
 $ErrorActionPreference = "Stop"
 Import-Module ScheduledTasks -ErrorAction Stop
+
+if ($Status) {
+    $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    [pscustomobject]@{
+        task_name = $TaskName
+        installed = [bool]$existing
+        state = if ($existing) { [string]$existing.State } else { "NotInstalled" }
+    } | ConvertTo-Json -Compress
+    exit 0
+}
 
 if ($Uninstall) {
     $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
