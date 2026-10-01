@@ -175,6 +175,61 @@ async function openNormalChat(){
 }
 
 
+async function refreshOrdaxAccount(){
+  const card=el("ordaxAccountCard");
+  if(!card)return;
+  try{
+    if(!api().ordax_device_status){card.classList.add("hidden");return}
+    const result=await api().ordax_device_status();
+    if(!result?.ok)throw new Error(result?.summary||"Falha ao verificar dispositivo ORDAX");
+    const data=result.data||{};
+    card.classList.remove("hidden");
+    el("ordaxDeviceState").textContent=data.enrolled
+      ?(data.control_plane_configured?"Dispositivo inscrito · Control Plane pronto":"Dispositivo inscrito · Control Plane pendente")
+      :"Dispositivo ainda não inscrito";
+    el("ordaxAccountButton").disabled=!data.enrolled||!data.control_plane_configured;
+  }catch(err){
+    card.classList.remove("hidden");
+    el("ordaxDeviceState").textContent=err.message;
+  }
+}
+
+function openOrdaxAccount(){
+  el("ordaxAccountDialog").classList.remove("hidden");
+  el("ordaxAccountStatus").textContent="A senha não é armazenada pelo ORDAX Dev.";
+  setTimeout(()=>el("ordaxAccountEmail").focus(),0);
+}
+
+function closeOrdaxAccount(){
+  el("ordaxAccountDialog").classList.add("hidden");
+  el("ordaxAccountPassword").value="";
+}
+
+async function connectOrdaxAccount(){
+  const email=el("ordaxAccountEmail").value.trim();
+  const password=el("ordaxAccountPassword").value;
+  if(!email||!password){el("ordaxAccountStatus").textContent="Informe e-mail e senha.";return}
+  const button=el("ordaxAccountSubmit");
+  button.disabled=true;
+  el("ordaxAccountStatus").textContent="Autenticando e vinculando este computador…";
+  try{
+    const result=await api().connect_ordax_account(email,password);
+    if(!result?.ok)throw new Error(result?.summary||"Não foi possível conectar a conta ORDAX.");
+    const connectedEmail=result.data?.email||email;
+    el("ordaxDeviceState").textContent="Conta vinculada · "+connectedEmail;
+    el("ordaxAccountButton").textContent="Conectada";
+    el("ordaxAccountStatus").textContent="Computador vinculado com segurança.";
+    setStatus("Conta ORDAX conectada.","success");
+    setTimeout(closeOrdaxAccount,700);
+  }catch(err){
+    el("ordaxAccountStatus").textContent=err.message;
+    setStatus("Conta ORDAX não conectada.","error");
+  }finally{
+    el("ordaxAccountPassword").value="";
+    button.disabled=false;
+  }
+}
+
 function renderAccount(account){
   state.connected=!!account.connected;
   el("connectButton").classList.toggle("hidden",state.connected);
@@ -433,12 +488,17 @@ async function bootstrap(){
     renderMode();
     renderWebBridge(state.webBridge||{});
     await refreshWebBridgeStartup();
+    await refreshOrdaxAccount();
     await refreshActivity();
     await refreshAutonomy();
     await refreshCapabilities();
   }catch(err){setStatus(err.message,"error")}
 }
 
+el("ordaxAccountButton").onclick=openOrdaxAccount;
+el("ordaxAccountClose").onclick=closeOrdaxAccount;
+el("ordaxAccountSubmit").onclick=connectOrdaxAccount;
+el("ordaxAccountDialog").onclick=e=>{if(e.target===el("ordaxAccountDialog"))closeOrdaxAccount()};
 el("connectButton").onclick=connect;
 el("openNormalChatButton").onclick=openNormalChat;
 el("webBridgeConnectButton").onclick=connectWebBridge;
