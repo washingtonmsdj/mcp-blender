@@ -38,6 +38,13 @@ class BrowserCompanionExtensionContractTests(unittest.TestCase):
         self.assertNotIn("Bearer ", content)
         self.assertNotIn("token =", content)
 
+    def test_background_auto_pairs_on_extension_startup(self):
+        background = (EXT / "background.js").read_text(encoding="utf-8")
+        self.assertIn('async function autoPair()', background)
+        self.assertIn('api("/pairing")', background)
+        self.assertIn('chrome.runtime.onInstalled.addListener', background)
+        self.assertIn('chrome.runtime.onStartup.addListener', background)
+
     def test_content_script_uses_page_ui_not_private_chatgpt_api(self):
         content = (EXT / "content.js").read_text(encoding="utf-8")
         self.assertIn("#prompt-textarea", content)
