@@ -19,6 +19,8 @@ class _Executor:
             "workspace.repository_catalog",
             "project.inventory",
             "project.text_read",
+            "handoff.get",
+            "handoff.create",
             "workspace.file_stat",
             "workspace.directory_list",
             "workspace.text_read",
@@ -102,6 +104,8 @@ class ProductMcpFacadeTests(unittest.TestCase):
                 "repository_catalog",
                 "project_inventory",
                 "project_text_read",
+                "handoff_get",
+                "handoff_create",
                 "workspace_file_stat",
                 "workspace_directory_list",
                 "workspace_text_read",
@@ -129,6 +133,8 @@ class ProductMcpFacadeTests(unittest.TestCase):
         effects = {tool["name"]: tool["effect"] for tool in tools}
         self.assertEqual(effects["git_status"], "read")
         self.assertEqual(effects["project_text_write"], "write")
+        self.assertEqual(effects["handoff_get"], "read")
+        self.assertEqual(effects["handoff_create"], "write")
         self.assertEqual(effects["workspace_text_write"], "write")
         self.assertEqual(effects["terminal_exec"], "execute")
         self.assertEqual(effects["git_command"], "execute")
