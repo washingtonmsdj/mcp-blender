@@ -16,6 +16,7 @@ DEVICE_ACTION_PREFIXES = (
     "geo.",
     "visual.",
     "agent.",
+    "handoff.",
 )
 
 ADAPTER_INVOKE_CAPABILITY = "ordax.dev.adapter.invoke"
