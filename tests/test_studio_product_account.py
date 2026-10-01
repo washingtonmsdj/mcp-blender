@@ -133,6 +133,20 @@ class StudioProductAccountTests(unittest.TestCase):
         self.assertEqual("device_not_enrolled", result["code"])
         self.assertEqual("Máquina não registrada", result["summary"])
 
+    def test_product_identity_is_separate_from_github_provider(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        auth_source = (root / "ordax_studio" / "product_auth.py").read_text(encoding="utf-8")
+        ui_source = (root / "ordax_studio" / "assets" / "product_account.js").read_text(encoding="utf-8")
+        contract = (root / "docs" / "ORDAX_IDENTITY_AND_PROVIDERS.md").read_text(encoding="utf-8")
+        self.assertIn("conta ORDAX", ui_source)
+        self.assertIn("GitHub", ui_source)
+        self.assertIn("provedor de projetos", ui_source)
+        self.assertIn("Conta ORDAX", contract)
+        self.assertIn("plugin ORDAX Dev", contract)
+        self.assertIn("plugin GitHub do ChatGPT", contract)
+        self.assertNotIn("github.com/login/oauth", auth_source.lower())
+        self.assertNotIn("api.github.com/user", auth_source.lower())
+
     def test_product_surface_source_never_persists_password_or_access_token(self) -> None:
         root = Path(__file__).resolve().parents[1]
         auth_source = (root / "ordax_studio" / "product_auth.py").read_text(encoding="utf-8")
