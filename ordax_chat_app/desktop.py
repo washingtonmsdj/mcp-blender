@@ -286,8 +286,19 @@ class DesktopApi:
     @staticmethod
     def _browser_companion_extension_dir() -> Path:
         packaged = os.environ.get("ORDAX_PACKAGED_ROOT")
-        root = Path(packaged).expanduser().resolve() if packaged else Path(__file__).resolve().parents[1]
-        return (root / "browser_extension").resolve()
+        if packaged:
+            candidate = (Path(packaged).expanduser().resolve() / "browser_extension")
+            if (candidate / "manifest.json").is_file():
+                return candidate
+
+        module_dir = Path(__file__).resolve().parent
+        for root in (module_dir, *module_dir.parents):
+            candidate = root / "browser_extension"
+            if (candidate / "manifest.json").is_file():
+                return candidate.resolve()
+
+        # Keep a deterministic diagnostic path when the bundle is incomplete.
+        return (module_dir.parent / "browser_extension").resolve()
 
     def managed_chat_browser_status(self) -> dict[str, Any]:
         return self._guard(self.managed_chat_browser.status)
