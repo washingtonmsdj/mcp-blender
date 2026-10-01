@@ -50,17 +50,31 @@ class ProcessRuntime:
         self.child: subprocess.Popen | None = None
         self._stopping = False
         self._stdin_thread: threading.Thread | None = None
+        self._state_lock = threading.RLock()
+        self._state = self._load_initial_state()
+
+    def _load_initial_state(self) -> dict:
+        last_error: Exception | None = None
+        for _ in range(20):
+            try:
+                payload = json.loads(self.state_path.read_text(encoding="utf-8"))
+                if isinstance(payload, dict) and payload:
+                    return payload
+            except Exception as error:
+                last_error = error
+            time.sleep(0.025)
+        if last_error is not None:
+            raise RuntimeError(f"cannot load persistent process state: {last_error}") from last_error
+        raise RuntimeError("cannot load persistent process state")
 
     def load_state(self) -> dict:
-        try:
-            return json.loads(self.state_path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
+        with self._state_lock:
+            return dict(self._state)
 
     def update(self, **changes) -> None:
-        state = self.load_state()
-        state.update(changes)
-        atomic_json(self.state_path, state)
+        with self._state_lock:
+            self._state.update(changes)
+            atomic_json(self.state_path, self._state)
 
     def stop(self, *_args) -> None:
         if self._stopping:
