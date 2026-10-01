@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,6 +8,7 @@ from unittest.mock import Mock, patch
 
 import httpx
 
+from ordax_dev_agent.config import AgentConfig
 from ordax_studio.product_auth import (
     ProductAccountError,
     ProductAuthSession,
@@ -112,14 +114,76 @@ class StudioProductAccountTests(unittest.TestCase):
         self.assertNotIn("access_token", result)
         self.assertNotIn("sensitive-jwt", repr(result))
 
-    def test_connect_requires_existing_device_identity(self) -> None:
-        config = SimpleNamespace(
-            control_plane_url="https://control.example.test",
-            device_id=None,
-        )
-        with self.assertRaises(ProductAccountError) as raised:
-            connect_existing_device(config, "user@example.com", "secret")
-        self.assertEqual("device_not_enrolled", raised.exception.code)
+    def test_connect_new_device_enrolls_with_product_session_before_pairing(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            state = Path(raw) / "state"
+            state.mkdir()
+            config = AgentConfig(
+                agent_name="test",
+                poll_seconds=1.0,
+                state_dir=state,
+                agent_repo_path=Path(raw) / "agent",
+                hordax_path=Path(raw) / "hordax",
+                bridge_path=Path(raw) / "bridge",
+                projects={},
+                device_id=None,
+                control_plane_url="https://control.example.test",
+            )
+            control = Mock()
+            control.http = Mock()
+            control.create_product_pairing.return_value = {
+                "pairing_id": "33333333-3333-4333-8333-333333333333",
+                "pairing_secret": "a" * 64,
+                "expires_at": "2026-09-30T20:00:00Z",
+            }
+            remote = Mock()
+            remote.__enter__ = Mock(return_value=remote)
+            remote.__exit__ = Mock(return_value=None)
+            remote.claim_device_pairing.return_value = {
+                "link_id": "44444444-4444-4444-8444-444444444444",
+                "device_id": "22222222-2222-4222-8222-222222222222",
+                "device_name": "REVIEW-PC",
+                "space_id": None,
+            }
+
+            with (
+                patch(
+                    "ordax_studio.product_auth.sign_in_with_password",
+                    return_value=ProductAuthSession(
+                        access_token="sensitive-jwt",
+                        email="user@example.com",
+                    ),
+                ),
+                patch(
+                    "ordax_studio.product_auth.configure_device",
+                    return_value={
+                        "ok": True,
+                        "device_id": "22222222-2222-4222-8222-222222222222",
+                        "protocol": "cloudflare-v3",
+                    },
+                ) as enrollment,
+                patch(
+                    "ordax_studio.product_auth.CloudflareControlPlane",
+                    return_value=control,
+                ),
+                patch(
+                    "ordax_studio.product_auth.ProductRemoteClient",
+                    return_value=remote,
+                ),
+            ):
+                result = connect_existing_device(config, "user@example.com", "secret")
+
+            enrollment.assert_called_once_with(
+                state,
+                control_plane_url="https://control.example.test",
+                product_access_token="sensitive-jwt",
+            )
+            self.assertTrue(result["enrolled_now"])
+            self.assertEqual(
+                "22222222-2222-4222-8222-222222222222",
+                result["device_id"],
+            )
+            self.assertNotIn("sensitive-jwt", repr(result))
 
     def test_product_api_returns_safe_error_shape(self) -> None:
         api = object.__new__(StudioProductApi)
