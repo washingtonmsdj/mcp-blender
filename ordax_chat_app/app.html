@@ -58,6 +58,17 @@
     <aside class="activity">
       <div class="section-head"><span>Agentes</span><button id="refreshActivity" class="icon-button">↻</button></div>
       <div id="agentPanel" class="agent-panel"></div>
+
+      <div class="section-head"><span>Autonomia</span><button id="newAgentButton" class="icon-button" title="Novo agente">+</button></div>
+      <div class="autonomy-panel">
+        <select id="agentSelect"></select>
+        <input id="workTitle" class="compact-input" placeholder="Título da tarefa">
+        <textarea id="workInstruction" class="compact-input" rows="4" placeholder="Instrução para o agente..."></textarea>
+        <button id="queueWorkButton" class="secondary-button">Adicionar à fila</button>
+        <button id="autonomyToggle" class="secondary-button">Iniciar 24/7</button>
+        <div id="autonomyState" class="muted">Supervisor parado.</div>
+      </div>
+
       <div class="section-head"><span>Última execução</span></div>
       <div id="runPanel" class="run-panel muted">Nenhuma execução nesta sessão.</div>
       <div class="section-head"><span>Arquitetura</span></div>
