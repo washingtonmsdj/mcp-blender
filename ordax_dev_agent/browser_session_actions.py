@@ -360,12 +360,71 @@ class BrowserSessionActions:
             self._write_browser_state(project, state)
             return ActionResult(False, str(error), {**state, "running": False, "ownership_valid": False})
         state = self._refresh_browser_pid(project, state)
+
+        if url == "about:blank":
+            ready = {
+                "url": str(target.get("url") or url),
+                "title": str(target.get("title") or ""),
+            }
+        else:
+            def initialize_page(ws, _state, _target):
+                _cdp_call(ws, 1, "Page.enable")
+                _cdp_call(ws, 2, "Page.navigate", {"url": url})
+                deadline = time.monotonic() + max(
+                    5.0,
+                    min(float(payload.get("wait_seconds", 8)), 30.0),
+                )
+                request_id = 3
+                current_url = ""
+                title = ""
+                while time.monotonic() < deadline:
+                    ready_state = self._eval(ws, request_id, "document.readyState")
+                    request_id += 1
+                    current_url = str(self._eval(ws, request_id, "location.href") or "")
+                    request_id += 1
+                    title = str(self._eval(ws, request_id, "document.title") or "")
+                    request_id += 1
+                    if ready_state in {"interactive", "complete"} and current_url == url:
+                        return {"url": current_url, "title": title}
+                    time.sleep(0.1)
+                raise BrowserCaptureError(
+                    f"Chromium page did not become ready: {current_url or 'unknown URL'}"
+                )
+
+            try:
+                ready = self._with_page(project, session_id, initialize_page)
+            except (ValueError, BrowserCaptureError) as error:
+                try:
+                    if os.name == "nt":
+                        subprocess.run(
+                            ["taskkill", "/PID", str(int(state.get("pid") or process.pid)), "/T", "/F"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=15,
+                            shell=False,
+                        )
+                    else:
+                        try:
+                            os.killpg(int(state.get("pid") or process.pid), 15)
+                        except ProcessLookupError:
+                            pass
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+                handles.pop(session_id, None)
+                state.update({"startup_error": str(error), "stopped_at_unix": time.time()})
+                self._write_browser_state(project, state)
+                return ActionResult(
+                    False,
+                    f"browser initial navigation failed: {error}",
+                    {**state, "running": False, "ownership_valid": False},
+                )
+
         return ActionResult(True, "browser session started", {
             **state,
             "running": True,
             "ownership_valid": self._browser_owned(project, state),
-            "url": str(target.get("url") or url),
-            "title": str(target.get("title") or ""),
+            "url": ready["url"],
+            "title": ready["title"],
         })
 
     def browser_status(self, payload: dict[str, Any]) -> ActionResult:
