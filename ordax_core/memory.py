@@ -4,8 +4,9 @@ import json
 import os
 import sqlite3
 import subprocess
+import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -70,6 +71,14 @@ class MemoryStore:
             CREATE TABLE IF NOT EXISTS sessions(
               id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL,
               started_at TEXT NOT NULL, ended_at TEXT, resumed_from_checkpoint_id INTEGER);
+            CREATE TABLE IF NOT EXISTS handoffs(
+              id TEXT PRIMARY KEY, project_id INTEGER NOT NULL,
+              summary TEXT NOT NULL, next_action TEXT,
+              completed_json TEXT NOT NULL, blockers_json TEXT NOT NULL,
+              changed_paths_json TEXT NOT NULL, git_state TEXT NOT NULL,
+              created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS idx_handoffs_project_expiry
+              ON handoffs(project_id, expires_at);
             """)
 
     def _project_id(self, slug: str, path: str | Path) -> int:
@@ -206,6 +215,118 @@ class MemoryStore:
             cursor = connection.execute("UPDATE sessions SET ended_at=? WHERE id=? AND ended_at IS NULL", (now(), int(session_id)))
             return cursor.rowcount > 0
 
+    def create_handoff(
+        self,
+        slug: str,
+        path: str | Path,
+        summary: str,
+        *,
+        next_action: str = "",
+        completed: list[str] | None = None,
+        blockers: list[str] | None = None,
+        changed_paths: list[str] | None = None,
+        ttl_hours: int = 24,
+    ) -> dict[str, Any]:
+        text = summary.strip()
+        if not text:
+            raise ValueError("handoff summary cannot be empty")
+        if len(text) > 20000:
+            raise ValueError("handoff summary is too long")
+        ttl_hours = int(ttl_hours)
+        if ttl_hours < 1 or ttl_hours > 168:
+            raise ValueError("ttl_hours must be between 1 and 168")
+
+        project_id = self._project_id(slug, path)
+        handoff_id = f"hof_{uuid.uuid4().hex}"
+        created_dt = datetime.now().astimezone()
+        expires_dt = created_dt + timedelta(hours=ttl_hours)
+        git_state = self.git_state(path)
+        payloads = {
+            "completed": list(completed or []),
+            "blockers": list(blockers or []),
+            "changed_paths": list(changed_paths or []),
+        }
+        for key, values in payloads.items():
+            if len(values) > 100:
+                raise ValueError(f"handoff {key} has too many items")
+            payloads[key] = [str(item)[:2000] for item in values]
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO handoffs(
+                  id,project_id,summary,next_action,completed_json,blockers_json,
+                  changed_paths_json,git_state,created_at,expires_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    handoff_id,
+                    project_id,
+                    text,
+                    next_action.strip()[:5000],
+                    json.dumps(payloads["completed"], ensure_ascii=False),
+                    json.dumps(payloads["blockers"], ensure_ascii=False),
+                    json.dumps(payloads["changed_paths"], ensure_ascii=False),
+                    json.dumps(git_state, ensure_ascii=False),
+                    created_dt.isoformat(timespec="seconds"),
+                    expires_dt.isoformat(timespec="seconds"),
+                ),
+            )
+            connection.execute(
+                "DELETE FROM handoffs WHERE expires_at < ?",
+                (created_dt.isoformat(timespec="seconds"),),
+            )
+        return {
+            "handoff_id": handoff_id,
+            "project": slug,
+            "expires_at": expires_dt.isoformat(timespec="seconds"),
+            "summary": text,
+            "next_action": next_action.strip()[:5000],
+            "git": git_state,
+        }
+
+    def get_handoff(self, slug: str, path: str | Path, handoff_id: str) -> dict[str, Any]:
+        token = str(handoff_id or "").strip()
+        if not token.startswith("hof_") or len(token) != 36:
+            raise ValueError("invalid handoff id")
+        project_id = self._project_id(slug, path)
+        current = datetime.now().astimezone()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM handoffs WHERE id=? AND project_id=?",
+                (token, project_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("handoff not found for project")
+            expires = datetime.fromisoformat(str(row["expires_at"]))
+            if expires <= current:
+                connection.execute("DELETE FROM handoffs WHERE id=?", (token,))
+                raise ValueError("handoff expired")
+
+        def load_list(raw: str) -> list[str]:
+            try:
+                value = json.loads(raw)
+            except json.JSONDecodeError:
+                return []
+            return [str(item) for item in value] if isinstance(value, list) else []
+
+        try:
+            git_state = json.loads(str(row["git_state"]))
+        except json.JSONDecodeError:
+            git_state = {}
+        return {
+            "handoff_id": str(row["id"]),
+            "project": slug,
+            "summary": str(row["summary"]),
+            "next_action": str(row["next_action"] or ""),
+            "completed": load_list(str(row["completed_json"])),
+            "blockers": load_list(str(row["blockers_json"])),
+            "changed_paths": load_list(str(row["changed_paths_json"])),
+            "git": git_state if isinstance(git_state, dict) else {},
+            "created_at": str(row["created_at"]),
+            "expires_at": str(row["expires_at"]),
+        }
+
     def _recent(self, table: str, project_id: int, limit: int) -> list[sqlite3.Row]:
         if table not in {"memories", "tasks", "checkpoints"}:
             raise ValueError(f"unsupported memory table: {table}")
@@ -276,7 +397,7 @@ class MemoryStore:
         with self._connect() as connection:
             counts = {
                 table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-                for table in ("projects", "memories", "tasks", "checkpoints", "events", "sessions")
+                for table in ("projects", "memories", "tasks", "checkpoints", "events", "sessions", "handoffs")
             }
         return {
             "ok": True,
