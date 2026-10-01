@@ -113,6 +113,62 @@ class FakeAutonomy:
         self.running = False
         return self.status()
 
+class FakeWebBridge:
+    def __init__(self):
+        self.running = False
+        self.configured = False
+        self.installed = False
+        self.tunnel_id = None
+
+    def status(self):
+        return {
+            "configured": self.configured,
+            "tunnel_id": self.tunnel_id,
+            "profile": "ordax-dev",
+            "initialized": False,
+            "client_installed": self.installed,
+            "client_path": None,
+            "running": self.running,
+            "pid": 123 if self.running else None,
+            "chatgpt_url": "https://chatgpt.com/",
+            "tunnels_url": "https://platform.openai.com/settings/organization/tunnels",
+            "api_keys_url": "https://platform.openai.com/settings/organization/api-keys",
+        }
+
+    def configure(self, tunnel_id, api_key):
+        self.configured = True
+        self.tunnel_id = tunnel_id
+        return self.status()
+
+    def install_client(self):
+        self.installed = True
+        return self.status()
+
+    def start(self):
+        if not self.configured:
+            raise RuntimeError("not configured")
+        self.running = True
+        return self.status()
+
+    def stop(self):
+        self.running = False
+        return self.status()
+
+    def disconnect(self):
+        self.running = False
+        self.configured = False
+        self.tunnel_id = None
+        return self.status()
+
+    @staticmethod
+    def open_tunnels_page():
+        return True
+
+    @staticmethod
+    def open_api_keys_page():
+        return True
+
+
 class FakeRuntime:
     def __init__(self):
         self.agent = types.SimpleNamespace(
@@ -158,9 +214,11 @@ class FakeRuntime:
 class DesktopApiTests(unittest.TestCase):
     def setUp(self):
         self.autonomy = FakeAutonomy()
+        self.web_bridge = FakeWebBridge()
         self.api = DesktopApi(
             FakeRuntime(),
             autonomy=self.autonomy,
+            web_bridge=self.web_bridge,
             auto_resume=False,
         )
 
@@ -188,6 +246,26 @@ class DesktopApiTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertTrue(result["data"]["opened"])
         opened.assert_called_once()
+
+    def test_web_bridge_can_be_configured_installed_started_and_stopped(self):
+        configured = self.api.web_bridge_configure(
+            "tunnel_0123456789abcdef",
+            "runtime-secret",
+        )
+        self.assertTrue(configured["ok"])
+        self.assertTrue(configured["data"]["configured"])
+
+        installed = self.api.web_bridge_install()
+        self.assertTrue(installed["ok"])
+        self.assertTrue(installed["data"]["client_installed"])
+
+        started = self.api.web_bridge_start()
+        self.assertTrue(started["ok"])
+        self.assertTrue(started["data"]["running"])
+
+        stopped = self.api.web_bridge_stop()
+        self.assertTrue(stopped["ok"])
+        self.assertFalse(stopped["data"]["running"])
 
     def test_create_open_and_send_thread(self):
         created = self.api.create_thread("demo", "gpt-test")
