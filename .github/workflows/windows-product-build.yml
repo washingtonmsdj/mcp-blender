@@ -193,7 +193,7 @@ jobs:
             "/NORESTART"
           ) -Wait -PassThru
           if ($uninstallProcess.ExitCode -ne 0) {
-            throw "ORDAX Studio silent uninstall failed: $($uninstallProcess.ExitCode)"
+            throw "ORDAX Dev silent uninstall failed: $($uninstallProcess.ExitCode)"
           }
 
           $leftoverAutoStart = (Get-ItemProperty -Path $runKey -Name "ORDAX Runtime" -ErrorAction SilentlyContinue)."ORDAX Runtime"
