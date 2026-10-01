@@ -4,8 +4,12 @@ on:
   pull_request:
     paths:
       - "packaging/windows/**"
+      - "ordax_chat_app/**"
+      - "browser_extension/**"
       - "scripts/windows/build-ordax-studio-product.ps1"
       - "tests/test_windows_product_packaging.py"
+      - "tests/test_chat_app_*.py"
+      - "tests/test_browser_companion_extension_contract.py"
       - "pyproject.toml"
       - ".github/workflows/windows-product-build.yml"
   workflow_dispatch:
