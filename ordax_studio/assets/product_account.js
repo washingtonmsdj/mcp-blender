@@ -21,7 +21,7 @@
           <div class="accountDialogTitle">
             <div class="eyebrow">CONEXÃO SEGURA</div>
             <h2 id="accountDialogTitle">Conectar conta ORDAX</h2>
-            <p>Opcional: vincule este computador à sua conta ORDAX para acesso remoto autenticado ao Runtime.</p>
+            <p>Vincule este computador à sua conta ORDAX para acesso remoto autenticado ao Runtime. GitHub e outros provedores de projeto são integrações separadas e não substituem a conta ORDAX.</p>
           </div>
           <button id="accountClose" class="accountClose" type="button" aria-label="Fechar">×</button>
         </div>
@@ -37,7 +37,7 @@
             <button id="accountCancel" class="subtleButton" type="button">Cancelar</button>
           </div>
         </form>
-        <div class="accountSecurity">A senha é enviada diretamente ao Supabase Auth por este aplicativo local. O Worker ORDAX não recebe nem armazena a senha. O JWT de login é usado apenas durante o vínculo e não é persistido pelo Studio.</div>
+        <div class="accountSecurity">A senha é enviada diretamente ao Supabase Auth por este aplicativo local. O Worker ORDAX não recebe nem armazena a senha. O JWT de login é usado apenas durante o vínculo e não é persistido pelo Studio. O usuário não precisa de conta Cloudflare; GitHub é opcional e serve apenas como provedor de projetos/remotos.</div>
         <div id="accountStatus" class="accountStatus" aria-live="polite"></div>
       </section>`;
     document.body.appendChild(overlay);
