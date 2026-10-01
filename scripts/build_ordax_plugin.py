@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = ROOT / "plugins" / "ordax-studio"
-REQUIRED_FILES = ("plugin.json", "mcp.json")
+REQUIRED_FILES = ("plugin.json", "mcp.json", "assets/ordax.svg")
 FIXED_ZIP_TIME = (2026, 1, 1, 0, 0, 0)
 
 
@@ -17,7 +17,7 @@ def load_manifest() -> dict:
     if raw.startswith(b"\xef\xbb\xbf"):
         raise ValueError("plugin.json must be UTF-8 without BOM")
     manifest = json.loads(raw.decode("utf-8"))
-    if manifest.get("name") != "ordax-studio":
+    if manifest.get("name") != "ordax-dev":
         raise ValueError("unexpected plugin name")
     return manifest
 
@@ -43,7 +43,7 @@ def build_archive(output_dir: Path) -> tuple[Path, str]:
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
         for name in sorted(REQUIRED_FILES):
             data = (PLUGIN_ROOT / name).read_bytes()
-            info = zipfile.ZipInfo(name, date_time=FIXED_ZIP_TIME)
+            info = zipfile.ZipInfo(name.replace("\\", "/"), date_time=FIXED_ZIP_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
             bundle.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
