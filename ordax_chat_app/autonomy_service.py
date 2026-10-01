@@ -26,7 +26,7 @@ class AutonomyService:
 
     def __init__(self, runtime: OrdaxChatRuntime):
         self.runtime = runtime
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._state = AutonomyServiceState()
