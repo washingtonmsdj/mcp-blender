@@ -228,6 +228,17 @@ DEVELOPMENT_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "process_stdin",
+        "description": "Send text to stdin of a running ORDAX-managed persistent process.",
+        "parameters": _object({
+            "process_id": {"type": "string"},
+            "text": {"type": "string"},
+            "newline": {"type": "boolean"},
+        }),
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "process_stop",
         "description": "Stop a persistent ORDAX-owned process and its child process tree.",
         "parameters": _object({
@@ -283,6 +294,7 @@ _TOOL_ACTIONS = {
     "process_list": "process.list",
     "process_status": "process.status",
     "process_logs": "process.logs",
+    "process_stdin": "process.write_stdin",
     "process_stop": "process.stop",
     "preview_status": "project.preview_status",
 }
