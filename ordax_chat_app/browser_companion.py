@@ -679,9 +679,10 @@ main{text-align:center}p{color:#aaa}</style></head>
             self._pairing = None
         if server is not None:
             server.shutdown()
-            server.server_close()
         if thread is not None:
             thread.join(timeout=3)
+        if server is not None:
+            server.server_close()
         return self.status()
 
     def close(self) -> dict[str, Any]:
