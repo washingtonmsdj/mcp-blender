@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from ordax_chat_app.policy import CapabilityPolicyStore
 from ordax_chat_app.toolset import DEVELOPMENT_TOOLS, DevelopmentToolset
 from ordax_core import OrchestratorStore
 from ordax_dev_agent.models import ActionResult
@@ -45,7 +46,7 @@ class DevelopmentToolsetTests(unittest.TestCase):
             for option in schema.get("anyOf", []):
                 assert_strict_object(option)
 
-        self.assertLessEqual(len(DEVELOPMENT_TOOLS), 20)
+        self.assertLessEqual(len(DEVELOPMENT_TOOLS), 24)
         names = {item["name"] for item in DEVELOPMENT_TOOLS}
         self.assertIn("terminal", names)
         self.assertIn("git", names)
@@ -142,6 +143,81 @@ class DevelopmentToolsetTests(unittest.TestCase):
             registry.calls[0][1],
             {"project": "demo", "session_id": "session-1", "max_elements": 120},
         )
+
+    def test_computer_tool_is_hidden_until_project_grant(self):
+        with tempfile.TemporaryDirectory() as directory:
+            policy = CapabilityPolicyStore(Path(directory) / "state.db")
+            toolset = DevelopmentToolset(
+                FakeRegistry(),
+                project="demo",
+                policy=policy,
+            )
+            self.assertNotIn("computer", {item["name"] for item in toolset.definitions})
+
+            policy.set("demo", "computer.observe", True)
+            visible = next(item for item in toolset.definitions if item["name"] == "computer")
+            operations = visible["parameters"]["properties"]["operation"]["enum"]
+            self.assertEqual(operations, ["windows", "active_window", "screenshot"])
+
+    def test_computer_observe_cannot_authorize_interaction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            policy = CapabilityPolicyStore(Path(directory) / "state.db")
+            policy.set("demo", "computer.observe", True)
+            registry = FakeRegistry()
+            toolset = DevelopmentToolset(registry, project="demo", policy=policy)
+
+            denied = json.loads(
+                toolset.execute(
+                    "computer",
+                    json.dumps(
+                        {
+                            "operation": "click",
+                            "mode": None,
+                            "max_items": None,
+                            "handle": None,
+                            "x": 10,
+                            "y": 20,
+                            "button": "left",
+                            "clicks": 1,
+                            "text": None,
+                            "keys": None,
+                            "amount": None,
+                            "horizontal": None,
+                        }
+                    ),
+                )
+            )
+            self.assertFalse(denied["ok"])
+            self.assertIn("computer.interact", denied["summary"])
+            self.assertEqual(registry.calls, [])
+
+            observed = json.loads(
+                toolset.execute(
+                    "computer",
+                    json.dumps(
+                        {
+                            "operation": "screenshot",
+                            "mode": "desktop",
+                            "max_items": None,
+                            "handle": None,
+                            "x": None,
+                            "y": None,
+                            "button": None,
+                            "clicks": None,
+                            "text": None,
+                            "keys": None,
+                            "amount": None,
+                            "horizontal": None,
+                        }
+                    ),
+                )
+            )
+            self.assertTrue(observed["ok"])
+            self.assertEqual(registry.calls[0][0], "computer.screenshot")
+            self.assertEqual(
+                registry.calls[0][1],
+                {"project": "demo", "mode": "desktop"},
+            )
 
     def test_prime_can_create_and_delegate_to_worker_through_single_agents_tool(self):
         with tempfile.TemporaryDirectory() as directory:
