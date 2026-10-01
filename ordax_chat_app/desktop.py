@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
+import os
+import subprocess
 import webbrowser
 from typing import Any, Callable
 
@@ -12,6 +14,7 @@ from .instance_lock import SingleInstanceLock
 from .runtime import OrdaxChatRuntime
 from .web_bridge import WebBridgeManager
 from .browser_companion import BrowserCompanionServer
+from ordax_dev_agent.browser_capture import find_chromium
 
 
 APP_NAME = "ORDAX Dev"
@@ -209,6 +212,32 @@ class DesktopApi:
                 str(text or ""),
             )
         )
+
+    def browser_companion_extension_path(self) -> dict[str, Any]:
+        packaged = os.environ.get("ORDAX_PACKAGED_ROOT")
+        root = Path(packaged).expanduser().resolve() if packaged else Path(__file__).resolve().parents[1]
+        path = (root / "browser_extension").resolve()
+        if not path.is_dir():
+            raise RuntimeError(f"Browser Companion extension is missing: {path}")
+        return {"path": str(path)}
+
+    def browser_companion_open_extension_folder(self) -> dict[str, Any]:
+        data = self.browser_companion_extension_path()
+        path = str(data["path"])
+        if os.name == "nt":
+            subprocess.Popen(["explorer.exe", path], shell=False)
+        else:
+            webbrowser.open(Path(path).as_uri(), new=2)
+        return data
+
+    def browser_companion_open_extensions_page(self) -> dict[str, Any]:
+        browser = find_chromium()
+        if browser is None:
+            raise RuntimeError("Chrome or Edge was not found")
+        name = Path(browser).name.lower()
+        url = "edge://extensions/" if "edge" in name else "chrome://extensions/"
+        subprocess.Popen([str(browser), url], shell=False)
+        return {"browser": str(browser), "url": url}
 
     def connect_chatgpt(self) -> dict[str, Any]:
         def connect():
