@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import io
+import json
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -62,6 +65,90 @@ class ManagedChatBrowserTests(unittest.TestCase):
             browser_path=self.browser,
         )
         self.assertEqual(first.profile_dir, second.profile_dir)
+
+    def test_download_url_must_use_official_chrome_for_testing_origin(self):
+        managed = ManagedChatBrowser(
+            extension_dir=self.extension,
+            state_dir=self.root / "state",
+            browser_path=self.browser,
+        )
+        accepted = managed._validate_download_url(
+            "https://storage.googleapis.com/chrome-for-testing-public/153.0.0.0/win64/chrome-win64.zip"
+        )
+        self.assertTrue(accepted.startswith("https://storage.googleapis.com/"))
+        with self.assertRaisesRegex(RuntimeError, "Unexpected Chrome for Testing"):
+            managed._validate_download_url("https://example.com/chrome.zip")
+
+    def test_install_browser_extracts_private_runtime_and_persists_metadata(self):
+        managed = ManagedChatBrowser(
+            extension_dir=self.extension,
+            state_dir=self.root / "state",
+        )
+
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as bundle:
+            bundle.writestr("chrome-win64/chrome.exe", b"signed-stub")
+            bundle.writestr("chrome-win64/resources.pak", b"resource")
+        archive_bytes = archive.getvalue()
+
+        metadata = {
+            "channels": {
+                "Stable": {
+                    "version": "153.0.8010.52",
+                    "downloads": {
+                        "chrome": [
+                            {
+                                "platform": "win64",
+                                "url": "https://storage.googleapis.com/chrome-for-testing-public/153.0.8010.52/win64/chrome-win64.zip",
+                            }
+                        ]
+                    },
+                }
+            }
+        }
+
+        class Response:
+            def __init__(self, data):
+                self._data = data
+                self._stream = io.BytesIO(data)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, size=-1):
+                return self._stream.read(size)
+
+        calls = []
+
+        def fake_urlopen(request, timeout=None):
+            url = request.full_url
+            calls.append(url)
+            if url.endswith("last-known-good-versions-with-downloads.json"):
+                return Response(json.dumps(metadata).encode("utf-8"))
+            return Response(archive_bytes)
+
+        with patch(
+            "ordax_chat_app.managed_chat_browser.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ), patch.object(
+            ManagedChatBrowser,
+            "_verify_windows_signature",
+            return_value=None,
+        ), patch(
+            "ordax_chat_app.managed_chat_browser.os.name",
+            "nt",
+        ):
+            result = managed.install_browser()
+
+        private = managed.browser_dir / "chrome-win64" / "chrome.exe"
+        self.assertTrue(private.is_file())
+        self.assertTrue(result["managed_runtime_installed"])
+        stored = json.loads(managed.browser_metadata_path.read_text(encoding="utf-8"))
+        self.assertEqual(stored["version"], "153.0.8010.52")
+        self.assertEqual(len(calls), 2)
 
     def test_untrusted_initial_url_is_rejected(self):
         managed = ManagedChatBrowser(
