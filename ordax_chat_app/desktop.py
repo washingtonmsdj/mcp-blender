@@ -15,9 +15,21 @@ APP_NAME = "ORDAX Dev"
 
 
 class DesktopApi:
-    def __init__(self, runtime: OrdaxChatRuntime | None = None):
+    def __init__(
+        self,
+        runtime: OrdaxChatRuntime | None = None,
+        *,
+        autonomy: AutonomyService | None = None,
+        auto_resume: bool = True,
+    ):
         self.runtime = runtime or OrdaxChatRuntime()
-        self.autonomy = AutonomyService(self.runtime)
+        self.autonomy = autonomy or AutonomyService(self.runtime)
+        self.autonomy_resume_error: str | None = None
+        if auto_resume:
+            try:
+                self.autonomy.resume_persisted()
+            except Exception as error:
+                self.autonomy_resume_error = f"{type(error).__name__}: {error}"
 
     @staticmethod
     def _guard(fn: Callable[[], Any]) -> dict[str, Any]:
@@ -51,16 +63,21 @@ class DesktopApi:
                 "models": models,
                 "model_error": model_error,
                 "threads": self.runtime.threads(default_project) if default_project else [],
+                "autonomy": self.autonomy.status(),
+                "autonomy_resume_error": self.autonomy_resume_error,
             }
         return self._guard(build)
 
     def connect_chatgpt(self) -> dict[str, Any]:
-        return self._guard(
-            lambda: {
-                "account": self.runtime.connect_chatgpt(),
+        def connect():
+            account = self.runtime.connect_chatgpt()
+            resume = self.autonomy.resume_persisted()
+            return {
+                "account": account,
                 "models": self.runtime.models(),
+                "autonomy": resume,
             }
-        )
+        return self._guard(connect)
 
     def models(self) -> dict[str, Any]:
         return self._guard(self.runtime.models)
@@ -187,7 +204,7 @@ def main() -> int:
         webview.start(gui="edgechromium", debug=False)
         return 0
     finally:
-        api.autonomy.stop(timeout_seconds=3.0)
+        api.autonomy.stop(timeout_seconds=3.0, disable_persisted=False)
         lock.release()
 
 
