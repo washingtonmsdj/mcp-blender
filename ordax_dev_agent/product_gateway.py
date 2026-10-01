@@ -88,6 +88,21 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
         local_action="project.text_read",
         allowed_fields=frozenset({"project", "path"}),
     ),
+    "workspace.file_stat": ProductActionSpec(
+        name="workspace.file_stat",
+        local_action="workspace.file_stat",
+        allowed_fields=frozenset({"project", "path"}),
+    ),
+    "workspace.directory_list": ProductActionSpec(
+        name="workspace.directory_list",
+        local_action="workspace.directory_list",
+        allowed_fields=frozenset({"project", "path", "max_depth", "max_entries", "include_hidden"}),
+    ),
+    "workspace.text_read": ProductActionSpec(
+        name="workspace.text_read",
+        local_action="workspace.text_read",
+        allowed_fields=frozenset({"project", "path", "start_line", "end_line"}),
+    ),
     "project.search_text": ProductActionSpec(
         name="project.search_text",
         local_action="project.search_text",
@@ -149,6 +164,48 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
 
 # Product v2 exposes only bounded typed operations. No generic action executor or shell.
 PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
+    "workspace.text_write": ProductActionSpec(
+        "workspace.text_write",
+        "workspace.text_write",
+        frozenset({"project", "path", "content", "expected_sha256", "create"}),
+        effect="write",
+    ),
+    "workspace.text_patch": ProductActionSpec(
+        "workspace.text_patch",
+        "workspace.text_patch",
+        frozenset({"project", "path", "expected_sha256", "replacements"}),
+        effect="write",
+    ),
+    "workspace.directory_create": ProductActionSpec(
+        "workspace.directory_create",
+        "workspace.directory_create",
+        frozenset({"project", "path", "parents"}),
+        effect="write",
+    ),
+    "workspace.path_remove": ProductActionSpec(
+        "workspace.path_remove",
+        "workspace.path_remove",
+        frozenset({"project", "path", "expected_sha256", "recursive"}),
+        effect="write",
+    ),
+    "workspace.path_move": ProductActionSpec(
+        "workspace.path_move",
+        "workspace.path_move",
+        frozenset({"project", "source", "destination", "expected_sha256", "overwrite"}),
+        effect="write",
+    ),
+    "git.command": ProductActionSpec(
+        "git.command",
+        "git.command",
+        frozenset({"project", "args", "timeout_seconds"}),
+        effect="execute",
+    ),
+    "terminal.exec": ProductActionSpec(
+        "terminal.exec",
+        "terminal.exec",
+        frozenset({"project", "cwd", "argv", "command", "shell", "timeout_seconds", "env"}),
+        effect="execute",
+    ),
     "project.text_write": ProductActionSpec("project.text_write", "project.text_write", frozenset({"project", "path", "content", "expected_sha256", "create"}), effect="write"),
     "project.text_patch": ProductActionSpec("project.text_patch", "project.text_patch", frozenset({"project", "path", "expected_sha256", "replacements"}), effect="write"),
     "blender.live_status": ProductActionSpec("blender.live_status", "blender.live_status", frozenset({"project"})),
