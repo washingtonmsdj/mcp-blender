@@ -144,6 +144,11 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
         local_action="git.diff",
         allowed_fields=frozenset({"project", "paths"}),
     ),
+    "handoff.get": ProductActionSpec(
+        name="handoff.get",
+        local_action="handoff.get",
+        allowed_fields=frozenset({"project", "handoff_id"}),
+    ),
     "artifact.preview": ProductActionSpec(
         name="artifact.preview",
         local_action="artifact.preview",
@@ -164,6 +169,12 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
 
 # Product v2 exposes only bounded typed operations. No generic action executor or shell.
 PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
+    "handoff.create": ProductActionSpec(
+        "handoff.create",
+        "handoff.create",
+        frozenset({"project", "summary", "next_action", "completed", "blockers", "changed_paths", "ttl_hours"}),
+        effect="write",
+    ),
     "workspace.text_write": ProductActionSpec(
         "workspace.text_write",
         "workspace.text_write",
