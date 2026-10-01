@@ -33,7 +33,7 @@ class DeveloperActionsTests(unittest.TestCase):
     def test_workspace_actions_are_not_limited_to_legacy_top_level_folders(self) -> None:
         target = self.project / "custom" / "deep" / "settings.ini"
         target.parent.mkdir(parents=True)
-        target.write_text("mode=one\n", encoding="utf-8")
+        target.write_bytes(b"mode=one\n")
 
         read = self.registry.execute(
             "workspace.text_read",
@@ -52,7 +52,7 @@ class DeveloperActionsTests(unittest.TestCase):
             },
         )
         self.assertTrue(patch.ok)
-        self.assertEqual("mode=two\n", target.read_text(encoding="utf-8"))
+        self.assertEqual(b"mode=two\n", target.read_bytes())
 
     def test_workspace_write_move_and_remove_are_sha_guarded(self) -> None:
         created = self.registry.execute(
