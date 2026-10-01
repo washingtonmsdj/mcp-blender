@@ -206,8 +206,21 @@ class DevelopmentToolset:
         if not isinstance(raw, dict):
             return json.dumps({"ok": False, "summary": "tool arguments must be an object"})
 
-        payload = {"project": self.project}
-        payload.update({key: value for key, value in raw.items() if value is not None})
+        definition = next((item for item in DEVELOPMENT_TOOLS if item["name"] == name), None)
+        allowed = set((definition or {}).get("parameters", {}).get("properties", {}))
+        unsupported = sorted(set(raw) - allowed)
+        if unsupported:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "summary": "unsupported tool argument(s): " + ", ".join(unsupported),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+
+        payload = {key: value for key, value in raw.items() if value is not None}
+        payload["project"] = self.project
         result = self.action_registry.execute(action, payload)
         output = {
             "ok": bool(result.ok),
