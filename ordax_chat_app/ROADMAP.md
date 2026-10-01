@@ -92,7 +92,7 @@ O fluxo base já está implementado; faltam provas de login real em conta elegí
 - recuperação após restart do Device Agent;
 - portas/preview vinculados ao projeto.
 
-## Gate 6 — browser control ✅ foundation / computer control pendente
+## Gate 6 — browser + computer control ✅ foundation
 
 Browser implementado e validado no Windows real:
 - Chromium ORDAX-owned com profile isolado e CDP;
@@ -100,10 +100,21 @@ Browser implementado e validado no Windows real:
 - cleanup de toda a árvore da sessão sem tocar em outros Chromes;
 - screenshot pode voltar ao modelo como evidência visual.
 
-Ainda pendente para computer control geral:
-- janela ativa e catálogo de aplicações;
-- click/type/hotkey/scroll fora do navegador;
-- grants próprios e confirmação para efeitos de alto impacto.
+Computer control geral implementado como capability separada:
+- catálogo de janelas e janela ativa;
+- screenshot do desktop ou janela ativa;
+- focus/click/type/hotkey/scroll fora do navegador;
+- backend Windows tipado, sem shell;
+- `computer.observe` e `computer.interact` são grants persistentes e project-scoped;
+- ambos começam negados; a ferramenta nem aparece ao modelo sem grant;
+- toggles explícitos no desktop para conceder/revogar por projeto;
+- observação validada no Windows real: enumeração de janelas + PNG 3840×2160;
+- interação não é inferida a partir de observação.
+
+Ainda neste gate:
+- confirmação de ações de alto impacto por política;
+- evidência/replay de ações de input;
+- backend equivalente para Linux quando o produto exigir.
 
 ## Gate 7 — contexto de agente ✅ foundation
 
