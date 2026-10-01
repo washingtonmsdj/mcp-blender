@@ -46,6 +46,41 @@ function renderWebBridge(status){
   el("webBridgeState").className=running?"success":"muted";
 }
 
+async function createHandoff(){
+  const project=state.project||el("projectSelect").value;
+  const summary=el("handoffSummary").value.trim();
+  const nextAction=el("handoffNextAction").value.trim();
+  if(!project){setStatus("Selecione um projeto.","error");return}
+  if(!summary){setStatus("Informe um resumo para o Handoff.","error");return}
+  try{
+    const data=unwrap(await api().handoff_create(project,summary,nextAction,24));
+    el("handoffId").value=data.handoff_id||"";
+    el("handoffState").textContent=(data.handoff_id||"")+" · expira "+(data.expires_at||"");
+    el("handoffState").className="success";
+    setStatus("Handoff criado. Use esse ID em uma conversa nova do ChatGPT.","success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
+async function loadHandoff(){
+  const project=state.project||el("projectSelect").value;
+  const id=el("handoffId").value.trim();
+  if(!project||!id){setStatus("Selecione o projeto e informe o Handoff ID.","error");return}
+  try{
+    const data=unwrap(await api().handoff_get(project,id));
+    el("handoffSummary").value=data.summary||"";
+    el("handoffNextAction").value=data.next_action||"";
+    const parts=[
+      data.handoff_id||"",
+      data.summary||"",
+      data.next_action?("Próximo: "+data.next_action):"",
+      data.expires_at?("Expira: "+data.expires_at):""
+    ].filter(Boolean);
+    el("handoffState").textContent=parts.join(" · ");
+    el("handoffState").className="success";
+    setStatus("Handoff carregado.","success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
 async function refreshWebBridge(){
   try{renderWebBridge(unwrap(await api().web_bridge_status()))}
   catch(err){el("webBridgeState").textContent=err.message;el("webBridgeState").className="error"}
@@ -371,6 +406,8 @@ el("webBridgeConnectButton").onclick=connectWebBridge;
 el("webBridgeStopButton").onclick=stopWebBridge;
 el("webBridgeTunnelsButton").onclick=openWebBridgeTunnels;
 el("webBridgeApiKeysButton").onclick=openWebBridgeApiKeys;
+el("handoffCreateButton").onclick=createHandoff;
+el("handoffLoadButton").onclick=loadHandoff;
 el("modeSelect").onchange=e=>{state.mode=e.target.value;renderMode()};
 el("newThreadButton").onclick=createThread;
 el("sendButton").onclick=send;
