@@ -2162,7 +2162,7 @@ export default {
         resource: `${url.origin}/mcp`,
         authorization_servers: authorizationServers,
         bearer_methods_supported: ["header"],
-        scopes_supported: ["openid", "email"],
+        scopes_supported: ["openid", "email", "offline_access"],
       });
     }
     if (url.pathname === "/mcp") {
