@@ -658,11 +658,29 @@ class BrowserSessionActions:
 
         try:
             if os.name == "nt":
-                subprocess.run(
-                    ["taskkill", "/PID", str(pid), "/T", "/F"],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    timeout=15, shell=False,
-                )
+                deadline = time.monotonic() + 12.0
+                attempted: set[int] = set()
+                while time.monotonic() < deadline:
+                    candidates = [pid]
+                    discovered = self._discover_browser_pid(project, state)
+                    if discovered is not None:
+                        candidates.append(discovered)
+                    candidates = [item for item in candidates if item > 0 and item not in attempted]
+                    if not candidates:
+                        if self._discover_browser_pid(project, state) is None:
+                            break
+                        time.sleep(0.05)
+                        continue
+                    for candidate in candidates:
+                        attempted.add(candidate)
+                        subprocess.run(
+                            ["taskkill", "/PID", str(candidate), "/T", "/F"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=15,
+                            shell=False,
+                        )
+                    time.sleep(0.1)
             else:
                 try:
                     os.killpg(pid, 15)
@@ -671,15 +689,42 @@ class BrowserSessionActions:
         except (OSError, subprocess.TimeoutExpired) as error:
             return ActionResult(False, f"browser stop failed: {error}", state)
 
-        deadline = time.monotonic() + 5.0
-        while self._pid_running(pid) and time.monotonic() < deadline:
-            time.sleep(0.05)
         handle = getattr(self, "_browser_process_handles", {}).pop(session_id, None)
         if handle is not None:
             try:
-                handle.wait(timeout=2)
+                handle.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                pass
-        state.update({"stopped_at_unix": time.time(), "running": False})
+                try:
+                    handle.kill()
+                    handle.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            owned_pid = self._discover_browser_pid(project, state)
+            original_running = self._pid_running(pid)
+            if owned_pid is None and not original_running:
+                break
+            if os.name == "nt" and owned_pid is not None:
+                try:
+                    subprocess.run(
+                        ["taskkill", "/PID", str(owned_pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=10,
+                        shell=False,
+                    )
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+            time.sleep(0.1)
+
+        owned_pid = self._discover_browser_pid(project, state)
+        stopped = owned_pid is None and not self._pid_running(pid)
+        state.update({
+            "stopped_at_unix": time.time(),
+            "running": not stopped,
+            "ownership_valid": False if stopped else self._browser_owned(project, state),
+        })
         self._write_browser_state(project, state)
-        return ActionResult(not self._pid_running(pid), "browser session stopped", state)
+        return ActionResult(stopped, "browser session stopped", state)
