@@ -39,7 +39,7 @@ class CloudflareDeployScriptTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn('"/.well-known/oauth-protected-resource"', verify)
-        self.assertIn('".well-known/openid-configuration"', verify)
+        self.assertIn('/.well-known/openid-configuration', verify)
         self.assertIn('{"openid", "email"}.issubset', verify)
         self.assertIn('"userinfo_endpoint"', verify)
         self.assertIn('"S256"', verify)
