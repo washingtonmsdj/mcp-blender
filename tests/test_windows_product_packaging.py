@@ -50,6 +50,14 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn("software\\microsoft\\windows\\currentversion\\run", installer)
         self.assertIn("microsoftedgewebview2setup.exe", installer)
 
+    def test_installer_skips_webview_bootstrap_when_runtime_exists(self) -> None:
+        installer = (ROOT / "packaging" / "windows" / "ordax-studio.iss").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("function NeedsWebView2()", installer)
+        self.assertIn("{pf32}\\Microsoft\\EdgeWebView\\Application", installer)
+        self.assertIn("Check: NeedsWebView2", installer)
+
     def test_product_build_bundles_private_runtime_and_project_scripts(self) -> None:
         build = (ROOT / "scripts" / "windows" / "build-ordax-studio-product.ps1").read_text(
             encoding="utf-8"
