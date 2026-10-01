@@ -93,8 +93,17 @@ export function publicProductPage(pathname: string): Response | null {
 <p>The remote Control Plane uses Cloudflare services for compute and storage. Account authentication currently uses Supabase Auth. Local project data remains on the user's device unless a tool invocation requires selected data or an artifact to transit the Control Plane to fulfill the request.</p>
 <h2>Sharing and sale</h2>
 <p>ORDAX Dev does not sell personal data. Data is shared with infrastructure providers only as needed to operate the service or when required by law.</p>
+<h2>Retention</h2>
+<ul>
+<li><strong>OAuth credentials:</strong> ORDAX verifies bearer tokens for requests but does not persist the user's OAuth access token in the Control Plane. Authentication records held by the identity provider follow the account lifecycle and the provider's applicable policy.</li>
+<li><strong>Temporary Product artifacts:</strong> signed download links expire after 1 hour. Artifact bytes and their Product metadata are retained for no more than 7 days, then the daily retention process deletes both the Cloudflare R2 object and its D1 record.</li>
+<li><strong>Product action and audit history:</strong> completed action records, request metadata and audit entries are retained for no more than 30 days for reliability, security and abuse investigation.</li>
+<li><strong>Device pairings:</strong> pairing secrets expire and expired pairing records are deleted by the next daily retention cycle.</li>
+<li><strong>Device links and grants:</strong> active links and grants remain while the user keeps them active. Revoked or expired authorization metadata is retained for no more than 30 days after it becomes inactive, once no retained action history depends on it.</li>
+</ul>
+<p>These retention periods apply to the ORDAX Product/MCP service. Files that remain only on the user's computer are not copied to the Control Plane unless an authorized tool request needs selected content or an artifact to fulfill that request.</p>
 <h2>User control</h2>
-<p>Users can stop the local runtime, revoke device or project grants, disconnect the plugin, and remove the software. Access is designed to fail closed when authentication or grants are missing.</p>
+<p>Users can stop the local runtime, revoke device or project grants, disconnect the plugin, and remove the software. Access is designed to fail closed when authentication or grants are missing. Retained Product metadata can also be addressed through the <a href="/support">support channel</a>.</p>
 <h2>Security</h2>
 <p>Device credentials are scoped separately from user authentication. Remote actions are checked against explicit device, project and action grants. Do not place secrets in prompts or project files unless necessary for the task.</p>
 <p>Questions about this policy can be raised through the <a href="/support">support page</a>.</p>`);
