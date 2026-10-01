@@ -638,19 +638,19 @@ class DeveloperActions:
         ):
             return ActionResult(False, "args must contain 1..128 valid Git arguments")
 
-        subcommand = args[0].strip().lower()
-        if subcommand not in _ALLOWED_GIT_SUBCOMMANDS:
-            return ActionResult(
-                False,
-                f"Git subcommand is not allowed through the remote boundary: {subcommand}",
-            )
-
         forbidden = {"-C", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
         for index, arg in enumerate(args):
             if arg in forbidden or any(arg.startswith(value + "=") for value in forbidden if value.startswith("--")):
                 return ActionResult(False, f"Git argument may escape project scope: {arg}")
             if arg == "-c":
                 return ActionResult(False, "Git config overrides are not allowed through the remote boundary")
+
+        subcommand = args[0].strip().lower()
+        if subcommand not in _ALLOWED_GIT_SUBCOMMANDS:
+            return ActionResult(
+                False,
+                f"Git subcommand is not allowed through the remote boundary: {subcommand}",
+            )
 
         timeout = _bounded_int(
             payload.get("timeout_seconds"),
