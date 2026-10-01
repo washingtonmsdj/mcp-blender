@@ -250,6 +250,22 @@ class FakeBrowserCompanion:
         self.sent.append(row)
         return row
 
+    def commands(self, conversation_id=None, *, limit=50):
+        rows = [
+            {
+                **item,
+                "attempts": 1,
+                "max_attempts": 5,
+                "delivered_at": None,
+                "ack_at": None,
+                "error": None,
+            }
+            for item in reversed(self.sent)
+        ]
+        if conversation_id:
+            rows = [item for item in rows if item["conversation_id"] == conversation_id]
+        return rows[:limit]
+
 
 class FakeManagedBrowser:
     def __init__(self):
@@ -471,6 +487,11 @@ class DesktopApiTests(unittest.TestCase):
         self.assertTrue(sent["ok"])
         self.assertEqual(sent["data"]["state"], "queued")
         self.assertEqual(self.browser_companion.sent[0]["text"], "continue")
+
+        commands = self.api.browser_companion_commands("conversation-12345678", 10)
+        self.assertTrue(commands["ok"])
+        self.assertEqual(commands["data"][0]["id"], "cmd-1")
+        self.assertEqual(commands["data"][0]["attempts"], 1)
 
     def test_create_open_and_send_thread(self):
         created = self.api.create_thread("demo", "gpt-test")
