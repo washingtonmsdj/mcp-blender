@@ -35,6 +35,11 @@ This mode is useful for headless automation, autonomous workers and background e
 
 ## Important product boundary
 
+The **normal ChatGPT allowance is never consumed through browser scraping or synthetic prompt submission**. In normal-chat mode, ChatGPT remains the conversation host and ORDAX is the MCP capability/runtime.
+
+ORDAX Dev may show project state, Web Bridge health and Handoff controls beside that workflow, but it does not programmatically read ChatGPT output or send hidden prompts to the consumer website. The embedded ORDAX chat is reserved for providers with an explicit inference API/session contract (Responses, other providers or local models).
+
+
 There is no supported API that lets a third-party desktop embed the consumer ChatGPT conversation while consuming the normal chat allowance as if it were the ChatGPT UI. ORDAX therefore does not scrape ChatGPT cookies, reverse-engineer private endpoints or automate extraction of ChatGPT output.
 
 For normal-chat quota, ChatGPT remains the host and calls ORDAX over MCP.
@@ -55,3 +60,15 @@ For unattended 24/7 model execution, ORDAX uses an explicitly configured provide
 - Rules, Skills and AGENTS.md context.
 
 Blender is one adapter. ORDAX Dev is not a Blender-only MCP.
+
+
+## Cross-chat Handoff
+
+Regular ChatGPT conversations can continue across fresh chats without scraping the prior chat.
+
+1. The current conversation calls `handoff_create` through ORDAX MCP with a compact summary, next action, changed paths and blockers.
+2. ORDAX stores an opaque `hof_...` record locally with a bounded TTL.
+3. A fresh ChatGPT conversation calls `handoff_get` with that ID and resumes from the returned project state.
+4. The desktop also exposes a local Handoff fallback in case a ChatGPT plan does not allow the write tool.
+
+Handoffs are project-scoped and expire automatically; they are not a hidden copy of the entire ChatGPT transcript.
