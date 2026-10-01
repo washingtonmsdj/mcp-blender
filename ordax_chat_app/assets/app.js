@@ -98,6 +98,7 @@ async function refreshAutonomy(){
     el("autonomyToggle").textContent=state.autonomy?"Parar 24/7":"Iniciar 24/7";
     const details=[];
     if(status.model)details.push(status.model);
+    if((status.project_slugs||[]).length)details.push((status.project_slugs||[]).join(", "));
     if(status.completed_runs)details.push(status.completed_runs+" execução(ões)");
     if(status.last_error)details.push("erro: "+status.last_error);
     el("autonomyState").textContent=(state.autonomy?"Supervisor ativo":"Supervisor parado")+(details.length?" · "+details.join(" · "):".");
@@ -141,7 +142,7 @@ async function toggleAutonomy(){
   if(!model){setStatus("Selecione um modelo.","error");return}
   try{
     if(state.autonomy)unwrap(await api().autonomy_stop());
-    else unwrap(await api().autonomy_start(model));
+    else unwrap(await api().autonomy_start(state.project,model));
     await refreshAutonomy();
     await refreshActivity();
   }catch(err){setStatus(err.message,"error")}
