@@ -45,6 +45,14 @@ class PersistentProcessActions:
                 return result.returncode == 0 and f'"{pid}"' in result.stdout
             except (OSError, subprocess.TimeoutExpired):
                 return False
+        proc_stat = Path(f"/proc/{pid}/stat")
+        try:
+            raw = proc_stat.read_text(encoding="utf-8", errors="replace")
+            parts = raw.split()
+            if len(parts) >= 3 and parts[2] == "Z":
+                return False
+        except OSError:
+            pass
         try:
             os.kill(pid, 0)
             return True
@@ -203,6 +211,11 @@ class PersistentProcessActions:
                 creationflags=creationflags,
                 start_new_session=start_new_session,
             )
+            handles = getattr(self, "_persistent_process_handles", None)
+            if handles is None:
+                handles = {}
+                self._persistent_process_handles = handles
+            handles[process_id] = manager
         except OSError as error:
             state.update({"state": "failed", "error": str(error), "ended_at_unix": time.time()})
             state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -307,6 +320,17 @@ class PersistentProcessActions:
         deadline = time.monotonic() + 5.0
         while self._pid_running(pid) and time.monotonic() < deadline:
             time.sleep(0.05)
+        handle = getattr(self, "_persistent_process_handles", {}).pop(process_id, None)
+        if handle is not None:
+            try:
+                handle.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        elif os.name != "nt":
+            try:
+                os.waitpid(pid, os.WNOHANG)
+            except (ChildProcessError, OSError):
+                pass
         final = self._public_process_state(self._load_process_state(project, process_id))
         final["running"] = False
         final["ownership_valid"] = False
