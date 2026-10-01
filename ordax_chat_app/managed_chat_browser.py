@@ -8,6 +8,7 @@ modified.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -135,15 +136,17 @@ class ManagedChatBrowser:
         return value
 
     @staticmethod
-    def _verify_windows_signature(executable: Path) -> None:
+    def _verify_windows_signature(executable: Path, *, expected_version: str) -> dict[str, str]:
         if os.name != "nt":
-            return
+            return {"status": "not-applicable", "subject": "", "product_version": expected_version}
         env = dict(os.environ)
         env["ORDAX_CFT_EXE"] = str(executable)
         command = (
             "$s=Get-AuthenticodeSignature -FilePath $env:ORDAX_CFT_EXE;"
             "$subject=if($s.SignerCertificate){$s.SignerCertificate.Subject}else{''};"
-            "Write-Output ($s.Status.ToString()+'|'+$subject)"
+            "$version=(Get-Item -LiteralPath $env:ORDAX_CFT_EXE).VersionInfo.ProductVersion;"
+            "[pscustomobject]@{Status=$s.Status.ToString();Subject=$subject;ProductVersion=$version}"
+            "|ConvertTo-Json -Compress"
         )
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
@@ -155,15 +158,43 @@ class ManagedChatBrowser:
             shell=False,
             check=False,
         )
-        output = (result.stdout or "").strip()
-        if result.returncode != 0 or not output.startswith("Valid|"):
+        raw = (result.stdout or "").strip()
+        if result.returncode != 0:
             raise RuntimeError(
-                "Chrome for Testing executable failed Windows signature validation"
+                "Chrome for Testing signature inspection failed: "
+                + (result.stderr or raw)[-1000:]
             )
-        if "Google" not in output:
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(
+                "Chrome for Testing signature inspection returned invalid data"
+            ) from error
+
+        status = str(payload.get("Status") or "")
+        subject = str(payload.get("Subject") or "")
+        product_version = str(payload.get("ProductVersion") or "")
+        if not subject or "Google" not in subject:
             raise RuntimeError(
                 "Chrome for Testing executable is not signed by Google"
             )
+        if status in {"NotSigned", "HashMismatch"}:
+            raise RuntimeError(
+                f"Chrome for Testing signature is invalid: {status}"
+            )
+        if status not in {"Valid", "UnknownError", "NotTrusted"}:
+            raise RuntimeError(
+                f"Chrome for Testing signature status is unsupported: {status}"
+            )
+        if expected_version not in product_version:
+            raise RuntimeError(
+                "Chrome for Testing executable version does not match release metadata"
+            )
+        return {
+            "status": status,
+            "subject": subject,
+            "product_version": product_version,
+        }
 
     def install_browser(self) -> dict[str, Any]:
         if os.name != "nt":
@@ -201,6 +232,7 @@ class ManagedChatBrowser:
             )
             with urllib.request.urlopen(req, timeout=180) as response, archive.open("wb") as handle:
                 shutil.copyfileobj(response, handle)
+            archive_sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()
 
             extract_dir = temp_root / "extract"
             extract_dir.mkdir()
@@ -210,7 +242,10 @@ class ManagedChatBrowser:
             executable = extract_dir / "chrome-win64" / "chrome.exe"
             if not executable.is_file():
                 raise RuntimeError("Chrome for Testing archive does not contain chrome.exe")
-            self._verify_windows_signature(executable)
+            signature = self._verify_windows_signature(
+                executable,
+                expected_version=version,
+            )
 
             target_root = self.browser_dir / "chrome-win64"
             self.browser_dir.mkdir(parents=True, exist_ok=True)
@@ -223,6 +258,10 @@ class ManagedChatBrowser:
             "version": version,
             "platform": "win64",
             "source": download_url,
+            "archive_sha256": archive_sha256,
+            "signature_status": signature["status"],
+            "signer_subject": signature["subject"],
+            "product_version": signature["product_version"],
         }
         self.browser_metadata_path.write_text(
             json.dumps(metadata, ensure_ascii=False, indent=2),
