@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import webbrowser
 import zipfile
@@ -109,7 +110,85 @@ class WebBridgeManager:
         )
         self.credentials = credentials or WebBridgeCredentialStore(self.state_dir / "web-bridge.dat")
         self.bin_dir = self.state_dir / "web-bridge" / "bin"
+        self.runtime_path = self.state_dir / "web-bridge-runtime.json"
         self._process: subprocess.Popen | None = None
+
+    @staticmethod
+    def _pid_running(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        if os.name == "nt":
+            try:
+                result = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                    capture_output=True,
+                    text=True,
+                    timeout=4,
+                    shell=False,
+                )
+                return result.returncode == 0 and f'"{pid}"' in (result.stdout or "")
+            except (OSError, subprocess.TimeoutExpired):
+                return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    @staticmethod
+    def _commandline(pid: int) -> str:
+        if pid <= 0:
+            return ""
+        if os.name == "nt":
+            script = (
+                "$ErrorActionPreference='SilentlyContinue';"
+                f"(Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\").CommandLine"
+            )
+            try:
+                result = subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-Command", script],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    shell=False,
+                )
+                return (result.stdout or "").strip()
+            except (OSError, subprocess.TimeoutExpired):
+                return ""
+        try:
+            return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+        except OSError:
+            return ""
+
+    def _load_runtime(self) -> dict[str, Any]:
+        if not self.runtime_path.is_file():
+            return {}
+        try:
+            payload = json.loads(self.runtime_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _write_runtime(self, payload: dict[str, Any]) -> None:
+        encoded = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+        _atomic_write(self.runtime_path, encoded, mode=0o600)
+
+    def _runtime_owned(self, runtime: dict[str, Any], config: dict[str, Any]) -> bool:
+        try:
+            pid = int(runtime.get("pid") or 0)
+        except (TypeError, ValueError):
+            return False
+        if not self._pid_running(pid):
+            return False
+        commandline = self._commandline(pid)
+        profile = str(config.get("profile") or "ordax-dev")
+        binary = self.binary()
+        binary_name = binary.name.lower() if binary else "tunnel-client"
+        return (
+            binary_name in commandline.lower()
+            and "run" in commandline
+            and profile in commandline
+        )
 
     def _configured(self) -> dict[str, Any]:
         return self.credentials.load()
@@ -286,12 +365,15 @@ class WebBridgeManager:
     def start(self) -> dict[str, Any]:
         config = self._configured()
         self.initialize()
-        if self._process is not None and self._process.poll() is None:
-            return self.status()
+        current = self.status()
+        if current.get("running"):
+            return current
         binary = self.binary()
         if binary is None:
             raise RuntimeError("tunnel-client is not installed")
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        if os.name == "nt":
+            flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         self._process = subprocess.Popen(
             [str(binary), "run", "--profile", str(config.get("profile") or "ordax-dev")],
             env=self._env(config),
@@ -299,11 +381,23 @@ class WebBridgeManager:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=flags,
+            start_new_session=os.name != "nt",
         )
+        self._write_runtime({
+            "schema_version": 1,
+            "pid": self._process.pid,
+            "profile": str(config.get("profile") or "ordax-dev"),
+            "binary": str(binary),
+            "started_at_unix": time.time(),
+        })
         return self.status()
 
     def stop(self) -> dict[str, Any]:
+        config = self._configured()
+        runtime = self._load_runtime()
         process = self._process
+        pid = int(runtime.get("pid") or 0) if runtime else 0
+
         if process is not None and process.poll() is None:
             try:
                 process.send_signal(signal.SIGTERM)
@@ -311,13 +405,41 @@ class WebBridgeManager:
             except Exception:
                 process.kill()
                 process.wait(timeout=5)
+        elif pid > 0 and self._runtime_owned(runtime, config):
+            try:
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/PID", str(pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=15,
+                        shell=False,
+                    )
+                else:
+                    os.kill(pid, signal.SIGTERM)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+
         self._process = None
+        try:
+            self.runtime_path.unlink()
+        except FileNotFoundError:
+            pass
         return self.status()
 
     def status(self) -> dict[str, Any]:
         config = self._configured()
+        runtime = self._load_runtime()
         process = self._process
-        running = bool(process is not None and process.poll() is None)
+        in_process = bool(process is not None and process.poll() is None)
+        persisted = bool(runtime and self._runtime_owned(runtime, config))
+        running = in_process or persisted
+        pid = process.pid if in_process else (int(runtime.get("pid") or 0) if persisted else None)
+        if runtime and not persisted and not in_process:
+            try:
+                self.runtime_path.unlink()
+            except FileNotFoundError:
+                pass
         return {
             "configured": bool(config.get("tunnel_id") and config.get("api_key")),
             "tunnel_id": config.get("tunnel_id"),
@@ -326,7 +448,8 @@ class WebBridgeManager:
             "client_installed": self.binary() is not None,
             "client_path": str(self.binary()) if self.binary() else None,
             "running": running,
-            "pid": process.pid if running else None,
+            "pid": pid,
+            "started_at_unix": runtime.get("started_at_unix") if persisted else None,
             "chatgpt_url": CHATGPT_URL,
             "tunnels_url": TUNNELS_URL,
             "api_keys_url": API_KEYS_URL,
