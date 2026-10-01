@@ -11,6 +11,7 @@ from .autonomy_service import AutonomyService
 from .instance_lock import SingleInstanceLock
 from .runtime import OrdaxChatRuntime
 from .web_bridge import WebBridgeManager
+from .browser_companion import BrowserCompanionServer
 
 
 APP_NAME = "ORDAX Dev"
@@ -25,11 +26,14 @@ class DesktopApi:
         *,
         autonomy: AutonomyService | None = None,
         web_bridge: WebBridgeManager | None = None,
+        browser_companion: BrowserCompanionServer | None = None,
         auto_resume: bool = True,
     ):
         self.runtime = runtime or OrdaxChatRuntime()
         self.autonomy = autonomy or AutonomyService(self.runtime)
         self.web_bridge = web_bridge or WebBridgeManager()
+        self.browser_companion = browser_companion or BrowserCompanionServer()
+        self.browser_companion.start()
         self.autonomy_resume_error: str | None = None
         if auto_resume:
             try:
@@ -79,6 +83,7 @@ class DesktopApi:
                         "mcp_endpoint": NORMAL_CHAT_MCP_ENDPOINT,
                         "chat_url": NORMAL_CHAT_URL,
                         "web_bridge": self.web_bridge.status(),
+                        "browser_companion": self.browser_companion.status(),
                     },
                     "agent": {
                         "label": "Agent / Responses",
@@ -181,6 +186,28 @@ class DesktopApi:
     def web_bridge_open_api_keys(self) -> dict[str, Any]:
         return self._guard(
             lambda: {"opened": self.web_bridge.open_api_keys_page()}
+        )
+
+    def browser_companion_status(self) -> dict[str, Any]:
+        return self._guard(self.browser_companion.status)
+
+    def browser_companion_pair(self) -> dict[str, Any]:
+        return self._guard(self.browser_companion.new_pairing_code)
+
+    def browser_companion_conversations(self) -> dict[str, Any]:
+        return self._guard(self.browser_companion.conversations)
+
+    def browser_companion_messages(self, conversation_id: str) -> dict[str, Any]:
+        return self._guard(
+            lambda: self.browser_companion.messages(str(conversation_id or ""))
+        )
+
+    def browser_companion_send(self, conversation_id: str, text: str) -> dict[str, Any]:
+        return self._guard(
+            lambda: self.browser_companion.send(
+                str(conversation_id or ""),
+                str(text or ""),
+            )
         )
 
     def connect_chatgpt(self) -> dict[str, Any]:
@@ -336,6 +363,10 @@ def run_desktop(api_factory=DesktopApi) -> int:
         return 0
     finally:
         api.autonomy.stop(timeout_seconds=3.0, disable_persisted=False)
+        try:
+            api.browser_companion.stop()
+        except Exception:
+            pass
         lock.release()
 
 
