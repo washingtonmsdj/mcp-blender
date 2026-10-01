@@ -1,4 +1,4 @@
-const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null,webBridge:null,webBridgeStartup:null,browserCompanion:null,browserConversation:null};
+const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null,webBridge:null,webBridgeStartup:null,browserCompanion:null,browserConversation:null,browserMessageFingerprint:""};
 
 function api(){return window.pywebview.api}
 function el(id){return document.getElementById(id)}
@@ -242,12 +242,29 @@ async function refreshBrowserCompanion(){
   }
 }
 
+function browserMessagesFingerprint(messages){
+  return (messages||[]).map(item=>String(item.key||"")+":"+String(item.text||"").length+":"+String(item.text||"").slice(-48)).join("|");
+}
+
+async function refreshBrowserConversationMessages(){
+  if(state.mode!=="normal"||!state.browserConversation)return;
+  try{
+    const messages=unwrap(await api().browser_companion_messages(state.browserConversation));
+    const fingerprint=browserMessagesFingerprint(messages);
+    if(fingerprint!==state.browserMessageFingerprint){
+      state.browserMessageFingerprint=fingerprint;
+      renderMessages(messages);
+    }
+  }catch(err){}
+}
+
 async function openBrowserConversation(id){
   state.browserConversation=id;
   const conversations=unwrap(await api().browser_companion_conversations());
   const current=(conversations||[]).find(item=>item.id===id);
   el("threadTitle").textContent=current?.title||"ChatGPT Web";
   const messages=unwrap(await api().browser_companion_messages(id));
+  state.browserMessageFingerprint=browserMessagesFingerprint(messages);
   renderMessages(messages);
   renderBrowserConversations(conversations);
   setStatus("Conversa real do ChatGPT Web anexada ao ORDAX.","success");
@@ -630,3 +647,6 @@ el("computerInteractToggle").onchange=e=>setComputerCapability("computer.interac
 el("projectSelect").onchange=async e=>{state.project=e.target.value;state.thread=null;if(state.mode!=="normal"){el("threadTitle").textContent="Nova conversa";renderMessages([])}await refreshThreads();await refreshActivity();await refreshAutonomy();await refreshCapabilities()};
 el("composerInput").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}};
 window.addEventListener("pywebviewready",bootstrap);
+
+setInterval(refreshBrowserConversationMessages,1200);
+setInterval(()=>{if(state.mode==="normal")refreshBrowserCompanion()},5000);
