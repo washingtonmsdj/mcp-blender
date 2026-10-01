@@ -16,11 +16,16 @@ from .blender_actions import BlenderActions
 from .unity_status_actions import UnityStatusActions
 from .unity_actions import UnityActions
 from .agent_actions import AgentActions
+from .agent_orchestration_actions import AgentOrchestrationActions
 from .artifact_actions import ArtifactActions
 from .git_actions import GitActions
+from .developer_actions import DeveloperActions
+from .persistent_process_actions import PersistentProcessActions
 from .project_text_actions import ProjectTextActions
 from .workspace_actions import WorkspaceActions
 from .preview_actions import PreviewActions
+from .browser_session_actions import BrowserSessionActions
+from .computer_control_actions import ComputerControlActions
 from .memory_actions import MemoryActions
 from .component_actions import ComponentActions
 from .game_asset_catalog_actions import GameAssetCatalogActions
@@ -66,11 +71,16 @@ class ActionRegistry(
     UnityStatusActions,
     UnityActions,
     AgentActions,
+    AgentOrchestrationActions,
     ArtifactActions,
     GitActions,
+    DeveloperActions,
+    PersistentProcessActions,
     ProjectTextActions,
     WorkspaceActions,
     PreviewActions,
+    BrowserSessionActions,
+    ComputerControlActions,
     MemoryActions,
     ComponentActions,
     GameAssetCatalogActions,
@@ -99,7 +109,7 @@ class ActionRegistry(
     AlephActions,
     AlephSceneActions,
 ):
-    """Strict allow-list. No arbitrary remote shell command is accepted."""
+    """Canonical typed action registry for local and remote ORDAX capabilities."""
 
     def __init__(self, config: AgentConfig):
         self.config = config
@@ -111,14 +121,68 @@ class ActionRegistry(
             "workspace.repository_catalog": self.workspace_repository_catalog,
             "workspace.list_projects": self.workspace_list_projects,
             "workspace.bind_project": self.workspace_bind_project,
+            "workspace.file_stat": self.workspace_file_stat,
+            "workspace.directory_list": self.workspace_directory_list,
+            "workspace.text_read": self.workspace_text_read,
+            "workspace.text_write": self.workspace_text_write,
+            "workspace.text_patch": self.workspace_text_patch,
+            "workspace.directory_create": self.workspace_directory_create,
+            "workspace.path_remove": self.workspace_path_remove,
+            "workspace.path_move": self.workspace_path_move,
+            "terminal.exec": self.terminal_exec,
+            "git.command": self.git_command,
+            "process.start": self.process_start,
+            "process.status": self.process_status,
+            "process.list": self.process_list,
+            "process.logs": self.process_logs,
+            "process.write_stdin": self.process_write_stdin,
+            "process.stop": self.process_stop,
+            "browser.start": self.browser_start,
+            "browser.status": self.browser_status,
+            "browser.list": self.browser_list,
+            "browser.navigate": self.browser_navigate,
+            "browser.snapshot": self.browser_snapshot,
+            "browser.click": self.browser_click,
+            "browser.type": self.browser_type,
+            "browser.screenshot": self.browser_screenshot,
+            "browser.stop": self.browser_stop,
+            "computer.windows": self.computer_windows,
+            "computer.active_window": self.computer_active_window,
+            "computer.screenshot": self.computer_screenshot,
+            "computer.focus_window": self.computer_focus_window,
+            "computer.click": self.computer_click,
+            "computer.type": self.computer_type,
+            "computer.hotkey": self.computer_hotkey,
+            "computer.scroll": self.computer_scroll,
             "memory.status": self.memory_status,
             "memory.context": self.memory_context,
             "memory.remember": self.memory_remember,
             "memory.task_add": self.memory_task_add,
             "memory.task_toggle": self.memory_task_toggle,
             "memory.checkpoint": self.memory_checkpoint,
+            "handoff.create": self.handoff_create,
+            "handoff.get": self.handoff_get,
             "session.resume": self.session_resume,
             "session.finish": self.session_finish,
+            "orchestrator.status": self.orchestrator_status,
+            "orchestrator.agent_create": self.orchestrator_agent_create,
+            "orchestrator.agent_state": self.orchestrator_agent_state,
+            "orchestrator.goal_create": self.orchestrator_goal_create,
+            "orchestrator.goal_state": self.orchestrator_goal_state,
+            "orchestrator.session_start": self.orchestrator_session_start,
+            "orchestrator.session_usage": self.orchestrator_session_usage,
+            "orchestrator.session_checkpoint": self.orchestrator_session_checkpoint,
+            "orchestrator.session_rotate": self.orchestrator_session_rotate,
+            "orchestrator.continuation": self.orchestrator_continuation,
+            "orchestrator.message_send": self.orchestrator_message_send,
+            "orchestrator.inbox": self.orchestrator_inbox,
+            "orchestrator.message_read": self.orchestrator_message_read,
+            "orchestrator.work_enqueue": self.orchestrator_work_enqueue,
+            "orchestrator.work_claim": self.orchestrator_work_claim,
+            "orchestrator.work_heartbeat": self.orchestrator_work_heartbeat,
+            "orchestrator.work_complete": self.orchestrator_work_complete,
+            "orchestrator.work_fail": self.orchestrator_work_fail,
+            "orchestrator.work_list": self.orchestrator_work_list,
             "project.archive_to_hordax": self.project_archive_to_hordax,
             "project.observe": self.project_observe,
             "project.inventory": self.project_inventory,
@@ -316,7 +380,7 @@ class ActionRegistry(
         self._adapter_contracts = builtin_adapter_contracts()
         available = {entry.name: entry for entry in entry_points(group="ordax_dev_agent.adapters")}
         for name in config.adapters:
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "observation", "unity", "blender", "game_assets", "geo", "visual", "memory"}:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "workspace", "terminal", "process", "browser", "computer", "orchestrator", "observation", "unity", "blender", "game_assets", "geo", "visual", "memory"}:
                 raise ValueError(f"invalid or reserved adapter name: {name}")
             if name not in available:
                 raise ValueError(f"configured adapter is not installed: {name}")

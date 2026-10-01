@@ -32,6 +32,13 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
             '"repository_catalog"',
             '"project_text_read"',
             '"project_text_write"',
+            '"handoff_get"',
+            '"handoff_create"',
+            '"workspace_text_read"',
+            '"workspace_text_write"',
+            '"workspace_path_remove"',
+            '"git_command"',
+            '"terminal_exec"',
             '"blender_status"',
             '"blender_scene_snapshot"',
             '"blender_start"',
@@ -44,6 +51,8 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
         self.assertNotIn('action_execute', self.mcp)
         self.assertNotIn('shell_execute', self.mcp)
         self.assertNotIn('run_command', self.mcp)
+        self.assertIn('action: "terminal.exec"', self.mcp)
+        self.assertIn('Requires an explicit terminal.exec grant', self.mcp)
 
     def test_mcp_actions_still_flow_through_product_grants(self) -> None:
         self.assertIn('handlers.createAction(createRequest)', self.mcp)

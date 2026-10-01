@@ -36,7 +36,7 @@ const CONTROL_PLANE_CAPABILITIES = [
 
 const ACTION_PREFIXES = [
   "blender.", "unity.", "git.", "project.", "projects.", "workspace.", "artifact.",
-  "observation.", "game_assets.", "geo.", "visual.", "agent.",
+  "observation.", "game_assets.", "geo.", "visual.", "agent.", "terminal.", "handoff.",
 ];
 
 const PRODUCT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
@@ -46,6 +46,9 @@ const PRODUCT_READ_ONLY_ACTIONS = new Set([
   "workspace.repository_catalog",
   "project.inventory",
   "project.text_read",
+  "workspace.file_stat",
+  "workspace.directory_list",
+  "workspace.text_read",
   "project.search_text",
   "project.text_read_batch",
   "project.preview_status",
@@ -54,8 +57,17 @@ const PRODUCT_READ_ONLY_ACTIONS = new Set([
   "git.status",
   "git.diff",
   "artifact.preview",
+  "handoff.get",
 ]);
 const PRODUCT_TYPED_ACTIONS_V2 = new Set([
+  "handoff.create",
+  "workspace.text_write",
+  "workspace.text_patch",
+  "workspace.directory_create",
+  "workspace.path_remove",
+  "workspace.path_move",
+  "git.command",
+  "terminal.exec",
   "project.text_write",
   "project.text_patch",
   "blender.live_status",
@@ -409,7 +421,7 @@ type ProductGrantInput = {
 
 function parseProductGrantInput(body: JsonObject): ProductGrantInput | null {
   const actions = normalizedStringArray(body.actions, {
-    maxItems: 32,
+    maxItems: 128,
     validator: (item) => PRODUCT_ID_RE.test(item),
     allowed: PRODUCT_ACTIONS,
   });

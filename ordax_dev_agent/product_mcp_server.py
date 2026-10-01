@@ -103,6 +103,53 @@ def repository_catalog(
 
 
 @mcp.tool()
+def handoff_get(
+    device_id: str,
+    project: str,
+    handoff_id: str,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Load one expiring ORDAX continuation handoff for a granted project."""
+    return _invoke(
+        device_id=device_id,
+        action="handoff.get",
+        project=project,
+        space_id=space_id,
+        arguments={"project": project, "handoff_id": handoff_id},
+    )
+
+
+@mcp.tool()
+def handoff_create(
+    device_id: str,
+    project: str,
+    summary: str,
+    next_action: str = "",
+    completed: list[str] | None = None,
+    blockers: list[str] | None = None,
+    changed_paths: list[str] | None = None,
+    ttl_hours: int = 24,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a bounded expiring handoff for continuing work in a fresh chat."""
+    return _invoke(
+        device_id=device_id,
+        action="handoff.create",
+        project=project,
+        space_id=space_id,
+        arguments={
+            "project": project,
+            "summary": summary,
+            "next_action": next_action,
+            "completed": list(completed or []),
+            "blockers": list(blockers or []),
+            "changed_paths": list(changed_paths or []),
+            "ttl_hours": ttl_hours,
+        },
+    )
+
+
+@mcp.tool()
 def project_inventory(
     device_id: str,
     project: str,
@@ -308,6 +355,90 @@ def project_text_write(device_id: str, project: str, path: str, content: str, ex
 @mcp.tool()
 def project_text_patch(device_id: str, project: str, path: str, expected_sha256: str, replacements: list[dict[str, Any]], space_id: str | None = None) -> dict[str, Any]:
     return _invoke(device_id=device_id, action="project.text_patch", project=project, space_id=space_id, arguments={"project": project, "path": path, "expected_sha256": expected_sha256, "replacements": replacements})
+
+
+@mcp.tool()
+def workspace_file_stat(device_id: str, project: str, path: str = ".", space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="workspace.file_stat", project=project, space_id=space_id, arguments={"project": project, "path": path})
+
+
+@mcp.tool()
+def workspace_directory_list(device_id: str, project: str, path: str = ".", max_depth: int = 2, max_entries: int = 500, include_hidden: bool = False, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="workspace.directory_list", project=project, space_id=space_id, arguments={"project": project, "path": path, "max_depth": max_depth, "max_entries": max_entries, "include_hidden": include_hidden})
+
+
+@mcp.tool()
+def workspace_text_read(device_id: str, project: str, path: str, start_line: int = 1, end_line: int | None = None, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "path": path, "start_line": start_line}
+    if end_line is not None:
+        arguments["end_line"] = end_line
+    return _invoke(device_id=device_id, action="workspace.text_read", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def workspace_text_write(device_id: str, project: str, path: str, content: str, expected_sha256: str | None = None, create: bool = False, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "path": path, "content": content, "create": create}
+    if expected_sha256 is not None:
+        arguments["expected_sha256"] = expected_sha256
+    return _invoke(device_id=device_id, action="workspace.text_write", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def workspace_text_patch(device_id: str, project: str, path: str, expected_sha256: str, replacements: list[dict[str, Any]], space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="workspace.text_patch", project=project, space_id=space_id, arguments={"project": project, "path": path, "expected_sha256": expected_sha256, "replacements": replacements})
+
+
+@mcp.tool()
+def workspace_directory_create(device_id: str, project: str, path: str, parents: bool = True, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="workspace.directory_create", project=project, space_id=space_id, arguments={"project": project, "path": path, "parents": parents})
+
+
+@mcp.tool()
+def workspace_path_remove(device_id: str, project: str, path: str, expected_sha256: str | None = None, recursive: bool = False, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "path": path, "recursive": recursive}
+    if expected_sha256 is not None:
+        arguments["expected_sha256"] = expected_sha256
+    return _invoke(device_id=device_id, action="workspace.path_remove", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def workspace_path_move(device_id: str, project: str, source: str, destination: str, expected_sha256: str | None = None, overwrite: bool = False, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "source": source, "destination": destination, "overwrite": overwrite}
+    if expected_sha256 is not None:
+        arguments["expected_sha256"] = expected_sha256
+    return _invoke(device_id=device_id, action="workspace.path_move", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def git_command(device_id: str, project: str, args: list[str], timeout_seconds: int = 300, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="git.command", project=project, space_id=space_id, arguments={"project": project, "args": args, "timeout_seconds": timeout_seconds})
+
+
+@mcp.tool()
+def terminal_exec(
+    device_id: str,
+    project: str,
+    argv: list[str] | None = None,
+    command: str | None = None,
+    shell: bool = False,
+    cwd: str = ".",
+    timeout_seconds: int = 900,
+    env: dict[str, str] | None = None,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    arguments: dict[str, Any] = {
+        "project": project,
+        "cwd": cwd,
+        "shell": shell,
+        "timeout_seconds": timeout_seconds,
+    }
+    if argv is not None:
+        arguments["argv"] = argv
+    if command is not None:
+        arguments["command"] = command
+    if env is not None:
+        arguments["env"] = env
+    return _invoke(device_id=device_id, action="terminal.exec", project=project, space_id=space_id, arguments=arguments)
 
 
 @mcp.tool()

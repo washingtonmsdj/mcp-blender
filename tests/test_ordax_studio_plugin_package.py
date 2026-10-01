@@ -16,7 +16,7 @@ class OrdaxStudioPluginPackageTests(unittest.TestCase):
     def test_portable_plugin_manifest_is_valid(self):
         manifest = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8-sig"))
         self.assertEqual(manifest["name"], "ordax-studio")
-        self.assertEqual(manifest["extensions"]["com.openai"]["interface"]["displayName"], "ORDAX Studio")
+        self.assertEqual(manifest["extensions"]["com.openai"]["interface"]["displayName"], "ORDAX Dev")
 
     def test_plugin_uses_production_streamable_http_mcp(self):
         config = json.loads((PLUGIN_ROOT / "mcp.json").read_text(encoding="utf-8-sig"))

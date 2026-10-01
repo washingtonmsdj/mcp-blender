@@ -133,7 +133,7 @@ def main() -> int:
     try:
         import webview
     except ImportError as error:
-        raise SystemExit("pywebview is required for ORDAX Studio WebView shell") from error
+        raise SystemExit("pywebview is required for ORDAX Dev") from error
 
     config = AgentConfig.from_env()
     lock = SingleInstanceLock(config.state_dir / "studio-web.lock")

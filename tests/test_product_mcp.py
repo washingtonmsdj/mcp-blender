@@ -19,6 +19,18 @@ class _Executor:
             "workspace.repository_catalog",
             "project.inventory",
             "project.text_read",
+            "handoff.get",
+            "handoff.create",
+            "workspace.file_stat",
+            "workspace.directory_list",
+            "workspace.text_read",
+            "workspace.text_write",
+            "workspace.text_patch",
+            "workspace.directory_create",
+            "workspace.path_remove",
+            "workspace.path_move",
+            "git.command",
+            "terminal.exec",
             "project.search_text",
             "project.text_read_batch",
             "project.preview_status",
@@ -81,7 +93,7 @@ class ProductMcpFacadeTests(unittest.TestCase):
             expires_at_unix=2000,
         )
 
-    def test_catalog_is_read_only_and_derived_from_gateway(self):
+    def test_catalog_is_capability_typed_and_derived_from_gateway(self):
         tools = self.facade.tools()
         names = {tool["name"] for tool in tools}
 
@@ -92,6 +104,18 @@ class ProductMcpFacadeTests(unittest.TestCase):
                 "repository_catalog",
                 "project_inventory",
                 "project_text_read",
+                "handoff_get",
+                "handoff_create",
+                "workspace_file_stat",
+                "workspace_directory_list",
+                "workspace_text_read",
+                "workspace_text_write",
+                "workspace_text_patch",
+                "workspace_directory_create",
+                "workspace_path_remove",
+                "workspace_path_move",
+                "git_command",
+                "terminal_exec",
                 "project_health",
                 "project_search",
                 "project_read_batch",
@@ -109,6 +133,11 @@ class ProductMcpFacadeTests(unittest.TestCase):
         effects = {tool["name"]: tool["effect"] for tool in tools}
         self.assertEqual(effects["git_status"], "read")
         self.assertEqual(effects["project_text_write"], "write")
+        self.assertEqual(effects["handoff_get"], "read")
+        self.assertEqual(effects["handoff_create"], "write")
+        self.assertEqual(effects["workspace_text_write"], "write")
+        self.assertEqual(effects["terminal_exec"], "execute")
+        self.assertEqual(effects["git_command"], "execute")
         self.assertEqual(effects["blender_transform"], "write")
 
     def test_call_routes_through_gateway_and_preserves_audit(self):

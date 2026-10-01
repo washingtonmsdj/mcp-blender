@@ -23,6 +23,8 @@ class FakeExecutor:
             "workspace.repository_catalog",
             "project.inventory",
             "project.text_read",
+            "handoff.get",
+            "handoff.create",
             "project.search_text",
             "project.text_read_batch",
             "project.preview_status",
@@ -199,11 +201,20 @@ class ProductGatewayTests(unittest.TestCase):
             expires_at_unix=expires_at_unix,
         )
 
-    def test_catalog_contains_only_explicit_read_only_surface(self) -> None:
+    def test_catalog_contains_explicit_capability_surface(self) -> None:
         names = {entry["name"] for entry in product_action_catalog()}
         self.assertEqual(names, set(PRODUCT_ACTIONS))
         self.assertIn("workspace.repository_catalog", names)
         self.assertIn("project.text_read", names)
+        self.assertIn("handoff.get", names)
+        self.assertIn("handoff.create", names)
+        self.assertIn("workspace.file_stat", names)
+        self.assertIn("workspace.directory_list", names)
+        self.assertIn("workspace.text_read", names)
+        self.assertIn("workspace.text_write", names)
+        self.assertIn("workspace.path_remove", names)
+        self.assertIn("git.command", names)
+        self.assertIn("terminal.exec", names)
         self.assertIn("project.search_text", names)
         self.assertIn("project.text_read_batch", names)
         self.assertIn("project.preview_status", names)
@@ -218,6 +229,40 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertNotIn("git.sync", names)
         self.assertNotIn("artifact.read_chunk", names)
         self.assertFalse(any(name.startswith("unity.") for name in names))
+
+    def test_handoff_actions_are_project_scoped_and_capability_typed(self) -> None:
+        loaded = self.gateway.execute(
+            "handoff.get",
+            {"project": "scene", "handoff_id": "hof_0123456789abcdef0123456789abcdef"},
+            context=self.context,
+            grant=self.grant("handoff.get"),
+        )
+        self.assertTrue(loaded.ok)
+
+        created = self.gateway.execute(
+            "handoff.create",
+            {
+                "project": "scene",
+                "summary": "Continue from here",
+                "next_action": "Run tests",
+                "completed": ["foundation"],
+                "blockers": [],
+                "changed_paths": ["src/app.py"],
+                "ttl_hours": 24,
+            },
+            context=self.context,
+            grant=self.grant("handoff.create"),
+        )
+        self.assertTrue(created.ok)
+
+        denied = self.gateway.execute(
+            "handoff.get",
+            {"project": "scene", "handoff_id": "hof_0123456789abcdef0123456789abcdef"},
+            context=self.context,
+            grant=self.grant("projects.list"),
+        )
+        self.assertFalse(denied.ok)
+        self.assertEqual(denied.data["error_code"], "grant_required")
 
     def test_action_requires_explicit_action_grant_and_denial_is_audited(self) -> None:
         result = self.gateway.execute(

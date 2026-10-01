@@ -12,7 +12,7 @@ from ordax_dev_agent.config import AgentConfig
 
 from .instance_lock import SingleInstanceLock
 
-APP_NAME = "ORDAX Studio"
+APP_NAME = "ORDAX Dev"
 
 
 class StudioApi:
@@ -338,7 +338,7 @@ class StudioApi:
             "endpoint": f"{base_url}/mcp" if base_url else None,
             "oauth": False,
             "typed_actions_v2": False,
-            "summary": "Control Plane n?o configurado",
+            "summary": "Control Plane não configurado",
         }
         if base_url:
             try:
@@ -354,7 +354,7 @@ class StudioApi:
                     "summary": "Remote MCP online" if remote_ok else f"Remote MCP HTTP {response.status_code}",
                 })
             except (httpx.HTTPError, ValueError) as error:
-                remote_mcp["summary"] = f"Remote MCP indispon?vel: {type(error).__name__}"
+                remote_mcp["summary"] = f"Remote MCP indisponível: {type(error).__name__}"
 
         project_health = self.agent.execute("agent.project_health", {"project": self.project})
         adapters = project_health.data.get("adapters", {}) if project_health.ok else {}
@@ -365,7 +365,7 @@ class StudioApi:
             "state": blender.get("state") or "disabled",
             "blender_version": blender.get("blender_version"),
             "file": blender.get("file"),
-            "summary": blender.get("summary") or ("Blender n?o habilitado neste projeto" if not blender.get("enabled") else "Blender Live indispon?vel"),
+            "summary": blender.get("summary") or ("Blender não habilitado neste projeto" if not blender.get("enabled") else "Blender Live indispon?vel"),
         }
         return {
             "ok": True,
