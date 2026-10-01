@@ -69,8 +69,12 @@ class ManagedChatBrowser:
         return None
 
     @staticmethod
+    def _is_windows() -> bool:
+        return os.name == "nt"
+
+    @staticmethod
     def _edge_candidates() -> list[Path]:
-        if os.name != "nt":
+        if not ManagedChatBrowser._is_windows():
             return []
         values = [
             os.environ.get("ProgramFiles(x86)"),
@@ -109,7 +113,7 @@ class ManagedChatBrowser:
             )
         detected_path = Path(detected).resolve()
         if (
-            os.name == "nt"
+            self._is_windows()
             and detected_path.name.lower() == "chrome.exe"
             and "google" in str(detected_path).lower()
         ):
@@ -137,7 +141,7 @@ class ManagedChatBrowser:
 
     @staticmethod
     def _verify_windows_signature(executable: Path, *, expected_version: str) -> dict[str, str]:
-        if os.name != "nt":
+        if not ManagedChatBrowser._is_windows():
             return {"status": "not-applicable", "subject": "", "product_version": expected_version}
         env = dict(os.environ)
         env["ORDAX_CFT_EXE"] = str(executable)
@@ -197,7 +201,7 @@ class ManagedChatBrowser:
         }
 
     def install_browser(self) -> dict[str, Any]:
-        if os.name != "nt":
+        if not self._is_windows():
             raise RuntimeError("Managed Chrome for Testing install currently supports Windows")
 
         request = urllib.request.Request(
