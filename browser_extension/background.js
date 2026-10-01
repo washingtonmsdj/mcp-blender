@@ -41,6 +41,22 @@ async function pair(code) {
   return {paired: true, browserId, protocol: body.protocol};
 }
 
+async function autoPair() {
+  await ready;
+  if (token) return {paired: true};
+  try {
+    const pending = await api("/pairing");
+    if (pending?.active && /^\d{8}$/.test(String(pending.code || ""))) {
+      return await pair(String(pending.code));
+    }
+  } catch {}
+  return {paired: !!token};
+}
+
+chrome.runtime.onInstalled.addListener(() => { autoPair(); });
+chrome.runtime.onStartup.addListener(() => { autoPair(); });
+autoPair();
+
 async function observe(payload) {
   if (!token) throw new Error("not_paired");
   return api("/events", {
