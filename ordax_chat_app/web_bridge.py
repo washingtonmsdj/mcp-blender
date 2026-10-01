@@ -309,6 +309,10 @@ class WebBridgeManager:
     def _env(self, config: dict[str, Any]) -> dict[str, str]:
         env = dict(os.environ)
         env["CONTROL_PLANE_API_KEY"] = str(config.get("api_key") or "")
+        root = str(self._product_root())
+        env.setdefault("ORDAX_PACKAGED_ROOT", root)
+        env.setdefault("ORDAX_AGENT_REPO_PATH", root)
+        env.setdefault("ORDAX_BRIDGE_PATH", root)
         return env
 
     @staticmethod
