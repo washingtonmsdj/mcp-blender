@@ -66,6 +66,34 @@ function renderWebBridgeStartup(status){
   el("webBridgeStartupState").className=installed?"success":"muted";
 }
 
+async function rolloverNormalChat(){
+  if(state.mode!=="normal"){setStatus("Troque para Chat normal para usar o handoff.","error");return}
+  const summary=el("handoffSummary").value.trim();
+  const nextAction=el("handoffNextAction").value.trim();
+  if(!summary){setStatus("Informe o resumo antes de abrir a nova conversa.","error");return}
+  const project=state.project||el("projectSelect").value||"";
+  const parts=[
+    "Continue este trabalho no ORDAX.",
+    project?("Projeto: "+project):"",
+    "",
+    "Resumo do contexto anterior:",
+    summary,
+    nextAction?("\nPróxima ação: "+nextAction):"",
+    "",
+    "Use o ORDAX/MCP já autorizado para verificar o estado real do projeto antes de executar alterações."
+  ].filter(Boolean);
+  try{
+    const data=unwrap(await api().browser_companion_new_chat(parts.join("\n")));
+    state.browserConversation=null;
+    state.browserMessageFingerprint="";
+    el("threadTitle").textContent="Aguardando nova conversa…";
+    renderMessages([]);
+    setStatus(data.opened
+      ?"Nova conversa aberta; o Browser Companion enviará o handoff automaticamente."
+      :"Handoff enfileirado; abra o ChatGPT para continuar.","success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
 async function createHandoff(){
   const project=state.project||el("projectSelect").value;
   const summary=el("handoffSummary").value.trim();
@@ -636,6 +664,7 @@ el("browserCompanionFolderButton").onclick=openBrowserCompanionFolder;
 el("webBridgeStartupButton").onclick=installWebBridgeStartup;
 el("webBridgeStartupRemoveButton").onclick=uninstallWebBridgeStartup;
 el("handoffCreateButton").onclick=createHandoff;
+el("normalChatRolloverButton").onclick=rolloverNormalChat;
 el("handoffLoadButton").onclick=loadHandoff;
 el("modeSelect").onchange=async e=>{state.mode=e.target.value;state.thread=null;state.browserConversation=null;renderMode();await refreshThreads()};
 el("newThreadButton").onclick=createThread;
