@@ -2,6 +2,12 @@ name: ORDAX Plugin Review Package
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "plugins/ordax-studio/**"
+      - "scripts/build_ordax_plugin.py"
+      - "tests/test_ordax_studio_plugin_package.py"
+      - ".github/workflows/plugin-review-package.yml"
   push:
     branches:
       - main
@@ -65,7 +71,10 @@ jobs:
               raise SystemExit("plugin name mismatch")
           if plugin.get("version") != "0.4.1":
               raise SystemExit("plugin version mismatch")
-          if not str(mcp.get("url") or "").startswith("https://"):
+          servers = mcp.get("mcpServers")
+          ordax = servers.get("ordax") if isinstance(servers, dict) else None
+          url = ordax.get("url") if isinstance(ordax, dict) else None
+          if not isinstance(url, str) or not url.startswith("https://"):
               raise SystemExit("remote MCP URL must use HTTPS")
           print(f"Review package OK: {archive}")
           PY
