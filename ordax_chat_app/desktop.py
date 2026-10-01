@@ -14,7 +14,7 @@ from .instance_lock import SingleInstanceLock
 from .runtime import OrdaxChatRuntime
 from .web_bridge import WebBridgeManager
 from .browser_companion import BrowserCompanionServer
-from ordax_dev_agent.browser_capture import find_chromium
+from .managed_chat_browser import ManagedChatBrowser
 
 
 APP_NAME = "ORDAX Dev"
@@ -30,12 +30,16 @@ class DesktopApi:
         autonomy: AutonomyService | None = None,
         web_bridge: WebBridgeManager | None = None,
         browser_companion: BrowserCompanionServer | None = None,
+        managed_chat_browser: ManagedChatBrowser | None = None,
         auto_resume: bool = True,
     ):
         self.runtime = runtime or OrdaxChatRuntime()
         self.autonomy = autonomy or AutonomyService(self.runtime)
         self.web_bridge = web_bridge or WebBridgeManager()
         self.browser_companion = browser_companion or BrowserCompanionServer()
+        self.managed_chat_browser = managed_chat_browser or ManagedChatBrowser(
+            extension_dir=self._browser_companion_extension_dir()
+        )
         self.browser_companion_start_error: str | None = None
         try:
             self.browser_companion.start()
@@ -107,6 +111,7 @@ class DesktopApi:
                         "chat_url": NORMAL_CHAT_URL,
                         "web_bridge": self.web_bridge.status(),
                         "browser_companion": self._ensure_browser_companion(),
+                        "managed_browser": self.managed_chat_browser.status(),
                     },
                     "agent": {
                         "label": "Agent / Responses",
@@ -259,10 +264,23 @@ class DesktopApi:
             )
         return self._guard(send)
 
-    def browser_companion_extension_path(self) -> dict[str, Any]:
+    @staticmethod
+    def _browser_companion_extension_dir() -> Path:
         packaged = os.environ.get("ORDAX_PACKAGED_ROOT")
         root = Path(packaged).expanduser().resolve() if packaged else Path(__file__).resolve().parents[1]
-        path = (root / "browser_extension").resolve()
+        return (root / "browser_extension").resolve()
+
+    def managed_chat_browser_status(self) -> dict[str, Any]:
+        return self._guard(self.managed_chat_browser.status)
+
+    def managed_chat_browser_start(self) -> dict[str, Any]:
+        return self._guard(self.managed_chat_browser.start)
+
+    def managed_chat_browser_stop(self) -> dict[str, Any]:
+        return self._guard(self.managed_chat_browser.stop)
+
+    def browser_companion_extension_path(self) -> dict[str, Any]:
+        path = self._browser_companion_extension_dir()
         if not path.is_dir():
             raise RuntimeError(f"Browser Companion extension is missing: {path}")
         return {"path": str(path)}
