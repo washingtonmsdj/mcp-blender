@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from ordax_chat_app.autonomy_preferences import AutonomyPreferencesStore
 from ordax_chat_app.autonomy_service import AutonomyService
+from ordax_chat_app.instance_lock import SingleInstanceLock
 
 
 class FakeRuntime:
@@ -42,8 +43,12 @@ class AutonomyServiceTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.preferences = AutonomyPreferencesStore(Path(self.temp.name) / "autonomy.json")
 
-    def service(self, runtime=None):
-        return AutonomyService(runtime or FakeRuntime(), preferences=self.preferences)
+    def service(self, runtime=None, *, lock_name="supervisor.lock"):
+        return AutonomyService(
+            runtime or FakeRuntime(),
+            preferences=self.preferences,
+            supervisor_lock=SingleInstanceLock(Path(self.temp.name) / lock_name),
+        )
 
     def test_start_is_idempotent_and_stop_is_clean(self):
         FakeSupervisor.calls = 0
@@ -119,6 +124,39 @@ class AutonomyServiceTests(unittest.TestCase):
             self.assertFalse(status["running"])
             self.assertIn("disconnected", status["last_error"])
             self.assertTrue(status["persisted_enabled"])
+
+    def test_cross_process_lock_prevents_duplicate_supervisors(self):
+        with patch("ordax_chat_app.autonomy_service.AutonomySupervisor", FakeSupervisor):
+            first = self.service(lock_name="shared.lock")
+            second = self.service(lock_name="shared.lock")
+            first_status = first.start(
+                model="gpt-a",
+                project_slugs=["demo"],
+                idle_sleep_seconds=0.5,
+            )
+            self.assertTrue(first_status["running"])
+            try:
+                second_status = second.start(
+                    model="gpt-a",
+                    project_slugs=["demo"],
+                    idle_sleep_seconds=0.5,
+                )
+                self.assertFalse(second_status["running"])
+                self.assertTrue(second_status["external_running"])
+            finally:
+                first.stop(timeout_seconds=2, disable_persisted=False)
+
+            retried = second.start(
+                model="gpt-a",
+                project_slugs=["demo"],
+                idle_sleep_seconds=0.5,
+                persist=False,
+            )
+            try:
+                self.assertTrue(retried["running"])
+                self.assertFalse(retried["external_running"])
+            finally:
+                second.stop(timeout_seconds=2, disable_persisted=False)
 
     def test_running_model_cannot_change_without_stop(self):
         with patch("ordax_chat_app.autonomy_service.AutonomySupervisor", FakeSupervisor):
