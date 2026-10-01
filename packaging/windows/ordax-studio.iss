@@ -44,6 +44,7 @@ Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 
 [InstallDelete]
 Type: files; Name: "{app}\ORDAX Studio.exe"
+Type: filesandordirs; Name: "{app}\browser_extension"
 
 [Icons]
 Name: "{group}\ORDAX Dev"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
