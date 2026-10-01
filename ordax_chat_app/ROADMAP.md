@@ -15,6 +15,8 @@
 - processos persistentes e browser control tipado;
 - Rules/Skills por projeto (`AGENTS.md`, `.ordax/rules`, `.ordax/skills/*/SKILL.md`);
 - painel de agentes, fila e supervisor 24/7 no desktop;
+- ferramenta `agents` no chat para Prime criar workers, delegar e consultar equipe;
+- feedback loop persistente Prime → worker → resultado → Prime;
 - contrato do provider independente para receber outros modelos no futuro.
 
 ## Gate 1 — coding runtime completo ✅
@@ -35,9 +37,13 @@
 - work queue crash-safe;
 - loop 24/7 idle-safe.
 
-Ainda neste gate:
-- ligar execução real do modelo à fila;
+Entregue também:
+- execução real do modelo ligada à fila;
 - scheduler de múltiplos agentes;
+- Prime cria/delega para workers pelo próprio tool loop;
+- resultado de worker vira follow-up durável do Prime sem polling do modelo quando idle.
+
+Ainda neste gate:
 - políticas de pausa/horário/custo e limites por projeto;
 - recovery service no startup do produto.
 
@@ -99,8 +105,11 @@ Ainda pendente para computer control geral:
 
 ## Gate 8 — subagentes e MCP aggregation
 
-- delegação para workers/modelos externos/local;
-- servidores MCP adicionais como adapters;
+- delegação Prime → workers locais ✅ foundation;
+- workers com sessão/modelo/contexto independentes ✅;
+- retorno worker → Prime e continuação automática ✅;
+- delegação para modelos externos/local ainda pendente;
+- servidores MCP adicionais como adapters ainda pendente;
 - orçamento, cancelamento e auditoria por subtarefa;
 - nenhuma credencial de terceiros exposta ao modelo.
 
