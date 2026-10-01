@@ -149,6 +149,16 @@ Ainda neste gate:
 
 ## Gate 9 — produto desktop
 
+- Browser Companion ✅ foundation;
+- loopback pareado em 127.0.0.1, código one-time e bearer isolado no service worker ✅;
+- extensão Chrome/Edge empacotada com o produto ✅;
+- conversa real do ChatGPT Web espelhada na UI do ORDAX ✅;
+- envio explícito pelo compositor do ORDAX para a conversa anexada ✅;
+- polling/stream visual de respostas na UI do ORDAX ✅;
+- páginas comuns não podem parear nem chamar o loopback do Companion ✅;
+- Companion não recebe autoridade de filesystem/terminal/Git/computer ✅;
+- próximo: smoke real no ChatGPT Web, robustez dos seletores e fluxo de criação/reabertura de chats.
+
 - ORDAX Web Bridge panel ✅;
 - official `tunnel-client` install from OpenAI release with SHA-256 verification ✅;
 - tunnel ID + runtime key protected locally; key is never passed to the model ✅;
