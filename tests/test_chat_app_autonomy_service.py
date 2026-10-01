@@ -14,10 +14,11 @@ class FakeRuntime:
 class FakeSupervisor:
     calls = 0
 
-    def __init__(self, runtime, *, model, context_window_tokens):
+    def __init__(self, runtime, *, model, context_window_tokens, project_slugs=None):
         self.runtime = runtime
         self.model = model
         self.context_window_tokens = context_window_tokens
+        self.project_slugs = project_slugs
 
     def run_cycle(self):
         type(self).calls += 1
