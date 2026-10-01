@@ -450,12 +450,18 @@ See `docs/REFERENCE_CONTRACT.md` and `config/references.example.json`.
 Não versione tokens, segredos ou dados de licença. Use variáveis de ambiente locais e GitHub Secrets quando necessário.
 
 
-### Product MCP (read-only)
+### Product MCP / ORDAX Chat App
 
 The authenticated Product MCP host is available as:
 
 `ordax-product-mcp`
 
-It uses `ORDAX_PRODUCT_ACCESS_TOKEN` plus the Cloudflare v3 Product API and
-exposes only the read-only Product surface. It does not provide a generic shell
-or mutation endpoint.
+It uses `ORDAX_PRODUCT_ACCESS_TOKEN` plus the Cloudflare v3 Product API. The
+current product surface supports project discovery, broad project-scoped file
+operations, Git, artifacts/previews, typed adapters and an explicit privileged
+`terminal.exec` capability for full development workflows.
+
+There is still no generic `action_execute` escape hatch. Authority is granted
+per device, project and capability, and every remote action goes through the
+same Product grant and audit path. See `ordax_chat_app/` for the product
+boundary and roadmap.
