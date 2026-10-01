@@ -61,3 +61,10 @@ select{width:100%;background:var(--panel2);color:var(--text);border:1px solid va
 .secondary-button{width:100%;border:1px solid #344151;border-radius:8px;background:var(--hover);color:var(--text);font-weight:600;padding:8px 10px}
 .secondary-button:hover{border-color:#526174}
 #autonomyState{font-size:11px;line-height:1.35;padding-top:3px}
+
+.capability-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:7px 0}
+.capability-row:last-of-type{border-bottom:0}
+.capability-row span{display:flex;flex-direction:column;gap:2px}
+.capability-row strong{font-size:12px;font-weight:650}
+.capability-row small{font-size:10px;color:var(--muted)}
+.capability-row input[type="checkbox"]{width:18px;height:18px;accent-color:#8aa4c8}
