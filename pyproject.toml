@@ -38,6 +38,7 @@ ordax-studio-web = "ordax_studio.web_desktop:main"
 ordax-dev = "ordax_chat_app.desktop:main"
 ordax-dev-autonomy = "ordax_chat_app.autonomy_daemon:main"
 ordax-web-bridge-mcp = "ordax_chat_app.tunnel_mcp_server:main"
+ordax-dev-web-bridge = "ordax_chat_app.web_bridge_daemon:main"
 
 [tool.setuptools.packages.find]
 include = ["mcp_blender_unity*", "ordax_core*", "ordax_studio*", "ordax_dev_agent*", "ordax_device_agent*", "ordax_chat_app*"]
