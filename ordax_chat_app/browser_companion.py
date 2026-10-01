@@ -60,24 +60,39 @@ class BrowserCompanionStore:
         )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._db_lock = threading.RLock()
+        self._connection = sqlite3.connect(
+            self.path,
+            timeout=10,
+            check_same_thread=False,
+        )
+        self._connection.row_factory = sqlite3.Row
+        self._connection.execute("PRAGMA busy_timeout=10000")
+        self._connection.execute("PRAGMA journal_mode=WAL")
+        self._connection.execute("PRAGMA synchronous=NORMAL")
         self._init_schema()
 
     @contextmanager
     def connect(self):
         with self._db_lock:
-            connection = sqlite3.connect(self.path, timeout=10)
-            connection.row_factory = sqlite3.Row
-            connection.execute("PRAGMA busy_timeout=10000")
+            connection = self._connection
+            if connection is None:
+                raise RuntimeError("Browser Companion store is closed")
             try:
                 yield connection
                 connection.commit()
-            finally:
+            except Exception:
+                connection.rollback()
+                raise
+
+    def close(self) -> None:
+        with self._db_lock:
+            connection = self._connection
+            self._connection = None
+            if connection is not None:
                 connection.close()
 
     def _init_schema(self) -> None:
         with self.connect() as connection:
-            connection.execute("PRAGMA journal_mode=WAL")
-            connection.execute("PRAGMA synchronous=NORMAL")
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS browser_clients(
