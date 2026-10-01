@@ -147,8 +147,14 @@ class DesktopApi:
     def autonomy_status(self) -> dict[str, Any]:
         return self._guard(self.autonomy.status)
 
-    def autonomy_start(self, model: str) -> dict[str, Any]:
-        return self._guard(lambda: self.autonomy.start(model=str(model or "")))
+    def autonomy_start(self, project: str, model: str) -> dict[str, Any]:
+        def start():
+            selected = self.runtime.agent.select_available_project(str(project or ""))
+            return self.autonomy.start(
+                model=str(model or ""),
+                project_slugs=[selected],
+            )
+        return self._guard(start)
 
     def autonomy_stop(self) -> dict[str, Any]:
         return self._guard(self.autonomy.stop)
