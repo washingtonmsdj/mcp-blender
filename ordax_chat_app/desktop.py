@@ -244,12 +244,19 @@ class DesktopApi:
             status = self._ensure_browser_companion()
             if not status.get("running"):
                 raise RuntimeError(status.get("start_error") or "Browser Companion is unavailable")
+            if int(status.get("paired_clients") or 0) < 1:
+                raise RuntimeError(
+                    "Browser Companion is not paired yet; open the dedicated ChatGPT browser first"
+                )
             command = self.browser_companion.new_chat(str(text or ""))
-            opened = webbrowser.open(NORMAL_CHAT_URL, new=2)
+            browser = self.managed_chat_browser.status()
+            if not browser.get("running"):
+                browser = self.managed_chat_browser.start()
             return {
                 "command": command,
-                "opened": bool(opened),
+                "opened": bool(browser.get("running")),
                 "chat_url": NORMAL_CHAT_URL,
+                "managed_browser": browser,
             }
         return self._guard(create)
 
