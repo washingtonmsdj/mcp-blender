@@ -75,3 +75,13 @@ select{width:100%;background:var(--panel2);color:var(--text);border:1px solid va
 .mode-card code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}
 .quota-warning{margin:7px 0 10px;padding:8px;border:1px solid #5b4930;border-radius:8px;color:#e8c78f;background:#17130d;font-size:11px;line-height:1.35}
 .icon-button:disabled{opacity:.35;cursor:not-allowed}
+
+.bridge-card{display:flex;flex-direction:column;gap:7px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.bridge-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.bridge-head strong{font-size:11px}
+.bridge-card small{font-size:10px;color:var(--muted);line-height:1.35}
+.bridge-badge{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border:1px solid var(--line);padding:3px 6px;border-radius:999px}
+.bridge-badge.success{color:var(--success);border-color:#31533e}
+.bridge-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.bridge-actions .secondary-button{font-size:10px;padding:7px}
+#webBridgeState{font-size:10px;line-height:1.35;word-break:break-word}
