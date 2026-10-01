@@ -82,9 +82,14 @@
           </div>
           <small>Espelha uma conversa real do ChatGPT Web dentro do ORDAX Dev e envia mensagens pela própria página.</small>
           <div class="bridge-actions">
+            <button id="managedChatBrowserStartButton" class="secondary-button">Abrir ChatGPT dedicado</button>
+            <button id="managedChatBrowserStopButton" class="secondary-button hidden">Fechar navegador</button>
+          </div>
+          <div class="bridge-actions">
             <button id="browserCompanionExtensionsButton" class="secondary-button">Abrir extensões</button>
             <button id="browserCompanionFolderButton" class="secondary-button">Abrir pasta</button>
           </div>
+          <div id="managedChatBrowserState" class="muted">Navegador dedicado parado.</div>
           <button id="browserCompanionPairButton" class="secondary-button">Gerar código de pareamento</button>
           <div id="browserCompanionPairCode" class="pair-code hidden"></div>
           <div id="browserCompanionState" class="muted">Extensão ainda não pareada.</div>
