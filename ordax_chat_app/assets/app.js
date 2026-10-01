@@ -1,10 +1,39 @@
-const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{}};
+const state={project:null,thread:null,models:[],connected:false,busy:false,autonomy:false,agents:[],capabilities:{},mode:"normal",normalChat:null};
 
 function api(){return window.pywebview.api}
 function el(id){return document.getElementById(id)}
 function unwrap(result){if(!result||!result.ok)throw new Error(result?.summary||"Falha no ORDAX");return result.data}
 function setStatus(text,cls=""){el("statusText").textContent=text;el("statusText").className=cls}
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+
+function renderMode(){
+  const normal=state.mode==="normal";
+  for(const node of document.querySelectorAll(".normal-only"))node.classList.toggle("hidden",!normal);
+  for(const node of document.querySelectorAll(".agent-only"))node.classList.toggle("hidden",normal);
+  el("modeSelect").value=state.mode;
+  el("architectureClient").textContent=normal?"ChatGPT normal":"Agent / Responses";
+  el("newThreadButton").disabled=normal;
+  if(normal){
+    state.thread=null;
+    el("threadTitle").textContent="Chat normal via ORDAX";
+    renderMessages([]);
+    const endpoint=state.normalChat?.mcp_endpoint||"";
+    el("normalMcpEndpoint").textContent=endpoint;
+    setStatus("Modo Chat normal · usa a cota normal do ChatGPT. Abra o ChatGPT e use o plugin ORDAX.");
+  }else{
+    setStatus(state.connected?"Modo Agent / Responses · usa cota Work/Codex.":"Conecte o ChatGPT para usar Agent / Responses.");
+  }
+}
+
+async function openNormalChat(){
+  try{
+    const data=unwrap(await api().open_normal_chat());
+    state.normalChat=data;
+    el("normalMcpEndpoint").textContent=data.mcp_endpoint||"";
+    setStatus(data.opened?"ChatGPT normal aberto. Use o ORDAX pelo plugin/MCP.":"Abra o ChatGPT e use o plugin ORDAX.","success");
+  }catch(err){setStatus(err.message,"error")}
+}
+
 
 function renderAccount(account){
   state.connected=!!account.connected;
@@ -172,6 +201,10 @@ async function queueWork(){
 
 async function toggleAutonomy(){
   const model=el("modelSelect").value;
+  if(state.mode==="normal"){
+    setStatus("Autonomia 24/7 não usa a cota do chat normal. Selecione Agent / Responses ou outro provider.","error");
+    return;
+  }
   if(!state.connected){setStatus("Conecte o ChatGPT primeiro.","error");return}
   if(!model){setStatus("Selecione um modelo.","error");return}
   try{
@@ -194,6 +227,7 @@ async function openThread(id){
 }
 
 async function createThread(){
+  if(state.mode==="normal"){setStatus("No modo Chat normal, a conversa acontece no próprio ChatGPT.","error");return}
   if(!state.connected){setStatus("Conecte sua conta ChatGPT primeiro.","error");return}
   if(!state.project){setStatus("Selecione um projeto.","error");return}
   const model=el("modelSelect").value;
@@ -203,6 +237,7 @@ async function createThread(){
 }
 
 async function send(){
+  if(state.mode==="normal"){setStatus("No modo Chat normal, envie a mensagem na janela do ChatGPT.","error");return}
   if(state.busy)return;
   const input=el("composerInput");const text=input.value.trim();
   if(!text)return;
@@ -251,9 +286,10 @@ async function bootstrap(){
     renderProjects(data.projects||[],data.default_project);
     renderModels(data.models||[]);
     renderThreads(data.threads||[]);
-    if(data.model_error)setStatus(data.model_error,"error");
-    else if(!data.account.connected)setStatus("Conecte o ChatGPT para começar.");
-    else setStatus("Pronto.");
+    state.normalChat=data.chat_modes?.normal||null;
+    state.mode=data.chat_modes?.default||"normal";
+    if(data.model_error&&state.mode==="agent")setStatus(data.model_error,"error");
+    renderMode();
     await refreshActivity();
     await refreshAutonomy();
     await refreshCapabilities();
@@ -261,6 +297,8 @@ async function bootstrap(){
 }
 
 el("connectButton").onclick=connect;
+el("openNormalChatButton").onclick=openNormalChat;
+el("modeSelect").onchange=e=>{state.mode=e.target.value;renderMode()};
 el("newThreadButton").onclick=createThread;
 el("sendButton").onclick=send;
 el("refreshActivity").onclick=refreshActivity;
