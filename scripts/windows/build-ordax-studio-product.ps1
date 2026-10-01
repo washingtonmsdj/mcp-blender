@@ -60,6 +60,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Copy-Item (Join-Path $repoRoot "scripts") (Join-Path $stageRoot "scripts") -Recurse -Force
+Copy-Item (Join-Path $repoRoot "browser_extension") (Join-Path $stageRoot "browser_extension") -Recurse -Force
 
 $privatePython = Join-Path $runtimeRoot "python.exe"
 & $privatePython -c "import ordax_studio, ordax_chat_app, ordax_dev_agent, ordax_device_agent, webview; print('ORDAX_PRIVATE_RUNTIME_OK')"
