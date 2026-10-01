@@ -252,6 +252,20 @@ class BrowserCompanionTests(unittest.TestCase):
         self.assertEqual(len(pulled["commands"]), 1)
         self.assertEqual(pulled["commands"][0]["text"], "continue from checkpoint")
 
+    def test_pending_pairing_endpoint_is_extension_scoped(self):
+        pairing = self.server.new_pairing_code()
+
+        pending = self.request("/pairing")
+        self.assertTrue(pending["active"])
+        self.assertEqual(pending["code"], pairing["code"])
+
+        with self.assertRaises(urllib.error.HTTPError) as blocked:
+            self.request(
+                "/pairing",
+                headers={"Origin": "https://example.com"},
+            )
+        self.assertEqual(blocked.exception.code, 403)
+
     def test_http_webpage_origin_cannot_pair_or_poll_commands(self):
         pairing = self.server.new_pairing_code()
         with self.assertRaises(urllib.error.HTTPError) as blocked_pair:
