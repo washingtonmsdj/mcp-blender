@@ -28,6 +28,17 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
         description="List projects visible through the resolved Product grant.",
     ),
     ProductMcpToolSpec(
+        name="handoff_get",
+        action="handoff.get",
+        description="Load one expiring project continuation handoff by opaque id.",
+    ),
+    ProductMcpToolSpec(
+        name="handoff_create",
+        action="handoff.create",
+        effect="write",
+        description="Create an expiring continuation handoff for a fresh ChatGPT conversation.",
+    ),
+    ProductMcpToolSpec(
         name="project_inventory",
         action="project.inventory",
         description="Inspect a bounded project inventory without exposing local roots.",
