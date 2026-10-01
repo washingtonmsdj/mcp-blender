@@ -30,6 +30,8 @@ _PROTOCOL = 1
 _PAIR_TTL_SECONDS = 10 * 60
 _TOKEN_BYTES = 32
 _MAX_BODY = 2 * 1024 * 1024
+_DELIVERY_ACK_TIMEOUT_SECONDS = 20
+_DEFAULT_MAX_DELIVERY_ATTEMPTS = 5
 _ALLOWED_HOSTS = {"chatgpt.com", "chat.openai.com"}
 
 
@@ -124,12 +126,26 @@ class BrowserCompanionStore:
                   created_at REAL NOT NULL,
                   delivered_at REAL,
                   ack_at REAL,
-                  error TEXT
+                  error TEXT,
+                  attempts INTEGER NOT NULL DEFAULT 0,
+                  max_attempts INTEGER NOT NULL DEFAULT 5
                 );
                 CREATE INDEX IF NOT EXISTS idx_browser_commands_pending
                   ON browser_commands(state, conversation_id, created_at);
                 """
             )
+            columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(browser_commands)").fetchall()
+            }
+            if "attempts" not in columns:
+                connection.execute(
+                    "ALTER TABLE browser_commands ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
+                )
+            if "max_attempts" not in columns:
+                connection.execute(
+                    "ALTER TABLE browser_commands ADD COLUMN max_attempts INTEGER NOT NULL DEFAULT 5"
+                )
 
     @staticmethod
     def _token_hash(token: str) -> str:
@@ -200,10 +216,15 @@ class BrowserCompanionStore:
         with self.connect() as connection:
             connection.execute(
                 """
-                INSERT INTO browser_commands(id,conversation_id,text,state,created_at)
-                VALUES(?,?,?,?,?)
+                INSERT INTO browser_commands(
+                  id,conversation_id,text,state,created_at,attempts,max_attempts
+                )
+                VALUES(?,?,?,?,?,?,?)
                 """,
-                (command_id, conversation_key, text[:200_000], "queued", created),
+                (
+                    command_id, conversation_key, text[:200_000], "queued", created,
+                    0, _DEFAULT_MAX_DELIVERY_ATTEMPTS,
+                ),
             )
         return {
             "id": command_id,
@@ -313,7 +334,10 @@ class BrowserCompanionStore:
                 INSERT INTO browser_commands(id,conversation_id,text,state,created_at)
                 VALUES(?,?,?,?,?)
                 """,
-                (command_id, conversation_id, text[:200_000], "queued", created),
+                (
+                    command_id, conversation_id, text[:200_000], "queued", created,
+                    0, _DEFAULT_MAX_DELIVERY_ATTEMPTS,
+                ),
             )
         return {
             "id": command_id,
@@ -325,32 +349,99 @@ class BrowserCompanionStore:
 
     def pull(self, conversation_id: str, *, limit: int = 5) -> list[dict[str, Any]]:
         now = _now()
+        stale_before = now - _DELIVERY_ACK_TIMEOUT_SECONDS
         with self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE browser_commands
+                SET state='failed',
+                    ack_at=?,
+                    error=COALESCE(error,'delivery_ack_timeout')
+                WHERE conversation_id=?
+                  AND state='delivered'
+                  AND delivered_at IS NOT NULL
+                  AND delivered_at<=?
+                  AND attempts>=max_attempts
+                """,
+                (now, conversation_id, stale_before),
+            )
             rows = connection.execute(
                 """
                 SELECT * FROM browser_commands
-                WHERE conversation_id=? AND state='queued'
+                WHERE conversation_id=?
+                  AND attempts<max_attempts
+                  AND (
+                    state='queued'
+                    OR (
+                      state='delivered'
+                      AND delivered_at IS NOT NULL
+                      AND delivered_at<=?
+                    )
+                  )
                 ORDER BY created_at ASC LIMIT ?
                 """,
-                (conversation_id, max(1, min(20, int(limit)))),
+                (
+                    conversation_id,
+                    stale_before,
+                    max(1, min(20, int(limit))),
+                ),
             ).fetchall()
             ids = [str(row["id"]) for row in rows]
             if ids:
                 placeholders = ",".join("?" for _ in ids)
                 connection.execute(
-                    f"UPDATE browser_commands SET state='delivered', delivered_at=? WHERE id IN ({placeholders})",
+                    f"""
+                    UPDATE browser_commands
+                    SET state='delivered',
+                        delivered_at=?,
+                        attempts=attempts+1
+                    WHERE id IN ({placeholders})
+                    """,
                     (now, *ids),
                 )
+                rows = connection.execute(
+                    f"SELECT * FROM browser_commands WHERE id IN ({placeholders}) ORDER BY created_at ASC",
+                    tuple(ids),
+                ).fetchall()
         return [
             {
                 "id": row["id"],
                 "conversation_id": row["conversation_id"],
                 "text": row["text"],
-                "state": "delivered",
+                "state": row["state"],
                 "created_at": row["created_at"],
+                "attempts": int(row["attempts"]),
+                "max_attempts": int(row["max_attempts"]),
             }
             for row in rows
         ]
+
+    def recent_commands(
+        self,
+        *,
+        conversation_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        filters = []
+        params: list[Any] = []
+        if conversation_id:
+            filters.append("conversation_id=?")
+            params.append(str(conversation_id))
+        where = (" WHERE " + " AND ".join(filters)) if filters else ""
+        params.append(max(1, min(200, int(limit))))
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id,conversation_id,text,state,created_at,delivered_at,ack_at,error,
+                       attempts,max_attempts
+                FROM browser_commands
+                {where}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                tuple(params),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def ack(self, command_id: str, *, ok: bool, error: str = "") -> dict[str, Any]:
         now = _now()
@@ -631,6 +722,17 @@ main{text-align:center}p{color:#aaa}</style></head>
 
     def send(self, conversation_id: str, text: str) -> dict[str, Any]:
         return self.store.enqueue(conversation_id, text)
+
+    def commands(
+        self,
+        conversation_id: str | None = None,
+        *,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        return self.store.recent_commands(
+            conversation_id=conversation_id,
+            limit=limit,
+        )
 
     def new_chat(self, text: str, *, browser_id: str | None = None) -> dict[str, Any]:
         return self.store.enqueue_new_chat(text, browser_id=browser_id)
