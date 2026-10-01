@@ -80,6 +80,7 @@ class AgentChatEngine:
         response_ids: list[str] = []
         rollover = False
         final_text = ""
+        transient_followups: list[dict[str, Any]] = []
 
         while True:
             rounds += 1
@@ -115,19 +116,26 @@ class AgentChatEngine:
                 arguments = str(call.get("arguments") or "{}")
                 if not call_id or not name:
                     raise RuntimeError("model returned an invalid function_call item")
-                output = self.toolset.execute(name, arguments)
+                execution = self.toolset.execute_with_followups(name, arguments)
                 items.append(
                     {
                         "type": "function_call_output",
                         "call_id": call_id,
-                        "output": output,
+                        "output": execution.output,
                     }
                 )
+                for followup in execution.followup_items:
+                    items.append(followup)
+                    transient_followups.append(followup)
                 tool_calls += 1
 
+        persistent_items = [
+            item for item in items
+            if not any(item is transient for transient in transient_followups)
+        ]
         return AgentChatResult(
             text=final_text,
-            items=items,
+            items=persistent_items,
             tool_calls=tool_calls,
             model_rounds=rounds,
             response_ids=response_ids,

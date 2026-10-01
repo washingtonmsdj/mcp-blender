@@ -1,8 +1,17 @@
 """Project-scoped development tools exposed to the embedded chat model."""
 from __future__ import annotations
 
+import base64
 import json
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+
+
+@dataclass(frozen=True)
+class ToolExecutionResult:
+    output: str
+    followup_items: list[dict[str, Any]]
 
 
 def _nullable(inner: dict[str, Any]) -> dict[str, Any]:
@@ -288,6 +297,81 @@ class DevelopmentToolset:
     @property
     def definitions(self) -> list[dict[str, Any]]:
         return [dict(item) for item in DEVELOPMENT_TOOLS]
+
+    def execute_with_followups(self, name: str, arguments_json: str) -> ToolExecutionResult:
+        raw_output = self.execute(name, arguments_json)
+        try:
+            envelope = json.loads(raw_output)
+        except json.JSONDecodeError:
+            return ToolExecutionResult(raw_output, [])
+        if not isinstance(envelope, dict):
+            return ToolExecutionResult(raw_output, [])
+        data = envelope.get("data")
+        if not isinstance(data, dict):
+            return ToolExecutionResult(raw_output, [])
+
+        raw_path = data.pop("image_path", None)
+        if not raw_path:
+            return ToolExecutionResult(
+                json.dumps(envelope, ensure_ascii=False, separators=(",", ":"), default=str),
+                [],
+            )
+        try:
+            image_path = Path(str(raw_path)).expanduser().resolve()
+            state_root = Path(self.action_registry.config.state_dir).expanduser().resolve()
+            image_path.relative_to(state_root)
+        except (OSError, ValueError):
+            envelope["ok"] = False
+            envelope["summary"] = "visual tool returned an image outside ORDAX state"
+            return ToolExecutionResult(
+                json.dumps(envelope, ensure_ascii=False, separators=(",", ":"), default=str),
+                [],
+            )
+        if not image_path.is_file():
+            envelope["ok"] = False
+            envelope["summary"] = "visual tool image is missing"
+            return ToolExecutionResult(
+                json.dumps(envelope, ensure_ascii=False, separators=(",", ":"), default=str),
+                [],
+            )
+        size = image_path.stat().st_size
+        if size <= 0 or size > 8 * 1024 * 1024:
+            envelope["ok"] = False
+            envelope["summary"] = "visual tool image exceeds the ORDAX vision transfer limit"
+            return ToolExecutionResult(
+                json.dumps(envelope, ensure_ascii=False, separators=(",", ":"), default=str),
+                [],
+            )
+        mime = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+        }.get(image_path.suffix.lower())
+        if mime is None:
+            envelope["ok"] = False
+            envelope["summary"] = "visual tool returned an unsupported image format"
+            return ToolExecutionResult(
+                json.dumps(envelope, ensure_ascii=False, separators=(",", ":"), default=str),
+                [],
+            )
+        encoded_image = base64.b64encode(image_path.read_bytes()).decode("ascii")
+        output = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"), default=str)
+        followup = {
+            "role": "user",
+            "content": [
+                {
+                    "type": "input_text",
+                    "text": f"Visual output captured by ORDAX tool {name}. Analyze this image as tool evidence.",
+                },
+                {
+                    "type": "input_image",
+                    "image_url": f"data:{mime};base64,{encoded_image}",
+                    "detail": "auto",
+                },
+            ],
+        }
+        return ToolExecutionResult(output, [followup])
 
     def execute(self, name: str, arguments_json: str) -> str:
         try:

@@ -42,6 +42,7 @@ class OpenAIChatGPTPlanProviderTests(unittest.TestCase):
             body = json.loads(request.content)
             self.assertFalse(body["store"])
             self.assertTrue(body["stream"])
+            self.assertEqual(body["include"], ["reasoning.encrypted_content"])
             self.assertEqual(body["model"], "gpt-test")
             self.assertEqual(body["input"][0]["content"], "hello")
             return httpx.Response(

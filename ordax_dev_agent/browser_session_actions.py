@@ -446,6 +446,7 @@ class BrowserSessionActions:
             return {
                 "session_id": session_id,
                 "artifact_name": output.name,
+                "image_path": str(output),
                 "width": width,
                 "height": height,
                 "size_bytes": len(data),

@@ -101,6 +101,7 @@ class OpenAIChatGPTPlanProvider:
             "input": input_items,
             "store": False,
             "stream": True,
+            "include": ["reasoning.encrypted_content"],
         }
         if instructions:
             body["instructions"] = instructions
