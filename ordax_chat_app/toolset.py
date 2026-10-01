@@ -275,6 +275,26 @@ DEVELOPMENT_TOOLS: list[dict[str, Any]] = [
         "parameters": _object({}),
         "strict": True,
     },
+    {
+        "type": "function",
+        "name": "agents",
+        "description": "Coordinate persistent ORDAX workers for the selected project. Operations: status, create_worker, delegate, inbox, message. Workers report back through their coordinator.",
+        "parameters": _object({
+            "operation": {
+                "type": "string",
+                "enum": ["status", "create_worker", "delegate", "inbox", "message"],
+            },
+            "worker_id": _nullable({"type": "string"}),
+            "name": _nullable({"type": "string"}),
+            "role": _nullable({"type": "string"}),
+            "title": _nullable({"type": "string"}),
+            "instruction": _nullable({"type": "string"}),
+            "priority": _nullable({"type": "integer", "minimum": 0, "maximum": 100}),
+            "message": _nullable({"type": "string"}),
+            "unread_only": _nullable({"type": "boolean"}),
+        }),
+        "strict": True,
+    },
 ]
 
 
@@ -301,10 +321,20 @@ _TOOL_ACTIONS = {
 
 
 class DevelopmentToolset:
-    def __init__(self, action_registry, *, project: str, max_output_bytes: int = 512 * 1024):
+    def __init__(
+        self,
+        action_registry,
+        *,
+        project: str,
+        max_output_bytes: int = 512 * 1024,
+        orchestrator=None,
+        agent_id: str | None = None,
+    ):
         self.action_registry = action_registry
         self.project = project
         self.max_output_bytes = max_output_bytes
+        self.orchestrator = orchestrator
+        self.agent_id = agent_id
 
     @property
     def definitions(self) -> list[dict[str, Any]]:
@@ -394,6 +424,8 @@ class DevelopmentToolset:
             return json.dumps({"ok": False, "summary": "tool arguments must be an object"})
 
         action = _TOOL_ACTIONS.get(name)
+        if name == "agents":
+            return self._execute_agents(raw)
         if name == "browser":
             operation = str(raw.get("operation") or "")
             action = {
@@ -481,3 +513,115 @@ class DevelopmentToolset:
                 separators=(",", ":"),
             )
         return encoded
+
+
+    def _execute_agents(self, raw: dict[str, Any]) -> str:
+        if self.orchestrator is None or not self.agent_id:
+            return json.dumps(
+                {"ok": False, "summary": "agent coordination is unavailable in this session"},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        definition = next((item for item in DEVELOPMENT_TOOLS if item["name"] == "agents"), None)
+        allowed = set((definition or {}).get("parameters", {}).get("properties", {}))
+        unsupported = sorted(set(raw) - allowed)
+        if unsupported:
+            return json.dumps(
+                {"ok": False, "summary": "unsupported tool argument(s): " + ", ".join(unsupported)},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+
+        operation = str(raw.get("operation") or "")
+        current = self.orchestrator.get_agent(self.agent_id)
+        if current["project_slug"] != self.project:
+            return json.dumps(
+                {"ok": False, "summary": "current agent is not bound to the selected project"},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+
+        try:
+            if operation == "status":
+                status = self.orchestrator.status(self.project)
+                data = {
+                    "current_agent": current,
+                    "agents": status["agents"],
+                    "goals": status["goals"],
+                    "work_counts": status.get("work_counts", {}),
+                    "unread_messages": status.get("unread_messages", 0),
+                }
+                summary = "Agent team status ready"
+
+            elif operation == "create_worker":
+                if current.get("parent_agent_id") is not None:
+                    raise ValueError("only a coordinator can create workers")
+                name = str(raw.get("name") or "").strip()
+                role = str(raw.get("role") or "").strip()
+                if not name or not role:
+                    raise ValueError("name and role are required for create_worker")
+                data = self.orchestrator.create_agent(
+                    self.project,
+                    name,
+                    role,
+                    parent_agent_id=self.agent_id,
+                )
+                summary = f"Worker created: {data['name']}"
+
+            elif operation == "delegate":
+                if current.get("parent_agent_id") is not None:
+                    raise ValueError("only a coordinator can delegate work")
+                worker_id = str(raw.get("worker_id") or "").strip()
+                title = str(raw.get("title") or "").strip()
+                instruction = str(raw.get("instruction") or "").strip()
+                if not worker_id or not title or not instruction:
+                    raise ValueError("worker_id, title and instruction are required for delegate")
+                worker = self.orchestrator.get_agent(worker_id)
+                if worker.get("parent_agent_id") != self.agent_id or worker["project_slug"] != self.project:
+                    raise ValueError("target worker does not belong to this coordinator")
+                data = self.orchestrator.enqueue_work(
+                    worker_id,
+                    title,
+                    instruction,
+                    priority=int(raw.get("priority") if raw.get("priority") is not None else 50),
+                )
+                summary = f"Delegated to {worker['name']}: {title}"
+
+            elif operation == "inbox":
+                messages = self.orchestrator.inbox(
+                    self.agent_id,
+                    unread_only=bool(raw.get("unread_only", True)),
+                    limit=100,
+                )
+                data = {"messages": messages}
+                summary = "Agent inbox ready"
+
+            elif operation == "message":
+                worker_id = str(raw.get("worker_id") or "").strip()
+                message = str(raw.get("message") or "").strip()
+                if not worker_id or not message:
+                    raise ValueError("worker_id and message are required for message")
+                target = self.orchestrator.get_agent(worker_id)
+                data = self.orchestrator.send_message(
+                    self.agent_id,
+                    worker_id,
+                    message,
+                    kind="message",
+                )
+                summary = f"Message sent to {target['name']}"
+
+            else:
+                raise ValueError(f"unsupported agents operation: {operation}")
+        except Exception as error:
+            return json.dumps(
+                {"ok": False, "summary": f"{type(error).__name__}: {error}"},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+
+        return json.dumps(
+            {"ok": True, "summary": summary, "data": data},
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=str,
+        )
