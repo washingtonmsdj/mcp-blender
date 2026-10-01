@@ -21,7 +21,7 @@
           <div class="accountDialogTitle">
             <div class="eyebrow">CONEXÃO SEGURA</div>
             <h2 id="accountDialogTitle">Conectar conta ORDAX</h2>
-            <p>Vincule este computador à sua conta para que clientes autorizados encontrem o ORDAX Runtime.</p>
+            <p>Opcional: vincule este computador à sua conta ORDAX para acesso remoto autenticado ao Runtime.</p>
           </div>
           <button id="accountClose" class="accountClose" type="button" aria-label="Fechar">×</button>
         </div>
@@ -97,7 +97,7 @@
       let result;
       try{
         if(!window.pywebview?.api?.connect_product_account){
-          result={ok:false,summary:'Esta edição do Studio não expõe conexão de conta.'};
+          result={ok:false,summary:'Esta edição do ORDAX Dev não expõe conexão de conta.'};
         }else{
           result=await window.pywebview.api.connect_product_account(accountEmail,accountPassword);
         }
