@@ -103,6 +103,34 @@ class BrowserCompanionTests(unittest.TestCase):
             self.request("/commands", headers={"X-ORDAX-Conversation": "anything"})
         self.assertEqual(unauthorized.exception.code, 401)
 
+    def test_http_webpage_origin_cannot_pair_or_poll_commands(self):
+        pairing = self.server.new_pairing_code()
+        with self.assertRaises(urllib.error.HTTPError) as blocked_pair:
+            self.request(
+                "/pair",
+                method="POST",
+                headers={"Origin": "https://example.com"},
+                payload={"code": pairing["code"], "browser_id": "browser-web"},
+            )
+        self.assertEqual(blocked_pair.exception.code, 403)
+
+        paired = self.request(
+            "/pair",
+            method="POST",
+            payload={"code": pairing["code"], "browser_id": "browser-extension"},
+        )
+        token = paired["token"]
+        with self.assertRaises(urllib.error.HTTPError) as blocked_poll:
+            self.request(
+                "/commands",
+                token=token,
+                headers={
+                    "Origin": "https://example.com",
+                    "X-ORDAX-Conversation": "anything",
+                },
+            )
+        self.assertEqual(blocked_poll.exception.code, 403)
+
     def test_non_chatgpt_event_is_rejected(self):
         pairing = self.server.new_pairing_code()
         token = self.request(
