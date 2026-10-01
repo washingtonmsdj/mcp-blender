@@ -65,6 +65,25 @@ class FakeOrchestrator:
 
 
 
+class FakePolicy:
+    def __init__(self):
+        self.values = {}
+
+    def project(self, project):
+        return {
+            "computer.observe": self.values.get((project, "computer.observe"), False),
+            "computer.interact": self.values.get((project, "computer.interact"), False),
+        }
+
+    def set(self, project, capability, enabled):
+        self.values[(project, capability)] = bool(enabled)
+        return {
+            "project_slug": project,
+            "capability": capability,
+            "enabled": bool(enabled),
+        }
+
+
 class FakeAutonomy:
     def __init__(self):
         self.running = False
@@ -101,6 +120,7 @@ class FakeRuntime:
         )
         self.conversations = FakeConversations()
         self.orchestrator = FakeOrchestrator()
+        self.policy = FakePolicy()
 
     def account_status(self):
         return {"connected": True, "account": {"name": "User", "email": "u@example.com"}}
@@ -199,6 +219,19 @@ class DesktopApiTests(unittest.TestCase):
         )
         self.assertFalse(wrong_project["ok"])
         self.assertIn("selected project", wrong_project["summary"])
+
+    def test_computer_capability_grants_are_project_scoped(self):
+        initial = self.api.capability_status("demo")
+        self.assertTrue(initial["ok"])
+        self.assertFalse(initial["data"]["computer.observe"])
+
+        enabled = self.api.capability_set("demo", "computer.observe", True)
+        self.assertTrue(enabled["ok"])
+        self.assertTrue(enabled["data"]["capabilities"]["computer.observe"])
+
+        other = self.api.capability_status("other")
+        self.assertTrue(other["ok"])
+        self.assertFalse(other["data"]["computer.observe"])
 
     def test_autonomy_status_starts_stopped(self):
         status = self.api.autonomy_status()
