@@ -331,11 +331,34 @@ class BrowserSessionActions:
         try:
             target = self._browser_target(
                 state,
-                timeout_seconds=max(2.0, min(float(payload.get("wait_seconds", 8)), 20.0)),
+                timeout_seconds=max(30.0, min(float(payload.get("wait_seconds", 8)), 60.0)),
                 create_url=url,
             )
         except BrowserCaptureError as error:
-            return ActionResult(False, str(error), {**state, "running": self._pid_running(process.pid)})
+            try:
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=15,
+                        shell=False,
+                    )
+                else:
+                    try:
+                        os.killpg(process.pid, 15)
+                    except ProcessLookupError:
+                        pass
+                process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            handles.pop(session_id, None)
+            state.update({
+                "startup_error": str(error),
+                "stopped_at_unix": time.time(),
+            })
+            self._write_browser_state(project, state)
+            return ActionResult(False, str(error), {**state, "running": False, "ownership_valid": False})
         state = self._refresh_browser_pid(project, state)
         return ActionResult(True, "browser session started", {
             **state,
