@@ -75,6 +75,22 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
         description="Read sanitized ORDAX Studio project health, Git, memory and adapter state.",
     ),
     ProductMcpToolSpec(
+        name="project_briefing",
+        action="agent.project_briefing",
+        description="Load a sanitized durable project briefing for a fresh or resumed conversation.",
+    ),
+    ProductMcpToolSpec(
+        name="continuity_state",
+        action="continuity.get",
+        description="Read the non-expiring continuation state for one granted project.",
+    ),
+    ProductMcpToolSpec(
+        name="continuity_update",
+        action="continuity.update",
+        effect="write",
+        description="Persist non-expiring project progress for future conversations.",
+    ),
+    ProductMcpToolSpec(
         name="project_search",
         action="project.search_text",
         description="Search bounded approved text sources in a granted project.",
