@@ -123,6 +123,7 @@ const READ_ONLY_TOOLS = new Set([
 const DESTRUCTIVE_TOOLS = new Set([
   "project_text_write",
   "project_text_patch",
+  "continuity_update",
   "workspace_text_write",
   "workspace_text_patch",
   "workspace_path_remove",
@@ -136,7 +137,6 @@ const DESTRUCTIVE_TOOLS = new Set([
 
 const NON_DESTRUCTIVE_WRITE_TOOLS = new Set([
   "project_create",
-  "continuity_update",
   "handoff_create",
   "workspace_directory_create",
   "blender_start",
