@@ -138,6 +138,7 @@ const DESTRUCTIVE_TOOLS = new Set([
 
 const NON_DESTRUCTIVE_WRITE_TOOLS = new Set([
   "project_create",
+  "project_import",
   "handoff_create",
   "workspace_directory_create",
   "blender_start",
@@ -163,6 +164,7 @@ const TOOL_TITLES: Record<string, string> = {
   project_text_patch: "Patch project text file",
   projects_list: "List device projects",
   project_create: "Create ORDAX project",
+  project_import: "Import existing ORDAX project",
   project_search: "Search project text",
   project_read_batch: "Read project files",
   project_health: "Inspect project health",
