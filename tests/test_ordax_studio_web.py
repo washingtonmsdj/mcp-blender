@@ -50,6 +50,13 @@ class OrdaxStudioWebTests(unittest.TestCase):
                 search = api.search("value")
                 self.assertTrue(search["ok"])
                 self.assertIn("src/demo.py", [item["path"] for item in search["data"]["matches"]])
+                executions = api.execution_status()
+                self.assertTrue(executions["ok"])
+                self.assertEqual("demo", executions["data"]["project"])
+                self.assertEqual([], executions["data"]["processes"])
+                self.assertEqual([], executions["data"]["browsers"])
+                self.assertIn("preview", executions["data"])
+
                 task = api.task_add("Refinar a experiência do preview")
                 self.assertTrue(task["ok"])
                 updated = api.briefing()
