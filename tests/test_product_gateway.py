@@ -551,11 +551,15 @@ class ProductGatewayTests(unittest.TestCase):
     def test_project_briefing_exposes_durable_state_without_local_paths(self) -> None:
         result = self.gateway.execute(
             "agent.project_briefing",
-            {"project": "scene"},
+            {"project": "scene", "query": "renderer", "recall_limit": 12},
             context=self.context,
             grant=self.grant("agent.project_briefing"),
         )
         self.assertTrue(result.ok)
+        self.assertEqual(
+            self.executor.calls[-1],
+            ("agent.project_briefing", {"project": "scene", "query": "renderer", "recall_limit": 12}),
+        )
         self.assertEqual(result.data["continuity"]["project_state"]["summary"], "Ready")
         self.assertNotIn("path", result.data["project"])
         self.assertNotIn("root", result.data["repository"])
