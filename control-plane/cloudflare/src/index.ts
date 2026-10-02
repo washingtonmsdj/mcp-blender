@@ -72,6 +72,11 @@ const PRODUCT_READ_ONLY_ACTIONS = new Set([
   "computer.windows",
   "computer.active_window",
   "computer.screenshot",
+  "computer.access_status",
+  "computer.file_stat",
+  "computer.directory_list",
+  "computer.text_read",
+  "computer.search",
 ]);
 const PRODUCT_TYPED_ACTIONS_V2 = new Set([
   "continuity.update",
@@ -95,6 +100,11 @@ const PRODUCT_TYPED_ACTIONS_V2 = new Set([
   "computer.scroll",
   "computer.type",
   "computer.hotkey",
+  "computer.text_write",
+  "computer.text_patch",
+  "computer.directory_create",
+  "computer.path_move",
+  "computer.path_remove",
   "project.text_write",
   "project.text_patch",
   "blender.live_status",
