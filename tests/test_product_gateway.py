@@ -41,6 +41,23 @@ class FakeExecutor:
             "git.sync",
             "artifact.preview",
             "artifact.read_chunk",
+            "browser.status",
+            "browser.list",
+            "browser.snapshot",
+            "browser.screenshot",
+            "browser.start",
+            "browser.navigate",
+            "browser.click",
+            "browser.type",
+            "browser.stop",
+            "computer.windows",
+            "computer.active_window",
+            "computer.screenshot",
+            "computer.focus_window",
+            "computer.click",
+            "computer.scroll",
+            "computer.type",
+            "computer.hotkey",
             "blender.live_inspect",
             "unity.scene_summary",
         ]
@@ -196,6 +213,25 @@ class FakeExecutor:
                     "max_items": 100,
                 },
             )
+        if action == "browser.screenshot":
+            return ActionResult(True, "browser screenshot", {
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "artifact_name": "browser.png",
+                "image_path": "C:/Users/example/AppData/Local/OrdaX/artifacts/scene/browser.png",
+                "width": 1440,
+                "height": 900,
+                "size_bytes": 42,
+            })
+        if action == "computer.screenshot":
+            return ActionResult(True, "desktop screenshot", {
+                "project": "scene",
+                "mode": "desktop",
+                "artifact_name": "computer.png",
+                "image_path": "C:/Users/example/AppData/Local/OrdaX/artifacts/scene/computer.png",
+                "width": 1920,
+                "height": 1080,
+                "size_bytes": 84,
+            })
         if action == "artifact.preview":
             return ActionResult(
                 True,
@@ -272,6 +308,10 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertIn("workspace.path_remove", names)
         self.assertIn("git.command", names)
         self.assertIn("terminal.exec", names)
+        self.assertIn("browser.screenshot", names)
+        self.assertIn("browser.start", names)
+        self.assertIn("computer.screenshot", names)
+        self.assertIn("computer.click", names)
         self.assertIn("project.search_text", names)
         self.assertIn("project.text_read_batch", names)
         self.assertIn("project.preview_status", names)
@@ -332,6 +372,41 @@ class ProductGatewayTests(unittest.TestCase):
             self.executor.calls,
             [("workspace.bind_project", {"slug": "existing-app", "relative_path": "existing-app", "apps": []})],
         )
+
+    def test_browser_and_computer_actions_require_explicit_project_grants_and_redact_paths(self) -> None:
+        browser = self.gateway.execute(
+            "browser.screenshot",
+            {
+                "project": "scene",
+                "session_id": "11111111-1111-4111-8111-111111111111",
+                "width": 1440,
+                "height": 900,
+            },
+            context=self.context,
+            grant=self.grant("browser.screenshot"),
+        )
+        self.assertTrue(browser.ok)
+        self.assertNotIn("image_path", browser.data)
+        self.assertEqual(browser.data["artifact_name"], "browser.png")
+
+        desktop = self.gateway.execute(
+            "computer.screenshot",
+            {"project": "scene", "mode": "desktop"},
+            context=self.context,
+            grant=self.grant("computer.screenshot"),
+        )
+        self.assertTrue(desktop.ok)
+        self.assertNotIn("image_path", desktop.data)
+        self.assertEqual(desktop.data["artifact_name"], "computer.png")
+
+        denied = self.gateway.execute(
+            "computer.click",
+            {"project": "scene", "x": 10, "y": 20},
+            context=self.context,
+            grant=self.grant("computer.screenshot"),
+        )
+        self.assertFalse(denied.ok)
+        self.assertEqual(denied.data["error_code"], "grant_required")
 
     def test_handoff_actions_are_project_scoped_and_capability_typed(self) -> None:
         loaded = self.gateway.execute(

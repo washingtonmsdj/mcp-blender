@@ -560,6 +560,91 @@ def terminal_exec(
 
 
 @mcp.tool()
+def browser_status(device_id: str, project: str, session_id: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="browser.status", project=project, space_id=space_id, arguments={"project": project, "session_id": session_id})
+
+
+@mcp.tool()
+def browser_list(device_id: str, project: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="browser.list", project=project, space_id=space_id, arguments={"project": project})
+
+
+@mcp.tool()
+def browser_snapshot(device_id: str, project: str, session_id: str, max_elements: int = 200, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="browser.snapshot", project=project, space_id=space_id, arguments={"project": project, "session_id": session_id, "max_elements": max_elements})
+
+
+@mcp.tool()
+def browser_screenshot(device_id: str, project: str, session_id: str, width: int = 1440, height: int = 900, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="browser.screenshot", project=project, space_id=space_id, arguments={"project": project, "session_id": session_id, "width": width, "height": height})
+
+
+@mcp.tool()
+def browser_start(device_id: str, project: str, url: str = "about:blank", headless: bool = True, wait_seconds: float = 8.0, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="browser.start", project=project, space_id=space_id, arguments={"project": project, "url": url, "headless": headless, "wait_seconds": wait_seconds})
+
+
+@mcp.tool()
+def browser_navigate(device_id: str, project: str, session_id: str, url: str, wait_seconds: float = 15.0, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="browser.navigate", project=project, space_id=space_id, arguments={"project": project, "session_id": session_id, "url": url, "wait_seconds": wait_seconds})
+
+
+@mcp.tool()
+def browser_click(device_id: str, project: str, session_id: str, node_id: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="browser.click", project=project, space_id=space_id, arguments={"project": project, "session_id": session_id, "node_id": node_id})
+
+
+@mcp.tool()
+def browser_type(device_id: str, project: str, session_id: str, node_id: str, text: str, clear: bool = True, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="browser.type", project=project, space_id=space_id, arguments={"project": project, "session_id": session_id, "node_id": node_id, "text": text, "clear": clear})
+
+
+@mcp.tool()
+def browser_stop(device_id: str, project: str, session_id: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="browser.stop", project=project, space_id=space_id, arguments={"project": project, "session_id": session_id})
+
+
+@mcp.tool()
+def computer_windows(device_id: str, project: str, max_items: int = 100, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.windows", project=project, space_id=space_id, arguments={"project": project, "max_items": max_items})
+
+
+@mcp.tool()
+def computer_active_window(device_id: str, project: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.active_window", project=project, space_id=space_id, arguments={"project": project})
+
+
+@mcp.tool()
+def computer_screenshot(device_id: str, project: str, mode: str = "desktop", space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.screenshot", project=project, space_id=space_id, arguments={"project": project, "mode": mode})
+
+
+@mcp.tool()
+def computer_focus_window(device_id: str, project: str, handle: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.focus_window", project=project, space_id=space_id, arguments={"project": project, "handle": handle})
+
+
+@mcp.tool()
+def computer_click(device_id: str, project: str, x: int, y: int, button: str = "left", clicks: int = 1, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.click", project=project, space_id=space_id, arguments={"project": project, "x": x, "y": y, "button": button, "clicks": clicks})
+
+
+@mcp.tool()
+def computer_scroll(device_id: str, project: str, amount: int, horizontal: bool = False, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.scroll", project=project, space_id=space_id, arguments={"project": project, "amount": amount, "horizontal": horizontal})
+
+
+@mcp.tool()
+def computer_type(device_id: str, project: str, text: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.type", project=project, space_id=space_id, arguments={"project": project, "text": text})
+
+
+@mcp.tool()
+def computer_hotkey(device_id: str, project: str, keys: list[str], space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.hotkey", project=project, space_id=space_id, arguments={"project": project, "keys": keys})
+
+
+@mcp.tool()
 def blender_status(device_id: str, project: str, space_id: str | None = None) -> dict[str, Any]:
     return _invoke(device_id=device_id, action="blender.live_status", project=project, space_id=space_id, arguments={"project": project})
 
