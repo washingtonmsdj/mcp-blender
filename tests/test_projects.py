@@ -383,25 +383,38 @@ class ProjectTests(unittest.TestCase):
         target = workspace / "dioramas-biblicos" / "diorama_jesus_samaritana_10cm"
         hordax.mkdir(parents=True)
         target.mkdir(parents=True)
+        state = self.root / "state-bind"
         config = replace(
             self.config,
-            state_dir=self.root / "state-bind",
+            state_dir=state,
             hordax_path=hordax,
         )
-        registry = ActionRegistry(config)
-
-        result = registry.execute(
-            "workspace.bind_project",
-            {
-                "slug": "diorama-jesus-samaritana-10cm",
-                "relative_path": "dioramas-biblicos/diorama_jesus_samaritana_10cm",
-                "apps": ["blender"],
-                "set_default": True,
-            },
-        )
+        memory_db = state / "memory.db"
+        with patch.dict(os.environ, {"ORDAX_MEMORY_DB": str(memory_db)}, clear=False):
+            registry = ActionRegistry(config)
+            result = registry.execute(
+                "workspace.bind_project",
+                {
+                    "slug": "diorama-jesus-samaritana-10cm",
+                    "relative_path": "dioramas-biblicos/diorama_jesus_samaritana_10cm",
+                    "apps": ["blender"],
+                    "set_default": True,
+                },
+            )
 
         self.assertTrue(result.ok, f"{result.summary}: {result.data}")
-        self.assertTrue(result.data["restart_required"])
+        self.assertFalse(result.data["restart_required"])
+        self.assertTrue(result.data["memory_active"])
+        self.assertEqual("diorama-jesus-samaritana-10cm", result.data["active_project"])
+        self.assertIn("diorama-jesus-samaritana-10cm", registry.projects)
+        self.assertEqual(
+            target.resolve(),
+            registry.projects["diorama-jesus-samaritana-10cm"].root,
+        )
+        self.assertEqual(
+            "diorama-jesus-samaritana-10cm",
+            registry.select_available_project("diorama-jesus-samaritana-10cm"),
+        )
         settings = json.loads(
             (config.state_dir / "agent-settings.json").read_text(encoding="utf-8")
         )
