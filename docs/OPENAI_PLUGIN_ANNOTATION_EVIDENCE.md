@@ -56,6 +56,16 @@ This document is reviewer-facing evidence for the OpenAI plugin submission. The 
 | `computer_scroll` | false | false | false | Sends bounded scrolling to the local interactive desktop without directly changing stored data. |
 | `computer_type` | false | true | true | Desktop typing can change local or external application state, so it requires an explicit grant and is conservatively destructive/open-world. |
 | `computer_hotkey` | false | true | true | A validated desktop hotkey can trigger local or external application actions, so it is conservatively destructive/open-world. |
+| `computer_access_status` | true | false | false | Reads the locally configured computer-access policy and allowed roots without changing device state. |
+| `computer_file_stat` | true | false | false | Reads bounded metadata for one locally allowed computer path. |
+| `computer_directory_list` | true | false | false | Lists filesystem entries only inside roots allowed by the local ORDAX computer-access policy. |
+| `computer_text_read` | true | false | false | Reads bounded UTF-8 text only from a locally allowed computer path. |
+| `computer_search` | true | false | false | Performs a bounded local filename/text search inside an allowed computer root. |
+| `computer_text_write` | false | true | false | Creates or replaces local text inside an allowed root; replacing existing content requires a SHA-256 precondition. |
+| `computer_text_patch` | false | true | false | Mutates an existing allowed local text file using exact replacements and a SHA-256 precondition. |
+| `computer_directory_create` | false | false | false | Creates additive local directory state only inside a root allowed by local policy. |
+| `computer_path_move` | false | true | false | Moves or renames allowed local filesystem state and can replace a destination file only when overwrite is explicit. |
+| `computer_path_remove` | false | true | false | Removes an allowed local file or directory; recursive directory removal must be explicit and configured roots cannot be removed. |
 | `artifacts_list` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `artifact_preview` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `blender_status` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
