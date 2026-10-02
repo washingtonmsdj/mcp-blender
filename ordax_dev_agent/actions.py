@@ -26,6 +26,7 @@ from .workspace_actions import WorkspaceActions
 from .preview_actions import PreviewActions
 from .browser_session_actions import BrowserSessionActions
 from .computer_control_actions import ComputerControlActions
+from .computer_filesystem_actions import ComputerFilesystemActions
 from .memory_actions import MemoryActions
 from .component_actions import ComponentActions
 from .game_asset_catalog_actions import GameAssetCatalogActions
@@ -81,6 +82,7 @@ class ActionRegistry(
     PreviewActions,
     BrowserSessionActions,
     ComputerControlActions,
+    ComputerFilesystemActions,
     MemoryActions,
     ComponentActions,
     GameAssetCatalogActions,
@@ -155,6 +157,16 @@ class ActionRegistry(
             "computer.type": self.computer_type,
             "computer.hotkey": self.computer_hotkey,
             "computer.scroll": self.computer_scroll,
+            "computer.access_status": self.computer_access_status,
+            "computer.file_stat": self.computer_file_stat,
+            "computer.directory_list": self.computer_directory_list,
+            "computer.text_read": self.computer_text_read,
+            "computer.text_write": self.computer_text_write,
+            "computer.text_patch": self.computer_text_patch,
+            "computer.directory_create": self.computer_directory_create,
+            "computer.path_move": self.computer_path_move,
+            "computer.path_remove": self.computer_path_remove,
+            "computer.search": self.computer_search,
             "memory.status": self.memory_status,
             "memory.context": self.memory_context,
             "memory.remember": self.memory_remember,
