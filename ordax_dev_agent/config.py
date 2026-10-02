@@ -20,6 +20,7 @@ class AgentConfig:
     agent_repo_path: Path
     hordax_path: Path
     bridge_path: Path
+    workspace_root: Path | None = None
     projects: dict | None = None
     default_project: str = "hordax"
     adapters: tuple[str, ...] = ()
@@ -124,6 +125,25 @@ class AgentConfig:
                     ),
                 )
             ),
+            workspace_root=Path(
+                os.environ.get(
+                    "ORDAX_WORKSPACE_ROOT",
+                    settings.get(
+                        "workspace_root",
+                        str(
+                            Path(
+                                os.environ.get(
+                                    "ORDAX_HORDAX_PATH",
+                                    settings.get(
+                                        "hordax_path",
+                                        str(Path.home() / "Documents" / "github" / "HORDAX-game"),
+                                    ),
+                                )
+                            ).expanduser().resolve().parent
+                        ),
+                    ),
+                )
+            ).expanduser().resolve(),
         )
 
     def public_status(self) -> dict:
@@ -134,6 +154,7 @@ class AgentConfig:
             "agent_repo_path": str(self.agent_repo_path),
             "hordax_path": str(self.hordax_path),
             "bridge_path": str(self.bridge_path),
+            "workspace_root": str((self.workspace_root or self.hordax_path.parent).resolve()),
             "control_plane_url_configured": bool(self.control_plane_url),
             "control_plane_url": self.control_plane_url,
             "control_plane_protocol": self.control_plane_protocol,
