@@ -85,7 +85,7 @@ class OrdaxProjectHealthTests(unittest.TestCase):
             root = Path(raw)
             project = root / "project"
             project.mkdir()
-            (project / "README.md").write_text("# Demo\n", encoding="utf-8")
+            (project / "README.md").write_text("# Demo\n\nContinuity architecture notes.\n", encoding="utf-8")
             config = AgentConfig(
                 agent_name="test", poll_seconds=1, state_dir=root / "state",
                 agent_repo_path=root / "agent", hordax_path=root / "hordax",
@@ -114,6 +114,11 @@ class OrdaxProjectHealthTests(unittest.TestCase):
             self.assertEqual("continuity", result.data["continuity"]["recall_query"])
             self.assertTrue(result.data["continuity"]["recall"])
             self.assertIn("Keep continuity", result.data["continuity"]["recall"][0]["snippet"])
+            source_recall = result.data["workspace"]["source_recall"]
+            self.assertEqual("continuity", source_recall["query"])
+            self.assertGreaterEqual(source_recall["match_count"], 1)
+            self.assertEqual("README.md", source_recall["matches"][0]["path"])
+            self.assertIn("Continuity architecture", source_recall["matches"][0]["text"])
             self.assertIn("project", result.data["capabilities"]["action_groups"])
 
 
