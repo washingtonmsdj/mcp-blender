@@ -79,10 +79,18 @@
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*"/>
                   <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock x:Name="PreviewAddress" Text="Preview do projeto" Margin="12,0"
-                           Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
-                <Button Grid.Column="1" Content="Atualizar preview" Click="RefreshPreview_Click"/>
+                <StackPanel Orientation="Vertical" Margin="12,2,8,2" VerticalAlignment="Center">
+                  <TextBlock x:Name="PreviewAddress" Text="Preview do projeto"
+                             Foreground="{StaticResource TextBrush}"/>
+                  <TextBlock Text="Captura do agente é independente desta aba"
+                             FontSize="10" Foreground="{StaticResource MutedBrush}"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="Iniciar" Click="StartPreview_Click"/>
+                <Button Grid.Column="2" Content="Capturar" Click="CapturePreview_Click"/>
+                <Button Grid.Column="3" Content="Atualizar" Click="RefreshPreview_Click"/>
               </Grid>
               <wv2:WebView2CompositionControl x:Name="PreviewView" Grid.Row="1" DefaultBackgroundColor="#040A11"/>
             </Grid>
@@ -106,9 +114,28 @@
           </TabItem>
           <TabItem Header="Execuções">
             <Grid Background="#050B12">
-              <TextBox x:Name="ActivityLog" Margin="10" IsReadOnly="True" AcceptsReturn="True"
-                       TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+              <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="2*"/>
+                <RowDefinition Height="1*"/>
+              </Grid.RowDefinitions>
+              <Grid Background="#091420">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="ExecutionSummary" Text="Runtime e automações do projeto"
+                           Margin="12,0" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
+                <Button Grid.Column="1" Content="Atualizar" Click="RefreshExecutions_Click"/>
+              </Grid>
+              <TextBox Grid.Row="1" x:Name="ExecutionState" Margin="10,10,10,5"
+                       IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                        FontFamily="Cascadia Code, Consolas" FontSize="12"/>
+              <TextBox Grid.Row="2" x:Name="ActivityLog" Margin="10,5,10,10"
+                       IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                       FontFamily="Cascadia Code, Consolas" FontSize="11"/>
             </Grid>
           </TabItem>
         </TabControl>
