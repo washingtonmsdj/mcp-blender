@@ -79,7 +79,7 @@ def projects_list(
     device_id: str,
     space_id: str | None = None,
 ) -> dict[str, Any]:
-    """List projects visible on one authorized device."""
+    """List granted projects; use first when a resume/continue request does not identify the project."""
     return _invoke(
         device_id=device_id,
         action="projects.list",
@@ -120,7 +120,7 @@ def repository_catalog(
     device_id: str,
     space_id: str | None = None,
 ) -> dict[str, Any]:
-    """List canonical ORDAX Studio repositories on one authorized device."""
+    """List canonical ORDAX repositories to disambiguate the project before resuming work."""
     return _invoke(
         device_id=device_id,
         action="workspace.repository_catalog",
@@ -223,7 +223,7 @@ def project_briefing(
     recall_limit: int = 20,
     space_id: str | None = None,
 ) -> dict[str, Any]:
-    """Load a sanitized durable project briefing with optional bounded memory recall."""
+    """Load durable project state and relevant context for fresh-chat continuation; pass the user intent as query when useful."""
     return _invoke(
         device_id=device_id,
         action="agent.project_briefing",
