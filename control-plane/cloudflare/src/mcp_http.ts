@@ -263,13 +263,16 @@ function sanitizeActionPayload(payload: JsonObject, requestId?: string): JsonObj
   const rawAction = payload.action;
   if (rawAction && typeof rawAction === "object" && !Array.isArray(rawAction)) {
     const action = rawAction as JsonObject;
+    const status = typeof action.status === "string" ? action.status : "";
+    const pending = !["succeeded", "failed", "cancelled"].includes(status);
     return {
       ok: payload.ok !== false,
-      pending: false,
+      pending,
+      request_id: requestId ?? (typeof action.request_id === "string" ? action.request_id : ""),
       action: {
         name: typeof action.action === "string" ? action.action : "",
         project: typeof action.project === "string" ? action.project : null,
-        status: typeof action.status === "string" ? action.status : "",
+        status,
         result: action.result ?? null,
         error_code: typeof action.error_code === "string" ? action.error_code : null,
       },
@@ -468,4 +471,3 @@ export async function handleOrdaxMcp(request: Request, handlers: OrdaxMcpHandler
   }
   return rpcError(id, -32601, "Method not found");
 }
-
