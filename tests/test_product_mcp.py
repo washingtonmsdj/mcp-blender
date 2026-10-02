@@ -17,6 +17,7 @@ class _Executor:
         self._names = [
             "projects.list",
             "workspace.repository_catalog",
+            "workspace.project_create",
             "project.inventory",
             "project.text_read",
             "handoff.get",
@@ -101,6 +102,7 @@ class ProductMcpFacadeTests(unittest.TestCase):
             names,
             {
                 "projects_list",
+                "project_create",
                 "repository_catalog",
                 "project_inventory",
                 "project_text_read",
@@ -131,6 +133,7 @@ class ProductMcpFacadeTests(unittest.TestCase):
             },
         )
         effects = {tool["name"]: tool["effect"] for tool in tools}
+        self.assertEqual(effects["project_create"], "write")
         self.assertEqual(effects["git_status"], "read")
         self.assertEqual(effects["project_text_write"], "write")
         self.assertEqual(effects["handoff_get"], "read")
@@ -139,6 +142,20 @@ class ProductMcpFacadeTests(unittest.TestCase):
         self.assertEqual(effects["terminal_exec"], "execute")
         self.assertEqual(effects["git_command"], "execute")
         self.assertEqual(effects["blender_transform"], "write")
+
+    def test_project_create_is_global_but_requires_its_explicit_grant(self):
+        result = self.facade.call(
+            "project_create",
+            {"slug": "new-app", "apps": [], "git_init": True},
+            context=self.context,
+            grant=self.grant("workspace.project_create"),
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(
+            self.executor.calls,
+            [("workspace.project_create", {"slug": "new-app", "apps": [], "git_init": True})],
+        )
 
     def test_call_routes_through_gateway_and_preserves_audit(self):
         result = self.facade.call(
