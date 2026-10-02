@@ -10,7 +10,9 @@ class WindowsProductPackagingTests(unittest.TestCase):
         installer = (ROOT / "packaging" / "windows" / "ordax-studio.iss").read_text(encoding="utf-8")
         self.assertIn("ORDAX Dev.exe", installer)
         self.assertIn("ORDAX Runtime.exe", installer)
-        self.assertIn('L"ordax_studio.product_web_desktop"', launcher)
+        self.assertIn('L"%ls\\\\workbench\\\\ORDAX Workbench.exe"', launcher)
+        self.assertIn("run_executable_child", launcher)
+        self.assertNotIn('L"ordax_studio.product_web_desktop"', launcher)
         self.assertNotIn("ordax_chat_app", launcher)
         self.assertIn("ordax_device_agent.main", launcher)
 
@@ -47,6 +49,9 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn("Lib\\site-packages", build)
         self.assertIn("pip install", build)
         self.assertIn("ORDAX_DEV_SETUP_SHA256", build)
+        self.assertIn("dotnet publish", build)
+        self.assertIn("ORDAX Workbench.exe", build)
+        self.assertIn("--self-contained true", build)
 
     def test_product_shell_is_project_host_not_embedded_chat(self) -> None:
         product = (ROOT / "ordax_studio" / "studio_product.html").read_text(encoding="utf-8")
@@ -92,6 +97,8 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn("running runtime did not exit during upgrade", workflow)
         self.assertIn("LEGACY_ORDAX_TASK_REMOVED", workflow)
         self.assertIn("LEGACY_ORDAX_STARTUP_REMOVED", workflow)
+        self.assertIn("ORDAX_WORKBENCH_READY", workflow)
+        self.assertIn("workbench\\ORDAX Workbench.exe", workflow)
 
 
 if __name__ == "__main__":

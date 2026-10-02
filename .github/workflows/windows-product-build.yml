@@ -43,6 +43,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
       - name: Enable MSVC command line
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -154,8 +157,9 @@ jobs:
 
           $studioExe = Join-Path $installRoot "ORDAX Dev.exe"
           $runtimeExe = Join-Path $installRoot "ORDAX Runtime.exe"
+          $workbenchExe = Join-Path $installRoot "workbench\ORDAX Workbench.exe"
           $privatePython = Join-Path $installRoot "runtime\python.exe"
-          foreach ($required in @($studioExe, $runtimeExe, $privatePython)) {
+          foreach ($required in @($studioExe, $runtimeExe, $workbenchExe, $privatePython)) {
             if (-not (Test-Path $required)) {
               if (Test-Path $installLog) { Get-Content $installLog -Tail 200 }
               throw "Installed product file is missing: $required"
@@ -170,6 +174,28 @@ jobs:
 
           & $privatePython -c "import ordax_studio, ordax_dev_agent, ordax_device_agent; print('ORDAX_INSTALLED_RUNTIME_OK')"
           if ($LASTEXITCODE -ne 0) { throw "Installed private runtime import smoke failed" }
+
+          $studio = Start-Process -FilePath $studioExe -WorkingDirectory $installRoot -PassThru
+          try {
+            Start-Sleep -Seconds 5
+            $studio.Refresh()
+            if ($studio.HasExited) {
+              throw "ORDAX Dev native Workbench exited during startup smoke with code $($studio.ExitCode)"
+            }
+            $workbench = Get-Process | Where-Object {
+              $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq [IO.Path]::GetFullPath($workbenchExe)
+            } | Select-Object -First 1
+            if (-not $workbench) {
+              throw "ORDAX Dev supervisor did not launch native Workbench"
+            }
+            Write-Host "ORDAX_WORKBENCH_READY"
+          } finally {
+            Stop-Process -Id $studio.Id -Force -ErrorAction SilentlyContinue
+            Get-Process | Where-Object {
+              $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq [IO.Path]::GetFullPath($workbenchExe)
+            } | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
+          }
 
           $runtime = Start-Process -FilePath $runtimeExe -WorkingDirectory $installRoot -PassThru
           $upgradedRuntime = $null
@@ -195,7 +221,7 @@ jobs:
               throw "running runtime did not exit during upgrade"
             }
 
-            foreach ($required in @($studioExe, $runtimeExe, $privatePython)) {
+            foreach ($required in @($studioExe, $runtimeExe, $workbenchExe, $privatePython)) {
               if (-not (Test-Path $required)) {
                 if (Test-Path $upgradeLog) { Get-Content $upgradeLog -Tail 200 }
                 throw "Upgraded product file is missing: $required"
