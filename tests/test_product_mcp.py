@@ -152,6 +152,11 @@ class ProductMcpFacadeTests(unittest.TestCase):
         self.assertEqual(effects["git_command"], "execute")
         self.assertEqual(effects["blender_transform"], "write")
 
+        descriptions = {tool["name"]: tool["description"] for tool in tools}
+        self.assertIn("continue/resume", descriptions["projects_list"])
+        self.assertIn("fresh chat", descriptions["project_briefing"])
+        self.assertIn("pass the user intent as query", descriptions["project_briefing"])
+
     def test_durable_continuity_tools_are_project_scoped(self):
         loaded = self.facade.call(
             "continuity_state",
