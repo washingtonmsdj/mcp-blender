@@ -579,11 +579,12 @@ class MemoryStore:
         ranked: list[dict[str, Any]] = []
         for item in candidates:
             haystack = str(item.get("text") or "").casefold()
-            term_hits = sum(haystack.count(term) for term in terms)
-            matched_terms = sum(1 for term in terms if term in haystack)
+            haystack_terms = re.findall(r"[\w.-]+", haystack, flags=re.UNICODE)
+            term_hits = sum(haystack_terms.count(term) for term in terms)
+            matched_terms = sum(1 for term in terms if term in haystack_terms)
             if matched_terms == 0:
                 continue
-            phrase_bonus = 8 if normalized in haystack else 0
+            phrase_bonus = 8 if len(terms) > 1 and normalized in haystack else 0
             coverage_bonus = int((matched_terms / max(len(terms), 1)) * 10)
             type_bonus = 3 if item["type"] == "project_state" else 0
             score = phrase_bonus + coverage_bonus + min(term_hits, 20) + type_bonus
