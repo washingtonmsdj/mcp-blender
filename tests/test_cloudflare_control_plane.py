@@ -475,6 +475,12 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             "artifact.preview",
         ):
             self.assertIn(f'"{action}"', product_block)
+        typed_block = worker.split(
+            "const PRODUCT_TYPED_ACTIONS_V2 = new Set([", 1
+        )[1].split("]);", 1)[0]
+        self.assertIn('"workspace.project_create"', typed_block)
+        self.assertIn('"workspace.bind_project"', typed_block)
+
         for mutation in (
             "project.text_write",
             "project.text_patch",
@@ -504,6 +510,7 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             "const PRODUCT_PROJECT_ACTIONS = new Set([", 1
         )[1].split("]);", 1)[0]
         self.assertNotIn('"workspace.project_create"', project_block)
+        self.assertNotIn('"workspace.bind_project"', project_block)
         self.assertIn('"continuity.update"', project_block)
         self.assertIn('"agent.project_briefing"', project_block)
 
