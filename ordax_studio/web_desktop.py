@@ -304,6 +304,72 @@ class StudioApi:
             },
         }
 
+    def execution_status(self) -> dict[str, Any]:
+        processes = self.agent.execute("process.list", {"project": self.project})
+        browsers = self.agent.execute("browser.list", {"project": self.project})
+        preview = self.agent.execute("project.preview_status", {"project": self.project})
+
+        process_items: list[dict[str, Any]] = []
+        if processes.ok:
+            for item in processes.data.get("processes", []):
+                if not isinstance(item, dict):
+                    continue
+                process_items.append({
+                    key: item.get(key)
+                    for key in (
+                        "process_id",
+                        "state",
+                        "running",
+                        "ownership_valid",
+                        "manager_pid",
+                        "child_pid",
+                        "cwd",
+                        "argv",
+                        "started_at_unix",
+                    )
+                    if key in item
+                })
+
+        browser_items: list[dict[str, Any]] = []
+        if browsers.ok:
+            for item in browsers.data.get("sessions", []):
+                if not isinstance(item, dict):
+                    continue
+                browser_items.append({
+                    key: item.get(key)
+                    for key in (
+                        "session_id",
+                        "running",
+                        "ownership_valid",
+                        "url",
+                        "title",
+                        "browser_pid",
+                        "created_at_unix",
+                    )
+                    if key in item
+                })
+
+        preview_data = preview.data if preview.ok and isinstance(preview.data, dict) else {}
+        runtime = preview_data.get("runtime") if isinstance(preview_data.get("runtime"), dict) else {}
+        return {
+            "ok": True,
+            "data": {
+                "project": self.project,
+                "processes": process_items,
+                "browsers": browser_items,
+                "preview": {
+                    "mode": preview_data.get("mode"),
+                    "url": preview_data.get("url"),
+                    "runtime": {
+                        key: runtime.get(key)
+                        for key in ("state", "running", "pid", "url_ready")
+                        if key in runtime
+                    },
+                    "has_latest_image": bool(preview_data.get("latest_image")),
+                },
+            },
+        }
+
     def task_add(self, title: str) -> dict[str, Any]:
         title = str(title or "").strip()
         if not title:
