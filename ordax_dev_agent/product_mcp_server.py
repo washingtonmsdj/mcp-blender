@@ -116,6 +116,35 @@ def project_create(
 
 
 @mcp.tool()
+def project_import(
+    device_id: str,
+    slug: str,
+    relative_path: str,
+    apps: list[str] | None = None,
+    set_default: bool = False,
+    blender_scripts_dir: str = "automation/blender",
+    blend_file: str = "",
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Register an existing project inside the configured ORDAX workspace."""
+    arguments: dict[str, Any] = {
+        "slug": slug,
+        "relative_path": relative_path,
+        "apps": list(apps or []),
+        "set_default": set_default,
+        "blender_scripts_dir": blender_scripts_dir,
+    }
+    if blend_file:
+        arguments["blend_file"] = blend_file
+    return _invoke(
+        device_id=device_id,
+        action="workspace.bind_project",
+        space_id=space_id,
+        arguments=arguments,
+    )
+
+
+@mcp.tool()
 def repository_catalog(
     device_id: str,
     space_id: str | None = None,
