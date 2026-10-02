@@ -36,6 +36,9 @@ class _Executor:
             "project.text_read_batch",
             "project.preview_status",
             "agent.project_health",
+            "agent.project_briefing",
+            "continuity.get",
+            "continuity.update",
             "artifacts.list",
             "git.status",
             "git.diff",
@@ -119,6 +122,9 @@ class ProductMcpFacadeTests(unittest.TestCase):
                 "git_command",
                 "terminal_exec",
                 "project_health",
+                "project_briefing",
+                "continuity_state",
+                "continuity_update",
                 "project_search",
                 "project_read_batch",
                 "project_preview_status",
@@ -134,6 +140,9 @@ class ProductMcpFacadeTests(unittest.TestCase):
         )
         effects = {tool["name"]: tool["effect"] for tool in tools}
         self.assertEqual(effects["project_create"], "write")
+        self.assertEqual(effects["project_briefing"], "read")
+        self.assertEqual(effects["continuity_state"], "read")
+        self.assertEqual(effects["continuity_update"], "write")
         self.assertEqual(effects["git_status"], "read")
         self.assertEqual(effects["project_text_write"], "write")
         self.assertEqual(effects["handoff_get"], "read")
@@ -142,6 +151,28 @@ class ProductMcpFacadeTests(unittest.TestCase):
         self.assertEqual(effects["terminal_exec"], "execute")
         self.assertEqual(effects["git_command"], "execute")
         self.assertEqual(effects["blender_transform"], "write")
+
+    def test_durable_continuity_tools_are_project_scoped(self):
+        loaded = self.facade.call(
+            "continuity_state",
+            {"project": "demo"},
+            context=self.context,
+            grant=self.grant("continuity.get"),
+        )
+        self.assertTrue(loaded.ok)
+        self.assertEqual(self.executor.calls[-1], ("continuity.get", {"project": "demo"}))
+
+        updated = self.facade.call(
+            "continuity_update",
+            {"project": "demo", "summary": "Ready", "next_action": "Ship"},
+            context=self.context,
+            grant=self.grant("continuity.update"),
+        )
+        self.assertTrue(updated.ok)
+        self.assertEqual(
+            self.executor.calls[-1],
+            ("continuity.update", {"project": "demo", "summary": "Ready", "next_action": "Ship"}),
+        )
 
     def test_project_create_is_global_but_requires_its_explicit_grant(self):
         result = self.facade.call(
