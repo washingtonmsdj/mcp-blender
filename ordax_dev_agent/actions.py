@@ -120,6 +120,7 @@ class ActionRegistry(
             "projects.list": self.projects_list,
             "workspace.repository_catalog": self.workspace_repository_catalog,
             "workspace.list_projects": self.workspace_list_projects,
+            "workspace.project_create": self.workspace_project_create,
             "workspace.bind_project": self.workspace_bind_project,
             "workspace.file_stat": self.workspace_file_stat,
             "workspace.directory_list": self.workspace_directory_list,
