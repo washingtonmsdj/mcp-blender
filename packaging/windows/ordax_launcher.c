@@ -57,6 +57,82 @@ static HANDLE create_kill_job(void) {
     return job;
 }
 
+static DWORD run_executable_child(
+    const wchar_t *executable,
+    const wchar_t *root,
+    HANDLE job,
+    HANDLE shutdown_event,
+    bool hidden
+) {
+    wchar_t command[ORDAX_MAX_PATH];
+    if (_snwprintf_s(
+            command,
+            ORDAX_MAX_PATH,
+            _TRUNCATE,
+            L"\"%ls\"",
+            executable) < 0) {
+        return ERROR_INSUFFICIENT_BUFFER;
+    }
+
+    STARTUPINFOW startup;
+    PROCESS_INFORMATION process;
+    ZeroMemory(&startup, sizeof(startup));
+    ZeroMemory(&process, sizeof(process));
+    startup.cb = sizeof(startup);
+
+    DWORD flags = CREATE_UNICODE_ENVIRONMENT;
+    if (hidden) {
+        flags |= CREATE_NO_WINDOW;
+    }
+
+    if (!CreateProcessW(
+            NULL,
+            command,
+            NULL,
+            NULL,
+            FALSE,
+            flags,
+            NULL,
+            root,
+            &startup,
+            &process)) {
+        return GetLastError();
+    }
+
+    if (job != NULL) {
+        AssignProcessToJobObject(job, process.hProcess);
+    }
+
+    HANDLE wait_handles[2] = { process.hProcess, shutdown_event };
+    DWORD wait_result = WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
+    DWORD exit_code = 1;
+
+    if (wait_result == WAIT_OBJECT_0 + 1) {
+        if (job != NULL) {
+            TerminateJobObject(job, 0);
+        } else {
+            TerminateProcess(process.hProcess, 0);
+        }
+        WaitForSingleObject(process.hProcess, 5000);
+        exit_code = ERROR_CANCELLED;
+    } else if (wait_result == WAIT_OBJECT_0) {
+        GetExitCodeProcess(process.hProcess, &exit_code);
+    } else {
+        DWORD error = GetLastError();
+        if (job != NULL) {
+            TerminateJobObject(job, error);
+        } else {
+            TerminateProcess(process.hProcess, error);
+        }
+        WaitForSingleObject(process.hProcess, 5000);
+        exit_code = error == ERROR_SUCCESS ? ERROR_GEN_FAILURE : error;
+    }
+
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return exit_code;
+}
+
 static DWORD run_python_child(
     const wchar_t *python,
     const wchar_t *module,
@@ -168,6 +244,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
 
     wchar_t root[ORDAX_MAX_PATH];
     wchar_t python[ORDAX_MAX_PATH];
+    wchar_t workbench[ORDAX_MAX_PATH];
     if (!get_install_root(root, ORDAX_MAX_PATH)) {
         fatal_message(L"Não foi possível localizar a instalação do ORDAX Dev.");
         CloseHandle(shutdown_event);
@@ -191,6 +268,21 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
         return 12;
     }
 
+    if (!ORDAX_RUNTIME_LAUNCHER) {
+        if (_snwprintf_s(
+                workbench,
+                ORDAX_MAX_PATH,
+                _TRUNCATE,
+                L"%ls\\workbench\\ORDAX Workbench.exe",
+                root) < 0 || !file_exists(workbench)) {
+            fatal_message(L"A Workbench nativa do ORDAX Dev está ausente ou corrompida.");
+            CloseHandle(shutdown_event);
+            ReleaseMutex(mutex);
+            CloseHandle(mutex);
+            return 14;
+        }
+    }
+
     set_default_environment(L"ORDAX_PACKAGED_ROOT", root);
     set_default_environment(L"ORDAX_AGENT_REPO_PATH", root);
     set_default_environment(L"ORDAX_BRIDGE_PATH", root);
@@ -200,9 +292,8 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
     DWORD result = 0;
 
     if (!ORDAX_RUNTIME_LAUNCHER) {
-        result = run_python_child(
-            python,
-            L"ordax_studio.product_web_desktop",
+        result = run_executable_child(
+            workbench,
             root,
             job,
             shutdown_event,
