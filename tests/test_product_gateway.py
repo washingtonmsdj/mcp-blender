@@ -58,6 +58,16 @@ class FakeExecutor:
             "computer.scroll",
             "computer.type",
             "computer.hotkey",
+            "computer.access_status",
+            "computer.file_stat",
+            "computer.directory_list",
+            "computer.text_read",
+            "computer.search",
+            "computer.text_write",
+            "computer.text_patch",
+            "computer.directory_create",
+            "computer.path_move",
+            "computer.path_remove",
             "blender.live_inspect",
             "unity.scene_summary",
         ]
@@ -312,6 +322,10 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertIn("browser.start", names)
         self.assertIn("computer.screenshot", names)
         self.assertIn("computer.click", names)
+        self.assertIn("computer.access_status", names)
+        self.assertIn("computer.text_read", names)
+        self.assertIn("computer.text_write", names)
+        self.assertIn("computer.path_remove", names)
         self.assertIn("project.search_text", names)
         self.assertIn("project.text_read_batch", names)
         self.assertIn("project.preview_status", names)
@@ -404,6 +418,24 @@ class ProductGatewayTests(unittest.TestCase):
             {"project": "scene", "x": 10, "y": 20},
             context=self.context,
             grant=self.grant("computer.screenshot"),
+        )
+        self.assertFalse(denied.ok)
+        self.assertEqual(denied.data["error_code"], "grant_required")
+
+    def test_computer_filesystem_actions_are_device_scoped_and_grant_typed(self) -> None:
+        read = self.gateway.execute(
+            "computer.text_read",
+            {"path": "C:/Users/example/notes.txt"},
+            context=self.context,
+            grant=self.grant("computer.text_read", projects=()),
+        )
+        self.assertTrue(read.ok)
+
+        denied = self.gateway.execute(
+            "computer.text_write",
+            {"path": "C:/Users/example/notes.txt", "content": "x"},
+            context=self.context,
+            grant=self.grant("computer.text_read", projects=()),
         )
         self.assertFalse(denied.ok)
         self.assertEqual(denied.data["error_code"], "grant_required")
