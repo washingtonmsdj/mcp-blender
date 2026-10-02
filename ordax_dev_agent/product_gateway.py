@@ -281,7 +281,9 @@ def _sanitize_product_result(
             if key in item
         }
 
-    if action == "projects.list":
+    if action == "workspace.project_create":
+        data = _redact_local_result_paths(data)
+    elif action == "projects.list":
         projects = data.get("projects")
         if isinstance(projects, list):
             data["projects"] = [
