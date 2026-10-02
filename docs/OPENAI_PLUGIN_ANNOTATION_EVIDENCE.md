@@ -39,6 +39,23 @@ This document is reviewer-facing evidence for the OpenAI plugin submission. The 
 | `git_diff` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `git_command` | false | true | true | Can execute commands or Git operations that may modify project state and may contact open-ended external destinations; explicit grants and host confirmation are required. |
 | `terminal_exec` | false | true | true | Can execute commands or Git operations that may modify project state and may contact open-ended external destinations; explicit grants and host confirmation are required. |
+| `browser_status` | true | false | false | Reads metadata for an ORDAX-owned browser session without changing browser or project state. |
+| `browser_list` | true | false | false | Lists ORDAX-owned browser sessions for the granted project without changing them. |
+| `browser_snapshot` | true | false | true | Reads bounded page text and interactive element metadata from the current browser page; the page may be an open-world web destination. |
+| `browser_screenshot` | true | false | true | Captures pixels from the current ORDAX-managed browser page through CDP without requiring that page to be foreground. |
+| `browser_start` | false | false | true | Starts an isolated ORDAX-owned Chromium session and may load an open-world URL; protected consumer AI pages remain blocked from automation. |
+| `browser_navigate` | false | false | true | Changes only the managed browser navigation state but may contact an open-world web destination. |
+| `browser_click` | false | true | true | A page click can submit forms or trigger external side effects, so it requires an explicit action grant and is conservatively destructive/open-world. |
+| `browser_type` | false | true | true | Typing into a web page can change or submit external state, so it is conservatively destructive/open-world. |
+| `browser_stop` | false | true | false | Stops only an ORDAX-owned browser process and discards its ephemeral session state. |
+| `computer_windows` | true | false | false | Reads bounded visible-window metadata from the interactive Windows desktop. |
+| `computer_active_window` | true | false | false | Reads metadata for the foreground Windows window. |
+| `computer_screenshot` | true | false | false | Captures the authorized local desktop or active window for visual inspection. |
+| `computer_focus_window` | false | false | false | Brings one existing visible local window to the foreground without changing its data. |
+| `computer_click` | false | true | true | A desktop click can activate arbitrary applications or external services, so it requires an explicit grant and is conservatively destructive/open-world. |
+| `computer_scroll` | false | false | false | Sends bounded scrolling to the local interactive desktop without directly changing stored data. |
+| `computer_type` | false | true | true | Desktop typing can change local or external application state, so it requires an explicit grant and is conservatively destructive/open-world. |
+| `computer_hotkey` | false | true | true | A validated desktop hotkey can trigger local or external application actions, so it is conservatively destructive/open-world. |
 | `artifacts_list` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `artifact_preview` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `blender_status` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
@@ -56,6 +73,6 @@ This document is reviewer-facing evidence for the OpenAI plugin submission. The 
 - **Read-only**: retrieval, bounded inspection, health/status, search, preview metadata, and artifact/file reads.
 - **Non-destructive write**: additive state such as creating a handoff, directory, primitive, or starting/adopting Blender.
 - **Destructive/write**: operations that can overwrite, patch, move, delete, save, transform, execute commands, or otherwise mutate existing state.
-- **Open-world**: only `git_command` and `terminal_exec`, because they may contact arbitrary remote destinations through Git/network-capable commands. Private ORDAX account/device/project reads are not open-world merely because the Control Plane is remotely hosted.
+- **Open-world**: Git/terminal commands and managed-browser or desktop-input operations that can reach arbitrary external destinations are marked open-world. Private ORDAX account/device/project reads are not open-world merely because the Control Plane is remotely hosted.
 
 The runtime still enforces account, device, project, Space, and action grants independently of these host-facing hints.
