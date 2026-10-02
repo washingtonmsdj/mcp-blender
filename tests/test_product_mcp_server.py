@@ -110,6 +110,26 @@ class ProductMcpServerTests(unittest.TestCase):
             },
         )
 
+    def test_project_briefing_and_continuity_route_with_project_scope(self):
+        briefing = server.project_briefing("dev-1", "demo", "space-1")
+        self.assertEqual(briefing["status"], "succeeded")
+        state = server.continuity_state("dev-1", "demo", "space-1")
+        self.assertEqual(state["status"], "succeeded")
+        updated = server.continuity_update(
+            "dev-1", "demo", "Ready", "Ship", ["foundation"], [], ["src/app.py"], "space-1"
+        )
+        self.assertEqual(updated["status"], "succeeded")
+
+        calls = [call for instance in FakeClient.instances for call in instance.calls if call[0] == "submit"]
+        actions = [call[2]["action"] for call in calls]
+        self.assertIn("agent.project_briefing", actions)
+        self.assertIn("continuity.get", actions)
+        self.assertIn("continuity.update", actions)
+        update = next(call for call in calls if call[2]["action"] == "continuity.update")
+        self.assertEqual(update[2]["project"], "demo")
+        self.assertEqual(update[2]["arguments"]["summary"], "Ready")
+        self.assertEqual(update[2]["arguments"]["next_action"], "Ship")
+
     def test_studio_catalog_routes_without_project_scope(self):
         result = server.repository_catalog("dev-1", "space-1")
         self.assertEqual(result["status"], "succeeded")
@@ -121,7 +141,7 @@ class ProductMcpServerTests(unittest.TestCase):
 
     def test_typed_mutations_are_exposed_but_generic_execution_is_not(self):
         for name in (
-            "project_create", "project_text_write", "project_text_patch", "blender_start",
+            "project_create", "continuity_update", "project_text_write", "project_text_patch", "blender_start",
             "blender_transform", "blender_create_primitive",
             "blender_apply_material", "blender_save",
         ):
@@ -139,6 +159,9 @@ class ProductMcpServerTests(unittest.TestCase):
             "project_inventory",
             "project_text_read",
             "project_health",
+            "project_briefing",
+            "continuity_state",
+            "continuity_update",
             "project_search",
             "project_read_batch",
             "project_preview_status",
