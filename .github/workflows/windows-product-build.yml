@@ -32,7 +32,7 @@ jobs:
         with:
           dotnet-version: "8.0.x"
       - name: Build native ORDAX Workbench
-        run: dotnet build native/ordax-workbench/Ordax.Workbench.csproj --configuration Release --no-restore
+        run: dotnet build native/ordax-workbench/Ordax.Workbench.csproj --configuration Release
         shell: powershell
 
   build-installer:
