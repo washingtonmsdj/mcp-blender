@@ -542,16 +542,43 @@ class WorkspaceActions:
         except Exception as error:
             return ActionResult(False, f"cannot write agent settings: {error}")
 
+        registered_apps = tuple(dict.fromkeys(apps))
+        self.projects[slug] = Project(
+            slug=slug,
+            root=target,
+            apps=registered_apps,
+            allowed_branches=(),
+            unity={},
+            blender=blender_config if "blender" in registered_apps else {},
+            preview={},
+        )
+
+        memory_active = False
+        memory_warning = ""
+        try:
+            self._memory_store_instance().set_active_project(slug, target)
+            memory_active = True
+        except Exception as error:
+            memory_warning = f"{type(error).__name__}: {error}"
+
         return ActionResult(
             True,
-            "ORDAX workspace project bound",
+            (
+                "ORDAX workspace project bound and activated"
+                if memory_active
+                else "ORDAX workspace project bound; persistent memory activation needs retry"
+            ),
             {
                 "slug": slug,
                 "project_path": str(target),
                 "workspace_root": str(workspace_root),
-                "apps": apps,
+                "apps": list(registered_apps),
                 "set_default": set_default,
-                "restart_required": True,
+                "active_project": slug if memory_active else None,
+                "memory_active": memory_active,
+                "memory_warning": memory_warning or None,
+                "restart_required": False,
+                "other_processes_must_reload": True,
             },
         )
 
