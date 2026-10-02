@@ -58,6 +58,8 @@ const PRODUCT_READ_ONLY_ACTIONS = new Set([
   "project.text_read_batch",
   "project.preview_status",
   "agent.project_health",
+  "agent.project_briefing",
+  "continuity.get",
   "artifacts.list",
   "git.status",
   "git.diff",
@@ -65,6 +67,7 @@ const PRODUCT_READ_ONLY_ACTIONS = new Set([
   "handoff.get",
 ]);
 const PRODUCT_TYPED_ACTIONS_V2 = new Set([
+  "continuity.update",
   "workspace.project_create",
   "handoff.create",
   "workspace.text_write",
@@ -99,6 +102,9 @@ const PRODUCT_PROJECT_ACTIONS = new Set([
   "project.text_write",
   "project.text_patch",
   "agent.project_health",
+  "agent.project_briefing",
+  "continuity.get",
+  "continuity.update",
   "artifacts.list",
   "git.status",
   "git.diff",
