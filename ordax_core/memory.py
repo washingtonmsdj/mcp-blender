@@ -448,6 +448,7 @@ class MemoryStore:
                 source="handoff",
                 source_ref=handoff_id,
             )
+        self.write_context(slug, path)
         return {
             "handoff_id": handoff_id,
             "project": slug,
