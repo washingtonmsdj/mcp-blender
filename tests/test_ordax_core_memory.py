@@ -129,7 +129,7 @@ class OrdaxCoreMemoryTests(unittest.TestCase):
             store = MemoryStore(root / "state.db")
             store.remember("first", first, "Water gameplay must support diving", "decision")
             store.remember("first", first, "Traffic system remains pending", "note")
-            store.add_task("first", first, "Polish underwater movement")
+            store.add_task("first", first, "Polish diving movement")
             store.checkpoint("first", first, "Diving controller foundation complete")
             store.update_project_state(
                 "first", first, "Aquatic gameplay foundation",
