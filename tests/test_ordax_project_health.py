@@ -75,6 +75,8 @@ class OrdaxProjectHealthTests(unittest.TestCase):
             self.assertIn("README.md", result.data["workspace"]["context_files"])
             self.assertEqual("Ship preview", result.data["continuity"]["open_tasks"][-1]["title"])
             self.assertEqual("Initial checkpoint", result.data["continuity"]["latest_checkpoint"]["summary"])
+            self.assertEqual("Initial checkpoint", result.data["continuity"]["project_state"]["summary"])
+            self.assertEqual("checkpoint", result.data["continuity"]["project_state"]["source"])
             self.assertIn("project", result.data["capabilities"]["action_groups"])
 
 
