@@ -1,5 +1,6 @@
 using System.IO;
 using System.ComponentModel;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Windows;
@@ -19,13 +20,14 @@ public partial class MainWindow : Window
     private readonly List<ProviderDefinition> _providers = new();
     private StudioBridgeClient? _bridge;
     private bool _ready;
+    private bool _refreshingStatus;
 
     public MainWindow()
     {
         InitializeComponent();
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
-        _runtimeTimer.Tick += async (_, _) => await RefreshRuntimeStateAsync();
+        _runtimeTimer.Tick += async (_, _) => await RefreshWorkbenchStateAsync();
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -47,7 +49,7 @@ public partial class MainWindow : Window
 
             _ready = true;
             ProviderSelector.SelectedIndex = 0;
-            await RefreshRuntimeStateAsync();
+            await RefreshWorkbenchStateAsync();
             _runtimeTimer.Start();
             StatusText.Text = "Workbench pronta";
         }
@@ -205,9 +207,47 @@ public partial class MainWindow : Window
             return;
         if (Equals(tab.Header, "Preview"))
             await RefreshPreviewAsync();
+        else if (Equals(tab.Header, "Execuções"))
+            await RefreshExecutionStateAsync();
     }
 
     private async void RefreshPreview_Click(object sender, RoutedEventArgs e) => await RefreshPreviewAsync();
+
+    private async void StartPreview_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bridge is null)
+            return;
+        try
+        {
+            var result = await _bridge.CallResultAsync("preview_start");
+            LogApiResult("Preview iniciado", result);
+            await RefreshPreviewAsync();
+            await RefreshExecutionStateAsync();
+        }
+        catch (Exception error)
+        {
+            LogActivity($"Falha ao iniciar preview: {error.Message}");
+        }
+    }
+
+    private async void CapturePreview_Click(object sender, RoutedEventArgs e)
+    {
+        if (_bridge is null)
+            return;
+        try
+        {
+            var result = await _bridge.CallResultAsync("preview_capture");
+            LogApiResult("Captura solicitada", result);
+            await RefreshPreviewAsync();
+            await RefreshExecutionStateAsync();
+        }
+        catch (Exception error)
+        {
+            LogActivity($"Falha ao capturar preview: {error.Message}");
+        }
+    }
+
+    private async void RefreshExecutions_Click(object sender, RoutedEventArgs e) => await RefreshExecutionStateAsync();
 
     private async Task RefreshPreviewAsync()
     {
@@ -251,6 +291,123 @@ public partial class MainWindow : Window
             PreviewAddress.Text = $"Preview indisponível: {error.Message}";
             LogActivity($"Preview: {error.Message}");
         }
+    }
+
+    private async Task RefreshWorkbenchStateAsync()
+    {
+        if (_refreshingStatus)
+            return;
+        _refreshingStatus = true;
+        try
+        {
+            await RefreshRuntimeStateAsync();
+            await RefreshExecutionStateAsync();
+        }
+        finally
+        {
+            _refreshingStatus = false;
+        }
+    }
+
+    private async Task RefreshExecutionStateAsync()
+    {
+        if (_bridge is null)
+            return;
+
+        try
+        {
+            var result = await _bridge.CallResultAsync("execution_status");
+            if (!TryData(result, out var data))
+                return;
+
+            var builder = new StringBuilder();
+            var project = data.TryGetProperty("project", out var projectElement)
+                ? projectElement.GetString() ?? "projeto"
+                : "projeto";
+
+            var runningProcesses = 0;
+            var runningBrowsers = 0;
+            builder.AppendLine($"PROJETO  {project}");
+            builder.AppendLine();
+
+            if (data.TryGetProperty("preview", out var preview) && preview.ValueKind == JsonValueKind.Object)
+            {
+                var previewUrl = preview.TryGetProperty("url", out var previewUrlElement)
+                    ? previewUrlElement.GetString()
+                    : null;
+                var mode = preview.TryGetProperty("mode", out var modeElement)
+                    ? modeElement.GetString()
+                    : null;
+                var runtime = preview.TryGetProperty("runtime", out var runtimeElement) &&
+                              runtimeElement.ValueKind == JsonValueKind.Object
+                    ? runtimeElement
+                    : default;
+                var previewRunning = runtime.ValueKind == JsonValueKind.Object &&
+                                     runtime.TryGetProperty("running", out var runningElement) &&
+                                     runningElement.ValueKind == JsonValueKind.True;
+                builder.AppendLine($"PREVIEW  {(previewRunning ? "RUNNING" : "IDLE")}  {mode ?? "-"}  {previewUrl ?? "-"}");
+            }
+
+            builder.AppendLine();
+            builder.AppendLine("PROCESSOS");
+            if (data.TryGetProperty("processes", out var processes) && processes.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var process in processes.EnumerateArray())
+                {
+                    var running = process.TryGetProperty("running", out var runningElement) &&
+                                  runningElement.ValueKind == JsonValueKind.True;
+                    if (running)
+                        runningProcesses++;
+                    var state = process.TryGetProperty("state", out var stateElement) ? stateElement.GetString() : null;
+                    var pid = process.TryGetProperty("child_pid", out var childPid) && childPid.ValueKind == JsonValueKind.Number
+                        ? childPid.GetInt32()
+                        : process.TryGetProperty("manager_pid", out var managerPid) && managerPid.ValueKind == JsonValueKind.Number
+                            ? managerPid.GetInt32()
+                            : 0;
+                    var argv = "";
+                    if (process.TryGetProperty("argv", out var argvElement) && argvElement.ValueKind == JsonValueKind.Array)
+                        argv = string.Join(" ", argvElement.EnumerateArray().Select(item => item.GetString() ?? ""));
+                    builder.AppendLine($"  {(running ? "●" : "○")} PID {pid,-6} {state ?? "-",-10} {argv}");
+                }
+            }
+            if (runningProcesses == 0)
+                builder.AppendLine("  nenhum processo persistente ativo");
+
+            builder.AppendLine();
+            builder.AppendLine("BROWSERS GERENCIADOS PELO AGENTE");
+            if (data.TryGetProperty("browsers", out var browsers) && browsers.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var browser in browsers.EnumerateArray())
+                {
+                    var running = browser.TryGetProperty("running", out var runningElement) &&
+                                  runningElement.ValueKind == JsonValueKind.True;
+                    if (running)
+                        runningBrowsers++;
+                    var title = browser.TryGetProperty("title", out var titleElement) ? titleElement.GetString() : null;
+                    var url = browser.TryGetProperty("url", out var urlElement) ? urlElement.GetString() : null;
+                    builder.AppendLine($"  {(running ? "●" : "○")} {title ?? "(sem título)"}  {url ?? "-"}");
+                }
+            }
+            if (runningBrowsers == 0)
+                builder.AppendLine("  nenhum browser gerenciado ativo");
+
+            ExecutionSummary.Text = $"{project} · {runningProcesses} processo(s) · {runningBrowsers} browser(s) gerenciado(s)";
+            ExecutionState.Text = builder.ToString();
+        }
+        catch (Exception error)
+        {
+            ExecutionSummary.Text = "Monitor do Runtime indisponível";
+            ExecutionState.Text = error.Message;
+        }
+    }
+
+    private void LogApiResult(string prefix, JsonElement result)
+    {
+        var summary = result.ValueKind == JsonValueKind.Object &&
+                      result.TryGetProperty("summary", out var summaryElement)
+            ? summaryElement.GetString()
+            : null;
+        LogActivity(string.IsNullOrWhiteSpace(summary) ? prefix : $"{prefix}: {summary}");
     }
 
     private async Task RefreshRuntimeStateAsync()
