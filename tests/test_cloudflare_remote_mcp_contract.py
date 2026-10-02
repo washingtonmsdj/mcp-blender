@@ -45,6 +45,23 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
             '"workspace_path_remove"',
             '"git_command"',
             '"terminal_exec"',
+            '"browser_status"',
+            '"browser_list"',
+            '"browser_snapshot"',
+            '"browser_screenshot"',
+            '"browser_start"',
+            '"browser_navigate"',
+            '"browser_click"',
+            '"browser_type"',
+            '"browser_stop"',
+            '"computer_windows"',
+            '"computer_active_window"',
+            '"computer_screenshot"',
+            '"computer_focus_window"',
+            '"computer_click"',
+            '"computer_scroll"',
+            '"computer_type"',
+            '"computer_hotkey"',
             '"blender_status"',
             '"blender_scene_snapshot"',
             '"blender_start"',
@@ -83,6 +100,10 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
         self.assertIn("destructiveHint: destructive", self.mcp)
         self.assertIn("NON_DESTRUCTIVE_WRITE_TOOLS", self.mcp)
         self.assertIn('project_import: "Import existing ORDAX project"', self.mcp)
+        self.assertIn('browser_screenshot: "Capture browser page"', self.mcp)
+        self.assertIn('computer_click: "Click desktop"', self.mcp)
+        self.assertIn('"browser_screenshot"', self.mcp)
+        self.assertIn('"computer_click"', self.mcp)
         self.assertIn("effectClassCount !== 1", self.mcp)
         self.assertIn("openWorldHint: OPEN_WORLD_TOOLS.has(name)", self.mcp)
         self.assertIn("outputSchema:", self.mcp)
