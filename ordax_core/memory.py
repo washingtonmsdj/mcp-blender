@@ -594,10 +594,11 @@ class MemoryStore:
 
         ranked.sort(
             key=lambda item: (
-                -int(item["score"]),
+                int(item["score"]),
                 str(item.get("created_at") or ""),
                 str(item.get("type") or ""),
-            )
+            ),
+            reverse=True,
         )
         return ranked[:limit]
 
