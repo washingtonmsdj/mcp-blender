@@ -25,7 +25,8 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
             server = StdioServerParameters(command=sys.executable,
                 args=['-m', 'ordax_studio.mcp_server'],
                 env={**os.environ, 'ORDAX_AGENT_STATE_DIR': directory,
-                     'ORDAX_MEMORY_DB': str(root / 'memory.db')},
+                     'ORDAX_MEMORY_DB': str(root / 'memory.db'),
+                     'ORDAX_WORKSPACE_ROOT': str(root / 'workspace')},
                 cwd=str(Path(__file__).resolve().parents[1]))
             async with stdio_client(server) as (read, write):
                 async with ClientSession(read, write) as session:
@@ -36,6 +37,7 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                     schemas = {tool.name: tool.inputSchema for tool in tools}
                     self.assertIn('studio_status', names)
                     self.assertIn('workspace_discover', names)
+                    self.assertIn('project_create', names)
                     self.assertIn('project_inventory', names)
                     self.assertIn('project_read', names)
                     self.assertIn('project_write', names)
@@ -74,6 +76,16 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn('project_preview_logs', names)
                     self.assertIn('project_preview_start', names)
                     self.assertIn('project_preview_stop', names)
+                    created = await session.call_tool('project_create', {
+                        'slug': 'new-project',
+                        'name': 'New Project',
+                        'apps': [],
+                        'git_init': False,
+                    })
+                    self.assertFalse(created.isError)
+                    created_payload = json.loads(created.content[0].text)
+                    self.assertTrue(created_payload['ok'])
+                    self.assertTrue((root / 'workspace' / 'new-project' / '.ordax' / 'project.json').is_file())
                     response = await session.call_tool('projects_list', {})
                     self.assertFalse(response.isError)
                     self.assertIn('test', response.content[0].text)
