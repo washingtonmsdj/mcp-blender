@@ -306,7 +306,78 @@ class ProjectTests(unittest.TestCase):
         foreground_helper.assert_not_called()
 
 
-    def test_workspace_bind_project_only_allows_hordax_parent_workspace(self):
+    def test_workspace_project_create_uses_explicit_root_and_registers_immediately(self):
+        workspace = self.root / "ordax-workspaces"
+        state = self.root / "state-create"
+        config = replace(
+            self.config,
+            state_dir=state,
+            workspace_root=workspace,
+            projects={},
+            default_project="missing",
+        )
+        memory_db = state / "memory.db"
+        with patch.dict(os.environ, {"ORDAX_MEMORY_DB": str(memory_db)}, clear=False):
+            registry = ActionRegistry(config)
+            result = registry.execute(
+                "workspace.project_create",
+                {
+                    "slug": "cidade-morta",
+                    "name": "Cidade Morta",
+                    "apps": ["blender"],
+                    "git_init": False,
+                    "set_default": True,
+                },
+            )
+
+        self.assertTrue(result.ok, f"{result.summary}: {result.data}")
+        target = workspace / "cidade-morta"
+        self.assertTrue((target / ".ordax" / "project.json").is_file())
+        self.assertTrue((target / "README.md").is_file())
+        self.assertTrue((target / ".gitignore").is_file())
+        self.assertTrue((target / "automation" / "blender").is_dir())
+        self.assertEqual("cidade-morta", result.data["active_project"])
+        self.assertFalse(result.data["git_initialized"])
+        self.assertIn("cidade-morta", registry.projects)
+        self.assertEqual("cidade-morta", registry.select_available_project())
+
+        settings = json.loads((state / "agent-settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(str(target.resolve()), settings["projects"]["cidade-morta"]["path"])
+        self.assertEqual("cidade-morta", settings["default_project"])
+        metadata = json.loads((target / ".ordax" / "project.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            {"schema_version": 1, "slug": "cidade-morta", "name": "Cidade Morta", "apps": ["blender"]},
+            metadata,
+        )
+
+    def test_workspace_project_create_rolls_back_if_git_init_fails(self):
+        workspace = self.root / "ordax-workspaces-fail"
+        state = self.root / "state-create-fail"
+        config = replace(
+            self.config,
+            state_dir=state,
+            workspace_root=workspace,
+            projects={},
+            default_project="missing",
+        )
+        registry = ActionRegistry(config)
+        failed = ActionResult(False, "command failed", {"stderr": "git unavailable"})
+        with patch("ordax_dev_agent.workspace_actions._run", return_value=failed):
+            result = registry.execute(
+                "workspace.project_create",
+                {"slug": "broken-project", "git_init": True},
+            )
+
+        self.assertFalse(result.ok)
+        self.assertIn("rolled back", result.summary)
+        self.assertFalse((workspace / "broken-project").exists())
+        settings_path = state / "agent-settings.json"
+        if settings_path.exists():
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertNotIn("broken-project", settings.get("projects", {}))
+        self.assertNotIn("broken-project", registry.projects)
+
+    def test_workspace_bind_project_uses_legacy_hordax_parent_as_fallback_workspace(self):
         workspace = self.root / "github"
         hordax = workspace / "HORDAX-game"
         target = workspace / "dioramas-biblicos" / "diorama_jesus_samaritana_10cm"
