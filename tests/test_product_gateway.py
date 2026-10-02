@@ -112,7 +112,15 @@ class FakeExecutor:
                 },
                 "preview": {"url": "http://127.0.0.1:5173", "runtime": {"state": "running", "running": True, "pid": 42, "command": ["npm"]}, "latest_image": {"path": "C:/secret/preview.png", "relative_path": "preview.png"}},
                 "continuity": {"context_path": "C:/secret/contexts/scene.md", "project_state": {"summary": "Ready", "next_action": "Ship"}},
-                "workspace": {"top_level": [{"path": "src", "kind": "directory"}], "context_files": ["README.md"]},
+                "workspace": {
+                    "top_level": [{"path": "src", "kind": "directory"}],
+                    "context_files": ["README.md"],
+                    "source_recall": {
+                        "query": "renderer",
+                        "match_count": 1,
+                        "matches": [{"path": "src/render.py", "line": 12, "text": "renderer = ready"}],
+                    },
+                },
                 "capabilities": {"apps": ["blender"]},
                 "attention": [],
             })
@@ -569,6 +577,8 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertNotIn("pid", result.data["preview"]["runtime"])
         self.assertNotIn("path", result.data["preview"]["latest_image"])
         self.assertEqual(result.data["workspace"]["top_level"][0]["path"], "src")
+        self.assertEqual(result.data["workspace"]["source_recall"]["matches"][0]["path"], "src/render.py")
+        self.assertEqual(result.data["workspace"]["source_recall"]["matches"][0]["line"], 12)
 
     def test_continuity_actions_require_project_grant(self) -> None:
         read = self.gateway.execute(
