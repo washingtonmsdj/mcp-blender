@@ -210,6 +210,36 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
         local_action="computer.screenshot",
         allowed_fields=frozenset({"project", "mode"}),
     ),
+    "computer.access_status": ProductActionSpec(
+        name="computer.access_status",
+        local_action="computer.access_status",
+        allowed_fields=frozenset(),
+        project_required=False,
+    ),
+    "computer.file_stat": ProductActionSpec(
+        name="computer.file_stat",
+        local_action="computer.file_stat",
+        allowed_fields=frozenset({"path"}),
+        project_required=False,
+    ),
+    "computer.directory_list": ProductActionSpec(
+        name="computer.directory_list",
+        local_action="computer.directory_list",
+        allowed_fields=frozenset({"path", "max_depth", "max_entries", "include_hidden"}),
+        project_required=False,
+    ),
+    "computer.text_read": ProductActionSpec(
+        name="computer.text_read",
+        local_action="computer.text_read",
+        allowed_fields=frozenset({"path", "start_line", "end_line"}),
+        project_required=False,
+    ),
+    "computer.search": ProductActionSpec(
+        name="computer.search",
+        local_action="computer.search",
+        allowed_fields=frozenset({"root", "query", "mode", "max_results", "max_depth", "include_hidden"}),
+        project_required=False,
+    ),
 }
 
 # Product v2 exposes only bounded typed operations. No generic action executor or shell.
@@ -340,6 +370,41 @@ PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
         "computer.hotkey",
         "computer.hotkey",
         frozenset({"project", "keys"}),
+        effect="write",
+    ),
+    "computer.text_write": ProductActionSpec(
+        "computer.text_write",
+        "computer.text_write",
+        frozenset({"path", "content", "expected_sha256", "create"}),
+        project_required=False,
+        effect="write",
+    ),
+    "computer.text_patch": ProductActionSpec(
+        "computer.text_patch",
+        "computer.text_patch",
+        frozenset({"path", "expected_sha256", "replacements"}),
+        project_required=False,
+        effect="write",
+    ),
+    "computer.directory_create": ProductActionSpec(
+        "computer.directory_create",
+        "computer.directory_create",
+        frozenset({"path", "parents"}),
+        project_required=False,
+        effect="write",
+    ),
+    "computer.path_move": ProductActionSpec(
+        "computer.path_move",
+        "computer.path_move",
+        frozenset({"source", "destination", "overwrite"}),
+        project_required=False,
+        effect="write",
+    ),
+    "computer.path_remove": ProductActionSpec(
+        "computer.path_remove",
+        "computer.path_remove",
+        frozenset({"path", "recursive"}),
+        project_required=False,
         effect="write",
     ),
     "project.text_write": ProductActionSpec("project.text_write", "project.text_write", frozenset({"project", "path", "content", "expected_sha256", "create"}), effect="write"),

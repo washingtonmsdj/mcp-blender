@@ -645,6 +645,155 @@ def computer_hotkey(device_id: str, project: str, keys: list[str], space_id: str
 
 
 @mcp.tool()
+def computer_access_status(device_id: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.access_status", space_id=space_id, arguments={})
+
+
+@mcp.tool()
+def computer_file_stat(device_id: str, path: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.file_stat", space_id=space_id, arguments={"path": path})
+
+
+@mcp.tool()
+def computer_directory_list(
+    device_id: str,
+    path: str,
+    max_depth: int = 2,
+    max_entries: int = 500,
+    include_hidden: bool = False,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    return _invoke(
+        device_id=device_id,
+        action="computer.directory_list",
+        space_id=space_id,
+        arguments={
+            "path": path,
+            "max_depth": max_depth,
+            "max_entries": max_entries,
+            "include_hidden": include_hidden,
+        },
+    )
+
+
+@mcp.tool()
+def computer_text_read(
+    device_id: str,
+    path: str,
+    start_line: int = 1,
+    end_line: int | None = None,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"path": path, "start_line": start_line}
+    if end_line is not None:
+        arguments["end_line"] = end_line
+    return _invoke(device_id=device_id, action="computer.text_read", space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def computer_search(
+    device_id: str,
+    root: str,
+    query: str,
+    mode: str = "name",
+    max_results: int = 100,
+    max_depth: int = 6,
+    include_hidden: bool = False,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    return _invoke(
+        device_id=device_id,
+        action="computer.search",
+        space_id=space_id,
+        arguments={
+            "root": root,
+            "query": query,
+            "mode": mode,
+            "max_results": max_results,
+            "max_depth": max_depth,
+            "include_hidden": include_hidden,
+        },
+    )
+
+
+@mcp.tool()
+def computer_text_write(
+    device_id: str,
+    path: str,
+    content: str,
+    expected_sha256: str = "",
+    create: bool = False,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"path": path, "content": content, "create": create}
+    if expected_sha256:
+        arguments["expected_sha256"] = expected_sha256
+    return _invoke(device_id=device_id, action="computer.text_write", space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def computer_text_patch(
+    device_id: str,
+    path: str,
+    expected_sha256: str,
+    replacements: list[dict[str, Any]],
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    return _invoke(
+        device_id=device_id,
+        action="computer.text_patch",
+        space_id=space_id,
+        arguments={"path": path, "expected_sha256": expected_sha256, "replacements": replacements},
+    )
+
+
+@mcp.tool()
+def computer_directory_create(
+    device_id: str,
+    path: str,
+    parents: bool = True,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    return _invoke(
+        device_id=device_id,
+        action="computer.directory_create",
+        space_id=space_id,
+        arguments={"path": path, "parents": parents},
+    )
+
+
+@mcp.tool()
+def computer_path_move(
+    device_id: str,
+    source: str,
+    destination: str,
+    overwrite: bool = False,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    return _invoke(
+        device_id=device_id,
+        action="computer.path_move",
+        space_id=space_id,
+        arguments={"source": source, "destination": destination, "overwrite": overwrite},
+    )
+
+
+@mcp.tool()
+def computer_path_remove(
+    device_id: str,
+    path: str,
+    recursive: bool = False,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    return _invoke(
+        device_id=device_id,
+        action="computer.path_remove",
+        space_id=space_id,
+        arguments={"path": path, "recursive": recursive},
+    )
+
+
+@mcp.tool()
 def blender_status(device_id: str, project: str, space_id: str | None = None) -> dict[str, Any]:
     return _invoke(device_id=device_id, action="blender.live_status", project=project, space_id=space_id, arguments={"project": project})
 

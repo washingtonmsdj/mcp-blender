@@ -477,6 +477,10 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             "browser.screenshot",
             "computer.windows",
             "computer.screenshot",
+            "computer.access_status",
+            "computer.file_stat",
+            "computer.text_read",
+            "computer.search",
         ):
             self.assertIn(f'"{action}"', product_block)
         typed_block = worker.split(
@@ -487,6 +491,9 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertIn('"browser.start"', typed_block)
         self.assertIn('"browser.click"', typed_block)
         self.assertIn('"computer.click"', typed_block)
+        self.assertIn('"computer.text_write"', typed_block)
+        self.assertIn('"computer.text_patch"', typed_block)
+        self.assertIn('"computer.path_remove"', typed_block)
 
         for mutation in (
             "project.text_write",
@@ -524,6 +531,11 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertIn('"browser.start"', project_block)
         self.assertIn('"computer.screenshot"', project_block)
         self.assertIn('"computer.click"', project_block)
+        self.assertNotIn('"computer.access_status"', project_block)
+        self.assertNotIn('"computer.file_stat"', project_block)
+        self.assertNotIn('"computer.text_read"', project_block)
+        self.assertNotIn('"computer.text_write"', project_block)
+        self.assertNotIn('"computer.path_remove"', project_block)
 
     def test_product_retention_is_scheduled_and_matches_public_policy(self) -> None:
         root = Path(__file__).resolve().parents[1]

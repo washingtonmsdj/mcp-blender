@@ -62,6 +62,16 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
             '"computer_scroll"',
             '"computer_type"',
             '"computer_hotkey"',
+            '"computer_access_status"',
+            '"computer_file_stat"',
+            '"computer_directory_list"',
+            '"computer_text_read"',
+            '"computer_search"',
+            '"computer_text_write"',
+            '"computer_text_patch"',
+            '"computer_directory_create"',
+            '"computer_path_move"',
+            '"computer_path_remove"',
             '"blender_status"',
             '"blender_scene_snapshot"',
             '"blender_start"',
@@ -102,6 +112,9 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
         self.assertIn('project_import: "Import existing ORDAX project"', self.mcp)
         self.assertIn('browser_screenshot: "Capture browser page"', self.mcp)
         self.assertIn('computer_click: "Click desktop"', self.mcp)
+        self.assertIn('computer_access_status: "Inspect computer access policy"', self.mcp)
+        self.assertIn('computer_text_read: "Read computer text"', self.mcp)
+        self.assertIn('computer_text_write: "Write computer text"', self.mcp)
         self.assertIn('"browser_screenshot"', self.mcp)
         self.assertIn('"computer_click"', self.mcp)
         self.assertIn("effectClassCount !== 1", self.mcp)
