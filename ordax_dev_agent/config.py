@@ -20,13 +20,13 @@ class AgentConfig:
     agent_repo_path: Path
     hordax_path: Path
     bridge_path: Path
-    workspace_root: Path | None = None
     projects: dict | None = None
     default_project: str = "hordax"
     adapters: tuple[str, ...] = ()
     control_plane_protocol: str = "cloudflare-v3"
     device_id: str | None = None
     control_plane_url: str | None = DEFAULT_CONTROL_PLANE_URL
+    workspace_root: Path | None = None
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
