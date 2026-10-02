@@ -99,7 +99,10 @@ class OrdaxProjectHealthTests(unittest.TestCase):
                 registry.execute("memory.remember", {"project": "demo", "content": "Keep continuity"})
                 registry.execute("memory.task_add", {"project": "demo", "title": "Ship preview"})
                 registry.execute("memory.checkpoint", {"project": "demo", "summary": "Initial checkpoint"})
-                result = registry.execute("agent.project_briefing", {"project": "demo"})
+                result = registry.execute(
+                    "agent.project_briefing",
+                    {"project": "demo", "query": "continuity", "recall_limit": 10},
+                )
 
             self.assertTrue(result.ok, result.summary)
             self.assertEqual("demo", result.data["project"]["slug"])
@@ -108,6 +111,9 @@ class OrdaxProjectHealthTests(unittest.TestCase):
             self.assertEqual("Initial checkpoint", result.data["continuity"]["latest_checkpoint"]["summary"])
             self.assertEqual("Initial checkpoint", result.data["continuity"]["project_state"]["summary"])
             self.assertEqual("checkpoint", result.data["continuity"]["project_state"]["source"])
+            self.assertEqual("continuity", result.data["continuity"]["recall_query"])
+            self.assertTrue(result.data["continuity"]["recall"])
+            self.assertIn("Keep continuity", result.data["continuity"]["recall"][0]["snippet"])
             self.assertIn("project", result.data["capabilities"]["action_groups"])
 
 

@@ -219,15 +219,17 @@ def project_text_read(
 def project_briefing(
     device_id: str,
     project: str,
+    query: str = "",
+    recall_limit: int = 20,
     space_id: str | None = None,
 ) -> dict[str, Any]:
-    """Load a sanitized durable project briefing for continuing work in a fresh chat."""
+    """Load a sanitized durable project briefing with optional bounded memory recall."""
     return _invoke(
         device_id=device_id,
         action="agent.project_briefing",
         project=project,
         space_id=space_id,
-        arguments={"project": project},
+        arguments={"project": project, "query": query, "recall_limit": recall_limit},
     )
 
 

@@ -131,6 +131,15 @@ Com isso, uma conversa nova pode descobrir o projeto e chamar `project_briefing`
 conhecer um token de handoff anterior. Busca semântica/RAG de longo prazo continua sendo
 uma camada posterior; o estado durável resolve primeiro a fonte de verdade operacional.
 
+### Recall contextual no briefing
+
+`agent.project_briefing` aceita opcionalmente `query` e `recall_limit` (1-50).
+Quando uma consulta é fornecida, o runtime faz recuperação lexical limitada e project-scoped
+sobre memórias, tarefas, checkpoints e `project_state`, retornando apenas snippets ranqueados.
+Essa camada é deliberadamente lexical nesta fase: não declara similaridade semântica sem um
+backend de embeddings validado. O contrato foi desenhado para que uma implementação vetorial
+futura possa substituir ou complementar o ranking sem alterar a API consumida pelo ChatGPT.
+
 ## Sessao resumivel
 
 A fundacao agora trata a continuidade como contrato explicito de runtime. `session.resume`:

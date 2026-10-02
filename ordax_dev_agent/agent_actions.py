@@ -162,10 +162,19 @@ class AgentActions:
 
     def agent_project_briefing(self, payload: dict[str, Any]) -> ActionResult:
         """Return a compact, resumable project context bundle for agent clients."""
-        unsupported = set(payload) - {"project"}
+        unsupported = set(payload) - {"project", "query", "recall_limit"}
         if unsupported:
             return ActionResult(False, "unsupported field(s): " + ", ".join(sorted(unsupported)))
         project = self._project(payload)
+        query = str(payload.get("query") or "").strip()
+        if len(query) > 500:
+            return ActionResult(False, "query must be at most 500 characters")
+        try:
+            recall_limit = int(payload.get("recall_limit", 20))
+        except (TypeError, ValueError):
+            return ActionResult(False, "recall_limit must be an integer")
+        if recall_limit < 1 or recall_limit > 50:
+            return ActionResult(False, "recall_limit must be between 1 and 50")
         scoped = {"project": project.slug}
         repository = self.git_repository_info({**scoped, "include_status": False})
         health = self.agent_project_health(scoped)
@@ -174,6 +183,7 @@ class AgentActions:
         store = self._memory_store_instance()
         continuity = store.context(project.slug, project.root)
         context_path = str(store.write_context(project.slug, project.root))
+        recall = store.search(project.slug, project.root, query, limit=recall_limit) if query else []
 
         open_tasks = [item for item in continuity.get("tasks", []) if not item.get("done")]
         checkpoints = continuity.get("checkpoints", [])
@@ -215,6 +225,8 @@ class AgentActions:
                 "open_tasks": open_tasks[-16:],
                 "latest_checkpoint": checkpoints[-1] if checkpoints else None,
                 "recent_checkpoints": checkpoints[-5:],
+                "recall_query": query,
+                "recall": recall,
             },
             "workspace": {
                 "top_level": top_level,

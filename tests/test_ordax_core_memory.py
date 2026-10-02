@@ -119,6 +119,36 @@ class OrdaxCoreMemoryTests(unittest.TestCase):
             self.assertIn("Estado durável", text)
             self.assertIn("Implement navigation", text)
 
+    def test_search_returns_bounded_project_scoped_recall(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first"
+            second = root / "second"
+            first.mkdir()
+            second.mkdir()
+            store = MemoryStore(root / "state.db")
+            store.remember("first", first, "Water gameplay must support diving", "decision")
+            store.remember("first", first, "Traffic system remains pending", "note")
+            store.add_task("first", first, "Polish diving movement")
+            store.checkpoint("first", first, "Diving controller foundation complete")
+            store.update_project_state(
+                "first", first, "Aquatic gameplay foundation",
+                next_action="Tune diving physics",
+                changed_paths=["src/water.py"],
+            )
+            store.remember("second", second, "Diving belongs to another project")
+
+            hits = store.search("first", first, "diving", limit=10)
+            self.assertGreaterEqual(len(hits), 3)
+            self.assertEqual(hits[0]["type"], "project_state")
+            self.assertTrue(all("another project" not in item["snippet"] for item in hits))
+            self.assertTrue(any(item["type"] == "memory" for item in hits))
+            self.assertTrue(any(item["type"] == "task" for item in hits))
+            self.assertTrue(any(item["type"] == "checkpoint" for item in hits))
+            self.assertEqual(store.search("first", first, "", limit=10), [])
+            with self.assertRaisesRegex(ValueError, "between 1 and 50"):
+                store.search("first", first, "diving", limit=51)
+
     def test_handoff_refreshes_durable_state_without_sharing_expiry(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
