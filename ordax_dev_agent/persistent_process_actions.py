@@ -112,18 +112,22 @@ class PersistentProcessActions:
         pid = int(state.get("manager_pid") or 0)
         token = str(state.get("token") or "")
         process_id = str(state.get("process_id") or "")
-        if not pid or not token:
+        if not token or not process_id:
             return False
 
         # A live Popen handle created by this ActionRegistry is stronger and much
         # cheaper ownership evidence than spawning tasklist/PowerShell during the
-        # startup hot path. Command-line verification remains the recovery path
-        # after the ORDAX Runtime itself has restarted.
+        # startup hot path. The runtime may not have persisted manager_pid yet,
+        # especially on Windows, so do not turn that short handshake window into
+        # a false startup failure. If a PID is already persisted it must still
+        # match the managed handle exactly.
         handle = getattr(self, "_persistent_process_handles", {}).get(process_id)
         if handle is not None:
-            return handle.pid == pid and handle.poll() is None
+            if pid and handle.pid != pid:
+                return False
+            return handle.poll() is None
 
-        if not self._pid_running(pid):
+        if not pid or not self._pid_running(pid):
             return False
         commandline = self._commandline(pid)
         return "persistent_process_runtime.py" in commandline and token in commandline
@@ -148,6 +152,15 @@ class PersistentProcessActions:
             "running": bool(running and owned),
             "ownership_valid": owned,
         })
+        if not manager_pid and owned:
+            handle = getattr(self, "_persistent_process_handles", {}).get(
+                str(state.get("process_id") or "")
+            )
+            if handle is not None and handle.poll() is None:
+                # Surface the authoritative local manager PID immediately without
+                # racing the detached runtime's atomic state writer. The runtime
+                # will persist the same PID as part of its normal startup handshake.
+                result["manager_pid"] = handle.pid
         return result
 
     def process_start(self, payload: dict[str, Any]) -> ActionResult:
