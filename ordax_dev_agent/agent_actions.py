@@ -210,6 +210,7 @@ class AgentActions:
             "preview": preview.data if preview.ok else {"error": preview.summary},
             "continuity": {
                 "context_path": context_path,
+                "project_state": continuity.get("project_state"),
                 "memories": continuity.get("memories", [])[-12:],
                 "open_tasks": open_tasks[-16:],
                 "latest_checkpoint": checkpoints[-1] if checkpoints else None,
