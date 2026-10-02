@@ -163,6 +163,29 @@ class ProductMcpServerTests(unittest.TestCase):
         self.assertEqual(desktop[2]["arguments"]["x"], 100)
         self.assertEqual(desktop[2]["arguments"]["y"], 200)
 
+    def test_computer_filesystem_tools_route_without_project_scope(self):
+        read = server.computer_text_read(
+            "dev-1", "C:/Users/example/notes.txt", 1, 20, "space-1"
+        )
+        self.assertEqual(read["status"], "succeeded")
+        write = server.computer_text_write(
+            "dev-1",
+            "C:/Users/example/notes.txt",
+            "hello",
+            "a" * 64,
+            False,
+            "space-1",
+        )
+        self.assertEqual(write["status"], "succeeded")
+
+        calls = [call for instance in FakeClient.instances for call in instance.calls if call[0] == "submit"]
+        read_call = next(call for call in calls if call[2]["action"] == "computer.text_read")
+        self.assertIsNone(read_call[2]["project"])
+        self.assertEqual(read_call[2]["arguments"]["path"], "C:/Users/example/notes.txt")
+        write_call = next(call for call in calls if call[2]["action"] == "computer.text_write")
+        self.assertIsNone(write_call[2]["project"])
+        self.assertEqual(write_call[2]["arguments"]["expected_sha256"], "a" * 64)
+
     def test_project_briefing_and_continuity_route_with_project_scope(self):
         briefing = server.project_briefing("dev-1", "demo", "space-1")
         self.assertEqual(briefing["status"], "succeeded")
@@ -194,7 +217,7 @@ class ProductMcpServerTests(unittest.TestCase):
 
     def test_typed_mutations_are_exposed_but_generic_execution_is_not(self):
         for name in (
-            "project_create", "project_import", "continuity_update", "browser_start", "browser_click", "computer_click", "project_text_write", "project_text_patch", "blender_start",
+            "project_create", "project_import", "continuity_update", "browser_start", "browser_click", "computer_click", "computer_text_write", "computer_path_remove", "project_text_write", "project_text_patch", "blender_start",
             "blender_transform", "blender_create_primitive",
             "blender_apply_material", "blender_save",
         ):
@@ -240,6 +263,16 @@ class ProductMcpServerTests(unittest.TestCase):
             "computer_scroll",
             "computer_type",
             "computer_hotkey",
+            "computer_access_status",
+            "computer_file_stat",
+            "computer_directory_list",
+            "computer_text_read",
+            "computer_search",
+            "computer_text_write",
+            "computer_text_patch",
+            "computer_directory_create",
+            "computer_path_move",
+            "computer_path_remove",
         ):
             annotations = getattr(server, name).__annotations__
             self.assertNotIn("access_token", annotations)
