@@ -99,7 +99,7 @@ class ComputerFilesystemActionsTests(unittest.TestCase):
             },
         )
         self.assertTrue(search.ok)
-        self.assertEqual(str(file), search.data["results"][0]["path"])
+        self.assertTrue(Path(search.data["results"][0]["path"]).samefile(file))
 
         moved = self.allowed / "archive" / "notes.txt"
         move = self.registry.execute(
