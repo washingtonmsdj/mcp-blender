@@ -140,6 +140,13 @@ Essa camada é deliberadamente lexical nesta fase: não declara similaridade sem
 backend de embeddings validado. O contrato foi desenhado para que uma implementação vetorial
 futura possa substituir ou complementar o ranking sem alterar a API consumida pelo ChatGPT.
 
+Quando `query` tem até 200 caracteres, o mesmo briefing também reutiliza
+`project.search_text` para localizar ocorrências em código e documentação aprovados pelo
+gateway. Essa busca de fonte é limitada a 20 resultados e 1.500 arquivos por briefing e
+retorna apenas caminho relativo, linha e trecho. Consultas maiores continuam recebendo recall
+de memória, mas a busca em fonte é explicitamente marcada como ignorada em vez de ser truncada
+silenciosamente.
+
 ## Sessao resumivel
 
 A fundacao agora trata a continuidade como contrato explicito de runtime. `session.resume`:
