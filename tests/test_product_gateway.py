@@ -30,6 +30,9 @@ class FakeExecutor:
             "project.text_read_batch",
             "project.preview_status",
             "agent.project_health",
+            "agent.project_briefing",
+            "continuity.get",
+            "continuity.update",
             "project.text_write",
             "artifacts.list",
             "git.status",
@@ -96,6 +99,32 @@ class FakeExecutor:
                 "memory": {"ok": True, "db_path": "C:/secret/state.db", "context_dir": "C:/secret/contexts"},
                 "git": {"ok": True, "command": ["git", "-C", "C:/secret"], "dirty": False},
                 "adapters": {"blender": {"enabled": True, "state": "ready"}},
+            })
+        if action == "agent.project_briefing":
+            return ActionResult(True, "briefing", {
+                "project": {"slug": "scene", "path": "C:/secret/project", "apps": ["blender"], "available": True},
+                "repository": {"is_repository": True, "root": "C:/secret/project", "path": "C:/secret/project", "branch": "main", "remote": "https://github.com/example/scene.git"},
+                "health": {
+                    "project": {"slug": "scene", "path": "C:/secret/project", "apps": ["blender"]},
+                    "memory": {"ok": True, "db_path": "C:/secret/state.db", "context_dir": "C:/secret/contexts"},
+                    "git": {"ok": True, "command": ["git", "status"], "dirty": False},
+                    "adapters": {},
+                },
+                "preview": {"url": "http://127.0.0.1:5173", "runtime": {"state": "running", "running": True, "pid": 42, "command": ["npm"]}, "latest_image": {"path": "C:/secret/preview.png", "relative_path": "preview.png"}},
+                "continuity": {"context_path": "C:/secret/contexts/scene.md", "project_state": {"summary": "Ready", "next_action": "Ship"}},
+                "workspace": {"top_level": [{"path": "src", "kind": "directory"}], "context_files": ["README.md"]},
+                "capabilities": {"apps": ["blender"]},
+                "attention": [],
+            })
+        if action == "continuity.get":
+            return ActionResult(True, "continuity", {
+                "project": "scene",
+                "state": {"summary": "Ready", "next_action": "Ship", "git": {"branch": "main"}},
+            })
+        if action == "continuity.update":
+            return ActionResult(True, "updated", {
+                "project": "scene",
+                "state": {"summary": payload.get("summary"), "next_action": payload.get("next_action", "")},
             })
         if action == "project.preview_status":
             return ActionResult(True, "preview", {
@@ -229,6 +258,9 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertIn("project.text_read_batch", names)
         self.assertIn("project.preview_status", names)
         self.assertIn("agent.project_health", names)
+        self.assertIn("agent.project_briefing", names)
+        self.assertIn("continuity.get", names)
+        self.assertIn("continuity.update", names)
         self.assertIn("git.diff", names)
         self.assertIn("artifacts.list", names)
         self.assertIn("project.text_write", names)
@@ -515,6 +547,51 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertTrue(empty.ok)
         self.assertEqual(empty.data["projects"], [])
         self.assertNotIn("active_project", empty.data)
+
+    def test_project_briefing_exposes_durable_state_without_local_paths(self) -> None:
+        result = self.gateway.execute(
+            "agent.project_briefing",
+            {"project": "scene"},
+            context=self.context,
+            grant=self.grant("agent.project_briefing"),
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.data["continuity"]["project_state"]["summary"], "Ready")
+        self.assertNotIn("path", result.data["project"])
+        self.assertNotIn("root", result.data["repository"])
+        self.assertNotIn("path", result.data["repository"])
+        self.assertNotIn("context_path", result.data["continuity"])
+        self.assertNotIn("url", result.data["preview"])
+        self.assertNotIn("pid", result.data["preview"]["runtime"])
+        self.assertNotIn("path", result.data["preview"]["latest_image"])
+        self.assertEqual(result.data["workspace"]["top_level"][0]["path"], "src")
+
+    def test_continuity_actions_require_project_grant(self) -> None:
+        read = self.gateway.execute(
+            "continuity.get",
+            {"project": "scene"},
+            context=self.context,
+            grant=self.grant("continuity.get"),
+        )
+        self.assertTrue(read.ok)
+        self.assertEqual(read.data["state"]["summary"], "Ready")
+
+        write = self.gateway.execute(
+            "continuity.update",
+            {"project": "scene", "summary": "Ready", "next_action": "Ship"},
+            context=self.context,
+            grant=self.grant("continuity.update"),
+        )
+        self.assertTrue(write.ok)
+
+        denied = self.gateway.execute(
+            "continuity.get",
+            {"project": "scene"},
+            context=self.context,
+            grant=self.grant("continuity.get", projects=()),
+        )
+        self.assertFalse(denied.ok)
+        self.assertEqual(denied.data["error_code"], "project_grant_required")
 
     def test_project_health_and_preview_redact_local_runtime_details(self) -> None:
         health = self.gateway.execute(

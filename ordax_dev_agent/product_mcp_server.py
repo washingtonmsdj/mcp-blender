@@ -216,6 +216,66 @@ def project_text_read(
 
 
 @mcp.tool()
+def project_briefing(
+    device_id: str,
+    project: str,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Load a sanitized durable project briefing for continuing work in a fresh chat."""
+    return _invoke(
+        device_id=device_id,
+        action="agent.project_briefing",
+        project=project,
+        space_id=space_id,
+        arguments={"project": project},
+    )
+
+
+@mcp.tool()
+def continuity_state(
+    device_id: str,
+    project: str,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Read the non-expiring continuation state for a granted project."""
+    return _invoke(
+        device_id=device_id,
+        action="continuity.get",
+        project=project,
+        space_id=space_id,
+        arguments={"project": project},
+    )
+
+
+@mcp.tool()
+def continuity_update(
+    device_id: str,
+    project: str,
+    summary: str,
+    next_action: str = "",
+    completed: list[str] | None = None,
+    blockers: list[str] | None = None,
+    changed_paths: list[str] | None = None,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Persist non-expiring project progress for future conversations."""
+    return _invoke(
+        device_id=device_id,
+        action="continuity.update",
+        project=project,
+        space_id=space_id,
+        arguments={
+            "project": project,
+            "summary": summary,
+            "next_action": next_action,
+            "completed": list(completed or []),
+            "blockers": list(blockers or []),
+            "changed_paths": list(changed_paths or []),
+        },
+    )
+
+
+@mcp.tool()
 def project_health(
     device_id: str,
     project: str,

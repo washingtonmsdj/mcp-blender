@@ -61,6 +61,38 @@ class MemoryActions:
         )
 
 
+    def continuity_get(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        state = self._memory_store_instance().project_state(project.slug, project.root)
+        return ActionResult(
+            True,
+            f"Durable continuity loaded for {project.slug}",
+            {"project": project.slug, "state": state},
+        )
+
+    def continuity_update(self, payload: dict[str, Any]) -> ActionResult:
+        project = self._project(payload)
+        for field in ("completed", "blockers", "changed_paths"):
+            value = payload.get(field)
+            if value is not None and not isinstance(value, list):
+                return ActionResult(False, f"{field} must be a list", {"field": field})
+        store = self._memory_store_instance()
+        state = store.update_project_state(
+            project.slug,
+            project.root,
+            str(payload.get("summary") or ""),
+            next_action=str(payload.get("next_action") or ""),
+            completed=payload.get("completed") or [],
+            blockers=payload.get("blockers") or [],
+            changed_paths=payload.get("changed_paths") or [],
+            source="manual",
+        )
+        return ActionResult(
+            True,
+            f"Durable continuity updated for {project.slug}",
+            {"project": project.slug, "state": state},
+        )
+
     def handoff_create(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
         data = self._memory_store_instance().create_handoff(

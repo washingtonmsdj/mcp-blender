@@ -22,6 +22,9 @@ This document is reviewer-facing evidence for the OpenAI plugin submission. The 
 | `project_search` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `project_read_batch` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `project_health` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
+| `project_briefing` | true | false | false | Reads a sanitized bounded briefing, including durable continuation state, without modifying project state. |
+| `continuity_state` | true | false | false | Reads the non-expiring continuation state already stored for the granted project. |
+| `continuity_update` | false | true | false | Replaces the previously stored ORDAX continuation metadata for the granted project; it does not modify source files but is conservatively classified as destructive because existing state is overwritten. |
 | `project_preview_status` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `workspace_file_stat` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `workspace_directory_list` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |

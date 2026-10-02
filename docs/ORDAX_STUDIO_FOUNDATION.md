@@ -109,6 +109,28 @@ Gate mínimo para iniciar a integração no OS:
 - testes de regressão do agente verdes;
 - caminho de atualização e rollback definido.
 
+## Continuidade durável do projeto
+
+Handoffs continuam existindo para transferência pontual entre conversas e permanecem
+temporários por desenho. Eles não são mais a única fonte do ponto de retomada.
+
+O banco persistente possui agora `project_state`, um registro único e não expirável por
+projeto. Esse estado guarda resumo operacional, próxima ação, concluídos, bloqueios,
+caminhos alterados, estado Git, origem e timestamp.
+
+- `continuity.update` grava explicitamente esse estado;
+- `continuity.get` recupera o estado sem exigir um ID de handoff;
+- cada `memory.checkpoint` atualiza o resumo e Git preservando detalhes ricos já existentes;
+- cada `handoff.create` atualiza o estado durável na mesma transação;
+- `memory.context`, `session.resume`, `BOOT_CONTEXT.md` e `agent.project_briefing`
+  passam a carregar `project_state`;
+- o Product MCP publica `project_briefing`, `continuity_state` e
+  `continuity_update` com grants explícitos e sem expor caminhos locais.
+
+Com isso, uma conversa nova pode descobrir o projeto e chamar `project_briefing` sem
+conhecer um token de handoff anterior. Busca semântica/RAG de longo prazo continua sendo
+uma camada posterior; o estado durável resolve primeiro a fonte de verdade operacional.
+
 ## Sessao resumivel
 
 A fundacao agora trata a continuidade como contrato explicito de runtime. `session.resume`:

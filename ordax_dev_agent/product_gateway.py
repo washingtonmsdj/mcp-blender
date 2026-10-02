@@ -123,6 +123,16 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
         local_action="agent.project_health",
         allowed_fields=frozenset({"project"}),
     ),
+    "agent.project_briefing": ProductActionSpec(
+        name="agent.project_briefing",
+        local_action="agent.project_briefing",
+        allowed_fields=frozenset({"project"}),
+    ),
+    "continuity.get": ProductActionSpec(
+        name="continuity.get",
+        local_action="continuity.get",
+        allowed_fields=frozenset({"project"}),
+    ),
     "workspace.repository_catalog": ProductActionSpec(
         name="workspace.repository_catalog",
         local_action="workspace.repository_catalog",
@@ -169,6 +179,12 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
 
 # Product v2 exposes only bounded typed operations. No generic action executor or shell.
 PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
+    "continuity.update": ProductActionSpec(
+        "continuity.update",
+        "continuity.update",
+        frozenset({"project", "summary", "next_action", "completed", "blockers", "changed_paths"}),
+        effect="write",
+    ),
     "workspace.project_create": ProductActionSpec(
         "workspace.project_create",
         "workspace.project_create",
@@ -255,8 +271,8 @@ def product_action_catalog() -> list[dict[str, Any]]:
 
 _LOCAL_RESULT_KEYS = frozenset({
     "path", "root", "file", "project_root", "project_path", "workspace_root",
-    "command", "control_root", "bootstrap_config", "discovery_path", "output_path",
-    "snapshot_path",
+    "context_path", "command", "control_root", "bootstrap_config", "discovery_path",
+    "output_path", "snapshot_path",
 })
 
 def _redact_local_result_paths(value: Any) -> Any:
@@ -337,6 +353,44 @@ def _sanitize_product_result(
             data.pop("active_project", None)
     elif action == "project.inventory":
         data.pop("project_root", None)
+    elif action == "agent.project_briefing":
+        project = data.get("project")
+        if isinstance(project, dict):
+            data["project"] = public_project(project)
+        repository = data.get("repository")
+        if isinstance(repository, dict):
+            data["repository"] = {
+                key: value
+                for key, value in repository.items()
+                if key not in {"path", "root", "command"}
+            }
+        health = data.get("health")
+        if isinstance(health, dict):
+            sanitized_health = _sanitize_product_result(
+                "agent.project_health",
+                ActionResult(True, "health", health),
+                allowed_projects=allowed_projects,
+            )
+            data["health"] = sanitized_health.data
+        preview = data.get("preview")
+        if isinstance(preview, dict):
+            preview.pop("url", None)
+            runtime = preview.get("runtime")
+            if isinstance(runtime, dict):
+                preview["runtime"] = {
+                    key: runtime[key]
+                    for key in (
+                        "state", "running", "url_ready", "ownership_valid",
+                        "started_at_unix", "ready_at_unix", "stopped_at_unix", "exit_code",
+                    )
+                    if key in runtime
+                }
+            latest = preview.get("latest_image")
+            if isinstance(latest, dict):
+                latest.pop("path", None)
+        continuity = data.get("continuity")
+        if isinstance(continuity, dict):
+            continuity.pop("context_path", None)
     elif action == "agent.project_health":
         project = data.get("project")
         if isinstance(project, dict):

@@ -468,6 +468,8 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             "project.text_read_batch",
             "project.preview_status",
             "agent.project_health",
+            "agent.project_briefing",
+            "continuity.get",
             "git.status",
             "git.diff",
             "artifact.preview",
@@ -476,6 +478,7 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         for mutation in (
             "project.text_write",
             "project.text_patch",
+            "continuity.update",
             "git.sync",
             "artifact.read_chunk",
             "blender.live_run_script",
@@ -491,6 +494,18 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertNotIn("/v3/product-execute", worker)
         self.assertNotIn("/v3/product-actions", worker)
         self.assertIn("deleted: !remaining", worker)
+
+    def test_product_project_scope_distinguishes_global_project_creation(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        worker = (
+            root / "control-plane" / "cloudflare" / "src" / "index.ts"
+        ).read_text(encoding="utf-8")
+        project_block = worker.split(
+            "const PRODUCT_PROJECT_ACTIONS = new Set([", 1
+        )[1].split("]);", 1)[0]
+        self.assertNotIn('"workspace.project_create"', project_block)
+        self.assertIn('"continuity.update"', project_block)
+        self.assertIn('"agent.project_briefing"', project_block)
 
     def test_product_retention_is_scheduled_and_matches_public_policy(self) -> None:
         root = Path(__file__).resolve().parents[1]

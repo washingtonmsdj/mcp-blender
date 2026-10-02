@@ -161,6 +161,8 @@ class ActionRegistry(
             "memory.task_add": self.memory_task_add,
             "memory.task_toggle": self.memory_task_toggle,
             "memory.checkpoint": self.memory_checkpoint,
+            "continuity.get": self.continuity_get,
+            "continuity.update": self.continuity_update,
             "handoff.create": self.handoff_create,
             "handoff.get": self.handoff_get,
             "session.resume": self.session_resume,
@@ -381,7 +383,7 @@ class ActionRegistry(
         self._adapter_contracts = builtin_adapter_contracts()
         available = {entry.name: entry for entry in entry_points(group="ordax_dev_agent.adapters")}
         for name in config.adapters:
-            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "workspace", "terminal", "process", "browser", "computer", "orchestrator", "observation", "unity", "blender", "game_assets", "geo", "visual", "memory"}:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", name) or name in {"agent", "artifact", "git", "project", "projects", "workspace", "terminal", "process", "browser", "computer", "orchestrator", "observation", "unity", "blender", "game_assets", "geo", "visual", "memory", "continuity"}:
                 raise ValueError(f"invalid or reserved adapter name: {name}")
             if name not in available:
                 raise ValueError(f"configured adapter is not installed: {name}")
