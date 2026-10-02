@@ -96,6 +96,16 @@ const TOOLS: ToolSpec[] = [
   { name: "computer_scroll", description: "Send bounded scrolling to the interactive Windows desktop.", action: "computer.scroll", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, amount: { type: "integer", minimum: -100, maximum: 100 }, horizontal: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "amount"] },
   { name: "computer_type", description: "Type bounded Unicode text into the interactive Windows desktop. Requires an explicit grant.", action: "computer.type", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, text: STRING, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "text"] },
   { name: "computer_hotkey", description: "Send a bounded validated hotkey chord to the interactive Windows desktop. Requires an explicit grant.", action: "computer.hotkey", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, keys: { type: "array", items: STRING, minItems: 1, maxItems: 6 }, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "keys"] },
+  { name: "computer_access_status", description: "Read the local ORDAX computer-access policy and allowed filesystem roots.", action: "computer.access_status", properties: { device_id: DEVICE, space_id: SPACE, wait_for_completion_ms: WAIT }, required: ["device_id"] },
+  { name: "computer_file_stat", description: "Inspect a file or directory allowed by the local computer-access policy.", action: "computer.file_stat", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, wait_for_completion_ms: WAIT }, required: ["device_id", "path"] },
+  { name: "computer_directory_list", description: "List a directory tree allowed by the local computer-access policy.", action: "computer.directory_list", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, max_depth: { type: "integer", minimum: 1, maximum: 12 }, max_entries: { type: "integer", minimum: 1, maximum: 5000 }, include_hidden: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "path"] },
+  { name: "computer_text_read", description: "Read bounded UTF-8 text from an allowed computer path.", action: "computer.text_read", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, start_line: { type: "integer", minimum: 1 }, end_line: { type: "integer", minimum: 1 }, wait_for_completion_ms: WAIT }, required: ["device_id", "path"] },
+  { name: "computer_search", description: "Search names or bounded text content under an allowed computer root.", action: "computer.search", properties: { device_id: DEVICE, space_id: SPACE, root: STRING, query: STRING, mode: { type: "string", enum: ["name", "content", "both"] }, max_results: { type: "integer", minimum: 1, maximum: 500 }, max_depth: { type: "integer", minimum: 1, maximum: 12 }, include_hidden: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "root", "query"] },
+  { name: "computer_text_write", description: "Create or replace text at an allowed computer path with SHA-256 concurrency protection.", action: "computer.text_write", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, content: STRING, expected_sha256: STRING, create: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "path", "content"] },
+  { name: "computer_text_patch", description: "Patch allowed computer text using exact replacements and a SHA-256 precondition.", action: "computer.text_patch", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, expected_sha256: STRING, replacements: REPLACEMENTS, wait_for_completion_ms: WAIT }, required: ["device_id", "path", "expected_sha256", "replacements"] },
+  { name: "computer_directory_create", description: "Create a directory within the local computer-access policy.", action: "computer.directory_create", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, parents: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "path"] },
+  { name: "computer_path_move", description: "Move or rename an allowed computer path.", action: "computer.path_move", properties: { device_id: DEVICE, space_id: SPACE, source: STRING, destination: STRING, overwrite: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "source", "destination"] },
+  { name: "computer_path_remove", description: "Remove an allowed computer path. Recursive directory removal requires recursive=true.", action: "computer.path_remove", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, recursive: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "path"] },
   { name: "artifacts_list", description: "List bounded artifact metadata for a granted project.", action: "artifacts.list", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, max_items: { type: "integer", minimum: 1, maximum: 100 }, wait_for_completion_ms: WAIT }, required: ["device_id", "project"] },
   { name: "artifact_preview", description: "Read a bounded preview of a granted project artifact.", action: "artifact.preview", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, artifact_name: STRING, project_artifact_path: STRING, thumbnail: BOOLEAN, max_bytes: { type: "integer", minimum: 1, maximum: 262144 }, max_width: { type: "integer", minimum: 1, maximum: 4096 }, max_height: { type: "integer", minimum: 1, maximum: 4096 }, quality: { type: "integer", minimum: 1, maximum: 100 }, wait_for_completion_ms: WAIT }, required: ["device_id", "project"] },
   { name: "blender_status", description: "Read sanitized live Blender status for a project.", action: "blender.live_status", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, wait_for_completion_ms: WAIT }, required: ["device_id", "project"] },
@@ -143,6 +153,11 @@ const READ_ONLY_TOOLS = new Set([
   "computer_windows",
   "computer_active_window",
   "computer_screenshot",
+  "computer_access_status",
+  "computer_file_stat",
+  "computer_directory_list",
+  "computer_text_read",
+  "computer_search",
 ]);
 
 const DESTRUCTIVE_TOOLS = new Set([
@@ -164,6 +179,10 @@ const DESTRUCTIVE_TOOLS = new Set([
   "computer_click",
   "computer_type",
   "computer_hotkey",
+  "computer_text_write",
+  "computer_text_patch",
+  "computer_path_move",
+  "computer_path_remove",
 ]);
 
 const NON_DESTRUCTIVE_WRITE_TOOLS = new Set([
@@ -177,6 +196,7 @@ const NON_DESTRUCTIVE_WRITE_TOOLS = new Set([
   "browser_navigate",
   "computer_focus_window",
   "computer_scroll",
+  "computer_directory_create",
 ]);
 
 const OPEN_WORLD_TOOLS = new Set([
@@ -244,6 +264,16 @@ const TOOL_TITLES: Record<string, string> = {
   computer_scroll: "Scroll desktop",
   computer_type: "Type on desktop",
   computer_hotkey: "Send desktop hotkey",
+  computer_access_status: "Inspect computer access policy",
+  computer_file_stat: "Inspect computer path",
+  computer_directory_list: "List computer directory",
+  computer_text_read: "Read computer text",
+  computer_search: "Search computer files",
+  computer_text_write: "Write computer text",
+  computer_text_patch: "Patch computer text",
+  computer_directory_create: "Create computer directory",
+  computer_path_move: "Move computer path",
+  computer_path_remove: "Remove computer path",
   artifacts_list: "List project artifacts",
   artifact_preview: "Preview project artifact",
   blender_status: "Inspect Blender status",
