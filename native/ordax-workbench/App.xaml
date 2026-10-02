@@ -1,0 +1,31 @@
+<Application x:Class="Ordax.Workbench.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+  <Application.Resources>
+    <SolidColorBrush x:Key="BgBrush" Color="#080F19"/>
+    <SolidColorBrush x:Key="PanelBrush" Color="#0B1724"/>
+    <SolidColorBrush x:Key="BorderBrush" Color="#243249"/>
+    <SolidColorBrush x:Key="TextBrush" Color="#E2EBF7"/>
+    <SolidColorBrush x:Key="MutedBrush" Color="#8E9DB4"/>
+    <Style TargetType="Button">
+      <Setter Property="Background" Value="#111E30"/>
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+      <Setter Property="Padding" Value="10,6"/>
+      <Setter Property="Margin" Value="2"/>
+    </Style>
+    <Style TargetType="TextBox">
+      <Setter Property="Background" Value="#07101A"/>
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+      <Setter Property="Padding" Value="8,5"/>
+    </Style>
+    <Style TargetType="ComboBox">
+      <Setter Property="Background" Value="#111E30"/>
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+      <Setter Property="Padding" Value="7,4"/>
+    </Style>
+  </Application.Resources>
+</Application>

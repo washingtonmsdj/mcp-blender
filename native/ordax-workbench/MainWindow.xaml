@@ -1,0 +1,130 @@
+<Window x:Class="Ordax.Workbench.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="ORDAX Dev" Width="1680" Height="980" MinWidth="1180" MinHeight="720"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="50"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="25"/>
+    </Grid.RowDefinitions>
+
+    <Border Grid.Row="0" Background="#091522" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+      <Grid Margin="12,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="ORDAX" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1" Text=" Dev" Foreground="#A9C9F7" FontSize="16" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="2" Text="AI Workbench · Runtime independente · MCP auditável"
+                   Foreground="{StaticResource MutedBrush}" Margin="18,0,0,0" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="3" x:Name="RuntimeState" Text="Runtime: conectando…"
+                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="5*"/>
+        <ColumnDefinition Width="6"/>
+        <ColumnDefinition Width="6*"/>
+      </Grid.ColumnDefinitions>
+
+      <Border Grid.Column="0" Background="#07101A" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="46"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <Grid Grid.Row="0" Background="#091420" Margin="0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="135"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <ComboBox x:Name="ProviderSelector" Margin="8,6,4,6" SelectionChanged="ProviderSelector_SelectionChanged"/>
+            <Button Grid.Column="1" Content="←" Click="ProviderBack_Click" ToolTip="Voltar"/>
+            <Button Grid.Column="2" Content="→" Click="ProviderForward_Click" ToolTip="Avançar"/>
+            <TextBox Grid.Column="3" x:Name="ProviderAddress" Margin="4,7" VerticalContentAlignment="Center"
+                     KeyDown="ProviderAddress_KeyDown"/>
+            <Button Grid.Column="4" Content="↻" Click="ProviderRefresh_Click" ToolTip="Atualizar"/>
+          </Grid>
+          <wv2:WebView2CompositionControl x:Name="ProviderView" Grid.Row="1" DefaultBackgroundColor="#07101A"/>
+        </Grid>
+      </Border>
+
+      <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="#17273A"/>
+
+      <Border Grid.Column="2" Background="#040A11">
+        <TabControl x:Name="WorkTabs" Background="#040A11" BorderThickness="0"
+                    SelectionChanged="WorkTabs_SelectionChanged">
+          <TabItem Header="Studio">
+            <wv2:WebView2CompositionControl x:Name="StudioView" DefaultBackgroundColor="#080F19"/>
+          </TabItem>
+          <TabItem Header="Preview">
+            <Grid>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="*"/>
+              </Grid.RowDefinitions>
+              <Grid Background="#091420">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="PreviewAddress" Text="Preview do projeto" Margin="12,0"
+                           Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="Atualizar preview" Click="RefreshPreview_Click"/>
+              </Grid>
+              <wv2:WebView2CompositionControl x:Name="PreviewView" Grid.Row="1" DefaultBackgroundColor="#040A11"/>
+            </Grid>
+          </TabItem>
+          <TabItem Header="Browser">
+            <Grid>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="*"/>
+              </Grid.RowDefinitions>
+              <Grid Background="#091420">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="WorkbenchBrowserAddress" Margin="8,5" KeyDown="WorkbenchBrowserAddress_KeyDown"/>
+                <Button Grid.Column="1" Content="Abrir" Click="WorkbenchBrowserGo_Click"/>
+              </Grid>
+              <wv2:WebView2CompositionControl x:Name="WorkbenchBrowserView" Grid.Row="1" DefaultBackgroundColor="#FFFFFF"/>
+            </Grid>
+          </TabItem>
+          <TabItem Header="Execuções">
+            <Grid Background="#050B12">
+              <TextBox x:Name="ActivityLog" Margin="10" IsReadOnly="True" AcceptsReturn="True"
+                       TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                       FontFamily="Cascadia Code, Consolas" FontSize="12"/>
+            </Grid>
+          </TabItem>
+        </TabControl>
+      </Border>
+    </Grid>
+
+    <Border Grid.Row="2" Background="#08121D" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+      <Grid Margin="8,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="StatusText" Text="Pronto" FontSize="10" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1" Text="Provider web ≠ automação · ações do agente passam pelo MCP/grants"
+                   FontSize="10" Foreground="#60738C" VerticalAlignment="Center"/>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

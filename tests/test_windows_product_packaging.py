@@ -59,6 +59,25 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertNotIn("Chat normal", product)
         self.assertNotIn("agentPrompt", script)
 
+    def test_native_workbench_is_provider_neutral_and_uses_webview2(self) -> None:
+        project = (ROOT / "native" / "ordax-workbench" / "Ordax.Workbench.csproj").read_text(encoding="utf-8")
+        xaml = (ROOT / "native" / "ordax-workbench" / "MainWindow.xaml").read_text(encoding="utf-8")
+        code = (ROOT / "native" / "ordax-workbench" / "MainWindow.xaml.cs").read_text(encoding="utf-8")
+        bridge = (ROOT / "ordax_studio" / "workbench_bridge.py").read_text(encoding="utf-8")
+        studio_js = (ROOT / "ordax_studio" / "assets" / "studio.js").read_text(encoding="utf-8")
+
+        self.assertIn("Microsoft.Web.WebView2", project)
+        self.assertIn("WebView2CompositionControl", xaml)
+        self.assertIn('x:Name="ProviderView"', xaml)
+        self.assertIn('x:Name="PreviewView"', xaml)
+        self.assertIn('x:Name="WorkbenchBrowserView"', xaml)
+        self.assertIn('Header="Execuções"', xaml)
+        self.assertIn("StudioView.CoreWebView2.WebMessageReceived", code)
+        self.assertNotIn("ProviderView.CoreWebView2.WebMessageReceived", code)
+        self.assertIn("_ALLOWED_METHODS", bridge)
+        self.assertIn("window.chrome?.webview", studio_js)
+        self.assertIn("window.pywebview?.api?.[name]", studio_js)
+
     def test_runtime_supervisor_is_client_neutral(self) -> None:
         launcher = (ROOT / "packaging" / "windows" / "ordax_launcher.c").read_text(encoding="utf-8").lower()
         self.assertNotIn("codex", launcher)
