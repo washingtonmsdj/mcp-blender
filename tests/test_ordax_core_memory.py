@@ -53,6 +53,7 @@ class OrdaxCoreMemoryTests(unittest.TestCase):
             self.assertTrue(status["ok"])
             self.assertEqual(status["counts"]["projects"], 1)
             self.assertEqual(status["counts"]["memories"], 1)
+            self.assertEqual(status["counts"]["project_state"], 0)
             json.dumps(status)
 
 
@@ -79,6 +80,68 @@ class OrdaxCoreMemoryTests(unittest.TestCase):
             self.assertFalse(reopened.finish_session(session["session_id"]))
             self.assertTrue(reopened.finish_session(second["session_id"]))
             self.assertEqual(reopened.status()["counts"]["sessions"], 2)
+
+    def test_durable_project_state_survives_reopen_and_checkpoint_preserves_details(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            db = root / "state.db"
+            store = MemoryStore(db)
+
+            state = store.update_project_state(
+                "demo",
+                project,
+                "Foundation is ready",
+                next_action="Implement navigation",
+                completed=["project bootstrap"],
+                blockers=["waiting for asset"],
+                changed_paths=["src/app.py"],
+            )
+            self.assertEqual(state["next_action"], "Implement navigation")
+            self.assertEqual(state["source"], "manual")
+
+            checkpoint_id = store.checkpoint("demo", project, "Navigation skeleton complete")
+            reopened = MemoryStore(db)
+            persisted = reopened.project_state("demo", project)
+            self.assertIsNotNone(persisted)
+            self.assertEqual(persisted["summary"], "Navigation skeleton complete")
+            self.assertEqual(persisted["next_action"], "Implement navigation")
+            self.assertEqual(persisted["blockers"], ["waiting for asset"])
+            self.assertEqual(persisted["changed_paths"], ["src/app.py"])
+            self.assertEqual(persisted["source"], "checkpoint")
+            self.assertEqual(persisted["source_ref"], str(checkpoint_id))
+            self.assertEqual(reopened.status()["counts"]["project_state"], 1)
+
+            context = reopened.context("demo", project)
+            self.assertEqual(context["project_state"]["summary"], "Navigation skeleton complete")
+            text = reopened.write_context("demo", project).read_text(encoding="utf-8")
+            self.assertIn("Estado durável", text)
+            self.assertIn("Implement navigation", text)
+
+    def test_handoff_refreshes_durable_state_without_sharing_expiry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            store = MemoryStore(root / "state.db")
+            handoff = store.create_handoff(
+                "demo",
+                project,
+                "Renderer stabilized",
+                next_action="Profile frame time",
+                completed=["renderer"],
+                blockers=[],
+                changed_paths=["render/core.py"],
+                ttl_hours=1,
+            )
+            state = store.project_state("demo", project)
+            self.assertIsNotNone(state)
+            self.assertEqual(state["summary"], "Renderer stabilized")
+            self.assertEqual(state["next_action"], "Profile frame time")
+            self.assertEqual(state["source"], "handoff")
+            self.assertEqual(state["source_ref"], handoff["handoff_id"])
+            self.assertNotIn("expires_at", state)
 
     def test_expiring_handoff_round_trip_is_project_scoped(self):
         with tempfile.TemporaryDirectory() as directory:
