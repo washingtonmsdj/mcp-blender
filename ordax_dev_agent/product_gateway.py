@@ -169,6 +169,13 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
 
 # Product v2 exposes only bounded typed operations. No generic action executor or shell.
 PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
+    "workspace.project_create": ProductActionSpec(
+        "workspace.project_create",
+        "workspace.project_create",
+        frozenset({"slug", "name", "apps", "set_default", "git_init", "readme", "blender_scripts_dir"}),
+        project_required=False,
+        effect="write",
+    ),
     "handoff.create": ProductActionSpec(
         "handoff.create",
         "handoff.create",
@@ -246,7 +253,11 @@ def product_action_catalog() -> list[dict[str, Any]]:
     ]
 
 
-_LOCAL_RESULT_KEYS = frozenset({"path", "root", "file", "project_root", "command", "control_root", "bootstrap_config", "discovery_path", "output_path", "snapshot_path"})
+_LOCAL_RESULT_KEYS = frozenset({
+    "path", "root", "file", "project_root", "project_path", "workspace_root",
+    "command", "control_root", "bootstrap_config", "discovery_path", "output_path",
+    "snapshot_path",
+})
 
 def _redact_local_result_paths(value: Any) -> Any:
     if isinstance(value, dict):
