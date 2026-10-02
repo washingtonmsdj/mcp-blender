@@ -167,6 +167,8 @@ class AgentActions:
             return ActionResult(False, "unsupported field(s): " + ", ".join(sorted(unsupported)))
         project = self._project(payload)
         query = str(payload.get("query") or "").strip()
+        if len(query) > 500:
+            return ActionResult(False, "query must be at most 500 characters")
         try:
             recall_limit = int(payload.get("recall_limit", 20))
         except (TypeError, ValueError):
