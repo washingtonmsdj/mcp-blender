@@ -468,6 +468,8 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             "project.text_read_batch",
             "project.preview_status",
             "agent.project_health",
+            "agent.project_briefing",
+            "continuity.get",
             "git.status",
             "git.diff",
             "artifact.preview",
@@ -476,6 +478,7 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         for mutation in (
             "project.text_write",
             "project.text_patch",
+            "continuity.update",
             "git.sync",
             "artifact.read_chunk",
             "blender.live_run_script",
