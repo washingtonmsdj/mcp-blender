@@ -44,6 +44,14 @@ jobs:
           node --check ordax_studio/assets/product_account.js
           node --check ordax_studio/assets/blender-connection.js
 
+      - name: Set up Node for MCP behavior tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Verify MCP action status and project discovery scope
+        run: node --test control-plane/tests/product_mcp_results.test.mts
+
       - name: Run Python unit tests
         run: python -m unittest discover -s tests -p "test_*.py"
 
