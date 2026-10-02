@@ -50,6 +50,16 @@ class _Executor:
             "computer.scroll",
             "computer.type",
             "computer.hotkey",
+            "computer.access_status",
+            "computer.file_stat",
+            "computer.directory_list",
+            "computer.text_read",
+            "computer.search",
+            "computer.text_write",
+            "computer.text_patch",
+            "computer.directory_create",
+            "computer.path_move",
+            "computer.path_remove",
             "project.search_text",
             "project.text_read_batch",
             "project.preview_status",
@@ -157,6 +167,16 @@ class ProductMcpFacadeTests(unittest.TestCase):
                 "computer_scroll",
                 "computer_type",
                 "computer_hotkey",
+                "computer_access_status",
+                "computer_file_stat",
+                "computer_directory_list",
+                "computer_text_read",
+                "computer_search",
+                "computer_text_write",
+                "computer_text_patch",
+                "computer_directory_create",
+                "computer_path_move",
+                "computer_path_remove",
                 "project_health",
                 "project_briefing",
                 "continuity_state",
@@ -190,6 +210,11 @@ class ProductMcpFacadeTests(unittest.TestCase):
         self.assertEqual(effects["browser_start"], "write")
         self.assertEqual(effects["computer_screenshot"], "read")
         self.assertEqual(effects["computer_click"], "write")
+        self.assertEqual(effects["computer_access_status"], "read")
+        self.assertEqual(effects["computer_text_read"], "read")
+        self.assertEqual(effects["computer_search"], "read")
+        self.assertEqual(effects["computer_text_write"], "write")
+        self.assertEqual(effects["computer_path_remove"], "write")
         self.assertEqual(effects["git_command"], "execute")
         self.assertEqual(effects["blender_transform"], "write")
 
