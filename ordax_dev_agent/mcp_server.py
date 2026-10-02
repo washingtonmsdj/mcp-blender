@@ -610,6 +610,37 @@ def run_blender_project_script(project: str | None = None, script_path: str = ""
 
 
 @mcp.tool()
+def continuity_state(project: str) -> dict:
+    """Load the non-expiring continuation state for one ORDAX project."""
+    result = registry().execute("continuity.get", {"project": project})
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
+def continuity_update(
+    project: str,
+    summary: str,
+    next_action: str = "",
+    completed: list[str] | None = None,
+    blockers: list[str] | None = None,
+    changed_paths: list[str] | None = None,
+) -> dict:
+    """Persist non-expiring project progress for future sessions and chats."""
+    result = registry().execute(
+        "continuity.update",
+        {
+            "project": project,
+            "summary": summary,
+            "next_action": next_action,
+            "completed": list(completed or []),
+            "blockers": list(blockers or []),
+            "changed_paths": list(changed_paths or []),
+        },
+    )
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
 def session_context(project: str) -> dict:
     """Load persistent project memory, tasks and checkpoints before continuing work."""
     result = registry().execute("memory.context", {"project": project})
