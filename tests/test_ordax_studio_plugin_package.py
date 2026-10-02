@@ -17,6 +17,13 @@ class OrdaxStudioPluginPackageTests(unittest.TestCase):
         manifest = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8-sig"))
         self.assertEqual(manifest["name"], "ordax-dev")
         self.assertEqual(manifest["extensions"]["com.openai"]["interface"]["displayName"], "ORDAX Dev")
+        interface = manifest["extensions"]["com.openai"]["interface"]
+        self.assertIn("Persistent project context", interface["capabilities"])
+        self.assertIn(
+            "Continue working on my ORDAX project from where we left off.",
+            interface["defaultPrompt"],
+        )
+        self.assertIn("durable project continuity", interface["longDescription"])
 
     def test_plugin_uses_production_streamable_http_mcp(self):
         config = json.loads((PLUGIN_ROOT / "mcp.json").read_text(encoding="utf-8-sig"))
