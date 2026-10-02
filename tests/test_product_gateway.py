@@ -21,6 +21,7 @@ class FakeExecutor:
         self._names = [
             "projects.list",
             "workspace.repository_catalog",
+            "workspace.project_create",
             "project.inventory",
             "project.text_read",
             "handoff.get",
@@ -65,6 +66,14 @@ class FakeExecutor:
                     ],
                 },
             )
+        if action == "workspace.project_create":
+            return ActionResult(True, "created", {
+                "slug": "new-app",
+                "project_path": "C:/Users/example/secret/new-app",
+                "workspace_root": "C:/Users/example/secret",
+                "git_initialized": True,
+                "active_project": "new-app",
+            })
         if action == "workspace.repository_catalog":
             return ActionResult(True, "catalog", {
                 "active_project": "scene",
@@ -205,6 +214,7 @@ class ProductGatewayTests(unittest.TestCase):
         names = {entry["name"] for entry in product_action_catalog()}
         self.assertEqual(names, set(PRODUCT_ACTIONS))
         self.assertIn("workspace.repository_catalog", names)
+        self.assertIn("workspace.project_create", names)
         self.assertIn("project.text_read", names)
         self.assertIn("handoff.get", names)
         self.assertIn("handoff.create", names)
@@ -229,6 +239,32 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertNotIn("git.sync", names)
         self.assertNotIn("artifact.read_chunk", names)
         self.assertFalse(any(name.startswith("unity.") for name in names))
+
+    def test_project_create_is_global_explicitly_granted_and_redacts_local_paths(self) -> None:
+        result = self.gateway.execute(
+            "workspace.project_create",
+            {"slug": "new-app", "apps": [], "git_init": True},
+            context=self.context,
+            grant=self.grant("workspace.project_create", projects=()),
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.data["slug"], "new-app")
+        self.assertNotIn("project_path", result.data)
+        self.assertNotIn("workspace_root", result.data)
+        self.assertEqual(
+            self.executor.calls,
+            [("workspace.project_create", {"slug": "new-app", "apps": [], "git_init": True})],
+        )
+
+        denied = self.gateway.execute(
+            "workspace.project_create",
+            {"slug": "new-app-2"},
+            context=self.context,
+            grant=self.grant("projects.list", projects=()),
+        )
+        self.assertFalse(denied.ok)
+        self.assertEqual(denied.data["error_code"], "grant_required")
 
     def test_handoff_actions_are_project_scoped_and_capability_typed(self) -> None:
         loaded = self.gateway.execute(
