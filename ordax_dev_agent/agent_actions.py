@@ -184,6 +184,31 @@ class AgentActions:
         continuity = store.context(project.slug, project.root)
         context_path = str(store.write_context(project.slug, project.root))
         recall = store.search(project.slug, project.root, query, limit=recall_limit) if query else []
+        source_recall: dict[str, Any] = {
+            "query": query,
+            "match_count": 0,
+            "matches": [],
+        }
+        if query:
+            if len(query) <= 200:
+                source_result = self.project_search_text({
+                    "project": project.slug,
+                    "query": query,
+                    "max_results": min(recall_limit, 20),
+                    "max_files": 1500,
+                })
+                source_recall = (
+                    source_result.data
+                    if source_result.ok
+                    else {
+                        "query": query,
+                        "match_count": 0,
+                        "matches": [],
+                        "error": source_result.summary,
+                    }
+                )
+            else:
+                source_recall["skipped"] = "query_exceeds_project_search_limit"
 
         open_tasks = [item for item in continuity.get("tasks", []) if not item.get("done")]
         checkpoints = continuity.get("checkpoints", [])
@@ -234,6 +259,7 @@ class AgentActions:
                 "scripts": inventory_data.get("scripts", [])[:40],
                 "models": inventory_data.get("models", [])[:20],
                 "context_files": known_context_files,
+                "source_recall": source_recall,
             },
             "capabilities": {
                 "apps": list(project.apps),
