@@ -175,6 +175,41 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
             }
         ),
     ),
+    "browser.status": ProductActionSpec(
+        name="browser.status",
+        local_action="browser.status",
+        allowed_fields=frozenset({"project", "session_id"}),
+    ),
+    "browser.list": ProductActionSpec(
+        name="browser.list",
+        local_action="browser.list",
+        allowed_fields=frozenset({"project"}),
+    ),
+    "browser.snapshot": ProductActionSpec(
+        name="browser.snapshot",
+        local_action="browser.snapshot",
+        allowed_fields=frozenset({"project", "session_id", "max_elements"}),
+    ),
+    "browser.screenshot": ProductActionSpec(
+        name="browser.screenshot",
+        local_action="browser.screenshot",
+        allowed_fields=frozenset({"project", "session_id", "width", "height"}),
+    ),
+    "computer.windows": ProductActionSpec(
+        name="computer.windows",
+        local_action="computer.windows",
+        allowed_fields=frozenset({"project", "max_items"}),
+    ),
+    "computer.active_window": ProductActionSpec(
+        name="computer.active_window",
+        local_action="computer.active_window",
+        allowed_fields=frozenset({"project"}),
+    ),
+    "computer.screenshot": ProductActionSpec(
+        name="computer.screenshot",
+        local_action="computer.screenshot",
+        allowed_fields=frozenset({"project", "mode"}),
+    ),
 }
 
 # Product v2 exposes only bounded typed operations. No generic action executor or shell.
@@ -247,6 +282,66 @@ PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
         frozenset({"project", "cwd", "argv", "command", "shell", "timeout_seconds", "env"}),
         effect="execute",
     ),
+    "browser.start": ProductActionSpec(
+        "browser.start",
+        "browser.start",
+        frozenset({"project", "url", "headless", "wait_seconds"}),
+        effect="write",
+    ),
+    "browser.navigate": ProductActionSpec(
+        "browser.navigate",
+        "browser.navigate",
+        frozenset({"project", "session_id", "url", "wait_seconds"}),
+        effect="write",
+    ),
+    "browser.click": ProductActionSpec(
+        "browser.click",
+        "browser.click",
+        frozenset({"project", "session_id", "node_id"}),
+        effect="write",
+    ),
+    "browser.type": ProductActionSpec(
+        "browser.type",
+        "browser.type",
+        frozenset({"project", "session_id", "node_id", "text", "clear"}),
+        effect="write",
+    ),
+    "browser.stop": ProductActionSpec(
+        "browser.stop",
+        "browser.stop",
+        frozenset({"project", "session_id"}),
+        effect="write",
+    ),
+    "computer.focus_window": ProductActionSpec(
+        "computer.focus_window",
+        "computer.focus_window",
+        frozenset({"project", "handle"}),
+        effect="write",
+    ),
+    "computer.click": ProductActionSpec(
+        "computer.click",
+        "computer.click",
+        frozenset({"project", "x", "y", "button", "clicks"}),
+        effect="write",
+    ),
+    "computer.scroll": ProductActionSpec(
+        "computer.scroll",
+        "computer.scroll",
+        frozenset({"project", "amount", "horizontal"}),
+        effect="write",
+    ),
+    "computer.type": ProductActionSpec(
+        "computer.type",
+        "computer.type",
+        frozenset({"project", "text"}),
+        effect="write",
+    ),
+    "computer.hotkey": ProductActionSpec(
+        "computer.hotkey",
+        "computer.hotkey",
+        frozenset({"project", "keys"}),
+        effect="write",
+    ),
     "project.text_write": ProductActionSpec("project.text_write", "project.text_write", frozenset({"project", "path", "content", "expected_sha256", "create"}), effect="write"),
     "project.text_patch": ProductActionSpec("project.text_patch", "project.text_patch", frozenset({"project", "path", "expected_sha256", "replacements"}), effect="write"),
     "blender.live_status": ProductActionSpec("blender.live_status", "blender.live_status", frozenset({"project"})),
@@ -279,7 +374,7 @@ def product_action_catalog() -> list[dict[str, Any]]:
 _LOCAL_RESULT_KEYS = frozenset({
     "path", "root", "file", "project_root", "project_path", "workspace_root",
     "context_path", "command", "control_root", "bootstrap_config", "discovery_path",
-    "output_path", "snapshot_path",
+    "output_path", "snapshot_path", "image_path", "profile", "browser",
 })
 
 def _redact_local_result_paths(value: Any) -> Any:
@@ -304,7 +399,16 @@ def _sanitize_product_result(
             if key in item
         }
 
-    if action in {"workspace.project_create", "workspace.bind_project"}:
+    if action in {
+        "workspace.project_create",
+        "workspace.bind_project",
+        "browser.start",
+        "browser.status",
+        "browser.list",
+        "browser.screenshot",
+        "browser.stop",
+        "computer.screenshot",
+    }:
         data = _redact_local_result_paths(data)
     elif action == "projects.list":
         projects = data.get("projects")
