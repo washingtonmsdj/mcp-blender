@@ -59,6 +59,8 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
         self.assertIn('action: "terminal.exec"', self.mcp)
         self.assertIn('Requires an explicit terminal.exec grant', self.mcp)
         self.assertIn('recall_limit: { type: "integer", minimum: 1, maximum: 50 }', self.mcp)
+        self.assertIn("continue/resume project work", self.mcp)
+        self.assertIn("pass the user intent as query", self.mcp)
 
     def test_mcp_actions_still_flow_through_product_grants(self) -> None:
         self.assertIn('handlers.createAction(createRequest)', self.mcp)
