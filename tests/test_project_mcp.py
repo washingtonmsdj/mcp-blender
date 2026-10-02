@@ -65,6 +65,8 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn('session_context', names)
                     self.assertIn('project_health', names)
                     self.assertIn('agent_briefing', names)
+                    self.assertIn('continuity_state', names)
+                    self.assertIn('continuity_update', names)
                     self.assertIn('project_search', names)
                     self.assertIn('project_read_batch', names)
                     self.assertIn('session_resume', names)
@@ -137,8 +139,21 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
                     response = await session.call_tool('session_context', {'project': 'test'})
                     self.assertFalse(response.isError)
                     self.assertIn('resume me', response.content[0].text)
+                    response = await session.call_tool('continuity_update', {
+                        'project': 'test',
+                        'summary': 'durable stdio state',
+                        'next_action': 'continue tests',
+                        'completed': ['memory'],
+                    })
+                    self.assertFalse(response.isError)
+                    durable = await session.call_tool('continuity_state', {'project': 'test'})
+                    self.assertFalse(durable.isError)
+                    self.assertIn('durable stdio state', durable.content[0].text)
                     response = await session.call_tool('session_checkpoint', {'project': 'test', 'summary': 'stdio checkpoint'})
                     self.assertFalse(response.isError)
+                    durable_after_checkpoint = await session.call_tool('continuity_state', {'project': 'test'})
+                    self.assertIn('continue tests', durable_after_checkpoint.content[0].text)
+                    self.assertIn('stdio checkpoint', durable_after_checkpoint.content[0].text)
                     finished = await session.call_tool('session_finish', {'session_id': session_id})
                     self.assertFalse(finished.isError)
                     preview = await session.call_tool('project_preview_image', {'project': 'test'})
