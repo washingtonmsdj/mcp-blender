@@ -473,6 +473,10 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             "git.status",
             "git.diff",
             "artifact.preview",
+            "browser.status",
+            "browser.screenshot",
+            "computer.windows",
+            "computer.screenshot",
         ):
             self.assertIn(f'"{action}"', product_block)
         typed_block = worker.split(
@@ -480,6 +484,9 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         )[1].split("]);", 1)[0]
         self.assertIn('"workspace.project_create"', typed_block)
         self.assertIn('"workspace.bind_project"', typed_block)
+        self.assertIn('"browser.start"', typed_block)
+        self.assertIn('"browser.click"', typed_block)
+        self.assertIn('"computer.click"', typed_block)
 
         for mutation in (
             "project.text_write",
@@ -513,6 +520,10 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertNotIn('"workspace.bind_project"', project_block)
         self.assertIn('"continuity.update"', project_block)
         self.assertIn('"agent.project_briefing"', project_block)
+        self.assertIn('"browser.screenshot"', project_block)
+        self.assertIn('"browser.start"', project_block)
+        self.assertIn('"computer.screenshot"', project_block)
+        self.assertIn('"computer.click"', project_block)
 
     def test_product_retention_is_scheduled_and_matches_public_policy(self) -> None:
         root = Path(__file__).resolve().parents[1]
