@@ -49,6 +49,37 @@ class OrdaxProjectHealthTests(unittest.TestCase):
             self.assertEqual(1, result.data["git"]["changed_entries"])
             self.assertEqual("disabled", result.data["adapters"]["unity"]["state"])
 
+    def test_continuity_update_rejects_malformed_lists_before_overwrite(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            project = root / "project"
+            project.mkdir()
+            config = AgentConfig(
+                agent_name="test", poll_seconds=1, state_dir=root / "state",
+                agent_repo_path=root / "agent", hordax_path=root / "hordax",
+                bridge_path=root / "bridge",
+                projects={"demo": {"path": str(project), "apps": []}},
+                default_project="demo",
+            )
+            env = {"ORDAX_MEMORY_DB": str(root / "memory.db")}
+            with patch.dict(os.environ, env, clear=False):
+                registry = ActionRegistry(config)
+                first = registry.execute(
+                    "continuity.update",
+                    {"project": "demo", "summary": "Stable", "completed": ["foundation"]},
+                )
+                bad = registry.execute(
+                    "continuity.update",
+                    {"project": "demo", "summary": "Bad", "completed": "not-a-list"},
+                )
+                state = registry.execute("continuity.get", {"project": "demo"})
+
+            self.assertTrue(first.ok)
+            self.assertFalse(bad.ok)
+            self.assertEqual("completed", bad.data["field"])
+            self.assertEqual("Stable", state.data["state"]["summary"])
+            self.assertEqual(["foundation"], state.data["state"]["completed"])
+
     def test_project_briefing_combines_continuity_workspace_and_capabilities(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
