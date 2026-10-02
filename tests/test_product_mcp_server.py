@@ -82,6 +82,34 @@ class ProductMcpServerTests(unittest.TestCase):
         self.assertEqual(submit[2]["arguments"], {"project": "demo"})
         self.assertIn(("wait", "jwt-secret", "req-1"), calls)
 
+    def test_project_create_routes_as_global_typed_write(self):
+        result = server.project_create(
+            "dev-1",
+            "new-app",
+            "New App",
+            ["blender"],
+            True,
+            True,
+            True,
+            "space-1",
+        )
+        self.assertEqual(result["status"], "succeeded")
+        calls = [call for instance in FakeClient.instances for call in instance.calls]
+        submit = next(call for call in calls if call[0] == "submit")
+        self.assertEqual(submit[2]["action"], "workspace.project_create")
+        self.assertIsNone(submit[2]["project"])
+        self.assertEqual(
+            submit[2]["arguments"],
+            {
+                "slug": "new-app",
+                "name": "New App",
+                "apps": ["blender"],
+                "set_default": True,
+                "git_init": True,
+                "readme": True,
+            },
+        )
+
     def test_studio_catalog_routes_without_project_scope(self):
         result = server.repository_catalog("dev-1", "space-1")
         self.assertEqual(result["status"], "succeeded")
@@ -93,7 +121,7 @@ class ProductMcpServerTests(unittest.TestCase):
 
     def test_typed_mutations_are_exposed_but_generic_execution_is_not(self):
         for name in (
-            "project_text_write", "project_text_patch", "blender_start",
+            "project_create", "project_text_write", "project_text_patch", "blender_start",
             "blender_transform", "blender_create_primitive",
             "blender_apply_material", "blender_save",
         ):
@@ -106,6 +134,7 @@ class ProductMcpServerTests(unittest.TestCase):
             "product_session",
             "product_targets",
             "projects_list",
+            "project_create",
             "repository_catalog",
             "project_inventory",
             "project_text_read",
