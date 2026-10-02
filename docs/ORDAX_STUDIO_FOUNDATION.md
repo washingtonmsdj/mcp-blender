@@ -252,7 +252,6 @@ um caminho absoluto e o resultado público remove os caminhos locais do disposit
 Criar um repositório remoto no GitHub é uma etapa separada: o provisionamento local não recebe,
 armazena nem reutiliza credenciais de provedor Git de forma implícita.
 
-A unidade principal do ORDAX Studio é um repositório Git, não um arquivo nem uma pasta arbitrária.
 A home consulta `workspace.repository_catalog`, deduplica worktrees/aliases pelo remoto Git e oculta entradas legadas que não sejam repositórios.
 Projetos web ou de software podem ser registrados com `apps: []`; Blender e Unity passam a ser capabilities opcionais do repositório.
 
