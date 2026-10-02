@@ -184,6 +184,45 @@ class PersistentProcessActionsTests(unittest.TestCase):
         self.assertTrue(public["ownership_valid"])
         self.assertEqual("running", public["state"])
 
+    def test_live_managed_handle_is_authoritative_before_manager_pid_is_persisted(self):
+        process_id = "22222222-2222-4222-8222-222222222222"
+        handle = SimpleNamespace(pid=5252, poll=lambda: None)
+        self.registry._persistent_process_handles = {process_id: handle}
+        state = {
+            "process_id": process_id,
+            "project": "demo",
+            "token": "owned-token",
+            "state": "starting",
+        }
+
+        with patch.object(self.registry, "_pid_running", return_value=False):
+            public = self.registry._public_process_state(state)
+
+        self.assertTrue(public["running"])
+        self.assertTrue(public["ownership_valid"])
+        self.assertEqual("running", public["state"])
+        self.assertEqual(5252, public["manager_pid"])
+
+    def test_persisted_manager_pid_must_match_live_managed_handle(self):
+        process_id = "33333333-3333-4333-8333-333333333333"
+        handle = SimpleNamespace(pid=6262, poll=lambda: None)
+        self.registry._persistent_process_handles = {process_id: handle}
+        state = {
+            "process_id": process_id,
+            "project": "demo",
+            "manager_pid": 7272,
+            "token": "owned-token",
+            "state": "starting",
+        }
+
+        with patch.object(self.registry, "_pid_running", return_value=False):
+            public = self.registry._public_process_state(state)
+
+        self.assertFalse(public["running"])
+        self.assertFalse(public["ownership_valid"])
+        self.assertEqual("stopped", public["state"])
+        self.assertEqual(7272, public["manager_pid"])
+
     def test_process_id_is_project_scoped(self):
         result = self.registry.execute(
             "process.status",
