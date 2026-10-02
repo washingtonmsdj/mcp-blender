@@ -41,7 +41,7 @@ const CONTROL_PLANE_CAPABILITIES = [
 
 const ACTION_PREFIXES = [
   "blender.", "unity.", "git.", "project.", "projects.", "workspace.", "artifact.",
-  "observation.", "game_assets.", "geo.", "visual.", "agent.", "terminal.", "handoff.",
+  "observation.", "game_assets.", "geo.", "visual.", "agent.", "terminal.", "handoff.", "continuity.",
 ];
 
 const PRODUCT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
@@ -109,7 +109,25 @@ const PRODUCT_PROJECT_ACTIONS = new Set([
   "git.status",
   "git.diff",
   "artifact.preview",
-  ...PRODUCT_TYPED_ACTIONS_V2,
+  "handoff.create",
+  "workspace.text_write",
+  "workspace.text_patch",
+  "workspace.directory_create",
+  "workspace.path_remove",
+  "workspace.path_move",
+  "git.command",
+  "terminal.exec",
+  "project.text_write",
+  "project.text_patch",
+  "blender.live_status",
+  "blender.live_scene_snapshot",
+  "blender.live_object_inspect",
+  "blender.live_modeling_schema",
+  "blender.live_start",
+  "blender.live_object_transform",
+  "blender.live_create_primitive",
+  "blender.live_material_apply",
+  "blender.live_save",
 ]);
 
 function json(body: unknown, status = 200): Response {
