@@ -33,6 +33,23 @@ class _Executor:
             "workspace.path_move",
             "git.command",
             "terminal.exec",
+            "browser.status",
+            "browser.list",
+            "browser.snapshot",
+            "browser.screenshot",
+            "browser.start",
+            "browser.navigate",
+            "browser.click",
+            "browser.type",
+            "browser.stop",
+            "computer.windows",
+            "computer.active_window",
+            "computer.screenshot",
+            "computer.focus_window",
+            "computer.click",
+            "computer.scroll",
+            "computer.type",
+            "computer.hotkey",
             "project.search_text",
             "project.text_read_batch",
             "project.preview_status",
@@ -123,6 +140,23 @@ class ProductMcpFacadeTests(unittest.TestCase):
                 "workspace_path_move",
                 "git_command",
                 "terminal_exec",
+                "browser_status",
+                "browser_list",
+                "browser_snapshot",
+                "browser_screenshot",
+                "browser_start",
+                "browser_navigate",
+                "browser_click",
+                "browser_type",
+                "browser_stop",
+                "computer_windows",
+                "computer_active_window",
+                "computer_screenshot",
+                "computer_focus_window",
+                "computer_click",
+                "computer_scroll",
+                "computer_type",
+                "computer_hotkey",
                 "project_health",
                 "project_briefing",
                 "continuity_state",
@@ -152,6 +186,10 @@ class ProductMcpFacadeTests(unittest.TestCase):
         self.assertEqual(effects["handoff_create"], "write")
         self.assertEqual(effects["workspace_text_write"], "write")
         self.assertEqual(effects["terminal_exec"], "execute")
+        self.assertEqual(effects["browser_screenshot"], "read")
+        self.assertEqual(effects["browser_start"], "write")
+        self.assertEqual(effects["computer_screenshot"], "read")
+        self.assertEqual(effects["computer_click"], "write")
         self.assertEqual(effects["git_command"], "execute")
         self.assertEqual(effects["blender_transform"], "write")
 
