@@ -25,7 +25,7 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
     ProductMcpToolSpec(
         name="projects_list",
         action="projects.list",
-        description="List projects visible through the resolved Product grant.",
+        description="List granted projects. Use this first when the user wants to continue/resume work but the target project is not yet known.",
     ),
     ProductMcpToolSpec(
         name="project_create",
@@ -67,7 +67,7 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
     ProductMcpToolSpec(
         name="repository_catalog",
         action="workspace.repository_catalog",
-        description="List canonical ORDAX Studio repositories without exposing local filesystem roots.",
+        description="List canonical ORDAX Studio repositories without exposing local roots; use it to disambiguate a named project/repository before resuming work.",
     ),
     ProductMcpToolSpec(
         name="project_health",
@@ -77,7 +77,7 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
     ProductMcpToolSpec(
         name="project_briefing",
         action="agent.project_briefing",
-        description="Load a sanitized durable project briefing for a fresh or resumed conversation.",
+        description="Load durable project state plus bounded relevant memory/source context. In a fresh chat, call this after identifying the project whenever the user asks to continue, resume, pick up, or review ongoing project work; pass the user intent as query when useful.",
     ),
     ProductMcpToolSpec(
         name="continuity_state",
