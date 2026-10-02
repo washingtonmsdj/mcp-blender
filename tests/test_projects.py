@@ -452,7 +452,7 @@ class ProjectTests(unittest.TestCase):
         )
 
         self.assertFalse(result.ok)
-        self.assertIn("inside the GitHub workspace", result.summary)
+        self.assertIn("inside the ORDAX workspace", result.summary)
 
     def test_archive_rejects_hordax_self_archive(self):
         workspace = self.root / "github"
