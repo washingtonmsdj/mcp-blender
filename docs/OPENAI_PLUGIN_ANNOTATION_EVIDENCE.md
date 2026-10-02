@@ -18,6 +18,7 @@ This document is reviewer-facing evidence for the OpenAI plugin submission. The 
 | `project_text_write` | false | true | false | Can overwrite, patch, move, remove, save, or otherwise modify existing project/Blender state, so it is treated as potentially destructive. |
 | `project_text_patch` | false | true | false | Can overwrite, patch, move, remove, save, or otherwise modify existing project/Blender state, so it is treated as potentially destructive. |
 | `projects_list` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
+| `project_create` | false | false | false | Creates a new project only inside the configured ORDAX workspace, without overwriting an existing path; the action requires an explicit grant. |
 | `project_search` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `project_read_batch` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `project_health` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |

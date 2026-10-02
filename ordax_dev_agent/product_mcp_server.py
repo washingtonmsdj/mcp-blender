@@ -89,6 +89,33 @@ def projects_list(
 
 
 @mcp.tool()
+def project_create(
+    device_id: str,
+    slug: str,
+    name: str = "",
+    apps: list[str] | None = None,
+    set_default: bool = True,
+    git_init: bool = True,
+    readme: bool = True,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    """Create and register a project inside the device's configured ORDAX workspace."""
+    return _invoke(
+        device_id=device_id,
+        action="workspace.project_create",
+        space_id=space_id,
+        arguments={
+            "slug": slug,
+            "name": name or slug,
+            "apps": list(apps or []),
+            "set_default": set_default,
+            "git_init": git_init,
+            "readme": readme,
+        },
+    )
+
+
+@mcp.tool()
 def repository_catalog(
     device_id: str,
     space_id: str | None = None,

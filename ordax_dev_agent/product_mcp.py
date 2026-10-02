@@ -28,6 +28,12 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
         description="List projects visible through the resolved Product grant.",
     ),
     ProductMcpToolSpec(
+        name="project_create",
+        action="workspace.project_create",
+        effect="write",
+        description="Create and register a new project inside the device's configured ORDAX workspace.",
+    ),
+    ProductMcpToolSpec(
         name="handoff_get",
         action="handoff.get",
         description="Load one expiring project continuation handoff by opaque id.",

@@ -65,6 +65,7 @@ const PRODUCT_READ_ONLY_ACTIONS = new Set([
   "handoff.get",
 ]);
 const PRODUCT_TYPED_ACTIONS_V2 = new Set([
+  "workspace.project_create",
   "handoff.create",
   "workspace.text_write",
   "workspace.text_patch",

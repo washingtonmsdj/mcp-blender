@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import ActionResult
+from .projects import Project
 from .process_runner import run_command as _run
 
 
@@ -109,6 +110,12 @@ def _remove_tree_force(path: Path) -> None:
 
 
 class WorkspaceActions:
+    def _workspace_root(self) -> Path:
+        configured = self.config.workspace_root
+        if configured is None:
+            return self.config.hordax_path.resolve().parent
+        return Path(configured).expanduser().resolve()
+
     def workspace_repository_catalog(self, payload: dict[str, Any]) -> ActionResult:
         if payload:
             return ActionResult(False, "workspace.repository_catalog does not accept fields")
@@ -162,9 +169,9 @@ class WorkspaceActions:
         if isinstance(max_entries, bool) or not isinstance(max_entries, int) or not (1 <= max_entries <= 500):
             return ActionResult(False, "max_entries must be an integer between 1 and 500")
 
-        root = self.config.hordax_path.resolve().parent
+        root = self._workspace_root()
         if not root.is_dir():
-            return ActionResult(False, f"GitHub workspace not found: {root}")
+            return ActionResult(False, f"ORDAX workspace not found: {root}")
 
         entries: list[dict[str, Any]] = []
         queue: list[tuple[Path, int]] = [(root, 0)]
@@ -217,7 +224,7 @@ class WorkspaceActions:
 
         return ActionResult(
             True,
-            "GitHub workspace projects discovered",
+            "ORDAX workspace projects discovered",
             {
                 "workspace_root": str(root),
                 "query": query,
@@ -226,6 +233,214 @@ class WorkspaceActions:
                 "truncated": len(entries) >= max_entries,
                 "timed_out": timed_out,
                 "scanned_directories": scanned_directories,
+            },
+        )
+
+    def workspace_project_create(self, payload: dict[str, Any]) -> ActionResult:
+        allowed = {
+            "slug",
+            "name",
+            "apps",
+            "set_default",
+            "git_init",
+            "readme",
+            "blender_scripts_dir",
+        }
+        unsupported = sorted(set(payload) - allowed)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+
+        slug = str(payload.get("slug") or "").strip().lower()
+        if not _SLUG_RE.fullmatch(slug):
+            return ActionResult(False, "slug must match [a-z0-9][a-z0-9_-]{0,63}")
+        if slug in self.projects:
+            return ActionResult(False, f"project already registered: {slug}")
+
+        name = str(payload.get("name") or slug).strip()
+        if not name or len(name) > 120 or any(ord(ch) < 32 for ch in name):
+            return ActionResult(False, "name must be 1-120 printable characters")
+
+        apps = payload.get("apps", [])
+        if (
+            not isinstance(apps, list)
+            or not all(isinstance(app, str) and app in _ALLOWED_APPS for app in apps)
+        ):
+            return ActionResult(False, "apps must be a list containing only blender/unity")
+        apps = list(dict.fromkeys(apps))
+
+        set_default = payload.get("set_default", True)
+        git_init = payload.get("git_init", True)
+        readme = payload.get("readme", True)
+        for field_name, value in (
+            ("set_default", set_default),
+            ("git_init", git_init),
+            ("readme", readme),
+        ):
+            if not isinstance(value, bool):
+                return ActionResult(False, f"{field_name} must be boolean")
+
+        blender_scripts_dir = payload.get("blender_scripts_dir", "automation/blender")
+        if not isinstance(blender_scripts_dir, str) or not blender_scripts_dir.strip():
+            return ActionResult(False, "blender_scripts_dir must be a non-empty string")
+        scripts_rel = Path(blender_scripts_dir.strip())
+        if scripts_rel.is_absolute() or ".." in scripts_rel.parts:
+            return ActionResult(False, "blender_scripts_dir must stay inside the project")
+
+        workspace_root = self._workspace_root()
+        try:
+            workspace_root.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            return ActionResult(False, f"cannot create ORDAX workspace: {error}")
+
+        target = (workspace_root / slug).resolve()
+        try:
+            target.relative_to(workspace_root)
+        except ValueError:
+            return ActionResult(False, "project path escapes the ORDAX workspace")
+        if target.exists():
+            return ActionResult(False, f"project directory already exists: {slug}")
+
+        settings_path = self.config.state_dir / "agent-settings.json"
+        try:
+            settings = _load_settings(settings_path)
+        except Exception as error:
+            return ActionResult(False, f"cannot read agent settings: {error}")
+        projects = settings.get("projects")
+        if projects is None:
+            projects = {}
+        if not isinstance(projects, dict):
+            return ActionResult(False, "existing projects setting must be an object")
+        if slug in projects:
+            return ActionResult(False, f"project already exists in settings: {slug}")
+
+        created_files: list[str] = []
+        git_initialized = False
+        try:
+            target.mkdir()
+            ordax_dir = target / ".ordax"
+            ordax_dir.mkdir()
+            metadata = {
+                "schema_version": 1,
+                "slug": slug,
+                "name": name,
+                "apps": apps,
+            }
+            (ordax_dir / "project.json").write_text(
+                json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            created_files.append(".ordax/project.json")
+
+            if readme:
+                (target / "README.md").write_text(
+                    f"# {name}\n\nProjeto gerenciado pelo ORDAX Studio.\n",
+                    encoding="utf-8",
+                )
+                created_files.append("README.md")
+
+            (target / ".gitignore").write_text(
+                "\n".join(
+                    [
+                        ".DS_Store",
+                        "Thumbs.db",
+                        "__pycache__/",
+                        ".pytest_cache/",
+                        ".venv/",
+                        "node_modules/",
+                        "dist/",
+                        "build/",
+                        "*.blend1",
+                        "*.blend2",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            created_files.append(".gitignore")
+
+            blender_config: dict[str, Any] = {}
+            if "blender" in apps:
+                (target / scripts_rel).mkdir(parents=True, exist_ok=True)
+                blender_config["scripts_dir"] = scripts_rel.as_posix()
+
+            if git_init:
+                initialized = _run(["git", "init", "-b", "main"], cwd=target, timeout=30)
+                if not initialized.ok:
+                    initialized = _run(["git", "init"], cwd=target, timeout=30)
+                    if initialized.ok:
+                        symbolic = _run(
+                            ["git", "symbolic-ref", "HEAD", "refs/heads/main"],
+                            cwd=target,
+                            timeout=30,
+                        )
+                        if not symbolic.ok:
+                            initialized = symbolic
+                if not initialized.ok:
+                    detail = str(initialized.data.get("stderr") or initialized.summary).strip()
+                    raise RuntimeError(f"git init failed: {detail[:1000]}")
+                git_initialized = True
+
+            projects[slug] = {
+                "path": str(target),
+                "apps": apps,
+                "allowed_branches": [],
+                "blender": blender_config,
+                "unity": {},
+                "preview": {},
+            }
+            settings["projects"] = projects
+            if set_default:
+                settings["default_project"] = slug
+            if self.config.workspace_root is not None:
+                settings["workspace_root"] = str(workspace_root)
+            _atomic_json_write(settings_path, settings)
+
+            self.projects[slug] = Project(
+                slug=slug,
+                root=target,
+                apps=tuple(apps),
+                allowed_branches=(),
+                unity={},
+                blender=blender_config,
+                preview={},
+            )
+        except Exception as error:
+            self.projects.pop(slug, None)
+            try:
+                if target.exists():
+                    _remove_tree_force(target)
+            except Exception:
+                pass
+            return ActionResult(False, f"project creation rolled back: {error}")
+
+        memory_active = False
+        memory_warning = ""
+        try:
+            self._memory_store_instance().set_active_project(slug, target)
+            memory_active = True
+        except Exception as error:
+            memory_warning = f"{type(error).__name__}: {error}"
+
+        return ActionResult(
+            True,
+            (
+                "ORDAX project created and registered"
+                if memory_active
+                else "ORDAX project created; persistent memory activation needs retry"
+            ),
+            {
+                "slug": slug,
+                "project_path": str(target),
+                "workspace_root": str(workspace_root),
+                "apps": apps,
+                "set_default": set_default,
+                "git_initialized": git_initialized,
+                "active_project": slug if memory_active else None,
+                "memory_active": memory_active,
+                "memory_warning": memory_warning or None,
+                "created_files": created_files,
+                "restart_required": False,
+                "other_processes_must_reload": True,
             },
         )
 
@@ -251,14 +466,14 @@ class WorkspaceActions:
             return ActionResult(False, "relative_path is required")
         relative = Path(raw_relative.strip())
         if relative.is_absolute() or ".." in relative.parts:
-            return ActionResult(False, "relative_path must stay inside the GitHub workspace")
+            return ActionResult(False, "relative_path must stay inside the ORDAX workspace")
 
-        workspace_root = self.config.hordax_path.resolve().parent
+        workspace_root = self._workspace_root()
         target = (workspace_root / relative).resolve()
         try:
             target.relative_to(workspace_root)
         except ValueError:
-            return ActionResult(False, "project path escapes the GitHub workspace")
+            return ActionResult(False, "project path escapes the ORDAX workspace")
         if not target.is_dir():
             return ActionResult(False, f"project directory not found: {target}")
 
@@ -329,7 +544,7 @@ class WorkspaceActions:
 
         return ActionResult(
             True,
-            "GitHub workspace project bound",
+            "ORDAX workspace project bound",
             {
                 "slug": slug,
                 "project_path": str(target),

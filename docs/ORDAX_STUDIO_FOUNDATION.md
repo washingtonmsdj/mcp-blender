@@ -228,6 +228,30 @@ Salvar continua exigindo o SHA-256 da leitura original, portanto a nova UI não 
 ## Modelo de projeto: repositório primeiro
 
 A unidade principal do ORDAX Studio é um repositório Git, não um arquivo nem uma pasta arbitrária.
+
+### Provisionamento de projeto
+
+O Studio possui uma raiz local explícita de workspaces. Instalações novas podem defini-la por
+`ORDAX_WORKSPACE_ROOT` ou `workspace_root` em `agent-settings.json`; instalações antigas
+continuam compatíveis usando o diretório pai do HORDAX como fallback.
+
+A action tipada `workspace.project_create` cria projetos somente dentro dessa raiz. Ela:
+
+- valida um slug limitado antes de tocar o disco;
+- cria `.ordax/project.json`, `.gitignore` e, por padrão, `README.md`;
+- prepara `automation/blender` quando Blender é habilitado;
+- inicializa Git em `main` por padrão, sem criar commit ou exigir identidade Git;
+- registra o projeto atomicamente em `agent-settings.json`;
+- adiciona o projeto ao runtime atual e o torna o projeto ativo da memória;
+- remove a pasta recém-criada se alguma etapa anterior ao registro falhar.
+
+O MCP local publica `project_create`. O Product MCP/Cloudflare publica a mesma capacidade
+somente através do grant explícito `workspace.project_create`; o cliente remoto não escolhe
+um caminho absoluto e o resultado público remove os caminhos locais do dispositivo.
+
+Criar um repositório remoto no GitHub é uma etapa separada: o provisionamento local não recebe,
+armazena nem reutiliza credenciais de provedor Git de forma implícita.
+
 A home consulta `workspace.repository_catalog`, deduplica worktrees/aliases pelo remoto Git e oculta entradas legadas que não sejam repositórios.
 Projetos web ou de software podem ser registrados com `apps: []`; Blender e Unity passam a ser capabilities opcionais do repositório.
 

@@ -26,6 +26,7 @@ class AgentConfig:
     control_plane_protocol: str = "cloudflare-v3"
     device_id: str | None = None
     control_plane_url: str | None = DEFAULT_CONTROL_PLANE_URL
+    workspace_root: Path | None = None
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -124,6 +125,25 @@ class AgentConfig:
                     ),
                 )
             ),
+            workspace_root=Path(
+                os.environ.get(
+                    "ORDAX_WORKSPACE_ROOT",
+                    settings.get(
+                        "workspace_root",
+                        str(
+                            Path(
+                                os.environ.get(
+                                    "ORDAX_HORDAX_PATH",
+                                    settings.get(
+                                        "hordax_path",
+                                        str(Path.home() / "Documents" / "github" / "HORDAX-game"),
+                                    ),
+                                )
+                            ).expanduser().resolve().parent
+                        ),
+                    ),
+                )
+            ).expanduser().resolve(),
         )
 
     def public_status(self) -> dict:
@@ -134,6 +154,7 @@ class AgentConfig:
             "agent_repo_path": str(self.agent_repo_path),
             "hordax_path": str(self.hordax_path),
             "bridge_path": str(self.bridge_path),
+            "workspace_root": str((self.workspace_root or self.hordax_path.parent).resolve()),
             "control_plane_url_configured": bool(self.control_plane_url),
             "control_plane_url": self.control_plane_url,
             "control_plane_protocol": self.control_plane_protocol,

@@ -31,6 +31,7 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
             '"ordax_profile"',
             '"ordax_targets"',
             '"repository_catalog"',
+            '"project_create"',
             '"project_text_read"',
             '"project_text_write"',
             '"handoff_get"',

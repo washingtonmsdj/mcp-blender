@@ -76,6 +76,30 @@ def workspace_discover(query: str = "", max_depth: int = 3, max_entries: int = 2
 
 
 @mcp.tool()
+def project_create(
+    slug: str,
+    name: str = "",
+    apps: list[str] | None = None,
+    set_default: bool = True,
+    git_init: bool = True,
+    readme: bool = True,
+) -> dict:
+    """Create and register a new project inside the configured ORDAX workspace."""
+    result = registry().execute(
+        "workspace.project_create",
+        {
+            "slug": slug,
+            "name": name or slug,
+            "apps": list(apps or []),
+            "set_default": set_default,
+            "git_init": git_init,
+            "readme": readme,
+        },
+    )
+    return {"ok": result.ok, "summary": result.summary, "data": result.data}
+
+
+@mcp.tool()
 def project_inventory(project: str | None = None, max_depth: int = 4, max_entries: int = 500) -> dict:
     """List a bounded inventory of approved files in one ORDAX Studio project."""
     agent = registry()
