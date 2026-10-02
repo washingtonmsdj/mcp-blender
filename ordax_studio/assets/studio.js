@@ -4,7 +4,37 @@ const $=id=>document.getElementById(id);
 const storageKey=(name,project=state.project)=>`ordax-studio:${project||'global'}:${name}`;
 function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function setStatus(text){$('globalStatus').textContent=text||''}
-async function call(name,...args){try{return await window.pywebview.api[name](...args)}catch(error){setStatus(String(error));return {ok:false,summary:String(error)}}}
+let nativeRpcSequence=0;
+const nativeRpcPending=new Map();
+if(window.chrome?.webview){
+  window.chrome.webview.addEventListener('message',event=>{
+    const message=event.data||{};
+    const id=String(message.id||'');
+    const pending=nativeRpcPending.get(id);
+    if(!pending)return;
+    nativeRpcPending.delete(id);
+    if(message.error)pending.reject(new Error(String(message.error)));
+    else pending.resolve(message.result);
+  });
+}
+function nativeCall(name,args){
+  return new Promise((resolve,reject)=>{
+    const id='rpc-'+(++nativeRpcSequence)+'-'+Date.now();
+    nativeRpcPending.set(id,{resolve,reject});
+    window.chrome.webview.postMessage({type:'ordax-rpc',id,method:name,args});
+    setTimeout(()=>{
+      const pending=nativeRpcPending.get(id);
+      if(!pending)return;
+      nativeRpcPending.delete(id);
+      reject(new Error('ORDAX native bridge timeout'));
+    },120000);
+  });
+}
+async function call(name,...args){try{
+  if(window.pywebview?.api?.[name])return await window.pywebview.api[name](...args);
+  if(window.chrome?.webview)return await nativeCall(name,args);
+  throw new Error('ORDAX bridge indisponível');
+}catch(error){setStatus(String(error));return {ok:false,summary:String(error)}}}
 function repoName(project){const remote=(project.repository||{}).remote||'';const clean=remote.replace(/\.git$/,'').replace(/\\/g,'/');const parts=clean.split(/[/:]/).filter(Boolean);return parts.length?parts.at(-1):project.slug}
 function repoOwner(project){const remote=(project.repository||{}).remote||'';const clean=remote.replace(/\.git$/,'').replace(/\\/g,'/');const parts=clean.split(/[/:]/).filter(Boolean);return parts.length>1?parts.at(-2):'local'}
 function projectMatches(project,query){if(!query)return true;const repo=project.repository||{};return [project.slug,project.path,repo.remote,repo.branch,repoName(project)].join(' ').toLowerCase().includes(query.toLowerCase())}
