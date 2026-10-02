@@ -26,6 +26,7 @@ _ALLOWED_METHODS = frozenset(
         "preview_capture",
         "preview_logs",
         "preview_image",
+        "execution_status",
         "task_add",
         "checkpoint",
         "product_status",
