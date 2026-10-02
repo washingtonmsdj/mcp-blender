@@ -138,6 +138,31 @@ class ProductMcpServerTests(unittest.TestCase):
             },
         )
 
+    def test_browser_and_desktop_tools_route_with_project_scope(self):
+        shot = server.browser_screenshot(
+            "dev-1",
+            "demo",
+            "11111111-1111-4111-8111-111111111111",
+            1280,
+            720,
+            "space-1",
+        )
+        self.assertEqual(shot["status"], "succeeded")
+        clicked = server.computer_click(
+            "dev-1", "demo", 100, 200, "left", 1, "space-1"
+        )
+        self.assertEqual(clicked["status"], "succeeded")
+
+        calls = [call for instance in FakeClient.instances for call in instance.calls if call[0] == "submit"]
+        browser = next(call for call in calls if call[2]["action"] == "browser.screenshot")
+        self.assertEqual(browser[2]["project"], "demo")
+        self.assertEqual(browser[2]["arguments"]["width"], 1280)
+        self.assertEqual(browser[2]["arguments"]["height"], 720)
+        desktop = next(call for call in calls if call[2]["action"] == "computer.click")
+        self.assertEqual(desktop[2]["project"], "demo")
+        self.assertEqual(desktop[2]["arguments"]["x"], 100)
+        self.assertEqual(desktop[2]["arguments"]["y"], 200)
+
     def test_project_briefing_and_continuity_route_with_project_scope(self):
         briefing = server.project_briefing("dev-1", "demo", "space-1")
         self.assertEqual(briefing["status"], "succeeded")
@@ -169,7 +194,7 @@ class ProductMcpServerTests(unittest.TestCase):
 
     def test_typed_mutations_are_exposed_but_generic_execution_is_not(self):
         for name in (
-            "project_create", "project_import", "continuity_update", "project_text_write", "project_text_patch", "blender_start",
+            "project_create", "project_import", "continuity_update", "browser_start", "browser_click", "computer_click", "project_text_write", "project_text_patch", "blender_start",
             "blender_transform", "blender_create_primitive",
             "blender_apply_material", "blender_save",
         ):
@@ -198,6 +223,23 @@ class ProductMcpServerTests(unittest.TestCase):
             "git_diff",
             "artifacts_list",
             "artifact_preview",
+            "browser_status",
+            "browser_list",
+            "browser_snapshot",
+            "browser_screenshot",
+            "browser_start",
+            "browser_navigate",
+            "browser_click",
+            "browser_type",
+            "browser_stop",
+            "computer_windows",
+            "computer_active_window",
+            "computer_screenshot",
+            "computer_focus_window",
+            "computer_click",
+            "computer_scroll",
+            "computer_type",
+            "computer_hotkey",
         ):
             annotations = getattr(server, name).__annotations__
             self.assertNotIn("access_token", annotations)
