@@ -59,6 +59,7 @@ const TOOLS: ToolSpec[] = [
   { name: "project_text_patch", description: "Patch a granted project text file using exact replacements and a SHA-256 precondition.", action: "project.text_patch", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, path: STRING, expected_sha256: STRING, replacements: { type: "array", items: { type: "object" }, maxItems: 100 }, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "path", "expected_sha256", "replacements"] },
   { name: "projects_list", description: "List granted projects. Use this first when the user asks to continue/resume project work but the target project is not yet known.", action: "projects.list", properties: { device_id: DEVICE, space_id: SPACE, wait_for_completion_ms: WAIT }, required: ["device_id"] },
   { name: "project_create", description: "Create and register a new project inside the device's configured ORDAX workspace.", action: "workspace.project_create", properties: { device_id: DEVICE, space_id: SPACE, slug: STRING, name: STRING, apps: { type: "array", items: { type: "string", enum: ["blender", "unity"] }, maxItems: 2, uniqueItems: true }, set_default: BOOLEAN, git_init: BOOLEAN, readme: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "slug"] },
+  { name: "project_import", description: "Register an existing directory inside the configured ORDAX workspace; arbitrary paths outside the workspace are rejected by the runtime.", action: "workspace.bind_project", properties: { device_id: DEVICE, space_id: SPACE, slug: STRING, relative_path: STRING, apps: { type: "array", items: { type: "string", enum: ["blender", "unity"] }, maxItems: 2, uniqueItems: true }, set_default: BOOLEAN, blender_scripts_dir: STRING, blend_file: STRING, wait_for_completion_ms: WAIT }, required: ["device_id", "slug", "relative_path"] },
   { name: "project_search", description: "Search text across a granted project.", action: "project.search_text", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, query: STRING, max_results: { type: "integer", minimum: 1, maximum: 100 }, max_files: { type: "integer", minimum: 50, maximum: 5000 }, case_sensitive: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "query"] },
   { name: "project_read_batch", description: "Read several granted project text files in one bounded call.", action: "project.text_read_batch", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, paths: { type: "array", items: STRING, minItems: 1, maxItems: 16 }, max_total_bytes: { type: "integer", minimum: 65536, maximum: 786432 }, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "paths"] },
   { name: "project_health", description: "Inspect sanitized project, Git, memory and adapter health.", action: "agent.project_health", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, wait_for_completion_ms: WAIT }, required: ["device_id", "project"] },
@@ -137,6 +138,7 @@ const DESTRUCTIVE_TOOLS = new Set([
 
 const NON_DESTRUCTIVE_WRITE_TOOLS = new Set([
   "project_create",
+  "project_import",
   "handoff_create",
   "workspace_directory_create",
   "blender_start",
@@ -162,6 +164,7 @@ const TOOL_TITLES: Record<string, string> = {
   project_text_patch: "Patch project text file",
   projects_list: "List device projects",
   project_create: "Create ORDAX project",
+  project_import: "Import existing ORDAX project",
   project_search: "Search project text",
   project_read_batch: "Read project files",
   project_health: "Inspect project health",

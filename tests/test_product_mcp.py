@@ -18,6 +18,7 @@ class _Executor:
             "projects.list",
             "workspace.repository_catalog",
             "workspace.project_create",
+            "workspace.bind_project",
             "project.inventory",
             "project.text_read",
             "handoff.get",
@@ -106,6 +107,7 @@ class ProductMcpFacadeTests(unittest.TestCase):
             {
                 "projects_list",
                 "project_create",
+                "project_import",
                 "repository_catalog",
                 "project_inventory",
                 "project_text_read",
@@ -140,6 +142,7 @@ class ProductMcpFacadeTests(unittest.TestCase):
         )
         effects = {tool["name"]: tool["effect"] for tool in tools}
         self.assertEqual(effects["project_create"], "write")
+        self.assertEqual(effects["project_import"], "write")
         self.assertEqual(effects["project_briefing"], "read")
         self.assertEqual(effects["continuity_state"], "read")
         self.assertEqual(effects["continuity_update"], "write")

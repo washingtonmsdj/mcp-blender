@@ -69,6 +69,7 @@ const PRODUCT_READ_ONLY_ACTIONS = new Set([
 const PRODUCT_TYPED_ACTIONS_V2 = new Set([
   "continuity.update",
   "workspace.project_create",
+  "workspace.bind_project",
   "handoff.create",
   "workspace.text_write",
   "workspace.text_patch",

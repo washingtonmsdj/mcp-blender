@@ -34,6 +34,12 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
         description="Create and register a new project inside the device's configured ORDAX workspace.",
     ),
     ProductMcpToolSpec(
+        name="project_import",
+        action="workspace.bind_project",
+        effect="write",
+        description="Register an existing directory inside the configured ORDAX workspace and activate it without exposing arbitrary filesystem paths.",
+    ),
+    ProductMcpToolSpec(
         name="handoff_get",
         action="handoff.get",
         description="Load one expiring project continuation handoff by opaque id.",

@@ -22,6 +22,7 @@ class FakeExecutor:
             "projects.list",
             "workspace.repository_catalog",
             "workspace.project_create",
+            "workspace.bind_project",
             "project.inventory",
             "project.text_read",
             "handoff.get",
@@ -76,6 +77,14 @@ class FakeExecutor:
                 "workspace_root": "C:/Users/example/secret",
                 "git_initialized": True,
                 "active_project": "new-app",
+            })
+        if action == "workspace.bind_project":
+            return ActionResult(True, "bound", {
+                "slug": "existing-app",
+                "project_path": "C:/Users/example/secret/existing-app",
+                "workspace_root": "C:/Users/example/secret",
+                "active_project": "existing-app",
+                "restart_required": False,
             })
         if action == "workspace.repository_catalog":
             return ActionResult(True, "catalog", {
@@ -252,6 +261,7 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertEqual(names, set(PRODUCT_ACTIONS))
         self.assertIn("workspace.repository_catalog", names)
         self.assertIn("workspace.project_create", names)
+        self.assertIn("workspace.bind_project", names)
         self.assertIn("project.text_read", names)
         self.assertIn("handoff.get", names)
         self.assertIn("handoff.create", names)
@@ -305,6 +315,23 @@ class ProductGatewayTests(unittest.TestCase):
         )
         self.assertFalse(denied.ok)
         self.assertEqual(denied.data["error_code"], "grant_required")
+
+    def test_project_import_is_global_explicitly_granted_and_redacts_local_paths(self) -> None:
+        result = self.gateway.execute(
+            "workspace.bind_project",
+            {"slug": "existing-app", "relative_path": "existing-app", "apps": []},
+            context=self.context,
+            grant=self.grant("workspace.bind_project", projects=()),
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.data["slug"], "existing-app")
+        self.assertNotIn("project_path", result.data)
+        self.assertNotIn("workspace_root", result.data)
+        self.assertEqual(
+            self.executor.calls,
+            [("workspace.bind_project", {"slug": "existing-app", "relative_path": "existing-app", "apps": []})],
+        )
 
     def test_handoff_actions_are_project_scoped_and_capability_typed(self) -> None:
         loaded = self.gateway.execute(

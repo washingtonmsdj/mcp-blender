@@ -32,6 +32,7 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
             '"ordax_targets"',
             '"repository_catalog"',
             '"project_create"',
+            '"project_import"',
             '"project_briefing"',
             '"continuity_state"',
             '"continuity_update"',
@@ -81,6 +82,7 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
         self.assertIn("readOnlyHint: readOnly", self.mcp)
         self.assertIn("destructiveHint: destructive", self.mcp)
         self.assertIn("NON_DESTRUCTIVE_WRITE_TOOLS", self.mcp)
+        self.assertIn('project_import: "Import existing ORDAX project"', self.mcp)
         self.assertIn("effectClassCount !== 1", self.mcp)
         self.assertIn("openWorldHint: OPEN_WORLD_TOOLS.has(name)", self.mcp)
         self.assertIn("outputSchema:", self.mcp)
