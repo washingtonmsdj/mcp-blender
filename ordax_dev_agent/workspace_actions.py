@@ -224,7 +224,7 @@ class WorkspaceActions:
 
         return ActionResult(
             True,
-            "GitHub workspace projects discovered",
+            "ORDAX workspace projects discovered",
             {
                 "workspace_root": str(root),
                 "query": query,
@@ -404,8 +404,8 @@ class WorkspaceActions:
                 blender=blender_config,
                 preview={},
             )
-            self._memory_store_instance().set_active_project(slug, target)
         except Exception as error:
+            self.projects.pop(slug, None)
             try:
                 if target.exists():
                     _remove_tree_force(target)
@@ -413,9 +413,21 @@ class WorkspaceActions:
                 pass
             return ActionResult(False, f"project creation rolled back: {error}")
 
+        memory_active = False
+        memory_warning = ""
+        try:
+            self._memory_store_instance().set_active_project(slug, target)
+            memory_active = True
+        except Exception as error:
+            memory_warning = f"{type(error).__name__}: {error}"
+
         return ActionResult(
             True,
-            "ORDAX project created and registered",
+            (
+                "ORDAX project created and registered"
+                if memory_active
+                else "ORDAX project created; persistent memory activation needs retry"
+            ),
             {
                 "slug": slug,
                 "project_path": str(target),
@@ -423,7 +435,9 @@ class WorkspaceActions:
                 "apps": apps,
                 "set_default": set_default,
                 "git_initialized": git_initialized,
-                "active_project": slug,
+                "active_project": slug if memory_active else None,
+                "memory_active": memory_active,
+                "memory_warning": memory_warning or None,
                 "created_files": created_files,
                 "restart_required": False,
                 "other_processes_must_reload": True,
@@ -452,14 +466,14 @@ class WorkspaceActions:
             return ActionResult(False, "relative_path is required")
         relative = Path(raw_relative.strip())
         if relative.is_absolute() or ".." in relative.parts:
-            return ActionResult(False, "relative_path must stay inside the GitHub workspace")
+            return ActionResult(False, "relative_path must stay inside the ORDAX workspace")
 
         workspace_root = self._workspace_root()
         target = (workspace_root / relative).resolve()
         try:
             target.relative_to(workspace_root)
         except ValueError:
-            return ActionResult(False, "project path escapes the GitHub workspace")
+            return ActionResult(False, "project path escapes the ORDAX workspace")
         if not target.is_dir():
             return ActionResult(False, f"project directory not found: {target}")
 
@@ -530,7 +544,7 @@ class WorkspaceActions:
 
         return ActionResult(
             True,
-            "GitHub workspace project bound",
+            "ORDAX workspace project bound",
             {
                 "slug": slug,
                 "project_path": str(target),
