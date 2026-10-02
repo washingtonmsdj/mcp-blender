@@ -24,11 +24,12 @@
       "interface": {
         "displayName": "ORDAX Dev",
         "shortDescription": "Connect to your ORDAX Dev",
-        "longDescription": "Work with projects on a computer you explicitly connect to ORDAX Dev. The plugin can list registered projects, read and update granted files, inspect Git state, run specifically granted development commands, and use supported Blender tools. Access is limited by device, project and action grants enforced by the ORDAX Runtime and Control Plane. It does not provide unrestricted access to the whole computer and it does not request the full ChatGPT conversation history.",
+        "longDescription": "Work with projects on a computer you explicitly connect to ORDAX Dev. The plugin can discover registered projects, load durable project continuity for fresh conversations, retrieve bounded relevant project memory and source context, read and update granted files, inspect Git state, run specifically granted development commands, and use supported Blender tools. Access is limited by device, project and action grants enforced by the ORDAX Runtime and Control Plane. It does not provide unrestricted access to the whole computer and it does not request the full ChatGPT conversation history.",
         "developerName": "ORDAX",
         "category": "Developer Tools",
         "capabilities": [
           "Projects",
+          "Persistent project context",
           "Files",
           "Git",
           "Development commands",
@@ -39,6 +40,7 @@
         "privacyPolicyURL": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/privacy",
         "termsOfServiceURL": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/terms",
         "defaultPrompt": [
+          "Continue working on my ORDAX project from where we left off.",
           "Show the projects available on my connected ORDAX computer.",
           "Check Git status for my selected ORDAX project.",
           "Inspect the live Blender scene for my selected ORDAX project."
@@ -106,7 +108,7 @@
         "translations": {
           "pt-BR": {
             "subtitle": "Conecte ao seu ORDAX Dev",
-            "description": "Trabalhe com projetos em um computador conectado por você ao ORDAX Dev. O plugin lista projetos registrados, lê e altera arquivos autorizados, inspeciona Git, executa comandos de desenvolvimento especificamente concedidos e usa ferramentas Blender compatíveis. O acesso é limitado por grants de dispositivo, projeto e ação no Runtime e Control Plane."
+            "description": "Trabalhe com projetos em um computador conectado por você ao ORDAX Dev. O plugin descobre projetos registrados, recupera continuidade persistente em conversas novas, busca contexto relevante limitado por projeto, lê e altera arquivos autorizados, inspeciona Git, executa comandos de desenvolvimento especificamente concedidos e usa ferramentas Blender compatíveis. O acesso é limitado por grants de dispositivo, projeto e ação no Runtime e Control Plane."
           }
         }
       }
