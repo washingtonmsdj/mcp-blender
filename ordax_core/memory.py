@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import uuid
@@ -492,6 +493,113 @@ class MemoryStore:
             "created_at": str(row["created_at"]),
             "expires_at": str(row["expires_at"]),
         }
+
+    def search(
+        self,
+        slug: str,
+        path: str | Path,
+        query: str,
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Return bounded lexical recall across durable project memory.
+
+        This deliberately does not pretend to be semantic/vector search. It provides
+        a stable retrieval contract that can later be backed by embeddings without
+        changing agent-facing APIs.
+        """
+        text = str(query or "").strip()
+        if not text:
+            return []
+        if len(text) > 500:
+            raise ValueError("memory search query is too long")
+        limit = int(limit)
+        if limit < 1 or limit > 50:
+            raise ValueError("memory search limit must be between 1 and 50")
+
+        project_id = self._project_id(slug, path)
+        normalized = text.casefold()
+        terms = [term for term in re.findall(r"[\w.-]+", normalized, flags=re.UNICODE) if len(term) >= 2]
+        if not terms:
+            return []
+
+        candidates: list[dict[str, Any]] = []
+        with self._connect() as connection:
+            for row in connection.execute(
+                "SELECT id,kind,content,created_at FROM memories WHERE project_id=? ORDER BY id DESC LIMIT 1000",
+                (project_id,),
+            ).fetchall():
+                candidates.append({
+                    "type": "memory",
+                    "id": int(row["id"]),
+                    "kind": str(row["kind"]),
+                    "text": str(row["content"]),
+                    "created_at": str(row["created_at"]),
+                })
+            for row in connection.execute(
+                "SELECT id,title,done,created_at FROM tasks WHERE project_id=? ORDER BY id DESC LIMIT 500",
+                (project_id,),
+            ).fetchall():
+                candidates.append({
+                    "type": "task",
+                    "id": int(row["id"]),
+                    "done": bool(row["done"]),
+                    "text": str(row["title"]),
+                    "created_at": str(row["created_at"]),
+                })
+            for row in connection.execute(
+                "SELECT id,summary,created_at FROM checkpoints WHERE project_id=? ORDER BY id DESC LIMIT 500",
+                (project_id,),
+            ).fetchall():
+                candidates.append({
+                    "type": "checkpoint",
+                    "id": int(row["id"]),
+                    "text": str(row["summary"]),
+                    "created_at": str(row["created_at"]),
+                })
+            state = connection.execute(
+                "SELECT * FROM project_state WHERE project_id=?",
+                (project_id,),
+            ).fetchone()
+            if state is not None:
+                state_parts = [
+                    str(state["summary"] or ""),
+                    str(state["next_action"] or ""),
+                    *self._load_json_list(str(state["completed_json"])),
+                    *self._load_json_list(str(state["blockers_json"])),
+                    *self._load_json_list(str(state["changed_paths_json"])),
+                ]
+                candidates.append({
+                    "type": "project_state",
+                    "id": None,
+                    "text": "\n".join(part for part in state_parts if part),
+                    "created_at": str(state["updated_at"]),
+                })
+
+        ranked: list[dict[str, Any]] = []
+        for item in candidates:
+            haystack = str(item.get("text") or "").casefold()
+            term_hits = sum(haystack.count(term) for term in terms)
+            matched_terms = sum(1 for term in terms if term in haystack)
+            if matched_terms == 0:
+                continue
+            phrase_bonus = 8 if normalized in haystack else 0
+            coverage_bonus = int((matched_terms / max(len(terms), 1)) * 10)
+            type_bonus = 3 if item["type"] == "project_state" else 0
+            score = phrase_bonus + coverage_bonus + min(term_hits, 20) + type_bonus
+            public = {key: value for key, value in item.items() if key != "text"}
+            snippet = str(item.get("text") or "").strip().replace("\x00", "")[:800]
+            public.update({"score": score, "snippet": snippet})
+            ranked.append(public)
+
+        ranked.sort(
+            key=lambda item: (
+                -int(item["score"]),
+                str(item.get("created_at") or ""),
+                str(item.get("type") or ""),
+            )
+        )
+        return ranked[:limit]
 
     def _recent(self, table: str, project_id: int, limit: int) -> list[sqlite3.Row]:
         if table not in {"memories", "tasks", "checkpoints"}:
