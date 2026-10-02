@@ -79,6 +79,14 @@ class MemoryStore:
               created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS idx_handoffs_project_expiry
               ON handoffs(project_id, expires_at);
+            CREATE TABLE IF NOT EXISTS project_state(
+              project_id INTEGER PRIMARY KEY,
+              summary TEXT NOT NULL, next_action TEXT,
+              completed_json TEXT NOT NULL, blockers_json TEXT NOT NULL,
+              changed_paths_json TEXT NOT NULL, git_state TEXT NOT NULL,
+              source TEXT NOT NULL, source_ref TEXT, updated_at TEXT NOT NULL,
+              FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE);
+
             """)
 
     def _project_id(self, slug: str, path: str | Path) -> int:
@@ -172,6 +180,153 @@ class MemoryStore:
         except Exception as error:
             return {"error": f"{type(error).__name__}: {error}"}
 
+    @staticmethod
+    def _bounded_state_items(values: list[str] | None, field: str) -> list[str]:
+        items = list(values or [])
+        if len(items) > 100:
+            raise ValueError(f"project state {field} has too many items")
+        return [str(item)[:2000] for item in items]
+
+    @staticmethod
+    def _load_json_list(raw: str) -> list[str]:
+        try:
+            value = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            return []
+        return [str(item) for item in value] if isinstance(value, list) else []
+
+    def _project_state_from_row(self, slug: str, row: sqlite3.Row | None) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        try:
+            git_state = json.loads(str(row["git_state"]))
+        except (TypeError, json.JSONDecodeError):
+            git_state = {}
+        return {
+            "project": slug,
+            "summary": str(row["summary"]),
+            "next_action": str(row["next_action"] or ""),
+            "completed": self._load_json_list(str(row["completed_json"])),
+            "blockers": self._load_json_list(str(row["blockers_json"])),
+            "changed_paths": self._load_json_list(str(row["changed_paths_json"])),
+            "git": git_state if isinstance(git_state, dict) else {},
+            "source": str(row["source"]),
+            "source_ref": str(row["source_ref"]) if row["source_ref"] else None,
+            "updated_at": str(row["updated_at"]),
+        }
+
+    def _upsert_project_state(
+        self,
+        connection: sqlite3.Connection,
+        project_id: int,
+        *,
+        summary: str,
+        next_action: str = "",
+        completed: list[str] | None = None,
+        blockers: list[str] | None = None,
+        changed_paths: list[str] | None = None,
+        git_state: dict[str, Any] | None = None,
+        source: str = "manual",
+        source_ref: str | None = None,
+        preserve_details: bool = False,
+    ) -> None:
+        text = summary.strip()
+        if not text:
+            raise ValueError("project state summary cannot be empty")
+        if len(text) > 20000:
+            raise ValueError("project state summary is too long")
+        source_name = str(source or "manual").strip()[:64] or "manual"
+        existing = connection.execute(
+            "SELECT * FROM project_state WHERE project_id=?",
+            (project_id,),
+        ).fetchone()
+
+        if preserve_details and existing is not None:
+            next_action_value = str(existing["next_action"] or "")
+            completed_items = self._load_json_list(str(existing["completed_json"]))
+            blocker_items = self._load_json_list(str(existing["blockers_json"]))
+            changed_items = self._load_json_list(str(existing["changed_paths_json"]))
+        else:
+            next_action_value = str(next_action or "").strip()[:5000]
+            completed_items = self._bounded_state_items(completed, "completed")
+            blocker_items = self._bounded_state_items(blockers, "blockers")
+            changed_items = self._bounded_state_items(changed_paths, "changed_paths")
+
+        connection.execute(
+            """
+            INSERT INTO project_state(
+              project_id,summary,next_action,completed_json,blockers_json,
+              changed_paths_json,git_state,source,source_ref,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(project_id) DO UPDATE SET
+              summary=excluded.summary,
+              next_action=excluded.next_action,
+              completed_json=excluded.completed_json,
+              blockers_json=excluded.blockers_json,
+              changed_paths_json=excluded.changed_paths_json,
+              git_state=excluded.git_state,
+              source=excluded.source,
+              source_ref=excluded.source_ref,
+              updated_at=excluded.updated_at
+            """,
+            (
+                project_id,
+                text,
+                next_action_value,
+                json.dumps(completed_items, ensure_ascii=False),
+                json.dumps(blocker_items, ensure_ascii=False),
+                json.dumps(changed_items, ensure_ascii=False),
+                json.dumps(git_state or {}, ensure_ascii=False),
+                source_name,
+                str(source_ref)[:200] if source_ref else None,
+                now(),
+            ),
+        )
+
+    def update_project_state(
+        self,
+        slug: str,
+        path: str | Path,
+        summary: str,
+        *,
+        next_action: str = "",
+        completed: list[str] | None = None,
+        blockers: list[str] | None = None,
+        changed_paths: list[str] | None = None,
+        source: str = "manual",
+        source_ref: str | None = None,
+    ) -> dict[str, Any]:
+        project_id = self._project_id(slug, path)
+        git_state = self.git_state(path)
+        with self._connect() as connection:
+            self._upsert_project_state(
+                connection,
+                project_id,
+                summary=summary,
+                next_action=next_action,
+                completed=completed,
+                blockers=blockers,
+                changed_paths=changed_paths,
+                git_state=git_state,
+                source=source,
+                source_ref=source_ref,
+            )
+            row = connection.execute(
+                "SELECT * FROM project_state WHERE project_id=?",
+                (project_id,),
+            ).fetchone()
+        self.write_context(slug, path)
+        return self._project_state_from_row(slug, row) or {}
+
+    def project_state(self, slug: str, path: str | Path) -> dict[str, Any] | None:
+        project_id = self._project_id(slug, path)
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM project_state WHERE project_id=?",
+                (project_id,),
+            ).fetchone()
+        return self._project_state_from_row(slug, row)
+
     def checkpoint(self, slug: str, path: str | Path, summary: str) -> int:
         text = summary.strip() or "Checkpoint salvo"
         project_id = self._project_id(slug, path)
@@ -186,6 +341,15 @@ class MemoryStore:
                 ,("checkpoint", json.dumps({"project": slug, "summary": text}, ensure_ascii=False), now()),
             )
             checkpoint_id = int(cursor.lastrowid)
+            self._upsert_project_state(
+                connection,
+                project_id,
+                summary=text,
+                git_state=state,
+                source="checkpoint",
+                source_ref=str(checkpoint_id),
+                preserve_details=True,
+            )
         self.write_context(slug, path)
         return checkpoint_id
 
@@ -242,14 +406,10 @@ class MemoryStore:
         expires_dt = created_dt + timedelta(hours=ttl_hours)
         git_state = self.git_state(path)
         payloads = {
-            "completed": list(completed or []),
-            "blockers": list(blockers or []),
-            "changed_paths": list(changed_paths or []),
+            "completed": self._bounded_state_items(completed, "completed"),
+            "blockers": self._bounded_state_items(blockers, "blockers"),
+            "changed_paths": self._bounded_state_items(changed_paths, "changed_paths"),
         }
-        for key, values in payloads.items():
-            if len(values) > 100:
-                raise ValueError(f"handoff {key} has too many items")
-            payloads[key] = [str(item)[:2000] for item in values]
 
         with self._connect() as connection:
             connection.execute(
@@ -275,6 +435,18 @@ class MemoryStore:
             connection.execute(
                 "DELETE FROM handoffs WHERE expires_at < ?",
                 (created_dt.isoformat(timespec="seconds"),),
+            )
+            self._upsert_project_state(
+                connection,
+                project_id,
+                summary=text,
+                next_action=next_action,
+                completed=payloads["completed"],
+                blockers=payloads["blockers"],
+                changed_paths=payloads["changed_paths"],
+                git_state=git_state,
+                source="handoff",
+                source_ref=handoff_id,
             )
         return {
             "handoff_id": handoff_id,
@@ -303,13 +475,6 @@ class MemoryStore:
                 connection.execute("DELETE FROM handoffs WHERE id=?", (token,))
                 raise ValueError("handoff expired")
 
-        def load_list(raw: str) -> list[str]:
-            try:
-                value = json.loads(raw)
-            except json.JSONDecodeError:
-                return []
-            return [str(item) for item in value] if isinstance(value, list) else []
-
         try:
             git_state = json.loads(str(row["git_state"]))
         except json.JSONDecodeError:
@@ -319,9 +484,9 @@ class MemoryStore:
             "project": slug,
             "summary": str(row["summary"]),
             "next_action": str(row["next_action"] or ""),
-            "completed": load_list(str(row["completed_json"])),
-            "blockers": load_list(str(row["blockers_json"])),
-            "changed_paths": load_list(str(row["changed_paths_json"])),
+            "completed": self._load_json_list(str(row["completed_json"])),
+            "blockers": self._load_json_list(str(row["blockers_json"])),
+            "changed_paths": self._load_json_list(str(row["changed_paths_json"])),
             "git": git_state if isinstance(git_state, dict) else {},
             "created_at": str(row["created_at"]),
             "expires_at": str(row["expires_at"]),
@@ -347,10 +512,12 @@ class MemoryStore:
                     item["git_state"] = json.loads(item["git_state"])
                 except json.JSONDecodeError:
                     pass
+        project_state = self.project_state(slug, path)
         return {
             "project": {"slug": slug, "path": str(Path(path).resolve())},
             "memory_db": str(self.db_path),
             "legacy_local_ai_db": "OrdaxLocalAI" in str(self.db_path),
+            "project_state": project_state,
             "memories": memories,
             "tasks": tasks,
             "checkpoints": checkpoints,
@@ -368,8 +535,21 @@ class MemoryStore:
             f"- Slug: {slug}",
             f"- Caminho: {data['project']['path']}",
             "",
-            "## Memórias recentes",
+            "## Estado durável",
       ]
+        state = data.get("project_state")
+        if state:
+            lines += [
+                f"- Atualizado: {state['updated_at']}",
+                f"- Resumo: {state['summary']}",
+                f"- Próxima ação: {state['next_action'] or 'Não definida.'}",
+                f"- Fonte: {state['source']}",
+            ]
+            if state.get("blockers"):
+                lines.append("- Bloqueios: " + "; ".join(state["blockers"]))
+        else:
+            lines.append("- Nenhum estado durável salvo.")
+        lines += ["", "## Memórias recentes"]
         lines += [f"- [{item['kind']}] {item['content']}" for item in data["memories"]] or ["- Nenhuma."]
         lines += ["", "## Tarefas"]
         lines += [f"- [{'x' if item['done'] else ' '}] #{item['id']} {item['title']}" for item in data["tasks"]] or ["- Nenhuma."]
@@ -397,7 +577,7 @@ class MemoryStore:
         with self._connect() as connection:
             counts = {
                 table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-                for table in ("projects", "memories", "tasks", "checkpoints", "events", "sessions", "handoffs")
+                for table in ("projects", "memories", "tasks", "checkpoints", "events", "sessions", "handoffs", "project_state")
             }
         return {
             "ok": True,
