@@ -192,6 +192,13 @@ PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
         project_required=False,
         effect="write",
     ),
+    "workspace.bind_project": ProductActionSpec(
+        "workspace.bind_project",
+        "workspace.bind_project",
+        frozenset({"slug", "relative_path", "apps", "set_default", "blender_scripts_dir", "blend_file"}),
+        project_required=False,
+        effect="write",
+    ),
     "handoff.create": ProductActionSpec(
         "handoff.create",
         "handoff.create",
@@ -297,7 +304,7 @@ def _sanitize_product_result(
             if key in item
         }
 
-    if action == "workspace.project_create":
+    if action in {"workspace.project_create", "workspace.bind_project"}:
         data = _redact_local_result_paths(data)
     elif action == "projects.list":
         projects = data.get("projects")
