@@ -126,7 +126,7 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
     "agent.project_briefing": ProductActionSpec(
         name="agent.project_briefing",
         local_action="agent.project_briefing",
-        allowed_fields=frozenset({"project"}),
+        allowed_fields=frozenset({"project", "query", "recall_limit"}),
     ),
     "continuity.get": ProductActionSpec(
         name="continuity.get",
