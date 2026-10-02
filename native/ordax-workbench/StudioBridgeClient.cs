@@ -1,3 +1,4 @@
+using System.IO;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
@@ -133,7 +134,7 @@ internal sealed class StudioBridgeClient : IAsyncDisposable
     {
         var configured = Environment.GetEnvironmentVariable("ORDAX_WORKBENCH_PYTHON");
         if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
-            return configured;
+            return configured!;
 
         var bundled = Path.Combine(AppContext.BaseDirectory, "runtime", "python.exe");
         if (File.Exists(bundled))
