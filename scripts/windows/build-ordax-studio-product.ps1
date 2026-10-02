@@ -61,6 +61,25 @@ if ($LASTEXITCODE -ne 0) {
 
 Copy-Item (Join-Path $repoRoot "scripts") (Join-Path $stageRoot "scripts") -Recurse -Force
 
+$workbenchRoot = Join-Path $stageRoot "workbench"
+$workbenchProject = Join-Path $repoRoot "native\ordax-workbench\Ordax.Workbench.csproj"
+Write-Host "Publishing native ORDAX Workbench"
+& dotnet publish $workbenchProject `
+    --configuration Release `
+    --runtime win-x64 `
+    --self-contained true `
+    --output $workbenchRoot `
+    /p:PublishSingleFile=false `
+    /p:DebugType=None `
+    /p:DebugSymbols=false
+if ($LASTEXITCODE -ne 0) {
+    throw "Native ORDAX Workbench publish failed"
+}
+$workbenchExe = Join-Path $workbenchRoot "ORDAX Workbench.exe"
+if (-not (Test-Path $workbenchExe)) {
+    throw "Native ORDAX Workbench executable was not produced"
+}
+
 $privatePython = Join-Path $runtimeRoot "python.exe"
 & $privatePython -c "import ordax_studio, ordax_dev_agent, ordax_device_agent, webview; print('ORDAX_PRIVATE_RUNTIME_OK')"
 if ($LASTEXITCODE -ne 0) {
@@ -107,6 +126,7 @@ $manifest = [ordered]@{
     python = $PythonVersion
     entrypoints = @{
         studio = "ORDAX Dev.exe"
+        workbench = "workbench\\ORDAX Workbench.exe"
         runtime = "ORDAX Runtime.exe"
     }
     control_plane = "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev"
