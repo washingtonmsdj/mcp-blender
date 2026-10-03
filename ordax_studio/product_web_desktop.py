@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
+
+import httpx
 
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
@@ -12,6 +17,36 @@ from .product_auth import ProductAccountError, connect_existing_device
 from .web_desktop import APP_NAME, StudioApi
 
 
+_API_KEY_ENV_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
+
+
+def _openai_compatible_base_url(raw: str) -> str:
+    value = str(raw or "").strip().rstrip("/")
+    if not value or len(value) > 2048:
+        raise ValueError("Base URL da API é obrigatória e deve ter no máximo 2048 caracteres")
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("Base URL deve usar http:// ou https://")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Credenciais não podem ficar embutidas na URL")
+    path = (parsed.path or "").rstrip("/")
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def _provider_headers(api_key_env: str) -> dict[str, str]:
+    name = str(api_key_env or "").strip()
+    headers = {"content-type": "application/json", "accept": "application/json"}
+    if not name:
+        return headers
+    if not _API_KEY_ENV_RE.fullmatch(name):
+        raise ValueError("Nome da variável de ambiente da API key é inválido")
+    key = str(os.environ.get(name) or "").strip()
+    if not key:
+        raise ValueError(f"Variável de ambiente não configurada: {name}")
+    headers["authorization"] = f"Bearer {key}"
+    return headers
+
+
 class StudioProductApi(StudioApi):
     """Windows product surface layered over the canonical Studio API.
 
@@ -19,6 +54,135 @@ class StudioProductApi(StudioApi):
     device ownership and interactive desktop lifecycle operations live here so
     development hosts do not need to own or store Product credentials.
     """
+
+    def provider_api_models(
+        self,
+        base_url: str,
+        api_key_env: str = "",
+    ) -> dict[str, Any]:
+        try:
+            base = _openai_compatible_base_url(base_url)
+            response = httpx.get(
+                f"{base}/models",
+                headers=_provider_headers(api_key_env),
+                timeout=15.0,
+                follow_redirects=False,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            raw_models = payload.get("data") if isinstance(payload, dict) else None
+            if not isinstance(raw_models, list):
+                raise ValueError("Resposta /models não contém data[]")
+            models: list[dict[str, Any]] = []
+            for item in raw_models[:500]:
+                if not isinstance(item, dict):
+                    continue
+                model_id = str(item.get("id") or "").strip()
+                if not model_id or len(model_id) > 500:
+                    continue
+                models.append({
+                    "id": model_id,
+                    "owned_by": str(item.get("owned_by") or "")[:200],
+                })
+            return {
+                "ok": True,
+                "summary": f"{len(models)} modelo(s) disponível(is)",
+                "data": {"models": models, "base_url": base},
+            }
+        except (ValueError, httpx.HTTPError) as error:
+            return {
+                "ok": False,
+                "summary": f"API compatível indisponível: {type(error).__name__}: {error}",
+            }
+
+    def provider_api_chat(
+        self,
+        base_url: str,
+        model: str,
+        messages: list[dict[str, Any]],
+        api_key_env: str = "",
+        temperature: float = 0.2,
+        max_tokens: int = 4096,
+    ) -> dict[str, Any]:
+        try:
+            base = _openai_compatible_base_url(base_url)
+            selected_model = str(model or "").strip()
+            if not selected_model or len(selected_model) > 500:
+                raise ValueError("Modelo é obrigatório")
+            if not isinstance(messages, list) or not 1 <= len(messages) <= 100:
+                raise ValueError("messages deve conter entre 1 e 100 mensagens")
+
+            sanitized: list[dict[str, str]] = []
+            total_chars = 0
+            for item in messages:
+                if not isinstance(item, dict):
+                    raise ValueError("Cada mensagem deve ser um objeto")
+                role = str(item.get("role") or "").strip().lower()
+                content = item.get("content")
+                if role not in {"system", "user", "assistant"} or not isinstance(content, str):
+                    raise ValueError("Mensagens aceitam apenas role system/user/assistant e conteúdo textual")
+                if len(content) > 100_000:
+                    raise ValueError("Uma mensagem excede 100000 caracteres")
+                total_chars += len(content)
+                if total_chars > 250_000:
+                    raise ValueError("Histórico da conversa excede 250000 caracteres")
+                sanitized.append({"role": role, "content": content})
+
+            try:
+                temp = float(temperature)
+            except (TypeError, ValueError) as error:
+                raise ValueError("temperature deve ser numérico") from error
+            if not 0.0 <= temp <= 2.0:
+                raise ValueError("temperature deve ficar entre 0 e 2")
+            if isinstance(max_tokens, bool):
+                raise ValueError("max_tokens deve ser inteiro")
+            tokens = int(max_tokens)
+            if not 1 <= tokens <= 32768:
+                raise ValueError("max_tokens deve ficar entre 1 e 32768")
+
+            response = httpx.post(
+                f"{base}/chat/completions",
+                headers=_provider_headers(api_key_env),
+                json={
+                    "model": selected_model,
+                    "messages": sanitized,
+                    "temperature": temp,
+                    "max_tokens": tokens,
+                    "stream": False,
+                },
+                timeout=180.0,
+                follow_redirects=False,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            choices = payload.get("choices") if isinstance(payload, dict) else None
+            if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+                raise ValueError("Resposta de chat não contém choices[0]")
+            message = choices[0].get("message")
+            if not isinstance(message, dict) or not isinstance(message.get("content"), str):
+                raise ValueError("Resposta de chat não contém message.content textual")
+            content = str(message["content"])
+            usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+            return {
+                "ok": True,
+                "summary": "Resposta recebida do provider",
+                "data": {
+                    "model": str(payload.get("model") or selected_model)[:500],
+                    "content": content,
+                    "finish_reason": str(choices[0].get("finish_reason") or "")[:100],
+                    "usage": {
+                        key: usage.get(key)
+                        for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+                        if isinstance(usage.get(key), int)
+                    },
+                    "base_url": base,
+                },
+            }
+        except (ValueError, httpx.HTTPError, TypeError) as error:
+            return {
+                "ok": False,
+                "summary": f"Falha no provider API: {type(error).__name__}: {error}",
+            }
 
     def connect_product_account(self, email: str, password: str) -> dict[str, Any]:
         try:
