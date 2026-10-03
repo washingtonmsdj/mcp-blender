@@ -1,8 +1,8 @@
-# ORDAX Dev — identidade, Cloudflare e provedores de projeto
+# ORDAX Studio — identidade, Cloudflare e provedores de projeto
 
 ## Contrato de produto
 
-O ORDAX Dev separa três responsabilidades que não devem ser confundidas:
+O ORDAX Studio separa três responsabilidades que não devem ser confundidas:
 
 1. **Identidade ORDAX**
    - é a conta do usuário no produto;
@@ -35,7 +35,7 @@ Usuário
   │
   └─ ChatGPT
        │
-       └─ plugin ORDAX Dev
+       └─ plugin ORDAX Studio
             │
             └─ MCP remoto no Cloudflare
                  │
@@ -47,18 +47,18 @@ Usuário
 
 O plugin GitHub do ChatGPT é uma integração separada.
 
-Ele pode ser usado em paralelo para ler ou alterar repositórios hospedados no GitHub, mas **não é a ponte entre ChatGPT e ORDAX Dev**. A ponte do ORDAX é o plugin ORDAX Dev conectado ao MCP remoto do Control Plane.
+Ele pode ser usado em paralelo para ler ou alterar repositórios hospedados no GitHub, mas **não é a ponte entre ChatGPT e ORDAX Studio**. A ponte do ORDAX é o plugin ORDAX Studio conectado ao MCP remoto do Control Plane.
 
 Não deve existir dependência do tipo:
 
 ```text
-ChatGPT → plugin GitHub → GitHub → ORDAX Dev
+ChatGPT → plugin GitHub → GitHub → ORDAX Studio
 ```
 
 O fluxo correto é:
 
 ```text
-ChatGPT → plugin ORDAX Dev → Cloudflare Control Plane → ORDAX Runtime
+ChatGPT → plugin ORDAX Studio → Cloudflare Control Plane → ORDAX Runtime
 ```
 
 Quando uma tarefa também precisar do GitHub, o GitHub entra como provedor/repositório, não como identidade principal do ORDAX.
@@ -82,4 +82,4 @@ Quando uma tarefa também precisar do GitHub, o GitHub entra como provedor/repos
 - MCP remoto: publicado pelo Control Plane.
 - Projetos locais e Git local: suportados pelo Runtime.
 - Plugin GitHub do ChatGPT: opcional e independente.
-- OAuth GitHub dentro do ORDAX Dev: ainda não é requisito para o fluxo principal; quando implementado, deve ser uma integração de provedor separada.
+- OAuth GitHub dentro do ORDAX Studio: ainda não é requisito para o fluxo principal; quando implementado, deve ser uma integração de provedor separada.

@@ -231,7 +231,7 @@ class StudioProductAccountTests(unittest.TestCase):
         self.assertIn("GitHub", ui_source)
         self.assertIn("provedor de projetos", ui_source)
         self.assertIn("Conta ORDAX", contract)
-        self.assertIn("plugin ORDAX Dev", contract)
+        self.assertIn("plugin ORDAX Studio", contract)
         self.assertIn("plugin GitHub do ChatGPT", contract)
         self.assertNotIn("github.com/login/oauth", auth_source.lower())
         self.assertNotIn("api.github.com/user", auth_source.lower())

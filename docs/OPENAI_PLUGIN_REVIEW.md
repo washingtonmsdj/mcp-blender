@@ -1,4 +1,4 @@
-# ORDAX Dev — OpenAI plugin review runbook
+# ORDAX Studio — OpenAI plugin review runbook
 
 Status: pre-submission checklist for ORDAX Studio 0.4.1. The 0.4.1 Windows/package artifact names still use the historical `ordax-dev-*` compatibility name.
 

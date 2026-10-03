@@ -2,7 +2,7 @@ export interface PublicPagesEnv {
   OPENAI_APPS_CHALLENGE?: string;
 }
 
-const PRODUCT_NAME = "ORDAX Dev";
+const PRODUCT_NAME = "ORDAX Studio";
 const REPOSITORY_URL = "https://github.com/washingtonmsdj/mcp-blender";
 const SUPPORT_URL = "https://github.com/washingtonmsdj/mcp-blender/issues";
 
@@ -25,7 +25,7 @@ h2{margin-top:36px;font-size:22px}p,li{color:#b7c8d8;line-height:1.7}code{color:
 </head>
 <body><main>
 <nav>
-<a href="/">ORDAX Dev</a>
+<a href="/">ORDAX Studio</a>
 <a href="/support">Support</a>
 <a href="/privacy">Privacy</a>
 <a href="/terms">Terms</a>
@@ -48,8 +48,8 @@ ${body}
 export function publicProductPage(pathname: string): Response | null {
   if (pathname === "/") {
     return html("Home", `
-<h1>ORDAX Dev</h1>
-<p>ORDAX Dev connects authorized AI clients to development tools on a computer you control. The Windows runtime keeps registered projects available through a grant-scoped remote MCP connection.</p>
+<h1>ORDAX Studio</h1>
+<p>ORDAX Studio connects authorized AI clients to development tools on a computer you control. The Windows runtime keeps registered projects available through a grant-scoped remote MCP connection.</p>
 <div class="card">
 <strong>What it can do</strong>
 <ul>
@@ -59,7 +59,7 @@ export function publicProductPage(pathname: string): Response | null {
 <li>Inspect and edit supported Blender projects through typed tools.</li>
 </ul>
 </div>
-<p>ORDAX Dev does not expose the whole computer by default. Remote actions are limited by device, project and action grants enforced by the runtime and Control Plane.</p>
+<p>ORDAX Studio does not expose the whole computer by default. Remote actions are limited by device, project and action grants enforced by the runtime and Control Plane.</p>
 <p><a href="${REPOSITORY_URL}">Source repository and technical documentation</a></p>
 <p class="small">Product version 0.4.x · Cloudflare Control Plane</p>`);
   }
@@ -67,10 +67,10 @@ export function publicProductPage(pathname: string): Response | null {
   if (pathname === "/support") {
     return html("Support", `
 <h1>Support</h1>
-<p>For ORDAX Dev installation, connection or tool issues, open a support issue in the project repository.</p>
+<p>For ORDAX Studio installation, connection or tool issues, open a support issue in the project repository.</p>
 <div class="card">
 <p><a href="${SUPPORT_URL}">Open or review support issues</a></p>
-<p>Include the ORDAX Dev version, the affected project or adapter, and a concise description of the problem. Do not include passwords, access tokens or private project content.</p>
+<p>Include the ORDAX Studio version, the affected project or adapter, and a concise description of the problem. Do not include passwords, access tokens or private project content.</p>
 </div>
 <p>Security-sensitive reports should not include exploit details or credentials in a public issue. Use the repository owner's private contact channel when available.</p>`);
   }
@@ -79,7 +79,7 @@ export function publicProductPage(pathname: string): Response | null {
     return html("Privacy Policy", `
 <h1>Privacy Policy</h1>
 <p>Effective: 1 October 2026.</p>
-<p>ORDAX Dev is a developer tool that connects a user's authorized AI client to devices and projects that the user explicitly connects.</p>
+<p>ORDAX Studio is a developer tool that connects a user's authorized AI client to devices and projects that the user explicitly connects.</p>
 <h2>Data processed</h2>
 <ul>
 <li><strong>Account and authentication data:</strong> authentication identifiers required to verify the connected ORDAX account. Authentication is currently provided by Supabase Auth; passwords are handled by the identity provider and are not stored by the ORDAX Control Plane.</li>
@@ -88,11 +88,11 @@ export function publicProductPage(pathname: string): Response | null {
 <li><strong>Operational and audit data:</strong> action names, project scope, request/status identifiers, authorization decisions, execution status and timestamps needed for security, reliability and abuse investigation.</li>
 </ul>
 <h2>How data is used</h2>
-<p>Data is used to authenticate connections, enforce grants, route tool calls to the selected device, return requested results, maintain reliability and provide security/audit controls. ORDAX Dev does not request the full ChatGPT conversation history.</p>
+<p>Data is used to authenticate connections, enforce grants, route tool calls to the selected device, return requested results, maintain reliability and provide security/audit controls. ORDAX Studio does not request the full ChatGPT conversation history.</p>
 <h2>Infrastructure</h2>
 <p>The remote Control Plane uses Cloudflare services for compute and storage. Account authentication currently uses Supabase Auth. Local project data remains on the user's device unless a tool invocation requires selected data or an artifact to transit the Control Plane to fulfill the request.</p>
 <h2>Sharing and sale</h2>
-<p>ORDAX Dev does not sell personal data. Data is shared with infrastructure providers only as needed to operate the service or when required by law.</p>
+<p>ORDAX Studio does not sell personal data. Data is shared with infrastructure providers only as needed to operate the service or when required by law.</p>
 <h2>Retention</h2>
 <ul>
 <li><strong>OAuth credentials:</strong> ORDAX verifies bearer tokens for requests but does not persist the user's OAuth access token in the Control Plane. Authentication records held by the identity provider follow the account lifecycle and the provider's applicable policy.</li>
@@ -113,15 +113,15 @@ export function publicProductPage(pathname: string): Response | null {
     return html("Terms of Service", `
 <h1>Terms of Service</h1>
 <p>Effective: 1 October 2026.</p>
-<p>By using ORDAX Dev, you agree to use it only on computers, repositories, accounts and project data that you are authorized to access.</p>
+<p>By using ORDAX Studio, you agree to use it only on computers, repositories, accounts and project data that you are authorized to access.</p>
 <h2>User responsibility</h2>
 <p>You are responsible for reviewing requested write, Git, terminal and Blender actions before authorizing them and for maintaining appropriate backups and version control for important work.</p>
 <h2>Service behavior</h2>
-<p>ORDAX Dev is provided as development software. Availability may change during updates, maintenance or third-party service outages. The service may reject actions that lack a valid grant, exceed safety limits or cannot be verified.</p>
+<p>ORDAX Studio is provided as development software. Availability may change during updates, maintenance or third-party service outages. The service may reject actions that lack a valid grant, exceed safety limits or cannot be verified.</p>
 <h2>Prohibited use</h2>
-<p>You may not use ORDAX Dev to access systems without authorization, bypass security controls, distribute malicious software, or violate applicable law or third-party rights.</p>
+<p>You may not use ORDAX Studio to access systems without authorization, bypass security controls, distribute malicious software, or violate applicable law or third-party rights.</p>
 <h2>Third-party services</h2>
-<p>ORDAX Dev relies on third-party infrastructure including Cloudflare and the configured identity provider. Their terms may also apply to those services.</p>
+<p>ORDAX Studio relies on third-party infrastructure including Cloudflare and the configured identity provider. Their terms may also apply to those services.</p>
 <h2>Changes</h2>
 <p>Material changes to these terms will be reflected on this page with an updated effective date.</p>
 <p>Questions can be raised through the <a href="/support">support page</a>.</p>`);

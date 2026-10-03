@@ -1,4 +1,4 @@
-# ORDAX Dev para Windows
+# ORDAX Studio para Windows
 
 ## Produto
 
@@ -8,7 +8,7 @@ A distribuição canônica é:
 
 Ela instala:
 
-- **ORDAX Dev.exe** — painel local de projetos e diagnóstico;
+- **ORDAX Dev.exe** — launcher Windows legado/compatível que abre a Workbench do **ORDAX Studio**;
 - **ORDAX Runtime.exe** — host persistente que conecta o computador ao Control Plane.
 
 O runtime privado inclui CPython e dependências do produto, sem alterar o PATH do usuário.
@@ -19,13 +19,13 @@ A identidade do produto é a **Conta ORDAX**. Hoje ela é autenticada por Supaba
 
 O **Cloudflare** é infraestrutura do Control Plane/MCP e não exige login do usuário final.
 
-O **GitHub** é opcional e deve ser tratado como provedor de projetos/remotos. Ele não substitui a Conta ORDAX e o plugin GitHub do ChatGPT não é a ponte do ORDAX. A ponte remota é o plugin ORDAX Dev → MCP do Control Plane → ORDAX Runtime.
+O **GitHub** é opcional e deve ser tratado como provedor de projetos/remotos. Ele não substitui a Conta ORDAX e o plugin GitHub do ChatGPT não é a ponte do ORDAX. A ponte remota é o plugin ORDAX Studio → MCP do Control Plane → ORDAX Runtime.
 
 Contrato detalhado: `docs/ORDAX_IDENTITY_AND_PROVIDERS.md`.
 
 ## Uso diário
 
-1. instalar o ORDAX Dev;
+1. instalar o ORDAX Studio (o instalador/binário 0.4.1 ainda usa o nome técnico `ORDAX Dev` por compatibilidade);
 2. o Runtime inicia automaticamente com o Windows;
 3. abrir o painel para ver projetos, Git, previews, memória e status;
 4. conectar o plugin/MCP no ChatGPT quando quiser usar o ChatGPT normal como agente;
