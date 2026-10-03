@@ -99,6 +99,10 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn("LEGACY_ORDAX_STARTUP_REMOVED", workflow)
         self.assertIn("ORDAX_WORKBENCH_READY", workflow)
         self.assertIn("workbench\\ORDAX Workbench.exe", workflow)
+        self.assertIn('- "ordax_core/**"', workflow)
+        self.assertIn('- "ordax_dev_agent/**"', workflow)
+        self.assertIn('- "ordax_device_agent/**"', workflow)
+        self.assertIn('- "ordax_studio/**"', workflow)
 
 
 if __name__ == "__main__":

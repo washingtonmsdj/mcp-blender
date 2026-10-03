@@ -76,6 +76,29 @@ class OrchestratorActionsTests(unittest.TestCase):
         )
         self.assertTrue(session.ok)
 
+        checkpoint = self.registry.execute(
+            "orchestrator.session_checkpoint",
+            {
+                "session_id": session.data["id"],
+                "summary": "Mid-session checkpoint",
+                "next_action": "Continue implementation",
+                "completed": ["bootstrap"],
+                "blockers": ["review pending"],
+                "changed_paths": ["src/bootstrap.py"],
+            },
+        )
+        self.assertTrue(checkpoint.ok)
+        continuity = self.registry.execute("continuity.get", {"project": "demo"})
+        self.assertTrue(continuity.ok)
+        state = continuity.data["state"]
+        self.assertEqual("Mid-session checkpoint", state["summary"])
+        self.assertEqual("Continue implementation", state["next_action"])
+        self.assertEqual(["bootstrap"], state["completed"])
+        self.assertEqual(["review pending"], state["blockers"])
+        self.assertEqual(["src/bootstrap.py"], state["changed_paths"])
+        self.assertEqual("orchestrator", state["source"])
+        self.assertEqual(checkpoint.data["id"], state["source_ref"])
+
         usage = self.registry.execute(
             "orchestrator.session_usage",
             {
@@ -102,6 +125,15 @@ class OrchestratorActionsTests(unittest.TestCase):
             rotated.data["continuation"]["latest_checkpoint"]["next_action"],
             "Continue from tests",
         )
+        continuity = self.registry.execute("continuity.get", {"project": "demo"})
+        state = continuity.data["state"]
+        self.assertEqual("Large context checkpoint", state["summary"])
+        self.assertEqual("Continue from tests", state["next_action"])
+        self.assertEqual(["initial implementation"], state["completed"])
+        self.assertEqual(["src/app.py"], state["changed_paths"])
+        self.assertEqual("orchestrator", state["source"])
+        self.assertEqual(rotated.data["checkpoint"]["id"], state["source_ref"])
+        self.assertEqual(state, rotated.data["project_continuity"])
 
         sent = self.registry.execute(
             "orchestrator.message_send",

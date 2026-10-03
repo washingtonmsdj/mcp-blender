@@ -102,12 +102,30 @@ class AgentOrchestrationActions:
             "git_state": self._memory_store_instance().git_state(project.root),
         }
 
+    def _publish_project_continuity(self, checkpoint: dict[str, Any]) -> dict[str, Any]:
+        store = self._orchestrator_store_instance()
+        agent = store.get_agent(str(checkpoint.get("agent_id") or ""))
+        project = self._project({"project": agent["project_slug"]})
+        return self._memory_store_instance().update_project_state(
+            project.slug,
+            project.root,
+            str(checkpoint.get("summary") or ""),
+            next_action=str(checkpoint.get("next_action") or ""),
+            completed=checkpoint.get("completed") or [],
+            blockers=checkpoint.get("blockers") or [],
+            changed_paths=checkpoint.get("changed_paths") or [],
+            source="orchestrator",
+            source_ref=str(checkpoint.get("id") or "") or None,
+        )
+
     def orchestrator_session_checkpoint(self, payload: dict[str, Any]) -> ActionResult:
         checkpoint = self._orchestrator_store_instance().checkpoint(
             str(payload.get("session_id") or ""),
             **self._checkpoint_payload(payload),
         )
-        return ActionResult(True, "Agent session checkpoint saved", checkpoint)
+        data = dict(checkpoint)
+        data["project_continuity"] = self._publish_project_continuity(checkpoint)
+        return ActionResult(True, "Agent session checkpoint saved", data)
 
     def orchestrator_session_rotate(self, payload: dict[str, Any]) -> ActionResult:
         store = self._orchestrator_store_instance()
@@ -127,6 +145,7 @@ class AgentOrchestrationActions:
             session_id,
             **self._checkpoint_payload(payload),
         )
+        data["project_continuity"] = self._publish_project_continuity(data["checkpoint"])
         return ActionResult(True, "Agent session rotated with continuity checkpoint", data)
 
     def orchestrator_continuation(self, payload: dict[str, Any]) -> ActionResult:
