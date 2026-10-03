@@ -47,6 +47,7 @@
       <div class="sidebarDivider"></div>
       <nav class="workspaceTools" aria-label="Ferramentas do projeto">
         <button class="toolButton active" data-view="overview"><span>●</span>Visão geral</button>
+        <button class="toolButton" data-view="sessions"><span>◎</span>Sessões de IA</button>
         <button class="toolButton" data-view="files"><span>⌘</span>Arquivos</button>
         <button class="toolButton" data-view="search"><span>⌕</span>Buscar</button>
         <button class="toolButton" data-view="git"><span>⑂</span>Git</button>
@@ -58,6 +59,7 @@
     <section class="mainPane">
       <div class="mainHeader"><div><div class="eyebrow">PROJETO</div><strong id="mainTitle">Visão geral</strong></div></div>
       <div id="overviewCanvas" class="mainCanvas"></div>
+      <div id="sessionsCanvas" class="mainCanvas hidden"></div>
       <div id="editorCanvas" class="mainCanvas hidden"><div class="editorToolbar"><span id="fileTitle">Nenhum arquivo aberto</span><button id="saveButton" class="primary" onclick="saveFile()" disabled>Salvar</button></div><textarea id="editor" spellcheck="false" placeholder="Abra um arquivo na lista do projeto"></textarea></div>
       <div id="searchCanvas" class="mainCanvas hidden"><div class="searchHeader"><input id="codeSearch" class="searchBox large" placeholder="Busque arquivos, símbolos ou trechos..." autocomplete="off"></div><div id="searchResults" class="searchResults"></div></div>
       <div id="diffCanvas" class="mainCanvas hidden"><div class="editorToolbar"><span>Alterações Git</span><button onclick="loadGitDiff()">Atualizar</button></div><pre id="diffView" class="codeView"></pre></div>
