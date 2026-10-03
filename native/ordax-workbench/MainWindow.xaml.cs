@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -444,10 +445,32 @@ public partial class MainWindow : Window
                 ? computerSummaryElement.GetString() ?? "Computer Control indisponível"
                 : "Computer Control indisponível";
 
-            RuntimeState.Text = $"Runtime: {(deviceOk ? "online" : "local")} · MCP: {(remoteOk ? "online" : "verificando")}";
-            TopConnectionState.Text = deviceOk && remoteOk ? "Dispositivo online" : "Conexão parcial";
-            DeviceCardState.Text = deviceOk ? "Device Agent online" : "Device Agent local ou degradado";
-            McpCardState.Text = remoteOk ? "Remote MCP online" : "Remote MCP verificando";
+            var transportState = device.ValueKind == JsonValueKind.Object &&
+                                 device.TryGetProperty("transport_state", out var transportStateElement)
+                ? transportStateElement.GetString() ?? "unknown"
+                : "unknown";
+            var runtimeState = device.ValueKind == JsonValueKind.Object &&
+                               device.TryGetProperty("runtime_state", out var runtimeStateElement)
+                ? runtimeStateElement.GetString() ?? "unknown"
+                : "unknown";
+            var transportKnown = transportState is not ("" or "unknown");
+            var transportConnected = transportState == "connected" || !transportKnown;
+            var transportReconnecting = transportState is "connecting" or "reconnecting";
+            var deviceOnline = deviceOk && remoteOk && transportConnected;
+
+            RuntimeState.Text = $"Runtime: {(deviceOk ? runtimeState : "local/degradado")} · MCP: {(remoteOk ? "online" : "verificando")} · Link: {transportState}";
+            TopConnectionState.Text = deviceOnline
+                ? "Dispositivo online"
+                : transportReconnecting ? "Reconectando…" : "Conexão parcial";
+            TopConnectionDot.Fill = (Brush)FindResource(
+                deviceOnline ? "SuccessBrush" : transportReconnecting ? "WarningBrush" : "MutedBrush"
+            );
+            DeviceCardState.Text = deviceOk
+                ? $"Device Agent {runtimeState} · transporte {transportState}"
+                : "Device Agent local ou degradado";
+            McpCardState.Text = remoteOk
+                ? transportConnected ? "Remote MCP + dispositivo conectados" : $"Remote MCP online · dispositivo {transportState}"
+                : "Remote MCP verificando";
             ComputerControlState.Text = computerSummary;
             ComputerRailState.Text = computerOk ? "Computer Control disponível" : "Computer Control parcial";
             ActionCountState.Text = actionCount > 0 ? actionCount.ToString() : "—";
@@ -456,6 +479,7 @@ public partial class MainWindow : Window
         {
             RuntimeState.Text = "Runtime: bridge indisponível";
             TopConnectionState.Text = "Bridge indisponível";
+            TopConnectionDot.Fill = (Brush)FindResource("MutedBrush");
             DeviceCardState.Text = "Device Agent indisponível";
             McpCardState.Text = "Remote MCP indisponível";
             ComputerControlState.Text = "Computer Control indisponível";

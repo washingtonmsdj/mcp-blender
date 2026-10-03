@@ -9,276 +9,209 @@
     <Grid.RowDefinitions>
       <RowDefinition Height="64"/>
       <RowDefinition Height="*"/>
-      <RowDefinition Height="28"/>
+      <RowDefinition Height="30"/>
     </Grid.RowDefinitions>
 
-    <Border Grid.Row="0" Background="#091522" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+    <!-- Native chrome only. Project navigation belongs to the shared Studio surface. -->
+    <Border Grid.Row="0" Background="#08131F" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
       <Grid Margin="18,0">
         <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-          <Border Width="34" Height="34" CornerRadius="9" Background="{StaticResource AccentSoftBrush}" Margin="0,0,12,0">
-            <TextBlock Text="O" FontWeight="Bold" FontSize="17" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#DDEEFF"/>
+          <Border Width="36" Height="36" CornerRadius="11" Background="#E5F0FF" Margin="0,0,12,0">
+            <Grid>
+              <Ellipse Width="13" Height="13" Fill="#0D1A29" HorizontalAlignment="Left" Margin="8,0,0,0"/>
+              <Border Width="14" Height="4" Background="#0D1A29" CornerRadius="2" HorizontalAlignment="Right" Margin="0,0,6,0" RenderTransformOrigin="0.5,0.5">
+                <Border.RenderTransform><RotateTransform Angle="-45"/></Border.RenderTransform>
+              </Border>
+            </Grid>
           </Border>
-          <StackPanel>
-            <TextBlock Text="ORDAX Studio" FontSize="17" FontWeight="SemiBold"/>
-            <TextBlock Text="Computer Control · projetos · MCP auditável" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="ORDAX Studio" FontSize="18" FontWeight="SemiBold"/>
+            <TextBlock Text="Projetos · IA · Computer Control" FontSize="10" Foreground="{StaticResource MutedBrush}"/>
           </StackPanel>
-        </StackPanel>        <Border Grid.Column="2" Background="#0D2134" BorderBrush="#244C70" BorderThickness="1" CornerRadius="12" Padding="12,6" VerticalAlignment="Center">
-          <TextBlock x:Name="TopConnectionState" Text="Conectando…" FontSize="11" Foreground="#BFD9F7"/>
+        </StackPanel>
+
+        <Border Grid.Column="1" Margin="24,0,0,0" Padding="16,0,0,0" BorderBrush="#20334A" BorderThickness="1,0,0,0" VerticalAlignment="Center">
+          <StackPanel>
+            <TextBlock Text="PROJETO" FontSize="9" FontWeight="SemiBold" Foreground="#6E86A4"/>
+            <TextBlock x:Name="ProjectRailState" Text="Carregando projeto…" FontSize="12" FontWeight="SemiBold" Foreground="#DCE8F7" Margin="0,2,0,0" MaxWidth="420" TextTrimming="CharacterEllipsis"/>
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Column="3" Background="#0D2134" BorderBrush="#294D70" BorderThickness="1" CornerRadius="12" Padding="12,7" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal">
+            <Ellipse x:Name="TopConnectionDot" Width="7" Height="7" Fill="{StaticResource MutedBrush}" Margin="0,0,7,0" VerticalAlignment="Center"/>
+            <TextBlock x:Name="TopConnectionState" Text="Conectando…" FontSize="11" Foreground="#C5DCF7"/>
+          </StackPanel>
         </Border>
       </Grid>
     </Border>
 
-    <Grid Grid.Row="1">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="286"/>
-        <ColumnDefinition Width="*"/>
-      </Grid.ColumnDefinitions>
+    <Border Grid.Row="1" Background="{StaticResource BgBrush}">
+      <TabControl x:Name="WorkTabs" SelectionChanged="WorkTabs_SelectionChanged" Margin="0" Padding="0">
+        <TabItem Header="Projeto">
+          <Grid Background="#060D15">
+            <wv2:WebView2CompositionControl x:Name="StudioView" DefaultBackgroundColor="#07101B"/>
+          </Grid>
+        </TabItem>
 
-      <Border Grid.Column="0" Background="#09131F" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="16">
-            <TextBlock Text="COMPUTADOR" FontSize="10" FontWeight="SemiBold" Foreground="#6683A3" Margin="4,4,4,8"/>
-            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="14" Margin="0,0,0,10">
-              <StackPanel>
-                <TextBlock Text="Este computador" FontSize="13" FontWeight="SemiBold"/>
-                <TextBlock x:Name="ComputerRailState" Text="Verificando capacidades…" Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-              </StackPanel>
-            </Border>
+        <TabItem Header="Web IA">
+          <Grid Background="#07101A">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="48"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0" Background="#0B1724" Margin="0,0,0,1">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <ComboBox x:Name="ProviderSelector" Margin="8,6" SelectionChanged="ProviderSelector_SelectionChanged"/>
+              <Button Grid.Column="1" Content="←" Click="ProviderBack_Click" ToolTip="Voltar"/>
+              <Button Grid.Column="2" Content="→" Click="ProviderForward_Click" ToolTip="Avançar"/>
+              <TextBox Grid.Column="3" x:Name="ProviderAddress" Margin="6" VerticalContentAlignment="Center" KeyDown="ProviderAddress_KeyDown"/>
+              <Button Grid.Column="4" Content="↻" Click="ProviderRefresh_Click" ToolTip="Atualizar"/>
+            </Grid>
+            <wv2:WebView2CompositionControl x:Name="ProviderView" Grid.Row="1" DefaultBackgroundColor="#07101A"/>
+          </Grid>
+        </TabItem>
 
-            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="14" Margin="0,0,0,10">
-              <StackPanel>
-                <TextBlock Text="Conexão" FontSize="13" FontWeight="SemiBold"/>
-                <TextBlock x:Name="RuntimeState" Text="Runtime: conectando…" Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+        <TabItem Header="Preview">
+          <Grid Background="#050B12">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="48"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0" Background="#0B1724">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel Margin="14,5" VerticalAlignment="Center">
+                <TextBlock x:Name="PreviewAddress" Text="Preview do projeto" FontWeight="SemiBold"/>
+                <TextBlock Text="Visualização ampla da mesma superfície de projeto" FontSize="9" Foreground="{StaticResource MutedBrush}"/>
               </StackPanel>
-            </Border>            <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="14" Margin="0,0,0,10">
-              <StackPanel>
-                <TextBlock Text="Projeto ativo" FontSize="13" FontWeight="SemiBold"/>
-                <TextBlock x:Name="ProjectRailState" Text="Carregando projeto…" Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-              </StackPanel>
-            </Border>
+              <Button Grid.Column="1" Content="Iniciar" Click="StartPreview_Click" Style="{StaticResource PrimaryButton}"/>
+              <Button Grid.Column="2" Content="Capturar" Click="CapturePreview_Click"/>
+              <Button Grid.Column="3" Content="Atualizar" Click="RefreshPreview_Click"/>
+            </Grid>
+            <wv2:WebView2CompositionControl x:Name="PreviewView" Grid.Row="1" DefaultBackgroundColor="#040A11"/>
+          </Grid>
+        </TabItem>
 
-            <TextBlock Text="SEGURANÇA" FontSize="10" FontWeight="SemiBold" Foreground="#6683A3" Margin="4,10,4,8"/>
-            <Border Background="#0B1925" BorderBrush="#29425D" BorderThickness="1" CornerRadius="12" Padding="14" Margin="0,0,0,10">
-              <StackPanel>
-                <TextBlock Text="Acesso remoto com grants" FontSize="13" FontWeight="SemiBold"/>
-                <TextBlock Text="Ações do GPT passam pelo MCP e pelo Action Gateway. Nenhuma capability ganha autoridade só por existir."
-                           Margin="0,6,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="11" LineHeight="17"/>
-              </StackPanel>
-            </Border>
+        <TabItem Header="Browser">
+          <Grid Background="#07101A">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="48"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0" Background="#0B1724">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <TextBox x:Name="WorkbenchBrowserAddress" Margin="8,6" VerticalContentAlignment="Center" KeyDown="WorkbenchBrowserAddress_KeyDown"/>
+              <Button Grid.Column="1" Content="Abrir" Click="WorkbenchBrowserGo_Click" Style="{StaticResource PrimaryButton}"/>
+            </Grid>
+            <wv2:WebView2CompositionControl x:Name="WorkbenchBrowserView" Grid.Row="1" DefaultBackgroundColor="#07101A"/>
+          </Grid>
+        </TabItem>
 
-            <TextBlock Text="CAPACIDADES ESPECIALIZADAS" FontSize="10" FontWeight="SemiBold" Foreground="#6683A3" Margin="4,10,4,8"/>
-            <Border Background="#0A151F" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="14">
-              <StackPanel>
-                <TextBlock Text="Blender · Unity" FontSize="12" Foreground="{StaticResource TextBrush}"/>
-                <TextBlock Text="Adapters do Studio — secundários ao Computer Control" Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="11"/>
-              </StackPanel>
-            </Border>
-          </StackPanel>
-        </ScrollViewer>
-      </Border>
+        <TabItem Header="Execuções">
+          <Grid Background="#07101A">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="48"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0" Background="#0B1724">
+              <TextBlock Text="Execuções do projeto" FontSize="13" FontWeight="SemiBold" Margin="14,0" VerticalAlignment="Center"/>
+              <Button Content="Atualizar" HorizontalAlignment="Right" Margin="0,6,8,6" Click="RefreshExecutions_Click"/>
+            </Grid>
+            <TextBox x:Name="ExecutionState" Grid.Row="1" Margin="10" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Cascadia Code, Consolas" FontSize="11"/>
+          </Grid>
+        </TabItem>
 
-      <Border Grid.Column="1" Background="{StaticResource BgBrush}">
-        <TabControl x:Name="WorkTabs" SelectionChanged="WorkTabs_SelectionChanged" Margin="14,12,14,8">
-          <TabItem Header="Visão geral">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" Background="{StaticResource BgBrush}">              <StackPanel Margin="8,14,8,24">
-                <Border Background="#10243A" BorderBrush="#28547D" BorderThickness="1" CornerRadius="16" Padding="22" Margin="0,0,0,16">
-                  <Grid>
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*"/>
-                      <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel>
-                      <TextBlock Text="Controle do computador" FontSize="22" FontWeight="SemiBold"/>
-                      <TextBlock Text="GPT + ORDAX Runtime, com ações tipadas e permissões auditáveis."
-                                 FontSize="12" Foreground="#AFC6E0" Margin="0,6,0,0"/>
-                      <TextBlock x:Name="ComputerControlState" Text="Verificando Computer Control…"
-                                 FontSize="13" Foreground="{StaticResource SuccessBrush}" FontWeight="SemiBold" Margin="0,14,0,0"/>
-                    </StackPanel>
-                    <Border Grid.Column="1" Background="#0C1B2A" BorderBrush="#2A5278" BorderThickness="1" CornerRadius="12" Padding="16,10" VerticalAlignment="Center">
-                      <StackPanel>
-                        <TextBlock Text="MCP" HorizontalAlignment="Center" Foreground="#7FA7D1" FontSize="10"/>
-                        <TextBlock x:Name="ActionCountState" Text="—" HorizontalAlignment="Center" FontSize="20" FontWeight="Bold"/>
-                        <TextBlock Text="ações do dispositivo" HorizontalAlignment="Center" Foreground="{StaticResource MutedBrush}" FontSize="10"/>
-                      </StackPanel>
-                    </Border>
-                  </Grid>
+        <TabItem Header="Diagnóstico">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Background="#07101A">
+            <StackPanel Margin="20" MaxWidth="1180" HorizontalAlignment="Stretch">
+              <Grid Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,7,0">
+                  <StackPanel>
+                    <TextBlock Text="Device Agent" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="DeviceCardState" Text="Verificando…" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                  </StackPanel>
                 </Border>
+                <Border Grid.Column="1" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="7,0">
+                  <StackPanel>
+                    <TextBlock Text="Remote MCP" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="McpCardState" Text="Verificando…" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="7,0,0,0">
+                  <StackPanel>
+                    <TextBlock Text="Projeto" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="ProjectCardState" Text="Carregando…" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Border>
+              </Grid>
 
-                <Grid Margin="0,0,0,16">
+              <Border Background="#0D2033" BorderBrush="#294D70" BorderThickness="1" CornerRadius="14" Padding="18" Margin="0,0,0,14">
+                <Grid>
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                  </Grid.ColumnDefinitions>                  <Border Grid.Column="0" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,8,0">
-                    <StackPanel>
-                      <TextBlock Text="Device Agent" FontWeight="SemiBold"/>
-                      <TextBlock x:Name="DeviceCardState" Text="Verificando…" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                    </StackPanel>
-                  </Border>
-                  <Border Grid.Column="1" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="4,0">
-                    <StackPanel>
-                      <TextBlock Text="Remote MCP" FontWeight="SemiBold"/>
-                      <TextBlock x:Name="McpCardState" Text="Verificando…" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                    </StackPanel>
-                  </Border>
-                  <Border Grid.Column="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="8,0,0,0">
-                    <StackPanel>
-                      <TextBlock Text="Projeto" FontWeight="SemiBold"/>
-                      <TextBlock x:Name="ProjectCardState" Text="Carregando…" Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                    </StackPanel>
-                  </Border>
-                </Grid>
-
-                <TextBlock Text="Capacidades do computador" FontSize="15" FontWeight="SemiBold" Margin="2,4,0,10"/>
-                <Grid Margin="0,0,0,16">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                   </Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                  </Grid.RowDefinitions>                  <Border Grid.Row="0" Grid.Column="0" Background="#0C1824" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,8,8">
+                  <StackPanel>
+                    <TextBlock Text="Computer Control" FontSize="16" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="ComputerControlState" Text="Verificando Computer Control…" Foreground="#BFD9F7" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="ComputerRailState" Text="Computer Control verificando" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
+                  </StackPanel>
+                  <Border Grid.Column="1" Background="#08131F" BorderBrush="#294D70" BorderThickness="1" CornerRadius="10" Padding="16,10" VerticalAlignment="Center">
                     <StackPanel>
-                      <TextBlock Text="Tela e janelas" FontWeight="SemiBold"/>
-                      <TextBlock Text="Screenshot · monitores · janela ativa · foco" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,0"/>
-                    </StackPanel>
-                  </Border>
-                  <Border Grid.Row="0" Grid.Column="1" Background="#0C1824" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="8,0,0,8">
-                    <StackPanel>
-                      <TextBlock Text="Mouse e teclado" FontWeight="SemiBold"/>
-                      <TextBlock Text="Click · scroll · mover · arrastar · digitar · hotkeys" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,0"/>
-                    </StackPanel>
-                  </Border>
-                  <Border Grid.Row="1" Grid.Column="0" Background="#0C1824" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,8,8,0">
-                    <StackPanel>
-                      <TextBlock Text="Arquivos e execução" FontWeight="SemiBold"/>
-                      <TextBlock Text="Filesystem permitido · processos · terminal por grant" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,0"/>
-                    </StackPanel>
-                  </Border>
-                  <Border Grid.Row="1" Grid.Column="1" Background="#0C1824" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16" Margin="8,8,0,0">
-                    <StackPanel>
-                      <TextBlock Text="Clipboard e aplicativos" FontWeight="SemiBold"/>
-                      <TextBlock Text="Clipboard tipado · abrir apps · browser gerenciado" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,0"/>
+                      <TextBlock Text="AÇÕES" FontSize="9" Foreground="#7188A6" HorizontalAlignment="Center"/>
+                      <TextBlock x:Name="ActionCountState" Text="—" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center"/>
                     </StackPanel>
                   </Border>
                 </Grid>
+              </Border>
 
-                <TextBlock Text="Atividade recente" FontSize="15" FontWeight="SemiBold" Margin="2,4,0,10"/>
-                <TextBox x:Name="ActivityLog" MinHeight="150" MaxHeight="240" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Cascadia Code, Consolas" FontSize="11"/>
-              </StackPanel>
-            </ScrollViewer>
-          </TabItem>          <TabItem Header="Studio">
-            <Border Background="#08111B" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="1">
-              <wv2:WebView2CompositionControl x:Name="StudioView" DefaultBackgroundColor="#080F19"/>
-            </Border>
-          </TabItem>
+              <TextBlock Text="Atividade local" FontSize="14" FontWeight="SemiBold" Margin="2,0,0,8"/>
+              <TextBox x:Name="ActivityLog" MinHeight="190" MaxHeight="340" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Cascadia Code, Consolas" FontSize="11"/>
+            </StackPanel>
+          </ScrollViewer>
+        </TabItem>
+      </TabControl>
+    </Border>
 
-          <TabItem Header="Web IA">
-            <Grid Background="#07101A">
-              <Grid.RowDefinitions>
-                <RowDefinition Height="48"/>
-                <RowDefinition Height="*"/>
-              </Grid.RowDefinitions>
-              <Grid Grid.Row="0" Background="#0B1724" Margin="0,0,0,8">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="150"/>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <ComboBox x:Name="ProviderSelector" Margin="4,5" SelectionChanged="ProviderSelector_SelectionChanged"/>
-                <Button Grid.Column="1" Content="←" Click="ProviderBack_Click" ToolTip="Voltar"/>
-                <Button Grid.Column="2" Content="→" Click="ProviderForward_Click" ToolTip="Avançar"/>
-                <TextBox Grid.Column="3" x:Name="ProviderAddress" Margin="4,6" VerticalContentAlignment="Center" KeyDown="ProviderAddress_KeyDown"/>
-                <Button Grid.Column="4" Content="↻" Click="ProviderRefresh_Click" ToolTip="Atualizar"/>
-              </Grid>
-              <wv2:WebView2CompositionControl x:Name="ProviderView" Grid.Row="1" DefaultBackgroundColor="#07101A"/>
-            </Grid>
-          </TabItem>
-
-          <TabItem Header="Preview">
-            <Grid>
-              <Grid.RowDefinitions>
-                <RowDefinition Height="48"/>
-                <RowDefinition Height="*"/>
-              </Grid.RowDefinitions>              <Grid Grid.Row="0" Background="#0B1724" Margin="0,0,0,8">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel Margin="12,3,8,3" VerticalAlignment="Center">
-                  <TextBlock x:Name="PreviewAddress" Text="Preview do projeto"/>
-                  <TextBlock Text="Preview pertence ao projeto; Computer Control é independente." FontSize="10" Foreground="{StaticResource MutedBrush}"/>
-                </StackPanel>
-                <Button Grid.Column="1" Content="Iniciar" Click="StartPreview_Click" Style="{StaticResource PrimaryButton}"/>
-                <Button Grid.Column="2" Content="Capturar" Click="CapturePreview_Click"/>
-                <Button Grid.Column="3" Content="Atualizar" Click="RefreshPreview_Click"/>
-              </Grid>
-              <wv2:WebView2CompositionControl x:Name="PreviewView" Grid.Row="1" DefaultBackgroundColor="#040A11"/>
-            </Grid>
-          </TabItem>
-
-          <TabItem Header="Browser">
-            <Grid>
-              <Grid.RowDefinitions>
-                <RowDefinition Height="48"/>
-                <RowDefinition Height="*"/>
-              </Grid.RowDefinitions>
-              <Grid Grid.Row="0" Background="#0B1724" Margin="0,0,0,8">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBox x:Name="WorkbenchBrowserAddress" Margin="6" KeyDown="WorkbenchBrowserAddress_KeyDown"/>
-                <Button Grid.Column="1" Content="Abrir" Click="WorkbenchBrowserGo_Click" Style="{StaticResource PrimaryButton}"/>
-              </Grid>
-              <wv2:WebView2CompositionControl x:Name="WorkbenchBrowserView" Grid.Row="1" DefaultBackgroundColor="#FFFFFF"/>
-            </Grid>
-          </TabItem>
-          <TabItem Header="Execuções">
-            <Grid Background="#07101A">
-              <Grid.RowDefinitions>
-                <RowDefinition Height="48"/>
-                <RowDefinition Height="*"/>
-              </Grid.RowDefinitions>
-              <Grid Grid.Row="0" Background="#0B1724" Margin="0,0,0,8">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel Margin="12,4" VerticalAlignment="Center">
-                  <TextBlock Text="Runtime e automações" FontWeight="SemiBold"/>
-                  <TextBlock Text="Processos persistentes e browsers gerenciados do projeto" FontSize="10" Foreground="{StaticResource MutedBrush}"/>
-                </StackPanel>
-                <Button Grid.Column="1" Content="Atualizar" Click="RefreshExecutions_Click"/>
-              </Grid>
-              <TextBox Grid.Row="1" x:Name="ExecutionState" Margin="0" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Cascadia Code, Consolas" FontSize="12"/>
-            </Grid>
-          </TabItem>
-        </TabControl>
-      </Border>
-    </Grid>
-
-    <Border Grid.Row="2" Background="#08121D" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+    <Border Grid.Row="2" Background="#08121E" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
       <Grid Margin="12,0">
         <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="*"/>
           <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
-        <TextBlock x:Name="StatusText" Text="Pronto" FontSize="10" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
-        <TextBlock Grid.Column="1" Text="Provider web ≠ automação · Computer Control passa por MCP + grants"
-                   FontSize="10" Foreground="#60738C" VerticalAlignment="Center"/>
+        <TextBlock x:Name="RuntimeState" Text="Runtime: conectando…" FontSize="10" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1" Text="  ·  grants auditáveis" FontSize="10" Foreground="#6E829C" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="2" Text=""/>
+        <TextBlock Grid.Column="3" x:Name="StatusText" Text="Inicializando" FontSize="10" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
       </Grid>
     </Border>
   </Grid>
