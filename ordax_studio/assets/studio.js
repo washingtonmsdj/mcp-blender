@@ -77,4 +77,14 @@ async function capturePreview(){setStatus('Capturando preview...');const result=
 async function togglePreviewLogs(){const box=$('previewLogs');const opening=box.style.display!=='block';box.style.display=opening?'block':'none';if(opening){const result=await call('preview_logs',65536);box.textContent=result?.ok?(result.data.tail||'(sem logs)'):(result?.summary||'Falha ao ler logs');box.scrollTop=box.scrollHeight}}
 function togglePreviewFocus(){$('workspace').classList.toggle('previewFocus')}
 setInterval(()=>{if(state.project&&!state.previewPreparing)refreshPreview(false)},3500);
-window.addEventListener('pywebviewready',init);
+let initStarted=false;
+function startInitOnce(){
+  if(initStarted)return;
+  initStarted=true;
+  void init();
+}
+window.addEventListener('pywebviewready',startInitOnce,{once:true});
+if(window.chrome?.webview){
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',startInitOnce,{once:true});
+  else queueMicrotask(startInitOnce);
+}

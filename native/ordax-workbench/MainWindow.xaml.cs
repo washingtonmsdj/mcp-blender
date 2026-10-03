@@ -20,8 +20,13 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _runtimeTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly List<ProviderDefinition> _providers = new();
     private StudioBridgeClient? _bridge;
+    private readonly SemaphoreSlim _viewInitLock = new(1, 1);
     private bool _ready;
     private bool _refreshingStatus;
+    private bool _studioViewReady;
+    private bool _providerViewReady;
+    private bool _previewViewReady;
+    private bool _browserViewReady;
 
     public MainWindow()
     {
@@ -39,17 +44,12 @@ public partial class MainWindow : Window
             _bridge = new StudioBridgeClient(LogActivity);
             await _bridge.StartAsync();
 
-            await InitializeViewAsync(ProviderView, "provider");
-            await InitializeViewAsync(StudioView, "studio");
-            await InitializeViewAsync(PreviewView, "preview-visible");
-            await InitializeViewAsync(WorkbenchBrowserView, "user-browser");
-
-            ConfigureProviderView();
-            ConfigureStudioView();
-            ConfigureWorkbenchBrowser();
+            // The shared Studio surface is the product. Auxiliary WebViews are
+            // intentionally lazy so a hidden provider/browser/preview can never
+            // block project startup.
+            await EnsureStudioViewAsync();
 
             _ready = true;
-            ProviderSelector.SelectedIndex = 0;
             await RefreshWorkbenchStateAsync();
             _runtimeTimer.Start();
             StatusText.Text = "Workbench pronta";
@@ -75,6 +75,83 @@ public partial class MainWindow : Window
         await view.EnsureCoreWebView2Async();
         view.CoreWebView2.Settings.AreDevToolsEnabled = true;
         view.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+    }
+
+    private async Task EnsureStudioViewAsync()
+    {
+        if (_studioViewReady)
+            return;
+        await _viewInitLock.WaitAsync();
+        try
+        {
+            if (_studioViewReady)
+                return;
+            await InitializeViewAsync(StudioView, "studio");
+            ConfigureStudioView();
+            _studioViewReady = true;
+        }
+        finally
+        {
+            _viewInitLock.Release();
+        }
+    }
+
+    private async Task EnsureProviderViewAsync()
+    {
+        if (_providerViewReady)
+            return;
+        await _viewInitLock.WaitAsync();
+        try
+        {
+            if (_providerViewReady)
+                return;
+            await InitializeViewAsync(ProviderView, "provider");
+            ConfigureProviderView();
+            _providerViewReady = true;
+            if (ProviderSelector.SelectedIndex < 0)
+                ProviderSelector.SelectedIndex = 0;
+        }
+        finally
+        {
+            _viewInitLock.Release();
+        }
+    }
+
+    private async Task EnsurePreviewViewAsync()
+    {
+        if (_previewViewReady)
+            return;
+        await _viewInitLock.WaitAsync();
+        try
+        {
+            if (_previewViewReady)
+                return;
+            await InitializeViewAsync(PreviewView, "preview-visible");
+            _previewViewReady = true;
+        }
+        finally
+        {
+            _viewInitLock.Release();
+        }
+    }
+
+    private async Task EnsureBrowserViewAsync()
+    {
+        if (_browserViewReady)
+            return;
+        await _viewInitLock.WaitAsync();
+        try
+        {
+            if (_browserViewReady)
+                return;
+            await InitializeViewAsync(WorkbenchBrowserView, "user-browser");
+            ConfigureWorkbenchBrowser();
+            _browserViewReady = true;
+        }
+        finally
+        {
+            _viewInitLock.Release();
+        }
     }
 
     private void ConfigureProviderView()
@@ -206,10 +283,19 @@ public partial class MainWindow : Window
     {
         if (!_ready || WorkTabs.SelectedItem is not TabItem tab)
             return;
-        if (Equals(tab.Header, "Preview"))
+        if (Equals(tab.Header, "Web IA"))
+            await EnsureProviderViewAsync();
+        else if (Equals(tab.Header, "Preview"))
+        {
+            await EnsurePreviewViewAsync();
             await RefreshPreviewAsync();
+        }
+        else if (Equals(tab.Header, "Browser"))
+            await EnsureBrowserViewAsync();
         else if (Equals(tab.Header, "Execuções"))
             await RefreshExecutionStateAsync();
+        else if (Equals(tab.Header, "Diagnóstico"))
+            await RefreshWorkbenchStateAsync();
     }
 
     private async void RefreshPreview_Click(object sender, RoutedEventArgs e) => await RefreshPreviewAsync();
