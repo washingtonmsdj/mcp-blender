@@ -45,8 +45,14 @@ class _Executor:
             "computer.windows",
             "computer.active_window",
             "computer.screenshot",
+            "computer.screen_info",
+            "computer.clipboard_read",
             "computer.focus_window",
             "computer.click",
+            "computer.mouse_move",
+            "computer.drag",
+            "computer.clipboard_write",
+            "computer.launch_app",
             "computer.scroll",
             "computer.type",
             "computer.hotkey",
@@ -164,8 +170,14 @@ class ProductMcpFacadeTests(unittest.TestCase):
                 "computer_windows",
                 "computer_active_window",
                 "computer_screenshot",
+                "computer_screen_info",
+                "computer_clipboard_read",
                 "computer_focus_window",
                 "computer_click",
+                "computer_mouse_move",
+                "computer_drag",
+                "computer_clipboard_write",
+                "computer_launch_app",
                 "computer_scroll",
                 "computer_type",
                 "computer_hotkey",
@@ -214,6 +226,12 @@ class ProductMcpFacadeTests(unittest.TestCase):
         self.assertEqual(effects["browser_start"], "write")
         self.assertEqual(effects["computer_screenshot"], "read")
         self.assertEqual(effects["computer_click"], "write")
+        self.assertEqual(effects["computer_screen_info"], "read")
+        self.assertEqual(effects["computer_clipboard_read"], "read")
+        self.assertEqual(effects["computer_mouse_move"], "write")
+        self.assertEqual(effects["computer_drag"], "write")
+        self.assertEqual(effects["computer_clipboard_write"], "write")
+        self.assertEqual(effects["computer_launch_app"], "write")
         self.assertEqual(effects["computer_access_status"], "read")
         self.assertEqual(effects["computer_text_read"], "read")
         self.assertEqual(effects["computer_search"], "read")

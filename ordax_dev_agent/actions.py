@@ -26,6 +26,7 @@ from .workspace_actions import WorkspaceActions
 from .preview_actions import PreviewActions
 from .browser_session_actions import BrowserSessionActions
 from .computer_control_actions import ComputerControlActions
+from .computer_parity_actions import ComputerParityActions
 from .computer_filesystem_actions import ComputerFilesystemActions
 from .memory_actions import MemoryActions
 from .component_actions import ComponentActions
@@ -82,6 +83,7 @@ class ActionRegistry(
     PreviewActions,
     BrowserSessionActions,
     ComputerControlActions,
+    ComputerParityActions,
     ComputerFilesystemActions,
     MemoryActions,
     ComponentActions,
@@ -152,6 +154,12 @@ class ActionRegistry(
             "computer.windows": self.computer_windows,
             "computer.active_window": self.computer_active_window,
             "computer.screenshot": self.computer_screenshot,
+            "computer.screen_info": self.computer_screen_info,
+            "computer.mouse_move": self.computer_mouse_move,
+            "computer.drag": self.computer_drag,
+            "computer.clipboard_read": self.computer_clipboard_read,
+            "computer.clipboard_write": self.computer_clipboard_write,
+            "computer.launch_app": self.computer_launch_app,
             "computer.focus_window": self.computer_focus_window,
             "computer.click": self.computer_click,
             "computer.type": self.computer_type,

@@ -210,6 +210,16 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
         local_action="computer.screenshot",
         allowed_fields=frozenset({"project", "mode"}),
     ),
+    "computer.screen_info": ProductActionSpec(
+        name="computer.screen_info",
+        local_action="computer.screen_info",
+        allowed_fields=frozenset({"project"}),
+    ),
+    "computer.clipboard_read": ProductActionSpec(
+        name="computer.clipboard_read",
+        local_action="computer.clipboard_read",
+        allowed_fields=frozenset({"project", "max_bytes"}),
+    ),
     "computer.access_status": ProductActionSpec(
         name="computer.access_status",
         local_action="computer.access_status",
@@ -377,6 +387,30 @@ PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
         "computer.click",
         "computer.click",
         frozenset({"project", "x", "y", "button", "clicks"}),
+        effect="write",
+    ),
+    "computer.mouse_move": ProductActionSpec(
+        "computer.mouse_move",
+        "computer.mouse_move",
+        frozenset({"project", "x", "y", "duration_ms"}),
+        effect="write",
+    ),
+    "computer.drag": ProductActionSpec(
+        "computer.drag",
+        "computer.drag",
+        frozenset({"project", "from_x", "from_y", "to_x", "to_y", "button", "duration_ms"}),
+        effect="write",
+    ),
+    "computer.clipboard_write": ProductActionSpec(
+        "computer.clipboard_write",
+        "computer.clipboard_write",
+        frozenset({"project", "text"}),
+        effect="write",
+    ),
+    "computer.launch_app": ProductActionSpec(
+        "computer.launch_app",
+        "computer.launch_app",
+        frozenset({"project", "application", "args"}),
         effect="write",
     ),
     "computer.scroll": ProductActionSpec(
