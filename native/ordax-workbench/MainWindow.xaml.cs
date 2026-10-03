@@ -391,12 +391,13 @@ public partial class MainWindow : Window
             if (runningBrowsers == 0)
                 builder.AppendLine("  nenhum browser gerenciado ativo");
 
-            ExecutionSummary.Text = $"{project} · {runningProcesses} processo(s) · {runningBrowsers} browser(s) gerenciado(s)";
+            ProjectRailState.Text = project;
+            ProjectCardState.Text = $"{project} · {runningProcesses} processo(s) · {runningBrowsers} browser(s) gerenciado(s)";
             ExecutionState.Text = builder.ToString();
         }
         catch (Exception error)
         {
-            ExecutionSummary.Text = "Monitor do Runtime indisponível";
+            ProjectCardState.Text = "Monitor do Runtime indisponível";
             ExecutionState.Text = error.Message;
         }
     }
@@ -429,11 +430,37 @@ public partial class MainWindow : Window
                            remote.TryGetProperty("ok", out var remoteOkElement) &&
                            remoteOkElement.ValueKind == JsonValueKind.True;
 
+            var computer = data.TryGetProperty("computer_control", out var computerElement) ? computerElement : default;
+            var computerOk = computer.ValueKind == JsonValueKind.Object &&
+                             computer.TryGetProperty("ok", out var computerOkElement) &&
+                             computerOkElement.ValueKind == JsonValueKind.True;
+            var actionCount = computer.ValueKind == JsonValueKind.Object &&
+                              computer.TryGetProperty("action_count", out var actionCountElement) &&
+                              actionCountElement.ValueKind == JsonValueKind.Number
+                ? actionCountElement.GetInt32()
+                : 0;
+            var computerSummary = computer.ValueKind == JsonValueKind.Object &&
+                                  computer.TryGetProperty("summary", out var computerSummaryElement)
+                ? computerSummaryElement.GetString() ?? "Computer Control indisponível"
+                : "Computer Control indisponível";
+
             RuntimeState.Text = $"Runtime: {(deviceOk ? "online" : "local")} · MCP: {(remoteOk ? "online" : "verificando")}";
+            TopConnectionState.Text = deviceOk && remoteOk ? "Dispositivo online" : "Conexão parcial";
+            DeviceCardState.Text = deviceOk ? "Device Agent online" : "Device Agent local ou degradado";
+            McpCardState.Text = remoteOk ? "Remote MCP online" : "Remote MCP verificando";
+            ComputerControlState.Text = computerSummary;
+            ComputerRailState.Text = computerOk ? "Computer Control disponível" : "Computer Control parcial";
+            ActionCountState.Text = actionCount > 0 ? actionCount.ToString() : "—";
         }
         catch (Exception error)
         {
             RuntimeState.Text = "Runtime: bridge indisponível";
+            TopConnectionState.Text = "Bridge indisponível";
+            DeviceCardState.Text = "Device Agent indisponível";
+            McpCardState.Text = "Remote MCP indisponível";
+            ComputerControlState.Text = "Computer Control indisponível";
+            ComputerRailState.Text = "Computer Control indisponível";
+            ActionCountState.Text = "—";
             LogActivity($"Status: {error.Message}");
         }
     }

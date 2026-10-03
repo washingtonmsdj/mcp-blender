@@ -280,6 +280,45 @@ class StudioApi:
             except (httpx.HTTPError, ValueError) as error:
                 remote_mcp["summary"] = f"Remote MCP indisponível: {type(error).__name__}"
 
+        action_names = set(self.agent.names)
+        desktop_actions = sorted(
+            name for name in action_names
+            if name.startswith(("computer.", "terminal.", "browser.", "process."))
+        )
+        core_desktop = {
+            "computer.windows", "computer.active_window", "computer.screenshot",
+            "computer.focus_window", "computer.click", "computer.scroll",
+            "computer.type_text", "computer.hotkey", "computer.processes",
+            "computer.access_status", "computer.directory_list", "computer.text_read",
+            "computer.screen_info", "computer.mouse_move", "computer.drag",
+            "computer.clipboard_read", "computer.clipboard_write", "computer.launch_app",
+        }
+        computer_control = {
+            "ok": os.name == "nt" and core_desktop.issubset(action_names),
+            "platform_supported": os.name == "nt",
+            "action_count": len(desktop_actions),
+            "screen_and_windows": all(name in action_names for name in (
+                "computer.windows", "computer.active_window", "computer.screenshot",
+                "computer.focus_window", "computer.screen_info",
+            )),
+            "input": all(name in action_names for name in (
+                "computer.click", "computer.scroll", "computer.type_text",
+                "computer.hotkey", "computer.mouse_move", "computer.drag",
+            )),
+            "filesystem": all(name in action_names for name in (
+                "computer.access_status", "computer.directory_list", "computer.text_read",
+            )),
+            "clipboard_and_apps": all(name in action_names for name in (
+                "computer.clipboard_read", "computer.clipboard_write", "computer.launch_app",
+            )),
+            "terminal": "terminal.exec" in action_names,
+            "summary": (
+                "Computer Control disponível via grants MCP"
+                if os.name == "nt" and core_desktop.issubset(action_names)
+                else "Computer Control parcial ou indisponível"
+            ),
+        }
+
         project_health = self.agent.execute("agent.project_health", {"project": self.project})
         adapters = project_health.data.get("adapters", {}) if project_health.ok else {}
         blender = adapters.get("blender") or {}
@@ -296,6 +335,7 @@ class StudioApi:
             "data": {
                 "device_agent": device_agent,
                 "remote_mcp": remote_mcp,
+                "computer_control": computer_control,
                 "blender_live": blender_live,
             },
         }
