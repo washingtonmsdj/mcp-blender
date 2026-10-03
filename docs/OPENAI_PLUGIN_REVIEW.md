@@ -175,8 +175,9 @@ python scripts/cloudflare/verify_product_oauth_server.py \
 
 A 404 from the discovery endpoint means the Supabase OAuth 2.1 Server is not enabled yet. Enable it in **Authentication → OAuth Server** and enable dynamic client registration before continuing.
 
-## Submission blockers
+For the public ORDAX plugin, set **Authentication → URL Configuration → Site URL** to `https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev` and keep **Authorization Path** as `/oauth/consent`. Supabase composes those values to reach the canonical consent UI at `https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/oauth/consent`. Do not leave the Site URL pointed at the retired Vercel engineering hub.
 
+## Submission blockers
 
 Do not submit while any of these is true:
 
