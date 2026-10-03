@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from ordax_core.orchestrator import OrchestratorStore
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
 
@@ -20,6 +21,7 @@ class StudioApi:
     def __init__(self, agent: ActionRegistry | None = None):
         self.agent = agent or ActionRegistry(AgentConfig.from_env())
         self.store = self.agent._memory_store_instance()
+        self.orchestrator = OrchestratorStore(self.store.db_path)
         # Keep one usable project for diagnostics/API compatibility, but do not
         # mutate the user's persisted active project merely by opening Studio.
         self.project = self.agent.select_available_project()
@@ -244,6 +246,18 @@ class StudioApi:
         return self._result(self.agent.execute("memory.checkpoint", {
             "project": self.project, "summary": summary,
         }))
+
+    def ai_sessions_status(self) -> dict[str, Any]:
+        try:
+            data = self.orchestrator.status(self.project)
+            continuations = []
+            for session in data.get("active_sessions", []):
+                continuation = self.orchestrator.continuation_bundle(str(session["id"]))
+                continuations.append(continuation)
+            data["continuations"] = continuations
+        except Exception as error:
+            return {"ok": False, "summary": f"{type(error).__name__}: {error}", "data": {}}
+        return {"ok": True, "data": data}
 
     def product_status(self) -> dict[str, Any]:
         config = self.agent.config
