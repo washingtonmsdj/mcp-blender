@@ -616,6 +616,20 @@ def _sanitize_product_result(
         data.pop("command", None)
     elif action == "artifact.preview":
         data.pop("path", None)
+    elif action == "computer.processes":
+        processes = data.get("processes")
+        if isinstance(processes, list):
+            data["processes"] = [
+                {
+                    key: item[key]
+                    for key in ("pid", "parent_pid", "name", "executable")
+                    if key in item
+                }
+                for item in processes
+                if isinstance(item, dict)
+            ]
+    elif action == "computer.terminate_process":
+        data.pop("command_line", None)
     elif action.startswith("blender."):
         data = _redact_local_result_paths(data)
 
