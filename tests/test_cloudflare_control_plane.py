@@ -481,6 +481,7 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             "computer.file_stat",
             "computer.text_read",
             "computer.search",
+            "computer.processes",
         ):
             self.assertIn(f'"{action}"', product_block)
         typed_block = worker.split(
@@ -494,6 +495,7 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertIn('"computer.text_write"', typed_block)
         self.assertIn('"computer.text_patch"', typed_block)
         self.assertIn('"computer.path_remove"', typed_block)
+        self.assertIn('"computer.terminate_process"', typed_block)
 
         for mutation in (
             "project.text_write",
@@ -536,6 +538,8 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertNotIn('"computer.text_read"', project_block)
         self.assertNotIn('"computer.text_write"', project_block)
         self.assertNotIn('"computer.path_remove"', project_block)
+        self.assertNotIn('"computer.processes"', project_block)
+        self.assertNotIn('"computer.terminate_process"', project_block)
 
     def test_product_retention_is_scheduled_and_matches_public_policy(self) -> None:
         root = Path(__file__).resolve().parents[1]
