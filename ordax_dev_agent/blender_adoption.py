@@ -24,6 +24,7 @@ ADDON_MODULE = "ordax_studio_bridge"
 ADDON_SOURCE_FILENAME = "ordax_studio_blender_addon.py"
 LEGACY_STARTUP_FILENAME = "ordax_studio_bootstrap.py"
 BOOTSTRAP_CONFIG_NAME = "blender-bootstrap.json"
+INSTALL_MARKER_NAME = "blender-adoption-install.json"
 DISCOVERY_MAX_AGE_SECONDS = 4.0
 ADOPTION_REQUEST_MAX_AGE_SECONDS = 30.0
 
@@ -40,6 +41,14 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"JSON object expected: {path}")
     return data
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _safe_project_payload(config, project: Project) -> dict[str, str]:
@@ -94,6 +103,7 @@ class BlenderAdoptionManager:
         roaming = appdata or Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
         self.blender_user_root = roaming / "Blender Foundation" / "Blender"
         self.config_path = (config.state_dir / BOOTSTRAP_CONFIG_NAME).resolve()
+        self.install_marker_path = (config.state_dir / INSTALL_MARKER_NAME).resolve()
         self.discovery_root = (config.state_dir / "blender-discovery").resolve()
         self.adoption_root = (config.state_dir / "blender-adoption").resolve()
 
@@ -135,6 +145,56 @@ class BlenderAdoptionManager:
 
     def addon_dirs(self) -> list[Path]:
         return [version / "scripts" / "addons" / ADDON_MODULE for version in self.profile_versions()]
+
+    def installation_status(self) -> dict[str, Any]:
+        source_sha = _sha256(self.bootstrap_source) if self.bootstrap_source.is_file() else None
+        versions = self.profile_versions()
+        targets: list[dict[str, Any]] = []
+        for version in versions:
+            target = version / "scripts" / "addons" / ADDON_MODULE / "__init__.py"
+            current = False
+            target_sha = None
+            if target.is_file():
+                try:
+                    target_sha = _sha256(target)
+                    current = bool(source_sha and target_sha == source_sha)
+                except OSError:
+                    current = False
+            targets.append(
+                {
+                    "version": version.name,
+                    "path": str(target),
+                    "exists": target.is_file(),
+                    "sha256": target_sha,
+                    "current": current,
+                }
+            )
+
+        marker: dict[str, Any] | None = None
+        try:
+            if self.install_marker_path.is_file():
+                marker = _read_json_object(self.install_marker_path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            marker = None
+        marker_current = bool(
+            marker
+            and marker.get("version") == BOOTSTRAP_VERSION
+            and marker.get("bootstrap_sha256") == source_sha
+            and marker.get("companion_fingerprint") == self.companion_fingerprint
+            and marker.get("enabled") is True
+        )
+        current = bool(targets) and all(item["current"] for item in targets) and marker_current
+        return {
+            "current": current,
+            "bootstrap_sha256": source_sha,
+            "companion_fingerprint": self.companion_fingerprint,
+            "profiles": [version.name for version in versions],
+            "targets": targets,
+            "marker": marker,
+            "marker_current": marker_current,
+            "config": str(self.config_path),
+            "install_marker": str(self.install_marker_path),
+        }
 
     def _enable_installed_addon(self) -> dict[str, Any]:
         if not self.enable_addon:
@@ -223,6 +283,16 @@ class BlenderAdoptionManager:
                     legacy.unlink()
                     removed_legacy.append(str(legacy))
             enabled = self._enable_installed_addon()
+            marker = {
+                "version": BOOTSTRAP_VERSION,
+                "installed_at": time.time(),
+                "bootstrap_sha256": _sha256(self.bootstrap_source),
+                "companion_fingerprint": self.companion_fingerprint,
+                "enabled": bool(enabled.get("enabled")),
+                "profiles": [version.name for version in versions],
+                "installed": installed,
+            }
+            _write_json_atomic(self.install_marker_path, marker)
             running = self.instances()
             restart_required_pids = [
                 int(item["pid"])
@@ -244,6 +314,7 @@ class BlenderAdoptionManager:
                     "installed": installed,
                     "removed_legacy": removed_legacy,
                     "enable": enabled,
+                    "install_marker": str(self.install_marker_path),
                     "restart_required_for_existing_blender": bool(restart_required_pids),
                     "restart_required_pids": restart_required_pids,
                     "attached_stale_pids": attached_stale_pids,
@@ -252,6 +323,23 @@ class BlenderAdoptionManager:
             )
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
             return ActionResult(False, f"Blender adoption addon install failed: {error}")
+
+    def ensure_installed(self) -> ActionResult:
+        try:
+            config_path = self.sync_config()
+            status = self.installation_status()
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            return ActionResult(False, f"Blender adoption bootstrap could not be inspected: {error}")
+        if status["current"]:
+            return ActionResult(
+                True,
+                "ORDAX Blender adoption addon already current",
+                {**status, "changed": False, "config": str(config_path)},
+            )
+        installed = self.install()
+        if installed.ok:
+            installed.data["changed"] = True
+        return installed
 
     def instances(self, *, max_age_seconds: float = DISCOVERY_MAX_AGE_SECONDS) -> list[dict[str, Any]]:
         now = time.time()
@@ -286,6 +374,9 @@ class BlenderAdoptionManager:
 
     @staticmethod
     def _instance_matches_project(instance: dict[str, Any], project: Project) -> bool:
+        attached = str(instance.get("attached_project") or "").strip()
+        if attached and attached != project.slug:
+            return False
         raw_file = str(instance.get("file") or "").strip()
         if not raw_file:
             return False
@@ -361,10 +452,13 @@ class BlenderAdoptionManager:
     ) -> ActionResult:
         if project.slug not in self._eligible_projects():
             return ActionResult(False, f"Blender is not enabled for project: {project.slug}")
-        try:
-            self.sync_config()
-        except (OSError, ValueError) as error:
-            return ActionResult(False, f"Blender bootstrap configuration could not be refreshed: {error}")
+        bootstrap = self.ensure_installed()
+        if not bootstrap.ok:
+            return ActionResult(
+                False,
+                "ORDAX Blender adoption bootstrap is unavailable",
+                {"project": project.slug, "bootstrap": bootstrap.data, "error": bootstrap.summary},
+            )
 
         instances = self.instances()
         explicit_pid = pid is not None
@@ -381,6 +475,7 @@ class BlenderAdoptionManager:
                     "project": project.slug,
                     "pid": pid,
                     "instances": instances,
+                    "bootstrap": bootstrap.data,
                     "retryable": False,
                     "no_match": True,
                 },
@@ -411,12 +506,15 @@ class BlenderAdoptionManager:
         if attached_project and attached_project != project.slug:
             return ActionResult(
                 False,
-                "Blender window is already attached to another ORDAX project",
+                "Blender window matches the requested file tree but is attached to another ORDAX project",
                 {
                     "project": project.slug,
                     "pid": selected_pid,
                     "attached_project": attached_project,
                     "conflict": True,
+                    "attachment_conflict": True,
+                    "instance": selected,
+                    "retryable": False,
                 },
             )
 
@@ -483,8 +581,13 @@ class BlenderAdoptionManager:
                 if (
                     0 <= age <= DISCOVERY_MAX_AGE_SECONDS
                     and int(data.get("pid", -1)) == selected_pid
+                    and data.get("project") == project.slug
                     and data.get("companion_fingerprint") == self.companion_fingerprint
                 ):
+                    try:
+                        request_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
                     return ActionResult(
                         True,
                         "Existing Blender window adopted by ORDAX Studio",
@@ -494,6 +597,10 @@ class BlenderAdoptionManager:
                 pass
             time.sleep(0.05)
 
+        try:
+            request_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         return ActionResult(
             False,
             "Blender adoption request timed out",

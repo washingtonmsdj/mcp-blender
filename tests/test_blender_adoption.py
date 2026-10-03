@@ -78,6 +78,19 @@ class BlenderAdoptionTests(unittest.TestCase):
         )
         return path
 
+    def _presence(self, pid: int, *, project: str = "demo") -> Path:
+        presence = self.state / "blender-live" / "demo" / "presence.json"
+        presence.parent.mkdir(parents=True, exist_ok=True)
+        presence.write_text(
+            json.dumps({
+                "pid": pid,
+                "project": project,
+                "companion_fingerprint": "fingerprint-1",
+            }),
+            encoding="utf-8",
+        )
+        return presence
+
     def test_install_writes_config_and_version_startup_script(self):
         result = self.manager.install()
         self.assertTrue(result.ok, result.summary)
@@ -87,14 +100,25 @@ class BlenderAdoptionTests(unittest.TestCase):
         self.assertEqual(config["version"], 1)
         self.assertEqual(config["projects"]["demo"]["root"], str(self.project_root.resolve()))
         self.assertEqual(config["companion_fingerprint"], "fingerprint-1")
+        marker = json.loads(self.manager.install_marker_path.read_text(encoding="utf-8"))
+        self.assertEqual(marker["bootstrap_sha256"], self.manager.installation_status()["bootstrap_sha256"])
+
+    def test_ensure_installed_is_noop_when_bootstrap_is_current(self):
+        first = self.manager.install()
+        self.assertTrue(first.ok)
+        marker = json.loads(self.manager.install_marker_path.read_text(encoding="utf-8"))
+        marker["enabled"] = True
+        self.manager.install_marker_path.write_text(json.dumps(marker), encoding="utf-8")
+        with patch.object(self.manager, "install", wraps=self.manager.install) as install:
+            result = self.manager.ensure_installed()
+        self.assertTrue(result.ok)
+        self.assertFalse(result.data["changed"])
+        install.assert_not_called()
 
     def test_enable_timeout_is_recovered_when_probe_confirms_addon_enabled(self):
         self.manager.enable_addon = True
         timeout = subprocess.TimeoutExpired(cmd=["blender"], timeout=60)
-        probe = SimpleNamespace(
-            returncode=0,
-            stdout="ORDAX_STUDIO_ADDON_PRESENT=True\n",
-        )
+        probe = SimpleNamespace(returncode=0, stdout="ORDAX_STUDIO_ADDON_PRESENT=True\n")
         with patch(
             "ordax_dev_agent.blender_adoption.find_blender",
             return_value=Path("C:/Blender/blender.exe"),
@@ -118,6 +142,10 @@ class BlenderAdoptionTests(unittest.TestCase):
         matches = self.manager.matching_instances(self.project)
         self.assertEqual([item["pid"] for item in matches], [101])
 
+    def test_matching_instances_excludes_window_attached_to_other_project(self):
+        self._discovery(104, attached_project="another-project")
+        self.assertEqual(self.manager.matching_instances(self.project), [])
+
     def test_system_blender_pids_parses_windows_tasklist(self):
         completed = SimpleNamespace(
             returncode=0,
@@ -136,6 +164,16 @@ class BlenderAdoptionTests(unittest.TestCase):
         self.assertTrue(result.data["ambiguous"])
         self.assertEqual({item["pid"] for item in result.data["instances"]}, {201, 202})
 
+    def test_attached_other_project_is_explicit_conflict(self):
+        pid = 211
+        self._discovery(pid, attached_project="other-project")
+        result = self.manager.request_adoption(self.project, pid=pid, wait_seconds=0.5)
+        self.assertFalse(result.ok)
+        self.assertTrue(result.data["attachment_conflict"])
+        self.assertEqual(result.data["attached_project"], "other-project")
+        self.assertEqual(result.data["project"], "demo")
+        self.assertFalse((self.state / "blender-adoption" / f"{pid}.json").exists())
+
     def test_request_adoption_waits_for_matching_presence_pid(self):
         pid = 301
         self._discovery(pid)
@@ -145,16 +183,7 @@ class BlenderAdoptionTests(unittest.TestCase):
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline and not request.is_file():
                 time.sleep(0.01)
-            presence = self.state / "blender-live" / "demo" / "presence.json"
-            presence.parent.mkdir(parents=True, exist_ok=True)
-            presence.write_text(
-                json.dumps({
-                    "pid": pid,
-                    "project": "demo",
-                    "companion_fingerprint": "fingerprint-1",
-                }),
-                encoding="utf-8",
-            )
+            self._presence(pid)
 
         thread = threading.Thread(target=companion_reply, daemon=True)
         thread.start()
@@ -163,13 +192,40 @@ class BlenderAdoptionTests(unittest.TestCase):
         self.assertTrue(result.ok, result.summary)
         self.assertEqual(result.data["pid"], pid)
         self.assertEqual(result.data["presence"]["project"], "demo")
+        self.assertFalse((self.state / "blender-adoption" / f"{pid}.json").exists())
 
-    def _reply_to_adoption(self, pid: int, project: str = "demo") -> threading.Thread:
+    def test_request_adoption_rejects_presence_from_other_project(self):
+        pid = 302
+        self._discovery(pid)
+
+        def wrong_companion_reply():
+            request = self.state / "blender-adoption" / f"{pid}.json"
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline and not request.is_file():
+                time.sleep(0.01)
+            self._presence(pid, project="different-project")
+
+        thread = threading.Thread(target=wrong_companion_reply, daemon=True)
+        thread.start()
+        result = self.manager.request_adoption(self.project, pid=pid, wait_seconds=0.5)
+        thread.join(timeout=1.0)
+        self.assertFalse(result.ok)
+        self.assertIn("timed out", result.summary.lower())
+        self.assertFalse((self.state / "blender-adoption" / f"{pid}.json").exists())
+
+    def _reply_to_adoption(
+        self,
+        pid: int,
+        project: str = "demo",
+        capture: dict[str, object] | None = None,
+    ) -> threading.Thread:
         def companion_reply():
             request = self.state / "blender-adoption" / f"{pid}.json"
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline and not request.is_file():
                 time.sleep(0.01)
+            if capture is not None and request.is_file():
+                capture.update(json.loads(request.read_text(encoding="utf-8")))
             presence = self.state / "blender-live" / project / "presence.json"
             presence.parent.mkdir(parents=True, exist_ok=True)
             presence.write_text(
@@ -209,7 +265,8 @@ class BlenderAdoptionTests(unittest.TestCase):
     def test_clean_blank_window_can_be_adopted_by_explicit_pid(self):
         pid = 402
         self._discovery(pid, file="")
-        thread = self._reply_to_adoption(pid)
+        request_capture: dict[str, object] = {}
+        thread = self._reply_to_adoption(pid, capture=request_capture)
         result = self.manager.request_adoption(
             self.project,
             pid=pid,
@@ -218,8 +275,8 @@ class BlenderAdoptionTests(unittest.TestCase):
         )
         thread.join(timeout=2.0)
         self.assertTrue(result.ok, result.summary)
-        request = json.loads((self.state / "blender-adoption" / f"{pid}.json").read_text(encoding="utf-8"))
-        self.assertTrue(request["allow_blank"])
+        self.assertTrue(request_capture["allow_blank"])
+        self.assertFalse((self.state / "blender-adoption" / f"{pid}.json").exists())
 
     def test_dirty_blank_window_cannot_be_adopted(self):
         self._discovery(403, file="", dirty=True)
@@ -245,9 +302,20 @@ class BlenderAdoptionTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertTrue(result.data["project_mismatch"])
 
-    def test_blender_addon_asset_is_valid_python(self):
+    def test_request_timeout_removes_pending_request(self):
+        pid = 302
+        self._discovery(pid)
+        result = self.manager.request_adoption(self.project, pid=pid, wait_seconds=0.5)
+        self.assertFalse(result.ok)
+        self.assertTrue(result.data["retryable"])
+        self.assertFalse((self.state / "blender-adoption" / f"{pid}.json").exists())
+
+    def test_blender_addon_asset_is_valid_python_and_suppresses_managed_launch(self):
         source = Path(__file__).resolve().parents[1] / "ordax_dev_agent" / "assets" / "ordax_studio_blender_addon.py"
-        compile(source.read_text(encoding="utf-8-sig"), str(source), "exec")
+        text = source.read_text(encoding="utf-8-sig")
+        compile(text, str(source), "exec")
+        self.assertIn("def _managed_launch()", text)
+        self.assertIn("if _managed_launch():", text)
 
 
 class BlenderStartAdoptionTests(unittest.TestCase):
@@ -292,6 +360,12 @@ class BlenderStartAdoptionTests(unittest.TestCase):
     def test_live_start_does_not_spawn_when_adoption_is_ambiguous(self):
         result, live = self._run_start(ActionResult(False, "ambiguous", {"ambiguous": True}))
         self.assertFalse(result.ok)
+        live.start.assert_not_called()
+
+    def test_live_start_does_not_spawn_on_attachment_conflict(self):
+        result, live = self._run_start(ActionResult(False, "conflict", {"attachment_conflict": True}))
+        self.assertFalse(result.ok)
+        self.assertTrue(result.data["attachment_conflict"])
         live.start.assert_not_called()
 
     def test_live_start_spawns_only_when_no_candidate_matches(self):

@@ -4,7 +4,7 @@ from __future__ import annotations
 bl_info = {
     "name": "ORDAX Studio Bridge",
     "author": "ORDAX",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (4, 3, 0),
     "location": "System",
     "description": "Discovers Blender windows and safely adopts them into ORDAX Studio",
@@ -93,6 +93,12 @@ def _matching_project(config: dict) -> str | None:
     return matches[0] if len(matches) == 1 else None
 
 
+def _managed_launch() -> bool:
+    if os.environ.get("ORDAX_BLENDER_MANAGED_LAUNCH") == "1":
+        return True
+    return "--ordax-control-root" in sys.argv and "--ordax-project-slug" in sys.argv
+
+
 def _discovery_path(config: dict) -> Path:
     return (config["state_dir"] / "blender-discovery" / f"{os.getpid()}.json").resolve()
 
@@ -112,6 +118,7 @@ def _write_discovery(config: dict) -> None:
         "file": str(getattr(bpy.data, "filepath", "") or ""),
         "is_dirty": bool(getattr(bpy.data, "is_dirty", False)),
         "scene": scene.name if scene is not None else "",
+        "managed_launch": _managed_launch(),
         "attached_project": bpy.app.driver_namespace.get(ATTACHED_KEY),
         "error": bpy.app.driver_namespace.get(ERROR_KEY),
     }
@@ -125,15 +132,18 @@ def _read_request(config: dict) -> dict | None:
     try:
         request = _read_json(path)
         if int(request.get("version", -1)) != BOOTSTRAP_VERSION:
+            path.unlink(missing_ok=True)
             return None
         if int(request.get("pid", -1)) != os.getpid():
             return None
         created_at = float(request.get("created_at"))
         age = time.time() - created_at
         if age < 0 or age > REQUEST_MAX_AGE_SECONDS:
+            path.unlink(missing_ok=True)
             return None
         project = str(request.get("project") or "")
         if project not in config["projects"]:
+            path.unlink(missing_ok=True)
             return None
         return request
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
@@ -205,6 +215,12 @@ def _tick() -> float:
         config = _load_config()
         _write_discovery(config)
         if bpy.app.driver_namespace.get(ATTACHED_KEY):
+            return 1.0
+
+        # A Blender process started by BlenderLiveBridge already receives the
+        # full companion through --python. The persistent add-on must only
+        # discover that window, otherwise two companion timers would compete.
+        if _managed_launch():
             return 1.0
 
         automatic = _matching_project(config)
