@@ -78,6 +78,13 @@ public partial class MainWindow : Window
 
     private void ConfigureProviderView()
     {
+        var assets = LocateStudioAssets();
+        ProviderView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+            "provider.ordax.local",
+            assets,
+            CoreWebView2HostResourceAccessKind.Allow
+        );
+        ProviderView.CoreWebView2.WebMessageReceived += ProviderWebMessageReceived;
         ProviderView.CoreWebView2.SourceChanged += (_, _) =>
         {
             ProviderAddress.Text = ProviderView.Source?.ToString() ?? "";
@@ -113,6 +120,44 @@ public partial class MainWindow : Window
             WorkbenchBrowserAddress.Text = WorkbenchBrowserView.Source?.ToString() ?? "";
         };
         WorkbenchBrowserAddress.Text = "http://127.0.0.1:5173/";
+    }
+
+    private async void ProviderWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        if (_bridge is null || ProviderView.Source is null ||
+            !ProviderView.Source.Host.Equals("provider.ordax.local", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        string? requestId = null;
+        try
+        {
+            using var document = JsonDocument.Parse(e.WebMessageAsJson);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("type", out var type) || type.GetString() != "ordax-provider-rpc")
+                return;
+            requestId = root.GetProperty("id").GetString();
+            var method = root.GetProperty("method").GetString() ?? "";
+            if (method is not ("provider_api_models" or "provider_api_chat"))
+                throw new InvalidOperationException("Provider RPC method is not allowed");
+            var args = root.TryGetProperty("args", out var argsElement)
+                ? argsElement.Clone()
+                : JsonSerializer.SerializeToElement(new { });
+
+            var raw = await _bridge.CallRawAsync(method, args, requestId);
+            if (ProviderView.Source?.Host.Equals("provider.ordax.local", StringComparison.OrdinalIgnoreCase) == true)
+                ProviderView.CoreWebView2.PostWebMessageAsJson(raw);
+        }
+        catch (Exception error)
+        {
+            var response = JsonSerializer.Serialize(new
+            {
+                id = requestId,
+                error = $"{error.GetType().Name}: {error.Message}",
+            });
+            if (ProviderView.Source?.Host.Equals("provider.ordax.local", StringComparison.OrdinalIgnoreCase) == true)
+                ProviderView.CoreWebView2.PostWebMessageAsJson(response);
+            LogActivity($"RPC Provider falhou: {error.Message}");
+        }
     }
 
     private async void StudioWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -157,7 +202,8 @@ public partial class MainWindow : Window
             new ProviderDefinition("grok", "Grok", "https://grok.com/"),
             new ProviderDefinition("claude", "Claude", "https://claude.ai/new"),
             new ProviderDefinition("gemini", "Gemini", "https://gemini.google.com/app"),
-            new ProviderDefinition("custom", "Local / Custom", "http://127.0.0.1:3000/"),
+            new ProviderDefinition("api", "API / Local", "https://provider.ordax.local/provider_api.html"),
+            new ProviderDefinition("custom", "Web local / Custom", "http://127.0.0.1:3000/"),
         });
         ProviderSelector.ItemsSource = _providers;
         ProviderSelector.DisplayMemberPath = nameof(ProviderDefinition.Label);
@@ -169,7 +215,11 @@ public partial class MainWindow : Window
             return;
         ProviderAddress.Text = provider.Url;
         Navigate(ProviderView, provider.Url);
-        LogActivity($"Provider visível: {provider.Label}. O ORDAX não automatiza este WebView.");
+        LogActivity(
+            provider.Id == "api"
+                ? "Provider nativo API/Local aberto. Chamadas passam pela bridge local allowlisted."
+                : $"Provider visível: {provider.Label}. O ORDAX não automatiza este WebView."
+        );
     }
 
     private void ProviderBack_Click(object sender, RoutedEventArgs e)
