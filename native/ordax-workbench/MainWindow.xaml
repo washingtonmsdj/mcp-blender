@@ -7,52 +7,11 @@
         Background="{StaticResource BgBrush}" Foreground="{StaticResource TextBrush}">
   <Grid>
     <Grid.RowDefinitions>
-      <RowDefinition Height="64"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="30"/>
     </Grid.RowDefinitions>
 
-    <!-- Native chrome only. Project navigation belongs to the shared Studio surface. -->
-    <Border Grid.Row="0" Background="#08131F" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-      <Grid Margin="18,0">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto"/>
-          <ColumnDefinition Width="Auto"/>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
-        </Grid.ColumnDefinitions>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-          <Border Width="36" Height="36" CornerRadius="11" Background="#E5F0FF" Margin="0,0,12,0">
-            <Grid>
-              <Ellipse Width="13" Height="13" Fill="#0D1A29" HorizontalAlignment="Left" Margin="8,0,0,0"/>
-              <Border Width="14" Height="4" Background="#0D1A29" CornerRadius="2" HorizontalAlignment="Right" Margin="0,0,6,0" RenderTransformOrigin="0.5,0.5">
-                <Border.RenderTransform><RotateTransform Angle="-45"/></Border.RenderTransform>
-              </Border>
-            </Grid>
-          </Border>
-          <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="ORDAX Studio" FontSize="18" FontWeight="SemiBold"/>
-            <TextBlock Text="Projetos · IA · Computer Control" FontSize="10" Foreground="{StaticResource MutedBrush}"/>
-          </StackPanel>
-        </StackPanel>
-
-        <Border Grid.Column="1" Margin="24,0,0,0" Padding="16,0,0,0" BorderBrush="#20334A" BorderThickness="1,0,0,0" VerticalAlignment="Center">
-          <StackPanel>
-            <TextBlock Text="PROJETO" FontSize="9" FontWeight="SemiBold" Foreground="#6E86A4"/>
-            <TextBlock x:Name="ProjectRailState" Text="Carregando projeto…" FontSize="12" FontWeight="SemiBold" Foreground="#DCE8F7" Margin="0,2,0,0" MaxWidth="420" TextTrimming="CharacterEllipsis"/>
-          </StackPanel>
-        </Border>
-
-        <Border Grid.Column="3" Background="#0D2134" BorderBrush="#294D70" BorderThickness="1" CornerRadius="12" Padding="12,7" VerticalAlignment="Center">
-          <StackPanel Orientation="Horizontal">
-            <Ellipse x:Name="TopConnectionDot" Width="7" Height="7" Fill="{StaticResource MutedBrush}" Margin="0,0,7,0" VerticalAlignment="Center"/>
-            <TextBlock x:Name="TopConnectionState" Text="Conectando…" FontSize="11" Foreground="#C5DCF7"/>
-          </StackPanel>
-        </Border>
-      </Grid>
-    </Border>
-
-    <Border Grid.Row="1" Background="{StaticResource BgBrush}">
+    <Border Grid.Row="0" Background="{StaticResource BgBrush}">
       <TabControl x:Name="WorkTabs" SelectionChanged="WorkTabs_SelectionChanged" Margin="0" Padding="0">
         <TabItem Header="Projeto">
           <Grid Background="#060D15">
@@ -200,7 +159,7 @@
       </TabControl>
     </Border>
 
-    <Border Grid.Row="2" Background="#08121E" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+    <Border Grid.Row="1" Background="#08121E" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
       <Grid Margin="12,0">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/>

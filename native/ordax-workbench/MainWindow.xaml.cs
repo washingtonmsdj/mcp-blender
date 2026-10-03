@@ -6,7 +6,6 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -478,7 +477,7 @@ public partial class MainWindow : Window
             if (runningBrowsers == 0)
                 builder.AppendLine("  nenhum browser gerenciado ativo");
 
-            ProjectRailState.Text = project;
+            Title = string.IsNullOrWhiteSpace(project) ? "ORDAX Studio" : $"ORDAX Studio — {project}";
             ProjectCardState.Text = $"{project} · {runningProcesses} processo(s) · {runningBrowsers} browser(s) gerenciado(s)";
             ExecutionState.Text = builder.ToString();
         }
@@ -541,16 +540,7 @@ public partial class MainWindow : Window
                 : "unknown";
             var transportKnown = transportState is not ("" or "unknown");
             var transportConnected = transportState == "connected" || !transportKnown;
-            var transportReconnecting = transportState is "connecting" or "reconnecting";
-            var deviceOnline = deviceOk && remoteOk && transportConnected;
-
             RuntimeState.Text = $"Runtime: {(deviceOk ? runtimeState : "local/degradado")} · MCP: {(remoteOk ? "online" : "verificando")} · Link: {transportState}";
-            TopConnectionState.Text = deviceOnline
-                ? "Dispositivo online"
-                : transportReconnecting ? "Reconectando…" : "Conexão parcial";
-            TopConnectionDot.Fill = (Brush)FindResource(
-                deviceOnline ? "SuccessBrush" : transportReconnecting ? "WarningBrush" : "MutedBrush"
-            );
             DeviceCardState.Text = deviceOk
                 ? $"Device Agent {runtimeState} · transporte {transportState}"
                 : "Device Agent local ou degradado";
@@ -564,8 +554,6 @@ public partial class MainWindow : Window
         catch (Exception error)
         {
             RuntimeState.Text = "Runtime: bridge indisponível";
-            TopConnectionState.Text = "Bridge indisponível";
-            TopConnectionDot.Fill = (Brush)FindResource("MutedBrush");
             DeviceCardState.Text = "Device Agent indisponível";
             McpCardState.Text = "Remote MCP indisponível";
             ComputerControlState.Text = "Computer Control indisponível";

@@ -22,10 +22,13 @@ class WorkbenchComputerFirstUiTests(unittest.TestCase):
         self.assertIn('x:Name="ComputerControlState"', xaml)
         self.assertIn('x:Name="DeviceCardState"', xaml)
         self.assertIn('x:Name="McpCardState"', xaml)
-        self.assertIn('x:Name="TopConnectionDot"', xaml)
+        self.assertNotIn('x:Name="TopConnectionDot"', xaml)
+        self.assertNotIn('x:Name="ProjectRailState"', xaml)
+        self.assertNotIn('Text="Projetos · IA · Computer Control"', xaml)
         self.assertNotIn('Header="Visão geral"', xaml)
         self.assertNotIn('Text="COMPUTADOR"', xaml)
         self.assertNotIn('Text="CAPACIDADES ESPECIALIZADAS"', xaml)
+        self.assertIn('Title = string.IsNullOrWhiteSpace(project) ? "ORDAX Studio"', (ROOT / "native" / "ordax-workbench" / "MainWindow.xaml.cs").read_text(encoding="utf-8"))
 
     def test_shared_surface_owns_project_navigation_and_preview(self) -> None:
         html = (ROOT / "ordax_studio" / "studio_product.html").read_text(encoding="utf-8")
