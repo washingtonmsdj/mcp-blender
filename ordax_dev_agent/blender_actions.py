@@ -734,14 +734,23 @@ class BlenderActions:
     def blender_live_status(self, payload: dict[str, Any]) -> ActionResult:
         live = self._blender_live(payload)
         data = live.status()
-        ready = bool(data.get("presence_fresh"))
-        return ActionResult(
-            ready,
-            "Visible Blender live session ready"
-            if ready
-            else "Visible Blender live session is not running",
-            data,
-        )
+        if not bool(data.get("presence_fresh")):
+            readiness_state = "not_running"
+            summary = "Visible Blender live session is not running"
+        elif data.get("identity_matches") is not True:
+            readiness_state = "identity_mismatch"
+            summary = "Visible Blender live session identity does not match this ORDAX project"
+        elif data.get("protocol_compatible") is not True:
+            readiness_state = "protocol_outdated"
+            summary = "Visible Blender companion protocol is outdated"
+        elif data.get("companion_current") is not True:
+            readiness_state = "companion_outdated"
+            summary = "Visible Blender companion code is outdated"
+        else:
+            readiness_state = "ready"
+            summary = "Visible Blender live session ready"
+        data["readiness_state"] = readiness_state
+        return ActionResult(readiness_state == "ready", summary, data)
 
     def blender_live_inspect(self, payload: dict[str, Any]) -> ActionResult:
         return self._blender_live(payload).request(

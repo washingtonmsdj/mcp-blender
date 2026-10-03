@@ -172,6 +172,89 @@ class OrdaxStudioProductBlenderControlTests(unittest.TestCase):
             [call.args[0] for call in execute.call_args_list],
         )
 
+    def test_prepare_surfaces_fresh_identity_mismatch_without_adoption(self):
+        with tempfile.TemporaryDirectory() as directory:
+            api = self._api(directory)
+            with patch.object(api.agent, "execute") as execute:
+                execute.return_value = ActionResult(
+                    False,
+                    "Visible Blender live session identity does not match this ORDAX project",
+                    {
+                        "presence_fresh": True,
+                        "readiness_state": "identity_mismatch",
+                        "project_matches": True,
+                        "file_matches_project": False,
+                        "presence": {"pid": 9101, "file": "C:/outside.blend"},
+                    },
+                )
+                result = api.blender_prepare()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual("identity_mismatch", result["data"]["state"])
+        self.assertEqual(9101, result["data"]["pid"])
+        self.assertFalse(result["data"]["can_capture"])
+        self.assertFalse(result["data"]["can_start"])
+        self.assertFalse(result["data"]["requires_restart"])
+        execute.assert_called_once_with("blender.live_status", {"project": "demo"})
+
+    def test_prepare_surfaces_dirty_outdated_companion_as_restart_required(self):
+        with tempfile.TemporaryDirectory() as directory:
+            api = self._api(directory)
+            with patch.object(api.agent, "execute") as execute:
+                execute.return_value = ActionResult(
+                    False,
+                    "Visible Blender companion code is outdated",
+                    {
+                        "presence_fresh": True,
+                        "readiness_state": "companion_outdated",
+                        "identity_matches": True,
+                        "protocol_compatible": True,
+                        "companion_current": False,
+                        "presence": {
+                            "pid": 9102,
+                            "file": "C:/project/scene.blend",
+                            "is_dirty": True,
+                        },
+                    },
+                )
+                result = api.blender_prepare()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual("restart_required", result["data"]["state"])
+        self.assertEqual([9102], result["data"]["blender_pids"])
+        self.assertTrue(result["data"]["requires_restart"])
+        self.assertTrue(result["data"]["dirty"])
+        self.assertIn("salve o arquivo", result["summary"])
+        execute.assert_called_once_with("blender.live_status", {"project": "demo"})
+
+    def test_prepare_surfaces_outdated_protocol_as_restart_required(self):
+        with tempfile.TemporaryDirectory() as directory:
+            api = self._api(directory)
+            with patch.object(api.agent, "execute") as execute:
+                execute.return_value = ActionResult(
+                    False,
+                    "Visible Blender companion protocol is outdated",
+                    {
+                        "presence_fresh": True,
+                        "readiness_state": "protocol_outdated",
+                        "identity_matches": True,
+                        "protocol_compatible": False,
+                        "companion_current": True,
+                        "presence": {
+                            "pid": 9103,
+                            "file": "C:/project/scene.blend",
+                            "is_dirty": False,
+                        },
+                    },
+                )
+                result = api.blender_prepare()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual("restart_required", result["data"]["state"])
+        self.assertEqual("protocol_outdated", result["data"]["readiness_state"])
+        self.assertEqual([9103], result["data"]["blender_pids"])
+        self.assertFalse(result["data"]["can_capture"])
+        execute.assert_called_once_with("blender.live_status", {"project": "demo"})
     def test_product_shell_loads_connection_assets(self):
         html = (Path(__file__).parents[1] / "ordax_studio" / "studio_product.html").read_text(encoding="utf-8")
         self.assertIn("assets/blender-connection.css", html)

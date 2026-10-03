@@ -1,4 +1,4 @@
-# ORDAX Studio — Blender window adoption
+# ORDAX Studio â€” Blender window adoption
 
 `mcp-blender` is the historical repository name. The product/runtime is **ORDAX Studio**, and Blender is one typed capability of the ORDAX Studio MCP.
 
@@ -46,13 +46,20 @@ A window already attached to another ORDAX project is never considered a candida
 
 Adoption requests are short-lived. If the requested window does not acknowledge the request before the timeout, ORDAX removes the pending request so it cannot be consumed later and unexpectedly attach a stale operation.
 
+## Live readiness contract
+
+A fresh `presence.json` proves that a Blender process is responding, but it is not sufficient to mark the session ready. `blender.live_status` is fail-closed and reports `ok=true` only when the presence is fresh, the project/file identity matches, the protocol version is compatible and the packaged companion fingerprint is current.
+
+The typed readiness states are `ready`, `not_running`, `identity_mismatch`, `protocol_outdated` and `companion_outdated`. Studio surfaces must preserve these distinctions: identity mismatch is never rendered as connected, while outdated protocol/companion requires a controlled restart and must warn the user to save dirty work first.
+
+`ordax_studio.blender_connection.prepare_blender_connection()` is the SSOT for the actionable Studio connection state. Desktop/product surfaces delegate to this resolver instead of carrying parallel adoption/readiness logic.
 ## MCP tools
 
-- `install_blender_adoption` — explicit install/repair entrypoint; retained for diagnostics and manual recovery.
-- `blender_instances` — reconciles adoptable windows, active ORDAX live sessions and truly unmanaged Blender PIDs.
-- `adopt_blender` — adopts one discovered window, optionally by PID.
-- `start_blender` — adoption-first entrypoint; spawns only when no physical Blender window already exists.
-- `get_blender_status`, `get_scene_info`, `get_object_info`, `get_viewport_screenshot` — normal read/visual operations after adoption.
+- `install_blender_adoption` â€” explicit install/repair entrypoint; retained for diagnostics and manual recovery.
+- `blender_instances` â€” reconciles adoptable windows, active ORDAX live sessions and truly unmanaged Blender PIDs.
+- `adopt_blender` â€” adopts one discovered window, optionally by PID.
+- `start_blender` â€” adoption-first entrypoint; spawns only when no physical Blender window already exists.
+- `get_blender_status`, `get_scene_info`, `get_object_info`, `get_viewport_screenshot` â€” normal read/visual operations after adoption.
 
 ## Invariants
 
