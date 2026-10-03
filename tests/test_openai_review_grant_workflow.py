@@ -57,6 +57,7 @@ class OpenAiReviewGrantWorkflowTests(unittest.TestCase):
         self.assertNotIn("operator_token", dispatch.lower())
         self.assertIn("environment: cloudflare-v3", self.workflow)
         self.assertIn("set -euo pipefail", self.workflow)
+        self.assertIn('"User-Agent": "ORDAX-Review-Grant/0.4.1"', self.workflow)
 
 
 if __name__ == "__main__":

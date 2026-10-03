@@ -93,6 +93,7 @@ jobs:
                   "Authorization": f"Bearer {token}",
                   "Content-Type": "application/json",
                   "Accept": "application/json",
+                  "User-Agent": "ORDAX-Review-Grant/0.4.1",
               },
           )
           try:
