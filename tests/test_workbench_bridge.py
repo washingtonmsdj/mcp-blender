@@ -22,6 +22,8 @@ class WorkbenchBridgeTests(unittest.TestCase):
         self.assertIn("preview_status", _ALLOWED_METHODS)
         self.assertIn("product_status", _ALLOWED_METHODS)
         self.assertIn("execution_status", _ALLOWED_METHODS)
+        self.assertIn("provider_api_models", _ALLOWED_METHODS)
+        self.assertIn("provider_api_chat", _ALLOWED_METHODS)
         self.assertNotIn("_activate", _ALLOWED_METHODS)
         self.assertNotIn("__dict__", _ALLOWED_METHODS)
 
