@@ -20,9 +20,10 @@ class StudioApi:
     def __init__(self, agent: ActionRegistry | None = None):
         self.agent = agent or ActionRegistry(AgentConfig.from_env())
         self.store = self.agent._memory_store_instance()
+        # Keep one usable project for diagnostics/API compatibility, but do not
+        # mutate the user's persisted active project merely by opening Studio.
         self.project = self.agent.select_available_project()
         self.session_id: int | None = None
-        self._activate(self.project)
 
     @staticmethod
     def _result(result) -> dict[str, Any]:
@@ -70,6 +71,9 @@ class StudioApi:
             self.session_id = int(resumed.data["session_id"])
 
     def bootstrap(self) -> dict[str, Any]:
+        # bootstrap means a caller is actually entering this project context.
+        if self.session_id is None:
+            self._activate(self.project)
         project = self.agent.projects[self.project]
         context = self.store.context(project.slug, project.root)
         preview = self.agent.execute("project.preview_status", {"project": self.project})
