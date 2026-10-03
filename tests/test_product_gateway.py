@@ -63,6 +63,8 @@ class FakeExecutor:
             "computer.directory_list",
             "computer.text_read",
             "computer.search",
+            "computer.processes",
+            "computer.terminate_process",
             "computer.text_write",
             "computer.text_patch",
             "computer.directory_create",
@@ -241,6 +243,18 @@ class FakeExecutor:
                 "width": 1920,
                 "height": 1080,
                 "size_bytes": 84,
+            })
+        if action == "computer.processes":
+            return ActionResult(True, "system processes", {
+                "processes": [{
+                    "pid": 4242,
+                    "parent_pid": 1,
+                    "name": "python.exe",
+                    "executable": "C:/Python/python.exe",
+                    "command_line": "python app.py --token TOP-SECRET",
+                }],
+                "total_matches": 1,
+                "truncated": False,
             })
         if action == "artifact.preview":
             return ActionResult(
@@ -421,6 +435,26 @@ class ProductGatewayTests(unittest.TestCase):
         )
         self.assertFalse(denied.ok)
         self.assertEqual(denied.data["error_code"], "grant_required")
+
+    def test_computer_process_list_redacts_command_line_and_requires_device_grant(self) -> None:
+        result = self.gateway.execute(
+            "computer.processes",
+            {"query": "python", "max_items": 20},
+            context=self.context,
+            grant=self.grant("computer.processes", projects=()),
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual("python.exe", result.data["processes"][0]["name"])
+        self.assertNotIn("command_line", result.data["processes"][0])
+
+        denied = self.gateway.execute(
+            "computer.terminate_process",
+            {"pid": 4242, "expected_name": "python.exe"},
+            context=self.context,
+            grant=self.grant("computer.processes", projects=()),
+        )
+        self.assertFalse(denied.ok)
+        self.assertEqual("grant_required", denied.data["error_code"])
 
     def test_computer_filesystem_actions_are_device_scoped_and_grant_typed(self) -> None:
         read = self.gateway.execute(
