@@ -54,9 +54,10 @@ if (-not $stdlibZip -or -not $pth) {
 
 $sitePackages = Join-Path $runtimeRoot "Lib\site-packages"
 New-Item -ItemType Directory -Force -Path $sitePackages | Out-Null
-& python -m pip install --disable-pip-version-check --no-compile --upgrade --target $sitePackages $repoRoot
+$desktopPackage = ('{0}[desktop]' -f $repoRoot)
+& python -m pip install --disable-pip-version-check --no-compile --upgrade --target $sitePackages $desktopPackage
 if ($LASTEXITCODE -ne 0) {
-    throw "Failed to install ORDAX runtime into the private Python distribution"
+    throw "Failed to install ORDAX desktop runtime into the private Python distribution"
 }
 
 Copy-Item (Join-Path $repoRoot "scripts") (Join-Path $stageRoot "scripts") -Recurse -Force
