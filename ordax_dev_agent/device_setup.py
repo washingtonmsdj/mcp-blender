@@ -104,41 +104,6 @@ def load_settings(path: Path) -> dict:
         raise SetupError("SETTINGS_INVALID_PRESERVED") from None
 
 
-def github_token(interactive: bool) -> str:
-    try:
-        result = subprocess.run(
-            ["gh", "auth", "token", "--hostname", "github.com"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        if result.returncode and interactive:
-            subprocess.run(
-                [
-                    "gh",
-                    "auth",
-                    "login",
-                    "--hostname",
-                    "github.com",
-                    "--web",
-                    "--git-protocol",
-                    "https",
-                ],
-                check=True,
-            )
-            result = subprocess.run(
-                ["gh", "auth", "token", "--hostname", "github.com"],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-        if result.returncode or not result.stdout.strip():
-            raise SetupError("USER_LOGIN_REQUIRED")
-        return result.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        raise SetupError("USER_LOGIN_REQUIRED") from None
-
-
 def request(client, endpoint: str, body: dict, headers: dict) -> dict:
     try:
         response = client.post(endpoint, json=body, headers=headers)
@@ -206,6 +171,7 @@ def _configure(
     binding=None,
     home=None,
     control_plane_url: str | None = None,
+    product_access_token: str | None = None,
 ) -> dict:
     settings_path = state / "agent-settings.json"
     settings = load_settings(settings_path)
@@ -238,7 +204,9 @@ def _configure(
                 raise SetupError("MACHINE_BINDING_MISMATCH")
 
         if not identity or not identity.get("ok"):
-            credential = github_token(interactive)
+            credential = str(product_access_token or "").strip()
+            if not credential or len(credential) > 16_000:
+                raise SetupError("PRODUCT_ACCOUNT_LOGIN_REQUIRED")
             if pending.is_file():
                 secret = pending.read_text(encoding="utf-8").strip()
                 if len(secret) != 64 or any(c not in "0123456789abcdef" for c in secret):

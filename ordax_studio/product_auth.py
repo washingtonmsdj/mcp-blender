@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -9,6 +9,7 @@ import httpx
 
 from ordax_dev_agent.cloudflare_control_plane import CloudflareControlPlane
 from ordax_dev_agent.config import AgentConfig
+from ordax_dev_agent.device_setup import SetupError, configure as configure_device
 from ordax_dev_agent.product_remote_client import ProductRemoteClient, ProductRemoteError
 
 _DEFAULT_SUPABASE_ORIGIN = "https://eobcxuyvhkvdmkbaihwh.supabase.co"
@@ -156,17 +157,34 @@ def connect_existing_device(
             "control_plane_unconfigured",
             "O ORDAX Runtime não possui Control Plane configurado.",
         )
-    if not config.device_id:
-        raise ProductAccountError(
-            "device_not_enrolled",
-            "Este computador ainda não possui uma identidade ORDAX registrada.",
-        )
 
     session = sign_in_with_password(email, password, http=auth_http)
+    active_config = config
+    enrolled_now = False
+    if not config.device_id:
+        try:
+            enrollment = configure_device(
+                config.state_dir,
+                control_plane_url=config.control_plane_url,
+                product_access_token=session.access_token,
+            )
+        except SetupError as error:
+            raise ProductAccountError(
+                "device_enrollment_failed",
+                "A conta foi autenticada, mas não foi possível registrar este computador.",
+            ) from error
+        device_id = str(enrollment.get("device_id") or "")
+        if not device_id:
+            raise ProductAccountError(
+                "device_enrollment_invalid",
+                "O Control Plane não retornou uma identidade válida para este computador.",
+            )
+        active_config = replace(config, device_id=device_id)
+        enrolled_now = True
 
     control: CloudflareControlPlane | None = None
     try:
-        control = CloudflareControlPlane(config)
+        control = CloudflareControlPlane(active_config)
         pairing = control.create_product_pairing()
     except ProductAccountError:
         raise
@@ -190,7 +208,7 @@ def connect_existing_device(
         )
 
     try:
-        with ProductRemoteClient(config.control_plane_url) as remote:
+        with ProductRemoteClient(active_config.control_plane_url) as remote:
             link = remote.claim_device_pairing(
                 session.access_token,
                 pairing_id=pairing_id,
@@ -207,7 +225,7 @@ def connect_existing_device(
             "A conta foi autenticada, mas o Control Plane está indisponível.",
         ) from error
 
-    if str(link.get("device_id") or "") != str(config.device_id):
+    if str(link.get("device_id") or "") != str(active_config.device_id):
         raise ProductAccountError(
             "product_pairing_device_mismatch",
             "O Control Plane vinculou uma identidade de dispositivo inesperada.",
@@ -216,4 +234,6 @@ def connect_existing_device(
     return {
         "email": session.email or email,
         "link": dict(link),
+        "device_id": active_config.device_id,
+        "enrolled_now": enrolled_now,
     }

@@ -23,8 +23,6 @@ type JsonObject = Record<string, unknown>;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX64_RE = /^[0-9a-f]{64}$/i;
-const GITHUB_REPOSITORY = "washingtonmsdj/mcp-blender";
-const GITHUB_REPOSITORY_ID = 1141624338;
 const DIRECT_ARTIFACT_MAX_BYTES = 90 * 1024 * 1024;
 const MULTIPART_ARTIFACT_MAX_BYTES = DIRECT_ARTIFACT_MAX_BYTES * 10_000;
 const MULTIPART_MAX_PARTS = 10_000;
@@ -316,44 +314,6 @@ async function parseSmallJson(request: Request, maxBytes = 128 * 1024): Promise<
   }
 }
 
-async function verifyGithubRepositoryAdmin(
-  rawToken: string,
-): Promise<{ userId: string } | null> {
-  if (!rawToken || rawToken.length > 1024) return null;
-  const headers = {
-    authorization: `Bearer ${rawToken}`,
-    accept: "application/vnd.github+json",
-    "user-agent": "OrdaX-Device-Setup",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  const [userResponse, repoResponse] = await Promise.all([
-    fetch("https://api.github.com/user", {
-      headers,
-      redirect: "manual",
-      signal: AbortSignal.timeout(15_000),
-    }),
-    fetch(`https://api.github.com/repos/${GITHUB_REPOSITORY}`, {
-      headers,
-      redirect: "manual",
-      signal: AbortSignal.timeout(15_000),
-    }),
-  ]);
-  if (!userResponse.ok || !repoResponse.ok) return null;
-
-  const user = await userResponse.json() as JsonObject;
-  const repo = await repoResponse.json() as JsonObject;
-  const permissions = isRecord(repo.permissions) ? repo.permissions : {};
-  if (
-    !Number.isSafeInteger(user.id)
-    || user.type !== "User"
-    || repo.id !== GITHUB_REPOSITORY_ID
-    || permissions.admin !== true
-  ) {
-    return null;
-  }
-  return { userId: String(user.id) };
-}
-
 async function deviceSetup(request: Request, env: Env): Promise<Response> {
   const body = await parseSmallJson(request, 16 * 1024);
   if (!body) return json({ ok: false, error: "request_invalid" }, 400);
@@ -412,13 +372,9 @@ async function deviceSetup(request: Request, env: Env): Promise<Response> {
     return json({ ok: false, error: "request_invalid" }, 400);
   }
 
-  const authorization = request.headers.get("Authorization") ?? "";
-  if (!authorization.startsWith("Bearer ") || authorization.length > 1100) {
-    return json({ ok: false, error: "user_auth_required" }, 401);
-  }
-  const github = await verifyGithubRepositoryAdmin(authorization.slice(7));
-  if (!github) {
-    return json({ ok: false, error: "repository_admin_required" }, 403);
+  const identity = await authenticateProductRequest(request, env);
+  if (!identity.ok) {
+    return json({ ok: false, error: identity.error }, identity.status);
   }
 
   const id = env.ENROLLMENT_SESSIONS.idFromName(binding);
@@ -426,7 +382,7 @@ async function deviceSetup(request: Request, env: Env): Promise<Response> {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "X-Ordax-GitHub-User-Id": github.userId,
+      "X-Ordax-Product-Subject": identity.subjectId,
     },
     body: JSON.stringify({
       machine_binding_sha256: binding,
@@ -2281,7 +2237,7 @@ export default {
         resource: `${url.origin}/mcp`,
         authorization_servers: authorizationServers,
         bearer_methods_supported: ["header"],
-        scopes_supported: ["openid", "email"],
+        scopes_supported: ["openid", "email", "offline_access"],
       });
     }
     if (url.pathname === "/mcp") {
@@ -2385,8 +2341,8 @@ export class EnrollmentSession extends DurableObject<Env> {
       return json({ ok: false, error: "not_found" }, 404);
     }
 
-    const githubUserId = request.headers.get("X-Ordax-GitHub-User-Id") ?? "";
-    if (!/^[0-9]{1,32}$/.test(githubUserId)) {
+    const productSubjectId = request.headers.get("X-Ordax-Product-Subject") ?? "";
+    if (!PRODUCT_ID_RE.test(productSubjectId)) {
       return json({ ok: false, error: "user_identity_invalid" }, 401);
     }
     const body = await parseSmallJson(request, 8 * 1024);
@@ -2404,16 +2360,19 @@ export class EnrollmentSession extends DurableObject<Env> {
     }
 
     const existing = await this.env.DB.prepare(
-      `SELECT id, owner_github_user_id, enrollment_window_started_at, enrollment_count
+      `SELECT id, owner_product_subject_id, enrollment_window_started_at, enrollment_count
        FROM ordax_devices WHERE machine_binding_sha256 = ?1`,
     ).bind(binding).first<{
       id: string;
-      owner_github_user_id: string | null;
+      owner_product_subject_id: string | null;
       enrollment_window_started_at: string | null;
       enrollment_count: number;
     }>();
 
-    if (existing?.owner_github_user_id && existing.owner_github_user_id !== githubUserId) {
+    if (
+      existing?.owner_product_subject_id
+      && existing.owner_product_subject_id !== productSubjectId
+    ) {
       return json({ ok: false, error: "device_owner_mismatch" }, 403);
     }
 
@@ -2443,16 +2402,16 @@ export class EnrollmentSession extends DurableObject<Env> {
         `UPDATE ordax_devices SET
            name = ?1,
            token_sha256 = ?2,
-           owner_github_user_id = ?3,
+           owner_product_subject_id = ?3,
            revoked_at = NULL,
            last_enrolled_at = ?4,
            enrollment_window_started_at = ?5,
            enrollment_count = ?6
          WHERE id = ?7
            AND machine_binding_sha256 = ?8
-           AND (owner_github_user_id IS NULL OR owner_github_user_id = ?3)`,
+           AND (owner_product_subject_id IS NULL OR owner_product_subject_id = ?3)`,
       ).bind(
-        name, tokenSha256, githubUserId, enrolledAt,
+        name, tokenSha256, productSubjectId, enrolledAt,
         windowStartedAt, nextCount, deviceId, binding,
       ).run();
       if ((updated.meta.changes ?? 0) !== 1) {
@@ -2463,12 +2422,12 @@ export class EnrollmentSession extends DurableObject<Env> {
         await this.env.DB.prepare(
           `INSERT INTO ordax_devices
             (id, name, token_sha256, created_at, revoked_at,
-             machine_binding_sha256, owner_github_user_id, last_enrolled_at,
+             machine_binding_sha256, owner_product_subject_id, last_enrolled_at,
              enrollment_window_started_at, enrollment_count)
            VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, ?7, ?8, ?9)`,
         ).bind(
           deviceId, name, tokenSha256, enrolledAt, binding,
-          githubUserId, enrolledAt, windowStartedAt, nextCount,
+          productSubjectId, enrolledAt, windowStartedAt, nextCount,
         ).run();
       } catch {
         return json({ ok: false, error: "enrollment_conflict" }, 409);

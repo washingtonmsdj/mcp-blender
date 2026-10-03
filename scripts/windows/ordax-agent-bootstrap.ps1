@@ -32,9 +32,10 @@ function Write-BootstrapLog([string]$Message) {
 }
 
 function Ensure-ConfiguredDeviceIdentity {
-    # Cloudflare v3 is the only supported remote provider. The shared setup
-    # client validates machine binding, credential ownership and GitHub admin
-    # authorization without opening UI during boot.
+    # Cloudflare v3 is the only supported remote provider. Existing device
+    # identity can recover non-interactively from its local device token.
+    # First enrollment requires an explicit ORDAX product-account session in
+    # the desktop app and is never authorized by GitHub credentials.
     $setupPath = Join-Path $repoRootResolved 'ordax_dev_agent\device_setup.py'
     if (-not (Test-Path $setupPath -PathType Leaf)) {
         Write-BootstrapLog "IDENTITY_RECOVERY_SKIP device_setup missing"
