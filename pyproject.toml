@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-blender-unity"
-# ORDAX Studio 0.3.4 packages fail-closed recovery for an already-enrolled Windows device.
+# ORDAX Studio 0.4.1 keeps one shared core for the desktop product and headless Device Agent.
 version = "0.4.1"
 description = "ORDAX Dev host and MCP runtime for projects, Git, preview, Blender, Unity and extensible adapters"
 readme = "README.md"
@@ -14,6 +14,10 @@ dependencies = [
   "httpx>=0.26.0,<1.0.0",
   "websockets>=14.0,<16.0",
   "Pillow>=10.0.0,<12.0.0",
+]
+
+[project.optional-dependencies]
+desktop = [
   "pywebview>=5.0,<7.0",
 ]
 
