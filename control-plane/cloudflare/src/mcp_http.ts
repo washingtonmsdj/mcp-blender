@@ -29,6 +29,9 @@ const SPACE = { type: "string", description: "Optional Product Space id used by 
 const WAIT = { type: "integer", minimum: 0, maximum: 20000, default: 8000, description: "How long the gateway waits for completion before returning a request_id." };
 const STRING_ARRAY = { type: "array", items: STRING, minItems: 1, maxItems: 256 };
 const ENV_OBJECT = { type: "object", maxProperties: 64, additionalProperties: { anyOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }] } };
+const PROCESS_ENV_OBJECT = { type: "object", maxProperties: 64, additionalProperties: { type: "string" } };
+const PROCESS_ARGV = { type: "array", items: { type: "string", minLength: 1, maxLength: 8192 }, minItems: 1, maxItems: 128 };
+const PROCESS_STDIN_TEXT = { type: "string", maxLength: 65536 };
 const REPLACEMENTS = {
   type: "array",
   minItems: 1,
@@ -79,6 +82,12 @@ const TOOLS: ToolSpec[] = [
   { name: "git_diff", description: "Read a bounded Git diff for a granted project.", action: "git.diff", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, paths: { type: "array", items: STRING, maxItems: 50 }, wait_for_completion_ms: WAIT }, required: ["device_id", "project"] },
   { name: "git_command", description: "Run an approved Git subcommand against a granted project. Repository hooks may execute, but credential/config inspection is blocked and authenticated remote URLs are redacted.", action: "git.command", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, args: { type: "array", items: STRING, minItems: 1, maxItems: 128 }, timeout_seconds: { type: "integer", minimum: 1, maximum: 1800 }, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "args"] },
   { name: "terminal_exec", description: "Execute a foreground command with the local OS user's permissions. Requires an explicit terminal.exec grant.", action: "terminal.exec", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, cwd: STRING, argv: STRING_ARRAY, command: STRING, shell: BOOLEAN, timeout_seconds: { type: "integer", minimum: 1, maximum: 1800 }, env: ENV_OBJECT, wait_for_completion_ms: WAIT }, required: ["device_id", "project"] },
+  { name: "process_status", description: "Inspect one ORDAX-owned persistent process.", action: "process.status", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, process_id: STRING, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "process_id"] },
+  { name: "process_list", description: "List ORDAX-owned persistent processes for a granted project.", action: "process.list", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, wait_for_completion_ms: WAIT }, required: ["device_id", "project"] },
+  { name: "process_logs", description: "Read a bounded log tail from an ORDAX-owned persistent process.", action: "process.logs", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, process_id: STRING, max_bytes: { type: "integer", minimum: 1024, maximum: 262144 }, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "process_id"] },
+  { name: "process_start", description: "Start a persistent argv-based process supervised by ORDAX inside a granted project. Requires an explicit process.start grant.", action: "process.start", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, argv: PROCESS_ARGV, cwd: STRING, env: PROCESS_ENV_OBJECT, wait_seconds: { type: "number", minimum: 0.1, maximum: 5 }, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "argv"] },
+  { name: "process_write_stdin", description: "Send bounded stdin to an ORDAX-owned persistent process. Requires an explicit process.write_stdin grant.", action: "process.write_stdin", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, process_id: STRING, text: PROCESS_STDIN_TEXT, newline: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "process_id", "text"] },
+  { name: "process_stop", description: "Stop an ORDAX-owned persistent process. Requires an explicit process.stop grant.", action: "process.stop", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, process_id: STRING, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "process_id"] },
   { name: "browser_status", description: "Read status for one ORDAX-managed Chromium session.", action: "browser.status", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, session_id: STRING, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "session_id"] },
   { name: "browser_list", description: "List ORDAX-managed Chromium sessions for a granted project.", action: "browser.list", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, wait_for_completion_ms: WAIT }, required: ["device_id", "project"] },
   { name: "browser_snapshot", description: "Read a bounded DOM/text snapshot from an ORDAX-managed Chromium session.", action: "browser.snapshot", projectRequired: true, properties: { device_id: DEVICE, project: PROJECT, space_id: SPACE, session_id: STRING, max_elements: { type: "integer", minimum: 20, maximum: 500 }, wait_for_completion_ms: WAIT }, required: ["device_id", "project", "session_id"] },
@@ -161,6 +170,9 @@ const READ_ONLY_TOOLS = new Set([
   "computer_text_read",
   "computer_search",
   "computer_processes",
+  "process_status",
+  "process_list",
+  "process_logs",
 ]);
 
 const DESTRUCTIVE_TOOLS = new Set([
@@ -173,6 +185,9 @@ const DESTRUCTIVE_TOOLS = new Set([
   "workspace_path_move",
   "git_command",
   "terminal_exec",
+  "process_start",
+  "process_write_stdin",
+  "process_stop",
   "blender_transform",
   "blender_apply_material",
   "blender_save",
@@ -206,6 +221,8 @@ const NON_DESTRUCTIVE_WRITE_TOOLS = new Set([
 const OPEN_WORLD_TOOLS = new Set([
   "git_command",
   "terminal_exec",
+  "process_start",
+  "process_write_stdin",
   "browser_snapshot",
   "browser_screenshot",
   "browser_start",
@@ -251,6 +268,12 @@ const TOOL_TITLES: Record<string, string> = {
   git_diff: "Read Git diff",
   git_command: "Run Git command",
   terminal_exec: "Run project command",
+  process_status: "Inspect persistent process",
+  process_list: "List persistent processes",
+  process_logs: "Read persistent process logs",
+  process_start: "Start persistent process",
+  process_write_stdin: "Send process input",
+  process_stop: "Stop persistent process",
   browser_status: "Inspect managed browser status",
   browser_list: "List managed browsers",
   browser_snapshot: "Inspect browser page",
@@ -312,7 +335,7 @@ function toolAnnotations(name: string): JsonObject {
 function toolInvocationText(name: string): { invoking: string; invoked: string } {
   const title = TOOL_TITLES[name] ?? name.replace(/_/g, " ");
   return {
-    invoking: `${title}…`.slice(0, 64),
+    invoking: `${title}ÔÇª`.slice(0, 64),
     invoked: `${title} complete`.slice(0, 64),
   };
 }
@@ -564,7 +587,7 @@ export async function handleOrdaxMcp(request: Request, handlers: OrdaxMcpHandler
     protocolVersion: "2025-06-18",
     capabilities: { tools: { listChanged: false } },
     serverInfo: { name: "ORDAX Dev", version: "0.4.1" },
-    instructions: "Use ORDAX Dev only when the user asks to work with a connected ORDAX device or one of its registered projects. List connected devices before project-scoped work when the target is unknown. Respect project boundaries and the user’s explicit intent. Write, execute, Git and Blender mutation tools remain grant- and audit-protected by the ORDAX Runtime.",
+    instructions: "Use ORDAX Dev only when the user asks to work with a connected ORDAX device or one of its registered projects. List connected devices before project-scoped work when the target is unknown. Respect project boundaries and the userÔÇÖs explicit intent. Write, execute, Git and Blender mutation tools remain grant- and audit-protected by the ORDAX Runtime.",
   });
   if (method === "tools/list") return rpcResult(id, { tools: toolDefinitions() });
   if (method === "tools/call") {

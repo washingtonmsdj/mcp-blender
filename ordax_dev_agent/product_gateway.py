@@ -246,6 +246,9 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
         allowed_fields=frozenset({"query", "max_items"}),
         project_required=False,
     ),
+    "process.status": ProductActionSpec("process.status", "process.status", frozenset({"project", "process_id"})),
+    "process.list": ProductActionSpec("process.list", "process.list", frozenset({"project"})),
+    "process.logs": ProductActionSpec("process.logs", "process.logs", frozenset({"project", "process_id", "max_bytes"})),
 }
 
 # Product v2 exposes only bounded typed operations. No generic action executor or shell.
@@ -317,6 +320,15 @@ PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
         "terminal.exec",
         frozenset({"project", "cwd", "argv", "command", "shell", "timeout_seconds", "env"}),
         effect="execute",
+    ),
+    "process.start": ProductActionSpec(
+        "process.start", "process.start", frozenset({"project", "argv", "cwd", "env", "wait_seconds"}), effect="execute",
+    ),
+    "process.write_stdin": ProductActionSpec(
+        "process.write_stdin", "process.write_stdin", frozenset({"project", "process_id", "text", "newline"}), effect="execute",
+    ),
+    "process.stop": ProductActionSpec(
+        "process.stop", "process.stop", frozenset({"project", "process_id"}), effect="write",
     ),
     "browser.start": ProductActionSpec(
         "browser.start",
@@ -477,6 +489,17 @@ def _sanitize_product_result(
             if key in item
         }
 
+    def public_process(item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: item[key]
+            for key in (
+                "process_id", "project", "state", "cwd", "started_at_unix",
+                "manager_ready_at_unix", "running_at_unix", "stopping_at_unix",
+                "ended_at_unix", "returncode", "running", "ownership_valid", "child_pid",
+            )
+            if key in item
+        }
+
     if action in {
         "workspace.project_create",
         "workspace.bind_project",
@@ -616,6 +639,16 @@ def _sanitize_product_result(
         data.pop("command", None)
     elif action == "artifact.preview":
         data.pop("path", None)
+    elif action in {"process.start", "process.status", "process.stop"}:
+        data = public_process(data)
+    elif action == "process.list":
+        items = data.get("processes")
+        data = {"project": data.get("project"), "processes": [public_process(item) for item in items if isinstance(item, dict)] if isinstance(items, list) else []}
+    elif action == "process.logs":
+        process = data.get("process")
+        data = {"process": public_process(process) if isinstance(process, dict) else {}, "tail": str(data.get("tail") or ""), "size_bytes": int(data.get("size_bytes") or 0), "truncated": bool(data.get("truncated"))}
+    elif action == "process.write_stdin":
+        data = {key: data[key] for key in ("process_id", "queued_bytes", "newline") if key in data}
     elif action == "computer.processes":
         processes = data.get("processes")
         if isinstance(processes, list):

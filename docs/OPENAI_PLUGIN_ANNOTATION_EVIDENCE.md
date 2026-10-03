@@ -1,4 +1,4 @@
-# ORDAX Dev — OpenAI MCP annotation review evidence
+# ORDAX Dev ÔÇö OpenAI MCP annotation review evidence
 
 Generated from the canonical public tool surface on `control-plane/cloudflare/src/mcp_http.ts`.
 
@@ -39,6 +39,12 @@ This document is reviewer-facing evidence for the OpenAI plugin submission. The 
 | `git_diff` | true | false | false | Reads or computes bounded data from the authenticated ORDAX account/device/project and does not modify external state. |
 | `git_command` | false | true | true | Can execute commands or Git operations that may modify project state and may contact open-ended external destinations; explicit grants and host confirmation are required. |
 | `terminal_exec` | false | true | true | Can execute commands or Git operations that may modify project state and may contact open-ended external destinations; explicit grants and host confirmation are required. |
+| `process_status` | true | false | false | Reads bounded sanitized state for one ORDAX-owned persistent process without exposing ownership tokens or local control paths. |
+| `process_list` | true | false | false | Lists sanitized ORDAX-owned persistent process state for the granted project without changing process state. |
+| `process_logs` | true | false | false | Reads a bounded tail from an ORDAX-owned process log and does not modify the process. |
+| `process_start` | false | true | true | Starts an argv-based project process that may modify local state or contact external destinations; it requires an explicit process.start grant. |
+| `process_write_stdin` | false | true | true | Input sent to a running process can trigger local or external side effects, so it requires an explicit process.write_stdin grant. |
+| `process_stop` | false | true | false | Stops only a process whose ORDAX ownership is revalidated; it does not target arbitrary system processes. |
 | `browser_status` | true | false | false | Reads metadata for an ORDAX-owned browser session without changing browser or project state. |
 | `browser_list` | true | false | false | Lists ORDAX-owned browser sessions for the granted project without changing them. |
 | `browser_snapshot` | true | false | true | Reads bounded page text and interactive element metadata from the current browser page; the page may be an open-world web destination. |
