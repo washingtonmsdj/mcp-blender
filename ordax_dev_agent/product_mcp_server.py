@@ -717,6 +717,43 @@ def computer_search(
 
 
 @mcp.tool()
+def computer_processes(
+    device_id: str,
+    query: str = "",
+    max_items: int = 200,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    return _invoke(
+        device_id=device_id,
+        action="computer.processes",
+        space_id=space_id,
+        arguments={"query": query, "max_items": max_items},
+    )
+
+
+@mcp.tool()
+def computer_terminate_process(
+    device_id: str,
+    pid: int,
+    expected_name: str,
+    force: bool = False,
+    tree: bool = True,
+    space_id: str | None = None,
+) -> dict[str, Any]:
+    return _invoke(
+        device_id=device_id,
+        action="computer.terminate_process",
+        space_id=space_id,
+        arguments={
+            "pid": pid,
+            "expected_name": expected_name,
+            "force": force,
+            "tree": tree,
+        },
+    )
+
+
+@mcp.tool()
 def computer_text_write(
     device_id: str,
     path: str,

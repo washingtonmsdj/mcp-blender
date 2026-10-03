@@ -240,6 +240,12 @@ PRODUCT_READ_ONLY_ACTIONS: dict[str, ProductActionSpec] = {
         allowed_fields=frozenset({"root", "query", "mode", "max_results", "max_depth", "include_hidden"}),
         project_required=False,
     ),
+    "computer.processes": ProductActionSpec(
+        name="computer.processes",
+        local_action="computer.processes",
+        allowed_fields=frozenset({"query", "max_items"}),
+        project_required=False,
+    ),
 }
 
 # Product v2 exposes only bounded typed operations. No generic action executor or shell.
@@ -340,6 +346,13 @@ PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
         "browser.stop",
         "browser.stop",
         frozenset({"project", "session_id"}),
+        effect="write",
+    ),
+    "computer.terminate_process": ProductActionSpec(
+        "computer.terminate_process",
+        "computer.terminate_process",
+        frozenset({"pid", "expected_name", "force", "tree"}),
+        project_required=False,
         effect="write",
     ),
     "computer.focus_window": ProductActionSpec(
@@ -603,6 +616,20 @@ def _sanitize_product_result(
         data.pop("command", None)
     elif action == "artifact.preview":
         data.pop("path", None)
+    elif action == "computer.processes":
+        processes = data.get("processes")
+        if isinstance(processes, list):
+            data["processes"] = [
+                {
+                    key: item[key]
+                    for key in ("pid", "parent_pid", "name", "executable")
+                    if key in item
+                }
+                for item in processes
+                if isinstance(item, dict)
+            ]
+    elif action == "computer.terminate_process":
+        data.pop("command_line", None)
     elif action.startswith("blender."):
         data = _redact_local_result_paths(data)
 

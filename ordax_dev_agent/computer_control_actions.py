@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import ctypes
 import os
+import json
+import subprocess
 import time
 import uuid
 from ctypes import wintypes
@@ -79,7 +81,210 @@ class _INPUT(ctypes.Structure):
     _fields_ = [("type", wintypes.DWORD), ("union", _INPUTUNION)]
 
 
+_CRITICAL_PROCESS_NAMES = frozenset({
+    "system",
+    "registry",
+    "memory compression",
+    "smss.exe",
+    "csrss.exe",
+    "wininit.exe",
+    "winlogon.exe",
+    "services.exe",
+    "lsass.exe",
+    "fontdrvhost.exe",
+})
+
 class ComputerControlActions:
+    @staticmethod
+    def _normalize_process_item(item: dict[str, Any]) -> dict[str, Any]:
+        def bounded(value: Any, limit: int = 2000) -> str:
+            return str(value or "").replace("\x00", "").strip()[:limit]
+
+        pid = int(item.get("pid") or item.get("ProcessId") or 0)
+        ppid = int(item.get("parent_pid") or item.get("ParentProcessId") or 0)
+        return {
+            "pid": pid,
+            "parent_pid": ppid,
+            "name": bounded(item.get("name") or item.get("Name"), 260),
+            "executable": bounded(item.get("executable") or item.get("ExecutablePath"), 2000),
+            "command_line": bounded(item.get("command_line") or item.get("CommandLine"), 4000),
+        }
+
+    @classmethod
+    def _system_process_snapshot(cls) -> list[dict[str, Any]]:
+        if os.name == "nt":
+            script = (
+                "$ErrorActionPreference='Stop';"
+                "Get-CimInstance Win32_Process | "
+                "Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine | "
+                "ConvertTo-Json -Compress -Depth 3"
+            )
+            completed = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                shell=False,
+            )
+            if completed.returncode != 0:
+                raise OSError((completed.stderr or "process enumeration failed").strip()[:2000])
+            raw = (completed.stdout or "").strip()
+            if not raw:
+                return []
+            payload = json.loads(raw)
+            if isinstance(payload, dict):
+                payload = [payload]
+            if not isinstance(payload, list):
+                raise ValueError("Windows process enumeration returned invalid JSON")
+            return [
+                cls._normalize_process_item(item)
+                for item in payload
+                if isinstance(item, dict) and int(item.get("ProcessId") or 0) > 0
+            ]
+
+        completed = subprocess.run(
+            ["ps", "-eo", "pid=,ppid=,comm=,args="],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            shell=False,
+        )
+        if completed.returncode != 0:
+            raise OSError((completed.stderr or "process enumeration failed").strip()[:2000])
+        items: list[dict[str, Any]] = []
+        for line in (completed.stdout or "").splitlines():
+            parts = line.strip().split(None, 3)
+            if len(parts) < 3:
+                continue
+            try:
+                pid = int(parts[0])
+                ppid = int(parts[1])
+            except ValueError:
+                continue
+            name = parts[2]
+            command = parts[3] if len(parts) > 3 else name
+            items.append(cls._normalize_process_item({
+                "pid": pid,
+                "parent_pid": ppid,
+                "name": name,
+                "command_line": command,
+            }))
+        return items
+
+    @classmethod
+    def _system_process_by_pid(cls, pid: int) -> dict[str, Any] | None:
+        return next((item for item in cls._system_process_snapshot() if item["pid"] == pid), None)
+
+    def computer_processes(self, payload: dict[str, Any]) -> ActionResult:
+        allowed = {"query", "max_items"}
+        unsupported = sorted(set(payload) - allowed)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+        query = str(payload.get("query") or "").strip().casefold()
+        try:
+            max_items = int(payload.get("max_items", 200))
+        except (TypeError, ValueError):
+            return ActionResult(False, "max_items must be an integer")
+        if not 1 <= max_items <= 1000:
+            return ActionResult(False, "max_items must be between 1 and 1000")
+
+        try:
+            items = self._system_process_snapshot()
+        except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
+            return ActionResult(False, f"process enumeration failed: {type(error).__name__}: {error}")
+
+        if query:
+            items = [
+                item for item in items
+                if query in str(item.get("name") or "").casefold()
+                or query in str(item.get("executable") or "").casefold()
+                or query in str(item.get("command_line") or "").casefold()
+            ]
+        items.sort(key=lambda item: (str(item.get("name") or "").casefold(), int(item["pid"])))
+        total = len(items)
+        return ActionResult(
+            True,
+            "system processes ready",
+            {"processes": items[:max_items], "total_matches": total, "truncated": total > max_items},
+        )
+
+    def computer_terminate_process(self, payload: dict[str, Any]) -> ActionResult:
+        allowed = {"pid", "expected_name", "force", "tree"}
+        unsupported = sorted(set(payload) - allowed)
+        if unsupported:
+            return ActionResult(False, "unsupported field(s): " + ", ".join(unsupported))
+        try:
+            pid = int(payload.get("pid"))
+        except (TypeError, ValueError):
+            return ActionResult(False, "pid must be an integer")
+        if pid <= 0:
+            return ActionResult(False, "pid must be positive")
+
+        expected_name = str(payload.get("expected_name") or "").strip()
+        if not expected_name or len(expected_name) > 260:
+            return ActionResult(False, "expected_name is required and must be at most 260 characters")
+        force = payload.get("force", False)
+        tree = payload.get("tree", True)
+        if not isinstance(force, bool) or not isinstance(tree, bool):
+            return ActionResult(False, "force and tree must be boolean")
+
+        current_pid = os.getpid()
+        parent_pid = os.getppid()
+        if pid in {current_pid, parent_pid}:
+            return ActionResult(False, "refusing to terminate the active ORDAX process")
+
+        try:
+            item = self._system_process_by_pid(pid)
+        except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
+            return ActionResult(False, f"process inspection failed: {type(error).__name__}: {error}")
+        if item is None:
+            return ActionResult(False, "process no longer exists")
+
+        actual_name = str(item.get("name") or "")
+        if actual_name.casefold() != expected_name.casefold():
+            return ActionResult(False, "process identity changed; expected_name does not match current PID", {
+                "pid": pid,
+                "expected_name": expected_name,
+                "actual_name": actual_name,
+            })
+
+        normalized_name = actual_name.casefold()
+        if normalized_name in _CRITICAL_PROCESS_NAMES or normalized_name.startswith("ordax"):
+            return ActionResult(False, f"refusing to terminate protected process: {actual_name}")
+
+        try:
+            if os.name == "nt":
+                command = ["taskkill", "/PID", str(pid)]
+                if tree:
+                    command.append("/T")
+                if force:
+                    command.append("/F")
+                completed = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    shell=False,
+                )
+                if completed.returncode != 0:
+                    return ActionResult(False, "process termination failed", {
+                        "pid": pid,
+                        "name": actual_name,
+                        "stderr": (completed.stderr or "")[-2000:],
+                    })
+            else:
+                import signal
+                os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return ActionResult(False, f"process termination failed: {type(error).__name__}: {error}")
+
+        return ActionResult(True, "process termination requested", {
+            "pid": pid,
+            "name": actual_name,
+            "force": force,
+            "tree": tree if os.name == "nt" else False,
+        })
+
     @staticmethod
     def _windows_only() -> None:
         if os.name != "nt":

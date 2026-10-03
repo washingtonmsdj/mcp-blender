@@ -481,6 +481,7 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             "computer.file_stat",
             "computer.text_read",
             "computer.search",
+            "computer.processes",
         ):
             self.assertIn(f'"{action}"', product_block)
         typed_block = worker.split(
@@ -494,6 +495,7 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertIn('"computer.text_write"', typed_block)
         self.assertIn('"computer.text_patch"', typed_block)
         self.assertIn('"computer.path_remove"', typed_block)
+        self.assertIn('"computer.terminate_process"', typed_block)
 
         for mutation in (
             "project.text_write",
@@ -536,6 +538,26 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertNotIn('"computer.text_read"', project_block)
         self.assertNotIn('"computer.text_write"', project_block)
         self.assertNotIn('"computer.path_remove"', project_block)
+        self.assertNotIn('"computer.processes"', project_block)
+        self.assertNotIn('"computer.terminate_process"', project_block)
+
+    def test_operator_job_prefixes_cover_typed_computer_runtime_surfaces(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        worker = (
+            root / "control-plane" / "cloudflare" / "src" / "index.ts"
+        ).read_text(encoding="utf-8")
+        prefix_block = worker.split(
+            "const ACTION_PREFIXES = [", 1
+        )[1].split("];", 1)[0]
+        for prefix in (
+            "workspace.",
+            "terminal.",
+            "process.",
+            "browser.",
+            "computer.",
+        ):
+            self.assertIn(f'"{prefix}"', prefix_block)
+        self.assertNotIn('"shell."', prefix_block)
 
     def test_product_retention_is_scheduled_and_matches_public_policy(self) -> None:
         root = Path(__file__).resolve().parents[1]

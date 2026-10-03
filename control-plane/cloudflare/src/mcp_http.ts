@@ -101,6 +101,8 @@ const TOOLS: ToolSpec[] = [
   { name: "computer_directory_list", description: "List a directory tree allowed by the local computer-access policy.", action: "computer.directory_list", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, max_depth: { type: "integer", minimum: 1, maximum: 12 }, max_entries: { type: "integer", minimum: 1, maximum: 5000 }, include_hidden: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "path"] },
   { name: "computer_text_read", description: "Read bounded UTF-8 text from an allowed computer path.", action: "computer.text_read", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, start_line: { type: "integer", minimum: 1 }, end_line: { type: "integer", minimum: 1 }, wait_for_completion_ms: WAIT }, required: ["device_id", "path"] },
   { name: "computer_search", description: "Search names or bounded text content under an allowed computer root.", action: "computer.search", properties: { device_id: DEVICE, space_id: SPACE, root: STRING, query: STRING, mode: { type: "string", enum: ["name", "content", "both"] }, max_results: { type: "integer", minimum: 1, maximum: 500 }, max_depth: { type: "integer", minimum: 1, maximum: 12 }, include_hidden: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "root", "query"] },
+  { name: "computer_processes", description: "List bounded system process metadata on the authorized computer.", action: "computer.processes", properties: { device_id: DEVICE, space_id: SPACE, query: STRING, max_items: { type: "integer", minimum: 1, maximum: 1000 }, wait_for_completion_ms: WAIT }, required: ["device_id"] },
+  { name: "computer_terminate_process", description: "Terminate one non-critical process only when expected_name still matches the PID.", action: "computer.terminate_process", properties: { device_id: DEVICE, space_id: SPACE, pid: { type: "integer", minimum: 1 }, expected_name: STRING, force: BOOLEAN, tree: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "pid", "expected_name"] },
   { name: "computer_text_write", description: "Create or replace text at an allowed computer path with SHA-256 concurrency protection.", action: "computer.text_write", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, content: STRING, expected_sha256: STRING, create: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "path", "content"] },
   { name: "computer_text_patch", description: "Patch allowed computer text using exact replacements and a SHA-256 precondition.", action: "computer.text_patch", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, expected_sha256: STRING, replacements: REPLACEMENTS, wait_for_completion_ms: WAIT }, required: ["device_id", "path", "expected_sha256", "replacements"] },
   { name: "computer_directory_create", description: "Create a directory within the local computer-access policy.", action: "computer.directory_create", properties: { device_id: DEVICE, space_id: SPACE, path: STRING, parents: BOOLEAN, wait_for_completion_ms: WAIT }, required: ["device_id", "path"] },
@@ -158,6 +160,7 @@ const READ_ONLY_TOOLS = new Set([
   "computer_directory_list",
   "computer_text_read",
   "computer_search",
+  "computer_processes",
 ]);
 
 const DESTRUCTIVE_TOOLS = new Set([
@@ -183,6 +186,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "computer_text_patch",
   "computer_path_move",
   "computer_path_remove",
+  "computer_terminate_process",
 ]);
 
 const NON_DESTRUCTIVE_WRITE_TOOLS = new Set([
@@ -269,6 +273,8 @@ const TOOL_TITLES: Record<string, string> = {
   computer_directory_list: "List computer directory",
   computer_text_read: "Read computer text",
   computer_search: "Search computer files",
+  computer_processes: "List system processes",
+  computer_terminate_process: "Terminate system process",
   computer_text_write: "Write computer text",
   computer_text_patch: "Patch computer text",
   computer_directory_create: "Create computer directory",

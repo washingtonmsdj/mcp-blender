@@ -55,6 +55,8 @@ class _Executor:
             "computer.directory_list",
             "computer.text_read",
             "computer.search",
+            "computer.processes",
+            "computer.terminate_process",
             "computer.text_write",
             "computer.text_patch",
             "computer.directory_create",
@@ -172,6 +174,8 @@ class ProductMcpFacadeTests(unittest.TestCase):
                 "computer_directory_list",
                 "computer_text_read",
                 "computer_search",
+                "computer_processes",
+                "computer_terminate_process",
                 "computer_text_write",
                 "computer_text_patch",
                 "computer_directory_create",
@@ -213,6 +217,8 @@ class ProductMcpFacadeTests(unittest.TestCase):
         self.assertEqual(effects["computer_access_status"], "read")
         self.assertEqual(effects["computer_text_read"], "read")
         self.assertEqual(effects["computer_search"], "read")
+        self.assertEqual(effects["computer_processes"], "read")
+        self.assertEqual(effects["computer_terminate_process"], "write")
         self.assertEqual(effects["computer_text_write"], "write")
         self.assertEqual(effects["computer_path_remove"], "write")
         self.assertEqual(effects["git_command"], "execute")
