@@ -84,7 +84,9 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn("_ALLOWED_METHODS", bridge)
         provider = (ROOT / "ordax_studio" / "provider_api.html").read_text(encoding="utf-8")
         self.assertIn("ordax-provider-rpc", provider)
-        self.assertNotIn("api_key", provider.lower())
+        self.assertIn("api_key_env", provider)
+        self.assertNotIn('type="password"', provider)
+        self.assertNotIn("authorization", provider.lower())
         self.assertIn("window.chrome?.webview", studio_js)
         self.assertIn("window.pywebview?.api?.[name]", studio_js)
 
