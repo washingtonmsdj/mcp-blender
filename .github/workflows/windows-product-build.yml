@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "packaging/windows/**"
+      - "ordax_core/**"
+      - "ordax_dev_agent/**"
+      - "ordax_device_agent/**"
       - "ordax_studio/**"
       - "native/ordax-workbench/**"
       - "scripts/windows/build-ordax-studio-product.ps1"
