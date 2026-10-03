@@ -423,6 +423,10 @@ class ComputerControlActions:
             },
         )
 
+    @staticmethod
+    def _current_thread_id() -> int:
+        return int(ctypes.windll.kernel32.GetCurrentThreadId())
+
     def computer_focus_window(self, payload: dict[str, Any]) -> ActionResult:
         self._project(payload)
         try:
@@ -432,15 +436,52 @@ class ComputerControlActions:
             return ActionResult(False, str(error))
         if not user32.IsWindow(hwnd):
             return ActionResult(False, "window handle does not exist")
-        if user32.IsIconic(hwnd):
-            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-        user32.BringWindowToTop(hwnd)
-        ok = bool(user32.SetForegroundWindow(hwnd))
-        time.sleep(0.05)
-        info = self._window_info(hwnd)
+
+        # Windows may reject SetForegroundWindow when the caller doesn't own the
+        # current foreground input queue. Temporarily join the caller, foreground
+        # and target input queues, focus the requested visible window, then always
+        # detach. This avoids click/ALT-key workarounds and never changes app data.
+        attached: list[tuple[int, int]] = []
+
+        def attach(first: int, second: int) -> None:
+            if not first or not second or first == second:
+                return
+            pair = (first, second)
+            if pair in attached:
+                return
+            if bool(user32.AttachThreadInput(first, second, True)):
+                attached.append(pair)
+
+        try:
+            foreground_hwnd = int(user32.GetForegroundWindow() or 0)
+            caller_thread = self._current_thread_id()
+            foreground_thread = int(
+                user32.GetWindowThreadProcessId(foreground_hwnd, None) or 0
+            ) if foreground_hwnd else 0
+            target_thread = int(user32.GetWindowThreadProcessId(hwnd, None) or 0)
+
+            attach(caller_thread, foreground_thread)
+            attach(caller_thread, target_thread)
+            attach(target_thread, foreground_thread)
+
+            if user32.IsIconic(hwnd):
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.BringWindowToTop(hwnd)
+            ok = bool(user32.SetForegroundWindow(hwnd))
+            user32.SetActiveWindow(hwnd)
+            user32.SetFocus(hwnd)
+            # Keep the input queues joined until Windows has committed the
+            # foreground transition; detaching earlier can revert the focus.
+            time.sleep(0.08)
+            info = self._window_info(hwnd)
+        finally:
+            for first, second in reversed(attached):
+                user32.AttachThreadInput(first, second, False)
+
+        focused = bool(ok or (info and info.get("foreground")))
         return ActionResult(
-            bool(ok or (info and info.get("foreground"))),
-            "window focused" if ok or (info and info.get("foreground")) else "window focus was rejected by Windows",
+            focused,
+            "window focused" if focused else "window focus was rejected by Windows",
             info or {"handle": f"0x{hwnd:X}"},
         )
 
