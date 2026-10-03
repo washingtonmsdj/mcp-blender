@@ -213,12 +213,19 @@ class BlenderAdoptionTests(unittest.TestCase):
         self.assertIn("timed out", result.summary.lower())
         self.assertFalse((self.state / "blender-adoption" / f"{pid}.json").exists())
 
-    def _reply_to_adoption(self, pid: int, project: str = "demo") -> threading.Thread:
+    def _reply_to_adoption(
+        self,
+        pid: int,
+        project: str = "demo",
+        capture: dict[str, object] | None = None,
+    ) -> threading.Thread:
         def companion_reply():
             request = self.state / "blender-adoption" / f"{pid}.json"
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline and not request.is_file():
                 time.sleep(0.01)
+            if capture is not None and request.is_file():
+                capture.update(json.loads(request.read_text(encoding="utf-8")))
             presence = self.state / "blender-live" / project / "presence.json"
             presence.parent.mkdir(parents=True, exist_ok=True)
             presence.write_text(
@@ -258,7 +265,8 @@ class BlenderAdoptionTests(unittest.TestCase):
     def test_clean_blank_window_can_be_adopted_by_explicit_pid(self):
         pid = 402
         self._discovery(pid, file="")
-        thread = self._reply_to_adoption(pid)
+        request_capture: dict[str, object] = {}
+        thread = self._reply_to_adoption(pid, capture=request_capture)
         result = self.manager.request_adoption(
             self.project,
             pid=pid,
@@ -267,8 +275,8 @@ class BlenderAdoptionTests(unittest.TestCase):
         )
         thread.join(timeout=2.0)
         self.assertTrue(result.ok, result.summary)
-        request = json.loads((self.state / "blender-adoption" / f"{pid}.json").read_text(encoding="utf-8"))
-        self.assertTrue(request["allow_blank"])
+        self.assertTrue(request_capture["allow_blank"])
+        self.assertFalse((self.state / "blender-adoption" / f"{pid}.json").exists())
 
     def test_dirty_blank_window_cannot_be_adopted(self):
         self._discovery(403, file="", dirty=True)
