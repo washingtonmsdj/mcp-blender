@@ -16,9 +16,12 @@ class OrdaxStudioPluginPackageTests(unittest.TestCase):
     def test_portable_plugin_manifest_is_valid(self):
         manifest = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8-sig"))
         self.assertEqual(manifest["name"], "ordax-dev")
-        self.assertEqual(manifest["extensions"]["com.openai"]["interface"]["displayName"], "ORDAX Dev")
+        self.assertEqual(manifest["extensions"]["com.openai"]["interface"]["displayName"], "ORDAX Studio")
         interface = manifest["extensions"]["com.openai"]["interface"]
+        self.assertIn("Computer Control", interface["capabilities"])
         self.assertIn("Persistent project context", interface["capabilities"])
+        self.assertIn("Blender & Unity adapters", interface["capabilities"])
+        self.assertNotIn("Development commands", interface["capabilities"])
         self.assertIn(
             "Continue working on my ORDAX project from where we left off.",
             interface["defaultPrompt"],
@@ -57,8 +60,11 @@ class OrdaxStudioPluginPackageTests(unittest.TestCase):
         self.assertEqual(interface["composerIcon"], "./assets/ordax.svg")
         self.assertEqual(interface["logo"], "./assets/ordax.svg")
         review = manifest["extensions"]["com.openai"]["review"]["test_cases"]
-        self.assertEqual(len(review["positive"]), 5)
-        self.assertEqual(len(review["negative"]), 3)
+        self.assertEqual(len(review["positive"]), 7)
+        self.assertEqual(len(review["negative"]), 6)
+        self.assertTrue(any("computer_screenshot" in case.get("tools_triggered", "") for case in review["positive"]))
+        self.assertTrue(any("computer_launch_app" in case.get("tools_triggered", "") for case in review["positive"]))
+        self.assertTrue(any("powershell.exe" in case.get("prompt", "") for case in review["negative"]))
 
     def test_submission_assets_are_present(self):
         self.assertTrue((PLUGIN_ROOT / "assets" / "ordax.svg").is_file())

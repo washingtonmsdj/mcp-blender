@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ordax-dev",
   "version": "0.4.1",
-  "description": "Connect ChatGPT and other compatible clients to authorized development projects and tools through the ORDAX Dev remote MCP.",
+  "description": "Connect ChatGPT to an authorized ORDAX Studio computer for grant-scoped projects, typed Computer Control, files, Git and specialized adapters.",
   "author": {
     "name": "ORDAX",
     "url": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/"
@@ -22,18 +22,19 @@
   "extensions": {
     "com.openai": {
       "interface": {
-        "displayName": "ORDAX Dev",
-        "shortDescription": "Connect to your ORDAX Dev",
-        "longDescription": "Work with projects on a computer you explicitly connect to ORDAX Dev. The plugin can discover registered projects, load durable project continuity for fresh conversations, retrieve bounded relevant project memory and source context, read and update granted files, inspect Git state, run specifically granted development commands, and use supported Blender tools. Access is limited by device, project and action grants enforced by the ORDAX Runtime and Control Plane. It does not provide unrestricted access to the whole computer and it does not request the full ChatGPT conversation history.",
+        "displayName": "ORDAX Studio",
+        "shortDescription": "Connect your ORDAX Studio",
+        "longDescription": "Work with projects and the interactive computer you explicitly connect to ORDAX Studio. Grant-scoped typed tools can inspect screens and windows, focus and interact with the desktop, launch locally allowlisted applications, inspect processes, work with authorized files and Git, use managed browser tooling, and load durable project continuity in fresh conversations. Blender and Unity are specialized project adapters, not the product boundary. Every remote action remains limited by device, project and action grants plus local Runtime policy; the integration does not request unrestricted conversation history or silently bypass local permissions.",
         "developerName": "ORDAX",
         "category": "Developer Tools",
         "capabilities": [
+          "Computer Control",
           "Projects",
           "Persistent project context",
-          "Files",
+          "Authorized files",
           "Git",
-          "Development commands",
-          "Blender"
+          "Managed browser",
+          "Blender & Unity adapters"
         ],
         "websiteURL": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/",
         "supportURL": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/support",
@@ -42,8 +43,8 @@
         "defaultPrompt": [
           "Continue working on my ORDAX project from where we left off.",
           "Show the projects available on my connected ORDAX computer.",
-          "Check Git status for my selected ORDAX project.",
-          "Inspect the live Blender scene for my selected ORDAX project."
+          "Show the screen geometry and visible windows on my connected ORDAX computer.",
+          "Capture the active window on my connected ORDAX computer."
         ],
         "brandColor": "#0B1724",
         "brandColorDark": "#76B8FF",
@@ -57,58 +58,82 @@
               "description": "List the connected review device and its granted projects.",
               "prompt": "Show the projects available on my connected ORDAX computer.",
               "tools_triggered": "ordax_targets, projects_list",
-              "expected_behavior": "Return only the connected ORDAX review device and the projects granted to the review account."
+              "expected_behavior": "Return only the connected review device and projects granted to the review account."
             },
             {
-              "description": "Read a file from the granted review project.",
-              "prompt": "Read README.md from the ordax-review-demo project.",
-              "tools_triggered": "project_text_read",
-              "expected_behavior": "Return the README content from the granted demo project without exposing files outside that project."
+              "description": "Inspect bounded screen geometry and visible windows.",
+              "prompt": "Show the screen geometry and visible windows on my connected review computer.",
+              "tools_triggered": "computer_screen_info, computer_windows",
+              "expected_behavior": "Return bounded physical-pixel screen and visible-window metadata from the granted device."
             },
             {
-              "description": "Search text inside the granted review project.",
-              "prompt": "Search ordax-review-demo for the phrase REVIEW_MARKER.",
-              "tools_triggered": "project_search",
-              "expected_behavior": "Return matching files and bounded excerpts only from the granted demo project."
+              "description": "Capture the active review-computer window.",
+              "prompt": "Capture the active window on my connected review computer.",
+              "tools_triggered": "computer_screenshot",
+              "expected_behavior": "Return a bounded screenshot artifact/receipt for the granted review device."
             },
             {
-              "description": "Create a review output file inside the granted project.",
-              "prompt": "Create review-output.txt in ordax-review-demo containing the text plugin review write test.",
-              "tools_triggered": "project_text_write",
-              "expected_behavior": "Create only the requested file inside the granted demo project and report the resulting file state."
+              "description": "Launch and interact with the locally allowlisted review application.",
+              "prompt": "Open Notepad on my connected review computer, focus it, click in the editor and type ORDAX REVIEW INPUT.",
+              "tools_triggered": "computer_launch_app, computer_windows, computer_focus_window, computer_click, computer_type",
+              "expected_behavior": "Only locally allowlisted Notepad starts and receives the bounded desktop input."
             },
             {
-              "description": "Inspect Git status after the review write.",
-              "prompt": "Show Git status for ordax-review-demo.",
-              "tools_triggered": "git_status",
-              "expected_behavior": "Return bounded Git status for the granted demo repository, including review-output.txt when it is uncommitted."
+              "description": "Inspect bounded process metadata without process control.",
+              "prompt": "List the running processes that match notepad.",
+              "tools_triggered": "computer_processes",
+              "expected_behavior": "Return bounded Notepad process metadata; process termination is not granted."
+            },
+            {
+              "description": "Read and search only inside the granted review project.",
+              "prompt": "Read README.md from ordax-review-demo and search it for REVIEW_MARKER.",
+              "tools_triggered": "project_text_read, project_search",
+              "expected_behavior": "Return only granted project content and bounded search matches."
+            },
+            {
+              "description": "Perform one bounded project write and inspect Git state.",
+              "prompt": "Create review-output.txt in ordax-review-demo containing plugin review write test, then show Git status.",
+              "tools_triggered": "project_text_write, git_status",
+              "expected_behavior": "Create only the requested review file and report its uncommitted Git state."
             }
           ],
           "negative": [
             {
-              "description": "Reject access to a project that is not granted to the connected account.",
+              "description": "Reject a project that is not in the review grant.",
               "prompt": "Read secrets.txt from a project named private-project-that-is-not-granted."
             },
             {
-              "description": "Reject command execution when the review account does not have terminal.exec permission.",
+              "description": "Reject shell execution because terminal.exec is not granted.",
               "prompt": "Run a terminal command in ordax-review-demo that prints the current environment variables."
             },
             {
-              "description": "Do not use ORDAX Dev for an unrelated financial action.",
+              "description": "Reject a non-allowlisted shell-like application.",
+              "prompt": "Open powershell.exe on my connected review computer."
+            },
+            {
+              "description": "Reject desktop hotkeys because computer.hotkey is not in the review grant.",
+              "prompt": "Press Win+R on my connected review computer."
+            },
+            {
+              "description": "Reject process termination because it is not in the review grant.",
+              "prompt": "Terminate the Notepad process."
+            },
+            {
+              "description": "Do not select ORDAX Studio for unrelated financial actions.",
               "prompt": "Transfer $100 to another bank account for me."
             }
           ]
         },
         "commerce": false,
-        "commerce_description": "ORDAX Dev does not sell products or process payments."
+        "commerce_description": "ORDAX Studio does not sell products or process payments."
       },
       "publication": {
         "countries": [],
-        "release_notes": "Initial public-review package for ORDAX Dev remote MCP with grant-scoped project, Git and Blender tooling, production OAuth, public policy pages and explicit tool safety annotations.",
+        "release_notes": "Initial public-review package for ORDAX Studio remote MCP with grant-scoped typed Computer Control, projects, files, Git, durable context, production OAuth, local Runtime policy and specialized adapters.",
         "translations": {
           "pt-BR": {
-            "subtitle": "Conecte ao seu ORDAX Dev",
-            "description": "Trabalhe com projetos em um computador conectado por você ao ORDAX Dev. O plugin descobre projetos registrados, recupera continuidade persistente em conversas novas, busca contexto relevante limitado por projeto, lê e altera arquivos autorizados, inspeciona Git, executa comandos de desenvolvimento especificamente concedidos e usa ferramentas Blender compatíveis. O acesso é limitado por grants de dispositivo, projeto e ação no Runtime e Control Plane."
+            "subtitle": "Conecte seu ORDAX Studio",
+            "description": "Conecte o ChatGPT ao computador autorizado pelo ORDAX Studio. A integração usa ações tipadas e grants para tela, janelas, entrada controlada, aplicativos permitidos localmente, processos, arquivos, Git e continuidade de projetos. Blender e Unity são adapters especializados. O Runtime e a política local continuam limitando cada ação por dispositivo, projeto e permissão."
           }
         }
       }
