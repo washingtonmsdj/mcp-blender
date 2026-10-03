@@ -215,6 +215,26 @@ class ProductMcpServerTests(unittest.TestCase):
         self.assertIsNone(submit[2]["project"])
         self.assertEqual(submit[2]["arguments"], {})
 
+    def test_persistent_process_tools_route_as_project_scoped_actions(self):
+        started = server.process_start(
+            "dev-1", "demo", ["python", "server.py"], "services", {"MODE": "test"}, 1.0, "space-1"
+        )
+        self.assertEqual(started["status"], "succeeded")
+        calls = [call for instance in FakeClient.instances for call in instance.calls]
+        submit = next(call for call in calls if call[0] == "submit")
+        self.assertEqual(submit[2]["action"], "process.start")
+        self.assertEqual(submit[2]["project"], "demo")
+        self.assertEqual(submit[2]["arguments"], {
+            "project": "demo", "argv": ["python", "server.py"], "cwd": "services",
+            "wait_seconds": 1.0, "env": {"MODE": "test"},
+        })
+
+        FakeClient.instances.clear()
+        server.process_write_stdin("dev-1", "demo", "proc-1", "yes", True, "space-1")
+        server.process_stop("dev-1", "demo", "proc-1", "space-1")
+        actions = [call[2]["action"] for instance in FakeClient.instances for call in instance.calls if call[0] == "submit"]
+        self.assertEqual(actions, ["process.write_stdin", "process.stop"])
+
     def test_system_process_tools_route_as_device_scoped_actions(self):
         listed = server.computer_processes("dev-1", "python", 25, "space-1")
         self.assertEqual(listed["status"], "succeeded")
@@ -249,7 +269,7 @@ class ProductMcpServerTests(unittest.TestCase):
 
     def test_typed_mutations_are_exposed_but_generic_execution_is_not(self):
         for name in (
-            "project_create", "project_import", "continuity_update", "browser_start", "browser_click", "computer_click", "computer_text_write", "computer_path_remove", "project_text_write", "project_text_patch", "blender_start",
+            "project_create", "project_import", "continuity_update", "browser_start", "browser_click", "computer_click", "computer_text_write", "computer_path_remove", "project_text_write", "project_text_patch", "process_start", "process_write_stdin", "process_stop", "blender_start",
             "blender_transform", "blender_create_primitive",
             "blender_apply_material", "blender_save",
         ):
@@ -287,6 +307,12 @@ class ProductMcpServerTests(unittest.TestCase):
             "browser_click",
             "browser_type",
             "browser_stop",
+            "process_status",
+            "process_list",
+            "process_logs",
+            "process_start",
+            "process_write_stdin",
+            "process_stop",
             "computer_windows",
             "computer_active_window",
             "computer_screenshot",
