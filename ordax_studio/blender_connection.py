@@ -151,6 +151,52 @@ def prepare_blender_connection(
 
     data = windows.data
     instances = data.get("instances") or []
+    live_sessions = data.get("live_sessions") or []
+    foreign_live_sessions = [
+        item
+        for item in live_sessions
+        if str(item.get("project") or "").strip()
+        and str(item.get("project") or "").strip() != project_slug
+    ]
+    occupied_instances = [
+        item
+        for item in instances
+        if str(item.get("attached_project") or "").strip()
+        and str(item.get("attached_project") or "").strip() != project_slug
+    ]
+    if foreign_live_sessions or occupied_instances:
+        live_attention = {int(pid) for pid in (data.get("live_attention_pids") or [])}
+        foreign_live_pids = sorted(
+            {
+                int(item["pid"])
+                for item in foreign_live_sessions
+                if item.get("pid") is not None
+            }
+        )
+        foreign_attention = sorted(pid for pid in foreign_live_pids if pid in live_attention)
+        return _state(
+            project_slug,
+            "occupied",
+            summary=(
+                "Há sessões Blender de outros projetos que exigem atenção"
+                if foreign_attention
+                else "As sessões Blender abertas já pertencem a outros projetos"
+            ),
+            instances=occupied_instances,
+            live_sessions=foreign_live_sessions,
+            blender_pids=sorted(
+                {
+                    *foreign_live_pids,
+                    *(
+                        int(item["pid"])
+                        for item in occupied_instances
+                        if item.get("pid") is not None
+                    ),
+                }
+            ),
+            live_attention_pids=foreign_attention,
+        )
+
     ready_pids = {int(pid) for pid in (data.get("ready_pids") or [])}
     clean_blank = [
         item
@@ -208,17 +254,6 @@ def prepare_blender_connection(
             blender_pids=restart or unmanaged,
             install_action="blender.adoption_install",
             bridge_installable=True,
-        )
-
-    occupied = [
-        item for item in instances if str(item.get("attached_project") or "").strip()
-    ]
-    if occupied:
-        return _state(
-            project_slug,
-            "occupied",
-            summary="As janelas Blender abertas já pertencem a outros projetos",
-            instances=occupied,
         )
 
     return _state(
