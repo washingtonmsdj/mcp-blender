@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from ordax_dev_agent.models import ActionResult
 from ordax_studio.web_desktop import StudioApi
@@ -321,22 +321,42 @@ class OrdaxStudioWebTests(unittest.TestCase):
                             "blender_version": "5.2.2", "file": str(project / "scene.blend"),
                         }}}),
                     ]
-                    response = get.return_value
-                    response.is_success = True
-                    response.status_code = 200
-                    response.headers = {"content-type": "application/json"}
-                    response.json.return_value = {
+                    local_response = Mock()
+                    local_response.is_success = True
+                    local_response.status_code = 200
+                    local_response.headers = {"content-type": "application/json"}
+                    local_response.json.return_value = {
+                        "runtime": {
+                            "state": "ready",
+                            "paired": True,
+                            "transport_state": "connected",
+                            "last_transport_error": None,
+                            "last_transport_recovered_at": None,
+                        }
+                    }
+                    remote_response = Mock()
+                    remote_response.is_success = True
+                    remote_response.status_code = 200
+                    remote_response.headers = {"content-type": "application/json"}
+                    remote_response.json.return_value = {
                         "ok": True, "product_auth_configured": True,
                         "capabilities": ["product_typed_actions_v2"],
                     }
+                    get.side_effect = [local_response, remote_response]
                     result = api.product_status()
             self.assertTrue(result["ok"])
             self.assertTrue(result["data"]["device_agent"]["ok"])
+            self.assertEqual("ready", result["data"]["device_agent"]["runtime_state"])
+            self.assertTrue(result["data"]["device_agent"]["paired"])
+            self.assertEqual("connected", result["data"]["device_agent"]["transport_state"])
             self.assertTrue(result["data"]["remote_mcp"]["ok"])
             self.assertTrue(result["data"]["remote_mcp"]["oauth"])
             self.assertTrue(result["data"]["remote_mcp"]["typed_actions_v2"])
+            self.assertTrue(result["data"]["computer_control"]["input"])
             self.assertTrue(result["data"]["blender_live"]["ok"])
-            get.assert_called_once_with("https://example.test/health", timeout=4.0, follow_redirects=False)
+            self.assertEqual(2, get.call_count)
+            get.assert_any_call("http://127.0.0.1:8765/status", timeout=1.5, follow_redirects=False)
+            get.assert_any_call("https://example.test/health", timeout=4.0, follow_redirects=False)
 
 
     def test_web_shell_contains_repository_first_home_and_preview_workspace(self):

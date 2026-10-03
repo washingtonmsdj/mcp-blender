@@ -13,7 +13,7 @@ from ordax_dev_agent.config import AgentConfig
 from .blender_connection import prepare_blender_connection
 from .instance_lock import SingleInstanceLock
 
-APP_NAME = "ORDAX Dev"
+APP_NAME = "ORDAX Studio"
 
 
 class StudioApi:
@@ -247,12 +247,38 @@ class StudioApi:
         resilience_data = resilience.data.get("resilience", {}) if resilience.ok else {}
         scheduled = resilience_data.get("scheduled_task") or {}
         local_health = resilience_data.get("local_health") or {}
+        runtime_status: dict[str, Any] = {}
+        try:
+            local_response = httpx.get(
+                "http://127.0.0.1:8765/status",
+                timeout=1.5,
+                follow_redirects=False,
+            )
+            local_payload = (
+                local_response.json()
+                if local_response.is_success
+                and local_response.headers.get("content-type", "").startswith("application/json")
+                else {}
+            )
+            if isinstance(local_payload, dict) and isinstance(local_payload.get("runtime"), dict):
+                runtime_status = dict(local_payload["runtime"])
+        except (httpx.HTTPError, ValueError):
+            runtime_status = {}
+
+        transport_state = str(runtime_status.get("transport_state") or "unknown")
+        runtime_state = str(runtime_status.get("state") or "unknown")
         device_agent = {
             "ok": bool(scheduled.get("exists")) and str(scheduled.get("state") or "").lower() == "running" and bool(local_health),
             "configured": bool(config.device_id),
             "scheduled_task_exists": bool(scheduled.get("exists")),
             "scheduled_task_state": scheduled.get("state"),
             "local_health": bool(local_health),
+            "runtime_reachable": bool(runtime_status),
+            "runtime_state": runtime_state,
+            "paired": bool(runtime_status.get("paired")),
+            "transport_state": transport_state,
+            "last_transport_error": runtime_status.get("last_transport_error"),
+            "last_transport_recovered_at": runtime_status.get("last_transport_recovered_at"),
             "summary": "Device Agent ativo" if local_health else (resilience.summary if not resilience.ok else "Device Agent sem health local"),
         }
 
@@ -288,7 +314,7 @@ class StudioApi:
         core_desktop = {
             "computer.windows", "computer.active_window", "computer.screenshot",
             "computer.focus_window", "computer.click", "computer.scroll",
-            "computer.type_text", "computer.hotkey", "computer.processes",
+            "computer.type", "computer.hotkey", "computer.processes",
             "computer.access_status", "computer.directory_list", "computer.text_read",
             "computer.screen_info", "computer.mouse_move", "computer.drag",
             "computer.clipboard_read", "computer.clipboard_write", "computer.launch_app",
@@ -302,7 +328,7 @@ class StudioApi:
                 "computer.focus_window", "computer.screen_info",
             )),
             "input": all(name in action_names for name in (
-                "computer.click", "computer.scroll", "computer.type_text",
+                "computer.click", "computer.scroll", "computer.type",
                 "computer.hotkey", "computer.mouse_move", "computer.drag",
             )),
             "filesystem": all(name in action_names for name in (
