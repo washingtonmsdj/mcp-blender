@@ -554,12 +554,60 @@ class BlenderActions:
     def blender_adoption_install(self, payload: dict[str, Any]) -> ActionResult:
         return self._blender_adoption_manager().install()
 
+    def _blender_live_sessions(self) -> list[dict[str, Any]]:
+        sessions: list[dict[str, Any]] = []
+        for project in self.projects.values():
+            if "blender" not in project.apps:
+                continue
+            live = BlenderLiveBridge(self.config, project)
+            if not live.presence_is_fresh():
+                continue
+            status = live.status()
+            presence = status.get("presence")
+            if not isinstance(presence, dict):
+                continue
+            try:
+                pid = int(presence.get("pid"))
+            except (TypeError, ValueError):
+                continue
+            if pid <= 0:
+                continue
+            sessions.append(
+                {
+                    "project": project.slug,
+                    "pid": pid,
+                    "file": str(presence.get("file") or ""),
+                    "scene": str(presence.get("scene") or ""),
+                    "is_dirty": bool(presence.get("is_dirty")),
+                    "identity_matches": status.get("identity_matches") is True,
+                    "protocol_compatible": status.get("protocol_compatible") is True,
+                    "companion_current": status.get("companion_current") is True,
+                    "presence_path": str(status.get("presence_path") or live.presence),
+                }
+            )
+        return sorted(sessions, key=lambda item: (item["project"], item["pid"]))
+
     def blender_instances(self, payload: dict[str, Any]) -> ActionResult:
         manager = self._blender_adoption_manager()
         instances = manager.instances()
         system_pids = manager.system_blender_pids()
         discovered_pids = {int(item.get("pid", -1)) for item in instances}
-        unmanaged_pids = [pid for pid in system_pids if pid not in discovered_pids]
+        live_sessions = self._blender_live_sessions()
+        live_session_pids = sorted({int(item["pid"]) for item in live_sessions})
+        live_managed_pids = set(live_session_pids)
+        unmanaged_pids = [
+            pid
+            for pid in system_pids
+            if pid not in discovered_pids and pid not in live_managed_pids
+        ]
+        live_healthy_pids = sorted(
+            int(item["pid"])
+            for item in live_sessions
+            if item["identity_matches"]
+            and item["protocol_compatible"]
+            and item["companion_current"]
+        )
+        live_attention_pids = sorted(live_managed_pids - set(live_healthy_pids))
         attached_pids = [
             int(item["pid"])
             for item in instances
@@ -578,9 +626,11 @@ class BlenderActions:
             and not str(item.get("attached_project") or "").strip()
         ]
         summary = (
-            f"Discovered {len(instances)} Blender window(s): "
+            f"Discovered {len(instances)} Blender adoption window(s): "
             f"{len(attached_pids)} attached, {len(ready_pids)} ready, "
-            f"{len(restart_required_pids)} restart-required, {len(unmanaged_pids)} unmanaged"
+            f"{len(restart_required_pids)} restart-required; "
+            f"{len(live_session_pids)} live-managed, {len(live_attention_pids)} live-attention, "
+            f"{len(unmanaged_pids)} unmanaged"
         )
         return ActionResult(
             True,
@@ -590,6 +640,10 @@ class BlenderActions:
                 "attached_pids": attached_pids,
                 "ready_pids": ready_pids,
                 "restart_required_pids": restart_required_pids,
+                "live_sessions": live_sessions,
+                "live_session_pids": live_session_pids,
+                "live_healthy_pids": live_healthy_pids,
+                "live_attention_pids": live_attention_pids,
                 "system_blender_pids": system_pids,
                 "unmanaged_blender_pids": unmanaged_pids,
                 "bootstrap_config": str(manager.config_path),

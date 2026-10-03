@@ -38,6 +38,8 @@ This is intentionally fail-closed. ORDAX does not use OS-level code injection to
 
 If multiple fresh Blender windows point into the same project, ORDAX does not guess. `blender_instances` exposes their PIDs and `adopt_blender` requires an explicit PID.
 
+`blender_instances` reconciles persistent-add-on discovery with fresh live-companion presence. A PID with a fresh ORDAX live companion is reported as `live-managed` instead of `unmanaged`, even when that process started before the persistent add-on was available. `live_healthy_pids` requires project identity, protocol and companion fingerprint to match; known live sessions that fail one of those checks are surfaced separately in `live_attention_pids`.
+
 A window already attached to another ORDAX project is never considered a candidate for a new project, even if the user opens a file from the new project in that same Blender process. Reopen Blender before changing managed projects in one process.
 
 ## Timeout behavior
@@ -47,7 +49,7 @@ Adoption requests are short-lived. If the requested window does not acknowledge 
 ## MCP tools
 
 - `install_blender_adoption` — explicit install/repair entrypoint; retained for diagnostics and manual recovery.
-- `blender_instances` — lists discovered adoptable windows and unmanaged Blender PIDs.
+- `blender_instances` — reconciles adoptable windows, active ORDAX live sessions and truly unmanaged Blender PIDs.
 - `adopt_blender` — adopts one discovered window, optionally by PID.
 - `start_blender` — adoption-first entrypoint; spawns only when no physical Blender window already exists.
 - `get_blender_status`, `get_scene_info`, `get_object_info`, `get_viewport_screenshot` — normal read/visual operations after adoption.
