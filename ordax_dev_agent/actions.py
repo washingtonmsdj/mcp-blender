@@ -56,6 +56,7 @@ from .comfyui_actions import ComfyUIActions
 from .aleph_actions import AlephActions
 from .aleph_scene_actions import AlephSceneActions
 from .execution_lock import ExecutionLock
+from .windows_dpi import ensure_physical_desktop_coordinates
 from .adapter_contracts import (
     adapter_contract_catalog,
     builtin_adapter_contracts,
@@ -116,6 +117,7 @@ class ActionRegistry(
     """Canonical typed action registry for local and remote ORDAX capabilities."""
 
     def __init__(self, config: AgentConfig):
+        self.desktop_coordinate_space = ensure_physical_desktop_coordinates()
         self.config = config
         self.projects = load_projects(config)
         self.on_observation = None
