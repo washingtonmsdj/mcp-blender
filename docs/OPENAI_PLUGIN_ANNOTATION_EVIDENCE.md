@@ -61,6 +61,8 @@ This document is reviewer-facing evidence for the OpenAI plugin submission. The 
 | `computer_directory_list` | true | false | false | Lists filesystem entries only inside roots allowed by the local ORDAX computer-access policy. |
 | `computer_text_read` | true | false | false | Reads bounded UTF-8 text only from a locally allowed computer path. |
 | `computer_search` | true | false | false | Performs a bounded local filename/text search inside an allowed computer root. |
+| `computer_processes` | true | false | false | Lists bounded local process metadata without changing process state. |
+| `computer_terminate_process` | false | true | false | Terminates one local non-critical process only after PID and expected process name are revalidated; ORDAX and protected system processes are refused. |
 | `computer_text_write` | false | true | false | Creates or replaces local text inside an allowed root; replacing existing content requires a SHA-256 precondition. |
 | `computer_text_patch` | false | true | false | Mutates an existing allowed local text file using exact replacements and a SHA-256 precondition. |
 | `computer_directory_create` | false | false | false | Creates additive local directory state only inside a root allowed by local policy. |
