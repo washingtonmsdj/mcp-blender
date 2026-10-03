@@ -215,6 +215,38 @@ class ProductMcpServerTests(unittest.TestCase):
         self.assertIsNone(submit[2]["project"])
         self.assertEqual(submit[2]["arguments"], {})
 
+    def test_system_process_tools_route_as_device_scoped_actions(self):
+        listed = server.computer_processes("dev-1", "python", 25, "space-1")
+        self.assertEqual(listed["status"], "succeeded")
+        terminated = server.computer_terminate_process(
+            "dev-1", 4242, "python.exe", False, True, "space-1"
+        )
+        self.assertEqual(terminated["status"], "succeeded")
+
+        calls = [
+            call for instance in FakeClient.instances for call in instance.calls
+            if call[0] == "submit"
+        ]
+        process_call = next(call for call in calls if call[2]["action"] == "computer.processes")
+        self.assertIsNone(process_call[2]["project"])
+        self.assertEqual(
+            {"query": "python", "max_items": 25},
+            process_call[2]["arguments"],
+        )
+        terminate_call = next(
+            call for call in calls if call[2]["action"] == "computer.terminate_process"
+        )
+        self.assertIsNone(terminate_call[2]["project"])
+        self.assertEqual(
+            {
+                "pid": 4242,
+                "expected_name": "python.exe",
+                "force": False,
+                "tree": True,
+            },
+            terminate_call[2]["arguments"],
+        )
+
     def test_typed_mutations_are_exposed_but_generic_execution_is_not(self):
         for name in (
             "project_create", "project_import", "continuity_update", "browser_start", "browser_click", "computer_click", "computer_text_write", "computer_path_remove", "project_text_write", "project_text_patch", "blender_start",
@@ -264,6 +296,8 @@ class ProductMcpServerTests(unittest.TestCase):
             "computer_type",
             "computer_hotkey",
             "computer_access_status",
+            "computer_processes",
+            "computer_terminate_process",
             "computer_file_stat",
             "computer_directory_list",
             "computer_text_read",
