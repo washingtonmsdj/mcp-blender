@@ -49,12 +49,18 @@ class ComputerAccessPolicy:
     enabled: bool
     full_filesystem: bool
     allowed_roots: tuple[Path, ...]
+    allowed_applications: tuple[str, ...]
+
+    def application_allowed(self, executable: Path) -> bool:
+        full_key = os.path.normcase(str(executable.resolve()))
+        return full_key in self.allowed_applications
 
     def public(self) -> dict[str, Any]:
         return {
             "enabled": self.enabled,
             "full_filesystem": self.full_filesystem,
             "allowed_roots": [str(root) for root in self.allowed_roots],
+            "allowed_applications": list(self.allowed_applications),
             "relative_paths_base": str(Path.home().resolve()),
         }
 
@@ -128,10 +134,51 @@ def load_computer_access_policy(config) -> ComputerAccessPolicy:
     if enabled and not full_filesystem and not roots:
         raise ValueError("computer access needs at least one allowed root unless full_filesystem=true")
 
+    raw_applications = section.get("allowed_applications")
+    env_applications = os.environ.get("ORDAX_COMPUTER_ALLOWED_APPLICATIONS")
+    if env_applications is not None:
+        raw_applications = [
+            item for item in env_applications.split(os.pathsep) if item.strip()
+        ]
+    if raw_applications is None:
+        raw_applications = []
+    if (
+        not isinstance(raw_applications, list)
+        or len(raw_applications) > 64
+        or not all(
+            isinstance(item, str) and item.strip() and len(item.strip()) <= 512
+            for item in raw_applications
+        )
+    ):
+        raise ValueError(
+            "computer_access.allowed_applications must be a list of at most 64 non-empty strings up to 512 characters"
+        )
+
+    applications: list[str] = []
+    seen_applications: set[str] = set()
+    for raw in raw_applications:
+        value = raw.strip()
+        candidate = Path(value).expanduser()
+        if candidate.is_absolute():
+            key = os.path.normcase(str(candidate.resolve()))
+        else:
+            if Path(value).name != value or Path(value).suffix.lower() != ".exe":
+                raise ValueError(
+                    "computer access applications must be absolute executable paths or .exe basenames"
+                )
+            resolved_application = shutil.which(value)
+            if not resolved_application:
+                raise ValueError(f"allowlisted application was not found on PATH: {value}")
+            key = os.path.normcase(str(Path(resolved_application).resolve()))
+        if key not in seen_applications:
+            seen_applications.add(key)
+            applications.append(key)
+
     return ComputerAccessPolicy(
         enabled=enabled,
         full_filesystem=full_filesystem,
         allowed_roots=tuple(roots),
+        allowed_applications=tuple(applications),
     )
 
 

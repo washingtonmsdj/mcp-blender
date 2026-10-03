@@ -52,6 +52,7 @@ class ComputerFilesystemActionsTests(unittest.TestCase):
         self.assertTrue(status.ok)
         self.assertFalse(status.data["full_filesystem"])
         self.assertEqual([str(self.allowed.resolve())], status.data["allowed_roots"])
+        self.assertEqual([], status.data["allowed_applications"])
 
         blocked = self.registry.execute(
             "computer.file_stat", {"path": str(self.outside)}

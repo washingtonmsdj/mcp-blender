@@ -64,11 +64,11 @@ This document is reviewer-facing evidence for the OpenAI plugin submission. The 
 | `computer_mouse_move` | false | false | true | Moves the pointer within validated local screen bounds; the target may belong to an open-world application, but pointer movement alone does not mutate stored data. |
 | `computer_drag` | false | true | true | A drag gesture can move, drop, or otherwise change state in arbitrary local or externally connected applications, so it is conservatively destructive/open-world. |
 | `computer_clipboard_write` | false | false | false | Replaces bounded Unicode text in the local clipboard; it changes local transient state but does not contact an external destination by itself. |
-| `computer_launch_app` | false | false | true | Starts one validated Windows executable without shell expansion; the launched application may contact open-world destinations, so an explicit grant is required. |
+| `computer_launch_app` | false | false | true | Starts one validated and locally allowlisted Windows executable without shell expansion; both the remote action grant and local computer-access policy must allow it, and the launched application may contact open-world destinations. |
 | `computer_scroll` | false | false | false | Sends bounded scrolling to the local interactive desktop without directly changing stored data. |
 | `computer_type` | false | true | true | Desktop typing can change local or external application state, so it requires an explicit grant and is conservatively destructive/open-world. |
 | `computer_hotkey` | false | true | true | A validated desktop hotkey can trigger local or external application actions, so it is conservatively destructive/open-world. |
-| `computer_access_status` | true | false | false | Reads the locally configured computer-access policy and allowed roots without changing device state. |
+| `computer_access_status` | true | false | false | Reads the effective non-secret local computer-access policy, including allowed roots and resolved allowed applications, without changing device state. |
 | `computer_file_stat` | true | false | false | Reads bounded metadata for one locally allowed computer path. |
 | `computer_directory_list` | true | false | false | Lists filesystem entries only inside roots allowed by the local ORDAX computer-access policy. |
 | `computer_text_read` | true | false | false | Reads bounded UTF-8 text only from a locally allowed computer path. |

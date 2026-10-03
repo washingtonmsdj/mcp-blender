@@ -5,6 +5,7 @@ import time
 from ctypes import wintypes
 from typing import Any
 
+from .computer_filesystem_actions import load_computer_access_policy
 from .models import ActionResult
 
 _CF_UNICODETEXT = 13
@@ -360,6 +361,18 @@ class ComputerParityActions:
 
         if executable.suffix.lower() != ".exe":
             return ActionResult(False, "application must resolve to a Windows .exe executable")
+
+        try:
+            policy = load_computer_access_policy(self.config)
+        except (OSError, ValueError) as error:
+            return ActionResult(False, f"computer access policy is invalid: {error}")
+        if not policy.enabled:
+            return ActionResult(False, "computer access is disabled by local ORDAX policy")
+        if not policy.application_allowed(executable):
+            return ActionResult(
+                False,
+                "application is not allowlisted by local ORDAX computer access policy",
+            )
 
         try:
             process = subprocess.Popen(

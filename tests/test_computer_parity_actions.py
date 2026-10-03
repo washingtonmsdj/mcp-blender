@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -81,10 +83,31 @@ class ComputerParityActionTests(unittest.TestCase):
         open_clipboard.assert_not_called()
 
 
-# Launch-app guards are appended as a second test case to keep desktop mutation isolated.
 class ComputerLaunchAppTests(unittest.TestCase):
     def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.state = self.root / "state"
+        self.state.mkdir()
         self.actions = _Harness()
+        self.actions.config = SimpleNamespace(state_dir=self.state)
+        self._write_policy([])
+
+    def _write_policy(self, applications):
+        (self.state / "agent-settings.json").write_text(
+            json.dumps(
+                {
+                    "computer_access": {
+                        "enabled": True,
+                        "full_filesystem": False,
+                        "allowed_roots": [str(self.root.resolve())],
+                        "allowed_applications": applications,
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
 
     def test_launch_app_rejects_non_executable_absolute_path(self):
         with patch("pathlib.Path.is_file", return_value=True):
@@ -105,6 +128,45 @@ class ComputerLaunchAppTests(unittest.TestCase):
             )
         self.assertFalse(result.ok)
         popen.assert_not_called()
+
+    def test_launch_app_denies_executable_not_in_local_allowlist(self):
+        executable = self.root / "viewer.exe"
+        executable.write_bytes(b"stub")
+        with patch("subprocess.Popen") as popen:
+            result = self.actions.computer_launch_app(
+                {"project": "demo", "application": str(executable)}
+            )
+        self.assertFalse(result.ok)
+        self.assertIn("not allowlisted", result.summary)
+        popen.assert_not_called()
+
+    def test_launch_app_allows_explicit_absolute_application(self):
+        executable = self.root / "viewer.exe"
+        executable.write_bytes(b"stub")
+        self._write_policy([str(executable.resolve())])
+        process = SimpleNamespace(pid=4242)
+        with patch("subprocess.Popen", return_value=process) as popen:
+            result = self.actions.computer_launch_app(
+                {"project": "demo", "application": str(executable)}
+            )
+        self.assertTrue(result.ok, result.summary)
+        self.assertEqual(4242, result.data["pid"])
+        popen.assert_called_once()
+
+    def test_launch_app_allows_explicit_executable_basename(self):
+        executable = self.root / "viewer.exe"
+        executable.write_bytes(b"stub")
+        self._write_policy(["viewer.exe"])
+        process = SimpleNamespace(pid=4243)
+        with patch("shutil.which", return_value=str(executable)), patch(
+            "subprocess.Popen", return_value=process
+        ) as popen:
+            result = self.actions.computer_launch_app(
+                {"project": "demo", "application": "viewer.exe"}
+            )
+        self.assertTrue(result.ok, result.summary)
+        popen.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
