@@ -157,6 +157,8 @@ class ActionRegistry(
             "computer.type": self.computer_type,
             "computer.hotkey": self.computer_hotkey,
             "computer.scroll": self.computer_scroll,
+            "computer.processes": self.computer_processes,
+            "computer.terminate_process": self.computer_terminate_process,
             "computer.access_status": self.computer_access_status,
             "computer.file_stat": self.computer_file_stat,
             "computer.directory_list": self.computer_directory_list,
