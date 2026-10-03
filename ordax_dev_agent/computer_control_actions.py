@@ -60,6 +60,9 @@ for _ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789":
 _KEYEVENTF_KEYUP = 0x0002
 _KEYEVENTF_UNICODE = 0x0004
 _INPUT_KEYBOARD = 1
+_WS_EX_TOOLWINDOW = 0x00000080
+_WS_EX_APPWINDOW = 0x00040000
+_GWL_EXSTYLE = -20
 
 
 class _KEYBDINPUT(ctypes.Structure):
@@ -334,6 +337,23 @@ class ComputerControlActions:
         }
 
     @staticmethod
+    def _window_style_is_user_selectable(ex_style: int) -> bool:
+        """Match the shell's app-window semantics for enumeration targets.
+
+        Tool windows are normally auxiliary surfaces and should not compete with
+        their owning application in the model-facing window list. APPWINDOW is
+        the explicit Win32 opt-in that makes a tool-style surface user-facing.
+        """
+        style = int(ex_style) & 0xFFFFFFFF
+        return not bool(style & _WS_EX_TOOLWINDOW) or bool(style & _WS_EX_APPWINDOW)
+
+    @classmethod
+    def _window_is_user_selectable(cls, hwnd: int) -> bool:
+        user32 = ctypes.windll.user32
+        ex_style = int(user32.GetWindowLongW(hwnd, _GWL_EXSTYLE))
+        return cls._window_style_is_user_selectable(ex_style)
+
+    @staticmethod
     def _parse_handle(raw: Any) -> int:
         if isinstance(raw, int):
             value = raw
@@ -358,7 +378,10 @@ class ComputerControlActions:
         callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
         def callback(hwnd, _lparam):
-            info = self._window_info(int(hwnd))
+            handle = int(hwnd)
+            if not self._window_is_user_selectable(handle):
+                return True
+            info = self._window_info(handle)
             if info is not None:
                 items.append(info)
             return len(items) < max_items
