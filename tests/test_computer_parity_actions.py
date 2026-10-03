@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -24,7 +25,7 @@ class ComputerParityActionTests(unittest.TestCase):
 
     def test_mouse_move_rejects_coordinate_outside_virtual_desktop(self):
         with patch.object(
-            self.actions,
+            _Harness,
             "_virtual_screen_rect",
             return_value={"left": 0, "top": 0, "right": 1920, "bottom": 1080, "width": 1920, "height": 1080},
         ):
@@ -34,7 +35,7 @@ class ComputerParityActionTests(unittest.TestCase):
 
     def test_mouse_move_uses_bounded_motion_helper(self):
         with patch.object(
-            self.actions,
+            _Harness,
             "_virtual_screen_rect",
             return_value={"left": 0, "top": 0, "right": 1920, "bottom": 1080, "width": 1920, "height": 1080},
         ), patch.object(self.actions, "_move_cursor") as move:
@@ -46,7 +47,7 @@ class ComputerParityActionTests(unittest.TestCase):
 
     def test_drag_rejects_unbounded_duration_before_mouse_down(self):
         with patch.object(
-            self.actions,
+            _Harness,
             "_virtual_screen_rect",
             return_value={"left": 0, "top": 0, "right": 1920, "bottom": 1080, "width": 1920, "height": 1080},
         ):
@@ -88,7 +89,7 @@ class ComputerLaunchAppTests(unittest.TestCase):
     def test_launch_app_rejects_non_executable_absolute_path(self):
         with patch("pathlib.Path.is_file", return_value=True):
             result = self.actions.computer_launch_app(
-                {"project": "demo", "application": "C:/Temp/readme.txt"}
+                {"project": "demo", "application": str(Path.cwd() / "readme.txt")}
             )
         self.assertFalse(result.ok)
         self.assertIn(".exe", result.summary)
