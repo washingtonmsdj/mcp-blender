@@ -65,9 +65,17 @@ class ProviderNeutralRemoteProtocolTests(unittest.TestCase):
         self.assertIn("blender.", DEVICE_ACTION_PREFIXES)
         self.assertIn("unity.", DEVICE_ACTION_PREFIXES)
         self.assertIn("git.", DEVICE_ACTION_PREFIXES)
+        self.assertIn("workspace.", DEVICE_ACTION_PREFIXES)
+        self.assertIn("terminal.", DEVICE_ACTION_PREFIXES)
+        self.assertIn("process.", DEVICE_ACTION_PREFIXES)
+        self.assertIn("browser.", DEVICE_ACTION_PREFIXES)
+        self.assertIn("computer.", DEVICE_ACTION_PREFIXES)
         self.assertTrue(is_device_owned_capability("artifact.preview"))
+        self.assertTrue(is_device_owned_capability("workspace.bind_project"))
+        self.assertTrue(is_device_owned_capability("terminal.exec"))
+        self.assertTrue(is_device_owned_capability("browser.screenshot"))
+        self.assertTrue(is_device_owned_capability("computer.processes"))
         self.assertFalse(is_device_owned_capability("shell.exec"))
-        self.assertFalse(is_device_owned_capability("workspace.bind_project"))
 
     def test_contract_dispatches_direct_capability_without_rewriting_payload(self) -> None:
         payload = {"project": "scene", "frames": 2}
