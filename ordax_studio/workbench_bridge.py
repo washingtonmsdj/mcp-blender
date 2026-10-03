@@ -27,6 +27,8 @@ _ALLOWED_METHODS = frozenset(
         "preview_logs",
         "preview_image",
         "execution_status",
+        "provider_api_models",
+        "provider_api_chat",
         "task_add",
         "checkpoint",
         "product_status",
