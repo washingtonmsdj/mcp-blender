@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ORDAX API / Local</title>
+<style>
+:root{color-scheme:dark;--bg:#07101a;--panel:#0b1622;--line:#203247;--text:#e7eef7;--muted:#8fa2b8;--accent:#72a9ef}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px "Segoe UI",system-ui,sans-serif;height:100vh;display:grid;grid-template-rows:auto 1fr auto}
+header{padding:10px;border-bottom:1px solid var(--line);background:#091420;display:grid;grid-template-columns:1fr 1fr auto;gap:8px}
+input,select,textarea,button{background:#0d1b29;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit}
+button{cursor:pointer}button:hover{border-color:var(--accent)}button.primary{background:#14345b;border-color:#2d629c}
+.small{font-size:11px;color:var(--muted);padding:0 2px 6px}.field{display:grid;gap:3px}
+#chat{overflow:auto;padding:18px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:86%;border:1px solid var(--line);border-radius:10px;padding:11px 13px;white-space:pre-wrap;line-height:1.45}
+.user{align-self:flex-end;background:#10253c}.assistant{align-self:flex-start;background:#0b1723}.system{align-self:center;color:var(--muted);background:#09131e}
+footer{border-top:1px solid var(--line);background:#091420;padding:10px;display:grid;grid-template-columns:1fr auto;gap:8px}
+textarea{resize:none;min-height:64px;max-height:180px}.status{grid-column:1/-1;color:var(--muted);font-size:11px}
+.config2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:900px){header{grid-template-columns:1fr}.config2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="field"><span class="small">Base URL OpenAI-compatible</span><input id="base" value="http://localhost:1234/v1"></div>
+  <div class="config2">
+    <div class="field"><span class="small">Modelo</span><select id="model"><option value="">Carregar modelos…</option></select></div>
+    <div class="field"><span class="small">API key via variável de ambiente</span><input id="keyenv" placeholder="ex.: OPENAI_API_KEY"></div>
+  </div>
+  <button id="models">Modelos</button>
+</header>
+<main id="chat">
+  <div class="msg system">Provider nativo ORDAX. Compatível com servidores OpenAI-style, incluindo LM Studio e gateways locais. A credencial nunca é digitada nesta página: informe somente o nome da variável de ambiente que contém a chave.</div>
+</main>
+<footer>
+  <textarea id="prompt" placeholder="Digite uma mensagem… (Enter envia, Shift+Enter quebra linha)"></textarea>
+  <button id="send" class="primary">Enviar</button>
+  <div id="status" class="status">Pronto.</div>
+</footer>
+<script>
+const pending=new Map(), messages=[];
+const $=id=>document.getElementById(id);
+function id(){return (crypto.randomUUID?.()||Date.now()+"-"+Math.random()).toString()}
+function rpc(method,args){
+  return new Promise((resolve,reject)=>{
+    const requestId=id(); pending.set(requestId,{resolve,reject});
+    window.chrome.webview.postMessage({type:"ordax-provider-rpc",id:requestId,method,args});
+  });
+}
+window.chrome.webview.addEventListener("message",event=>{
+  const data=event.data||{}, slot=pending.get(data.id); if(!slot)return;
+  pending.delete(data.id); data.error?slot.reject(new Error(data.error)):slot.resolve(data.result);
+});
+function add(role,text){
+  const el=document.createElement("div"); el.className="msg "+role; el.textContent=text;
+  $("chat").appendChild(el); $("chat").scrollTop=$("chat").scrollHeight;
+}
+function cfg(){return {base_url:$("base").value.trim(),api_key_env:$("keyenv").value.trim()}}
+function remember(){
+  localStorage.setItem("ordax.provider.base",$("base").value.trim());
+  localStorage.setItem("ordax.provider.model",$("model").value);
+  localStorage.setItem("ordax.provider.keyenv",$("keyenv").value.trim());
+}
+async function loadModels(){
+  $("status").textContent="Consultando /models…";
+  try{
+    const result=await rpc("provider_api_models",cfg());
+    if(!result?.ok) throw new Error(result?.summary||"Falha ao listar modelos");
+    const previous=localStorage.getItem("ordax.provider.model")||$("model").value;
+    $("model").replaceChildren();
+    for(const item of result.data.models||[]){
+      const option=document.createElement("option"); option.value=item.id; option.textContent=item.id; $("model").appendChild(option);
+    }
+    if(previous && [...$("model").options].some(o=>o.value===previous)) $("model").value=previous;
+    $("status").textContent=result.summary||"Modelos carregados"; remember();
+  }catch(e){$("status").textContent=e.message}
+}
+async function send(){
+  const text=$("prompt").value.trim(), model=$("model").value;
+  if(!text)return; if(!model){$("status").textContent="Selecione/carregue um modelo.";return}
+  $("prompt").value=""; add("user",text); messages.push({role:"user",content:text}); remember();
+  $("send").disabled=true; $("status").textContent="Gerando resposta…";
+  try{
+    const result=await rpc("provider_api_chat",{...cfg(),model,messages,temperature:0.2,max_tokens:4096});
+    if(!result?.ok) throw new Error(result?.summary||"Falha no provider");
+    const answer=result.data.content||""; messages.push({role:"assistant",content:answer}); add("assistant",answer);
+    $("status").textContent=(result.data.model||model)+(result.data.usage?.total_tokens?(" · "+result.data.usage.total_tokens+" tokens"):"");
+  }catch(e){add("system","Erro: "+e.message);$("status").textContent=e.message}
+  finally{$("send").disabled=false;$("prompt").focus()}
+}
+$("models").onclick=loadModels;$("send").onclick=send;
+$("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}});
+$("base").value=localStorage.getItem("ordax.provider.base")||$("base").value;
+$("keyenv").value=localStorage.getItem("ordax.provider.keyenv")||"";
+$("base").addEventListener("change",remember);$("keyenv").addEventListener("change",remember);$("model").addEventListener("change",remember);
+</script>
+</body>
+</html>
