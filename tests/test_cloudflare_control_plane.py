@@ -541,6 +541,24 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertNotIn('"computer.processes"', project_block)
         self.assertNotIn('"computer.terminate_process"', project_block)
 
+    def test_operator_job_prefixes_cover_typed_computer_runtime_surfaces(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        worker = (
+            root / "control-plane" / "cloudflare" / "src" / "index.ts"
+        ).read_text(encoding="utf-8")
+        prefix_block = worker.split(
+            "const ACTION_PREFIXES = [", 1
+        )[1].split("];", 1)[0]
+        for prefix in (
+            "workspace.",
+            "terminal.",
+            "process.",
+            "browser.",
+            "computer.",
+        ):
+            self.assertIn(f'"{prefix}"', prefix_block)
+        self.assertNotIn('"shell."', prefix_block)
+
     def test_product_retention_is_scheduled_and_matches_public_policy(self) -> None:
         root = Path(__file__).resolve().parents[1]
         worker = (
