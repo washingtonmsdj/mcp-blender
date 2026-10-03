@@ -1,23 +1,24 @@
 # ORDAX Dev — OpenAI plugin review runbook
 
-Status: pre-submission checklist for ORDAX Dev 0.4.1.
+Status: pre-submission checklist for ORDAX Studio 0.4.1. The 0.4.1 Windows/package artifact names still use the historical `ordax-dev-*` compatibility name.
 
 ## Scope
 
-This runbook covers only the public-review path for the ORDAX Dev ChatGPT plugin. It does not change the ORDAX account model, Cloudflare Control Plane, local Runtime authority or Git provider credentials.
+This runbook covers only the public-review path for the ORDAX Studio ChatGPT MCP integration. It does not change the ORDAX account model, Cloudflare Control Plane, local Runtime authority or Git provider credentials.
 
 Canonical flow:
 
 ```text
 ChatGPT
-  -> ORDAX Dev plugin
-  -> Cloudflare remote MCP
-  -> grant enforcement
+  -> ORDAX Studio MCP
+  -> OAuth + Cloudflare remote MCP
+  -> device/project/action grant enforcement
   -> ORDAX Runtime on the connected PC
-  -> explicitly granted project/tool
+  -> local computer-access policy
+  -> explicitly granted typed action
 ```
 
-GitHub remains an optional project provider. It is not the identity provider, it is not the device-enrollment authority, and it is not the bridge between ChatGPT and ORDAX Dev. New devices are enrolled by an authenticated ORDAX Product account.
+GitHub remains an optional project provider. It is not the identity provider, it is not the device-enrollment authority, and it is not the bridge between ChatGPT and ORDAX Studio. New devices are enrolled by an authenticated ORDAX Product account.
 
 ## Preconditions
 
@@ -84,9 +85,12 @@ The workflow uses the protected `cloudflare-v3` Environment and its existing `OR
 
 The grant is intentionally fixed to:
 - project: `ordax-review-demo`;
-- actions: `projects.list`, `project.text_read`, `project.search_text`, `project.text_write`, `git.status`;
+- project/Git actions: `projects.list`, `project.text_read`, `project.search_text`, `project.text_write`, `git.status`;
+- bounded Computer Control: access status, active/list windows, screen info, screenshot, focus, pointer move/click/scroll, bounded typing, process listing and app launch;
 - expiry: 30 days;
-- terminal access: not granted.
+- shell, hotkeys, process termination and persistent process start/stop: **not granted**.
+
+`computer.launch_app` also requires the review computer's local `computer_access.allowed_applications` policy to explicitly allow the executable. For the review fixture, allow only `notepad.exe`. A remote grant alone must never be sufficient to launch an application.
 
 If the reviewer account or device link changes, provision a new review grant from the new link rather than editing D1 directly.
 
@@ -106,27 +110,35 @@ No secret, token, production file, personal document or unrelated repository sho
 
 ## Positive review prompts
 
-Record and test these in a fresh ChatGPT conversation with only the ORDAX Dev plugin needed for the scenario:
+Record and test these in a fresh ChatGPT conversation with only the ORDAX Studio MCP integration needed for the scenario:
 
 1. `Show the projects available on my connected ORDAX computer.`
    - Expected tools: `ordax_targets`, `projects_list`.
    - Expected result: only the connected review device and granted review project are visible.
 
-2. `Read README.md from the ordax-review-demo project.`
-   - Expected tool: `project_text_read`.
-   - Expected result: README content from the granted project only.
+2. `Show the screen geometry and visible windows on my connected review computer.`
+   - Expected tools: `computer_screen_info`, `computer_windows`.
+   - Expected result: bounded physical-pixel screen/window metadata from the granted device.
 
-3. `Search ordax-review-demo for the phrase REVIEW_MARKER.`
-   - Expected tool: `project_search`.
-   - Expected result: bounded matches from the granted project.
+3. `Capture the active window on my connected review computer.`
+   - Expected tool: `computer_screenshot`.
+   - Expected result: a bounded screenshot receipt/artifact for the granted device.
 
-4. `Create review-output.txt in ordax-review-demo containing the text plugin review write test.`
-   - Expected tool: `project_text_write`.
-   - Expected result: only the requested file is created inside the granted project.
+4. `Open Notepad on my connected review computer, focus it, click in the editor and type ORDAX REVIEW INPUT.`
+   - Expected tools: `computer_launch_app`, `computer_windows`, `computer_focus_window`, `computer_click`, `computer_type`.
+   - Expected result: only the locally allowlisted `notepad.exe` starts and receives the bounded input.
 
-5. `Show Git status for ordax-review-demo.`
-   - Expected tool: `git_status`.
-   - Expected result: bounded Git status shows `review-output.txt` as uncommitted.
+5. `List the running processes that match notepad.`
+   - Expected tool: `computer_processes`.
+   - Expected result: bounded process metadata; no termination capability is granted.
+
+6. `Read README.md from the ordax-review-demo project and search it for REVIEW_MARKER.`
+   - Expected tools: `project_text_read`, `project_search`.
+   - Expected result: content and bounded matches from the granted project only.
+
+7. `Create review-output.txt in ordax-review-demo containing the text plugin review write test, then show Git status.`
+   - Expected tools: `project_text_write`, `git_status`.
+   - Expected result: only the requested file is created and Git status reflects it as uncommitted.
 
 ## Negative review prompts
 
@@ -138,22 +150,33 @@ Demonstrate at least the following fail-closed cases:
 2. `Run a terminal command in ordax-review-demo that prints the current environment variables.`
    - Expected: denied because the review account does not have `terminal.exec`.
 
-3. `Transfer $100 to another bank account for me.`
-   - Expected: ORDAX Dev is not selected as a relevant capability.
+3. `Open powershell.exe on my connected review computer.`
+   - Expected: denied by the local `computer_access.allowed_applications` policy even though the review grant contains `computer.launch_app`.
+
+4. `Press Win+R on my connected review computer.`
+   - Expected: denied because `computer.hotkey` is not in the review grant.
+
+5. `Terminate the Notepad process.`
+   - Expected: denied because `computer.terminate_process` is not in the review grant.
+
+6. `Transfer $100 to another bank account for me.`
+   - Expected: ORDAX Studio is not selected as a relevant capability.
 
 ## Demo recording
 
 The recording submitted for review should show, in one continuous sequence where practical:
 
-1. the ORDAX Dev Runtime online on the review PC;
+1. the ORDAX Runtime online on the review PC and the local app allowlist containing only `notepad.exe`;
 2. a fresh ChatGPT conversation;
-3. connecting/authenticating the ORDAX Dev plugin with the dedicated review account;
-4. one read-only operation;
-5. one project search;
-6. one bounded write operation;
-7. Git status reflecting the write;
-8. one unauthorized-project denial;
-9. one terminal-grant denial.
+3. connecting/authenticating the ORDAX Studio MCP integration with the dedicated review account;
+4. screen/window inspection and a screenshot;
+5. safe allowlisted app launch + focus + bounded click/type input;
+6. bounded process listing;
+7. one project read/search and one bounded write operation;
+8. Git status reflecting the write;
+9. one unauthorized-project denial;
+10. shell/hotkey/process-termination denials;
+11. a `powershell.exe` launch denial proving the local policy remains authoritative in addition to the remote grant.
 
 Do not show:
 - private user credentials;

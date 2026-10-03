@@ -58,6 +58,17 @@ jobs:
           token = os.environ["ORDAX_OPERATOR_TOKEN"]
           link_id = os.environ["REVIEW_LINK_ID"].strip().lower()
           actions = [
+              "computer.access_status",
+              "computer.active_window",
+              "computer.click",
+              "computer.focus_window",
+              "computer.launch_app",
+              "computer.mouse_move",
+              "computer.processes",
+              "computer.screen_info",
+              "computer.screenshot",
+              "computer.scroll",
+              "computer.type",
               "git.status",
               "project.search_text",
               "project.text_read",
@@ -108,8 +119,17 @@ jobs:
               raise SystemExit("review grant escaped the demo project")
           if grant.get("actions") != expected_actions:
               raise SystemExit(f"review grant action mismatch: {grant.get('actions')!r}")
-          if "terminal.exec" in grant.get("actions", []):
-              raise SystemExit("terminal.exec must never be present in the review grant")
+          forbidden_actions = {
+              "computer.hotkey",
+              "computer.terminate_process",
+              "git.command",
+              "process.start",
+              "process.stop",
+              "terminal.exec",
+          }
+          escaped = sorted(forbidden_actions.intersection(grant.get("actions", [])))
+          if escaped:
+              raise SystemExit(f"forbidden review action(s): {escaped!r}")
           if not grant.get("id") or not grant.get("device_id"):
               raise SystemExit("review grant response is missing id/device provenance")
 
@@ -120,7 +140,8 @@ jobs:
                   handle.write(f"- Grant: `{grant['id']}`\n")
                   handle.write(f"- Device: `{grant['device_id']}`\n")
                   handle.write("- Project: `ordax-review-demo`\n")
-                  handle.write("- Terminal access: **not granted**\n")
+                  handle.write("- Computer Control: **bounded typed actions granted**\n")
+                  handle.write("- Shell / hotkey / process termination: **not granted**\n")
                   handle.write(f"- Expires: `{grant.get('expires_at')}`\n")
           print("Least-privilege ORDAX review grant created")
           PY

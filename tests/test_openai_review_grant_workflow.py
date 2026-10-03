@@ -19,21 +19,37 @@ class OpenAiReviewGrantWorkflowTests(unittest.TestCase):
         self.assertIn("/v3/product-grants/from-link", self.workflow)
         self.assertIn('"projects": ["ordax-review-demo"]', self.workflow)
         self.assertIn("timedelta(days=30)", self.workflow)
-        for action in (
+        expected = (
+            '"computer.access_status"',
+            '"computer.active_window"',
+            '"computer.click"',
+            '"computer.focus_window"',
+            '"computer.launch_app"',
+            '"computer.mouse_move"',
+            '"computer.processes"',
+            '"computer.screen_info"',
+            '"computer.screenshot"',
+            '"computer.scroll"',
+            '"computer.type"',
             '"git.status"',
             '"project.search_text"',
             '"project.text_read"',
             '"project.text_write"',
             '"projects.list"',
-        ):
-            self.assertIn(action, self.workflow)
-        self.assertIn(
-            'if "terminal.exec" in grant.get("actions", [])',
-            self.workflow,
         )
-        self.assertNotIn('"terminal.exec",', self.workflow)
-        self.assertNotIn('"git.command"', self.workflow)
-        self.assertNotIn('"terminal_exec"', self.workflow)
+        for action in expected:
+            self.assertIn(action, self.workflow)
+
+        for forbidden in (
+            '"computer.hotkey",',
+            '"computer.terminate_process",',
+            '"git.command",',
+            '"process.start",',
+            '"process.stop",',
+            '"terminal.exec",',
+        ):
+            self.assertNotIn(forbidden, self.workflow.split("forbidden_actions =", 1)[0])
+        self.assertIn('forbidden_actions = {', self.workflow)
 
     def test_operator_secret_is_not_a_dispatch_input(self) -> None:
         dispatch = self.workflow.split("permissions:", 1)[0]
