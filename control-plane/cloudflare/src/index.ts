@@ -42,6 +42,7 @@ const CONTROL_PLANE_CAPABILITIES = [
 const ACTION_PREFIXES = [
   "blender.", "unity.", "git.", "project.", "projects.", "workspace.", "artifact.",
   "observation.", "game_assets.", "geo.", "visual.", "agent.", "terminal.", "handoff.", "continuity.",
+  "browser.", "computer.", "process.",
 ];
 
 const PRODUCT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/;
@@ -77,6 +78,7 @@ const PRODUCT_READ_ONLY_ACTIONS = new Set([
   "computer.directory_list",
   "computer.text_read",
   "computer.search",
+  "computer.processes",
 ]);
 const PRODUCT_TYPED_ACTIONS_V2 = new Set([
   "continuity.update",
@@ -105,6 +107,7 @@ const PRODUCT_TYPED_ACTIONS_V2 = new Set([
   "computer.directory_create",
   "computer.path_move",
   "computer.path_remove",
+  "computer.terminate_process",
   "project.text_write",
   "project.text_patch",
   "blender.live_status",
