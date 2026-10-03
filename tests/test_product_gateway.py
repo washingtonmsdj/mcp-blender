@@ -63,6 +63,8 @@ class FakeExecutor:
             "computer.directory_list",
             "computer.text_read",
             "computer.search",
+            "computer.processes",
+            "computer.terminate_process",
             "computer.text_write",
             "computer.text_patch",
             "computer.directory_create",
