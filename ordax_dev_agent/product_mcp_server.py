@@ -653,6 +653,16 @@ def computer_screenshot(device_id: str, project: str, mode: str = "desktop", spa
 
 
 @mcp.tool()
+def computer_screen_info(device_id: str, project: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.screen_info", project=project, space_id=space_id, arguments={"project": project})
+
+
+@mcp.tool()
+def computer_clipboard_read(device_id: str, project: str, max_bytes: int = 65536, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.clipboard_read", project=project, space_id=space_id, arguments={"project": project, "max_bytes": max_bytes})
+
+
+@mcp.tool()
 def computer_focus_window(device_id: str, project: str, handle: str, space_id: str | None = None) -> dict[str, Any]:
     return _invoke(device_id=device_id, action="computer.focus_window", project=project, space_id=space_id, arguments={"project": project, "handle": handle})
 
@@ -660,6 +670,26 @@ def computer_focus_window(device_id: str, project: str, handle: str, space_id: s
 @mcp.tool()
 def computer_click(device_id: str, project: str, x: int, y: int, button: str = "left", clicks: int = 1, space_id: str | None = None) -> dict[str, Any]:
     return _invoke(device_id=device_id, action="computer.click", project=project, space_id=space_id, arguments={"project": project, "x": x, "y": y, "button": button, "clicks": clicks})
+
+
+@mcp.tool()
+def computer_mouse_move(device_id: str, project: str, x: int, y: int, duration_ms: int = 0, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.mouse_move", project=project, space_id=space_id, arguments={"project": project, "x": x, "y": y, "duration_ms": duration_ms})
+
+
+@mcp.tool()
+def computer_drag(device_id: str, project: str, from_x: int, from_y: int, to_x: int, to_y: int, button: str = "left", duration_ms: int = 500, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.drag", project=project, space_id=space_id, arguments={"project": project, "from_x": from_x, "from_y": from_y, "to_x": to_x, "to_y": to_y, "button": button, "duration_ms": duration_ms})
+
+
+@mcp.tool()
+def computer_clipboard_write(device_id: str, project: str, text: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.clipboard_write", project=project, space_id=space_id, arguments={"project": project, "text": text})
+
+
+@mcp.tool()
+def computer_launch_app(device_id: str, project: str, application: str, args: list[str] | None = None, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="computer.launch_app", project=project, space_id=space_id, arguments={"project": project, "application": application, "args": args or []})
 
 
 @mcp.tool()
