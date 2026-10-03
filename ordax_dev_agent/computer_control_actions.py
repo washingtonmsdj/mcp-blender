@@ -414,6 +414,7 @@ class ComputerControlActions:
             {
                 "project": project.slug,
                 "mode": mode,
+                "coordinate_space": "physical_pixels",
                 "artifact_name": target.name,
                 "image_path": str(target),
                 "width": int(width),

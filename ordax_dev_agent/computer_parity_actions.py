@@ -134,6 +134,7 @@ class ComputerParityActions:
             True,
             "desktop screen information ready",
             {
+                "coordinate_space": "physical_pixels",
                 "virtual_desktop": self._virtual_screen_rect(),
                 "monitor_count": len(monitors),
                 "monitors": monitors,
