@@ -57,6 +57,51 @@ def prepare_blender_connection(
             file=presence.get("file"),
         )
 
+    status_data = status.data or {}
+    if bool(status_data.get("presence_fresh")):
+        presence = status_data.get("presence") or {}
+        readiness_state = str(status_data.get("readiness_state") or "attention_required")
+        pid = presence.get("pid")
+        file = presence.get("file")
+        if readiness_state == "identity_mismatch":
+            return _state(
+                project_slug,
+                "identity_mismatch",
+                summary=status.summary,
+                requires_restart=status_data.get("project_matches") is False,
+                pid=pid,
+                file=file,
+                project_matches=status_data.get("project_matches"),
+                file_matches_project=status_data.get("file_matches_project"),
+                readiness_state=readiness_state,
+            )
+        if readiness_state in {"protocol_outdated", "companion_outdated"}:
+            dirty = bool(presence.get("is_dirty"))
+            summary = status.summary
+            if dirty:
+                summary = f"{summary}; salve o arquivo antes de reiniciar a sessão"
+            return _state(
+                project_slug,
+                "restart_required",
+                summary=summary,
+                requires_restart=True,
+                pid=pid,
+                file=file,
+                blender_pids=[int(pid)] if pid else [],
+                install_action="blender.adoption_install",
+                bridge_installable=True,
+                readiness_state=readiness_state,
+                dirty=dirty,
+            )
+        return _state(
+            project_slug,
+            "attention_required",
+            summary=status.summary,
+            pid=pid,
+            file=file,
+            readiness_state=readiness_state,
+        )
+
     adopted = agent.execute(
         "blender.adopt",
         {

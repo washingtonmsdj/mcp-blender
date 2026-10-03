@@ -60,9 +60,13 @@
       title.textContent=connection.state==='connected'?'Blender conectado':'Blender adotado';
       detail.textContent=[pid,connection.file].filter(Boolean).join(' · ')||summary||'Companion ORDAX ativo.';
       actions.append(button('Capturar','capture',{primary:true}),button('Reverificar','refresh'));
+    }else if(connection.state==='identity_mismatch'){
+      title.textContent='Sessão Blender fora do projeto';
+      detail.textContent=summary||'A sessão ORDAX está ativa, mas a identidade ou o arquivo aberto não corresponde a este projeto.';
+      actions.append(button('Reverificar','refresh',{primary:true}));
     }else if(connection.state==='restart_required'){
       title.textContent='Bridge ORDAX pendente';
-      detail.textContent='Instale/atualize o bridge e reabra somente a janela Blender indicada uma vez.';
+      detail.textContent=summary||'Instale/atualize o bridge e reabra somente a janela Blender indicada uma vez.';
       actions.append(button('Instalar bridge','install',{primary:true}),button('Reverificar','refresh'));
     }else if(connection.state==='ambiguous'||connection.state==='blank_ambiguous'){
       title.textContent='Escolha a janela Blender';
