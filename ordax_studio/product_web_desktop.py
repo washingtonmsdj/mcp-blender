@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +13,47 @@ from .blender_connection import prepare_blender_connection
 from .instance_lock import SingleInstanceLock
 from .product_auth import ProductAccountError, connect_existing_device
 from .web_desktop import APP_NAME, StudioApi
+
+
+def _restart_packaged_runtime_after_enrollment() -> bool:
+    """Restart the packaged runtime after first device enrollment on Windows."""
+    root_raw = str(os.environ.get("ORDAX_PACKAGED_ROOT") or "").strip()
+    if os.name != "nt" or not root_raw:
+        return False
+    root = Path(root_raw).resolve()
+    runtime = root / "ORDAX Runtime.exe"
+    if not runtime.is_file():
+        return False
+
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        event_modify_state = 0x0002
+        synchronize = 0x00100000
+        wait_object_0 = 0
+        event = kernel32.OpenEventW(event_modify_state, False, "Local\\ORDAXRuntimeShutdown")
+        if event:
+            try:
+                kernel32.SetEvent(event)
+            finally:
+                kernel32.CloseHandle(event)
+        mutex = kernel32.OpenMutexW(synchronize, False, "Local\\ORDAXRuntime")
+        if mutex:
+            try:
+                result = kernel32.WaitForSingleObject(mutex, 5000)
+                if result == wait_object_0:
+                    kernel32.ReleaseMutex(mutex)
+            finally:
+                kernel32.CloseHandle(mutex)
+        subprocess.Popen(
+            [str(runtime)], cwd=str(root), stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+        )
+        time.sleep(0.25)
+        return True
+    except (OSError, AttributeError):
+        return False
 
 
 class StudioProductApi(StudioApi):
@@ -35,6 +79,9 @@ class StudioProductApi(StudioApi):
                 "code": "product_account_unexpected_error",
                 "summary": f"{type(error).__name__}: não foi possível conectar a conta ORDAX",
             }
+        if data.get("enrolled_now"):
+            data["runtime_restarted"] = _restart_packaged_runtime_after_enrollment()
+            data["runtime_restart_required"] = not data["runtime_restarted"]
         return {
             "ok": True,
             "summary": "Conta ORDAX conectada a este computador",
@@ -110,23 +157,11 @@ class StudioProductApi(StudioApi):
         if not started.ok:
             return self._result(started)
 
-        status = self.agent.execute("blender.live_status", {"project": self.project})
-        if not status.ok:
-            return self._result(started)
-        presence = status.data.get("presence") or {}
-        return {
-            "ok": True,
-            "summary": started.summary,
-            "data": {
-                "state": "connected",
-                "project": self.project,
-                "pid": presence.get("pid") or started.data.get("pid"),
-                "file": presence.get("file"),
-                "can_start": False,
-                "can_capture": True,
-                "requires_restart": False,
-            },
-        }
+        return prepare_blender_connection(
+            self.agent,
+            self.project,
+            wait_seconds=4.0,
+        )
 
 
 def main() -> int:

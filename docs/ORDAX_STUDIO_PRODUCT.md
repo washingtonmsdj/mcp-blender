@@ -43,3 +43,14 @@ Endpoint canônico:
 - o Device Agent não depende da janela aberta;
 - permissões e auditoria continuam no runtime/control plane;
 - Blender e Unity são adapters do mesmo host, não produtos separados.
+
+## Modos de IA e cotas
+
+O Studio não possui um segundo cérebro, memória ou roteador independente do OrdaX OS. O contrato canônico de IA está em [ORDAX_INTELLIGENCE_MODES.md](ORDAX_INTELLIGENCE_MODES.md).
+
+- **ChatGPT normal + MCP:** a conversa é iniciada pelo usuário no ChatGPT e o ORDAX fornece ferramentas.
+- **IA local 24h:** trabalha com memória/checkpoints do ORDAX e não deve consumir OpenAI por padrão.
+- **Usar plano ChatGPT em aplicativo externo:** é um modo separado e opcional; quando suportado oficialmente, deve avisar antes da ativação que requisições elegíveis consomem a cota **ChatGPT Work e Codex**, não a cota do chat normal.
+- **API com chave própria:** deve ser identificada como API cobrada separadamente.
+
+Conta ORDAX, assinatura ORDAX e consumo de IA são conceitos separados. Nenhum modo limitado/pago pode ser habilitado silenciosamente como fallback.

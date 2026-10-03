@@ -20,7 +20,7 @@ interface ToolSpec {
 }
 
 const STRING = { type: "string" };
-const OAUTH_SCOPES = ["openid", "email"];
+const OAUTH_SCOPES = ["openid", "email", "offline_access"];
 const NUMBER = { type: "number" };
 const BOOLEAN = { type: "boolean" };
 const DEVICE = { type: "string", description: "ORDAX device UUID returned by ordax_targets." };

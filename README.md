@@ -4,6 +4,8 @@
 
 ORDAX Dev é um host local de desenvolvimento para Windows. Ele mantém projetos e ferramentas do computador disponíveis para clientes MCP autorizados, sem incorporar um segundo chat ou depender do Codex.
 
+A arquitetura de IA, handoff e consumo de cotas é é definida em [`docs/ORDAX_INTELLIGENCE_MODES.md`](docs/ORDAX_INTELLIGENCE_MODES.md). Em particular, uso do plano ChatGPT por um aplicativo externo é distinto do chat normal e deve ser apresentado como consumo da cota de **ChatGPT Work e Codex** quando esse modo estiver disponível.
+
 ## Como funciona
 
 ```text

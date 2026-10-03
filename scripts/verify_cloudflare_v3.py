@@ -50,7 +50,7 @@ def run(base_url: str, operator_token: str) -> None:
         protected_resource.raise_for_status()
         resource_metadata = protected_resource.json()
         scopes = resource_metadata.get("scopes_supported")
-        if not isinstance(scopes, list) or not {"openid", "email"}.issubset(scopes):
+        if not isinstance(scopes, list) or not {"openid", "email", "offline_access"}.issubset(scopes):
             raise RuntimeError("MCP protected-resource metadata is missing openid/email scopes")
         authorization_servers = resource_metadata.get("authorization_servers")
         if not isinstance(authorization_servers, list):
