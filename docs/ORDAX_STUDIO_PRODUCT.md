@@ -22,6 +22,14 @@ ORDAX Runtime no Windows
 
 O app Windows mostra projetos, status, memória/checkpoints, Git, arquivos, preview, adapters e a saúde da conexão. O **ORDAX Runtime** inicia com o Windows e continua online mesmo com a janela fechada.
 
+## Runtime headless e shell desktop
+
+O Device Agent e o ActionRegistry formam um núcleo **headless**. Eles não dependem de `pywebview` nem da shell gráfica do Windows para carregar ou executar capabilities tipadas.
+
+A dependência `pywebview` pertence ao extra Python `desktop`. O instalador Windows instala esse extra explicitamente e continua validando a shell gráfica no smoke de produto.
+
+Essa separação é a preparação para o `prototipo-ordax-os`: o OrdaX OS deve reutilizar o núcleo/capabilities do Runtime e montar sua própria Surface first-party `studio`, em vez de embutir o `ORDAX Dev.exe` ou criar um segundo frontend do Studio.
+
 ## Sem licença/assinatura nesta etapa
 
 A versão atual não possui plano pago, licença ou gate de assinatura. O vínculo de conta ORDAX é apenas autenticação opcional do dispositivo para acesso remoto; ele não desbloqueia tiers.
