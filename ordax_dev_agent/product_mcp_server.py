@@ -560,6 +560,39 @@ def terminal_exec(
 
 
 @mcp.tool()
+def process_status(device_id: str, project: str, process_id: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="process.status", project=project, space_id=space_id, arguments={"project": project, "process_id": process_id})
+
+
+@mcp.tool()
+def process_list(device_id: str, project: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="process.list", project=project, space_id=space_id, arguments={"project": project})
+
+
+@mcp.tool()
+def process_logs(device_id: str, project: str, process_id: str, max_bytes: int = 65536, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="process.logs", project=project, space_id=space_id, arguments={"project": project, "process_id": process_id, "max_bytes": max_bytes})
+
+
+@mcp.tool()
+def process_start(device_id: str, project: str, argv: list[str], cwd: str = ".", env: dict[str, str] | None = None, wait_seconds: float = 0.5, space_id: str | None = None) -> dict[str, Any]:
+    arguments: dict[str, Any] = {"project": project, "argv": argv, "cwd": cwd, "wait_seconds": wait_seconds}
+    if env is not None:
+        arguments["env"] = env
+    return _invoke(device_id=device_id, action="process.start", project=project, space_id=space_id, arguments=arguments)
+
+
+@mcp.tool()
+def process_write_stdin(device_id: str, project: str, process_id: str, text: str, newline: bool = True, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="process.write_stdin", project=project, space_id=space_id, arguments={"project": project, "process_id": process_id, "text": text, "newline": newline})
+
+
+@mcp.tool()
+def process_stop(device_id: str, project: str, process_id: str, space_id: str | None = None) -> dict[str, Any]:
+    return _invoke(device_id=device_id, action="process.stop", project=project, space_id=space_id, arguments={"project": project, "process_id": process_id})
+
+
+@mcp.tool()
 def browser_status(device_id: str, project: str, session_id: str, space_id: str | None = None) -> dict[str, Any]:
     return _invoke(device_id=device_id, action="browser.status", project=project, space_id=space_id, arguments={"project": project, "session_id": session_id})
 
