@@ -47,6 +47,25 @@ def _startup_log(config: AgentConfig | None, message: str) -> None:
         pass
 
 
+def _mark_transport_delivery_error(runtime: dict, error: Exception) -> None:
+    summary = str(error)
+    runtime["state"] = "control-plane-error"
+    runtime["transport_state"] = "reconnecting"
+    runtime["job_phase"] = "delivery-error"
+    runtime["last_transport_error"] = {"summary": summary, "at": time.time()}
+    runtime["last_result"] = {"ok": False, "summary": summary}
+
+
+def _mark_transport_healthy(runtime: dict) -> None:
+    previous = runtime.get("transport_state")
+    runtime["transport_state"] = "connected"
+    if previous == "reconnecting":
+        runtime["last_transport_recovered_at"] = time.time()
+        if runtime.get("job_phase") == "delivery-error":
+            runtime["job_phase"] = "idle"
+        runtime["last_result"] = {"ok": True, "summary": "control plane connection recovered"}
+
+
 def _agent_metadata(config: AgentConfig) -> dict:
     from .projects import load_projects
 
@@ -177,6 +196,9 @@ def main() -> int:
         "started_at": time.time(),
         "job_phase": "idle",
         "jobs_completed": 0,
+        "transport_state": "not-configured",
+        "last_transport_error": None,
+        "last_transport_recovered_at": None,
     }
     registry = None
 
@@ -212,6 +234,7 @@ def main() -> int:
         and config.device_id
     )
     runtime["state"] = "pairing" if remote_control_configured else "local-ready"
+    runtime["transport_state"] = "connecting" if remote_control_configured else "not-configured"
     print(json.dumps(status_payload(), indent=2))
 
     stop = False
@@ -278,6 +301,7 @@ def main() -> int:
             )
             runtime["paired"] = True
             runtime["state"] = "ready"
+            runtime["transport_state"] = "connected"
             runtime["last_result"] = {
                 "ok": True,
                 "summary": "agent paired" if paired_now else "agent token loaded",
@@ -319,6 +343,7 @@ def main() -> int:
                         metadata=_agent_metadata(config),
                     )
                     runtime["last_heartbeat_at"] = time.time()
+                    _mark_transport_healthy(runtime)
                     runtime.setdefault("startup_seconds", round(time.monotonic() - started_monotonic, 3))
                     next_heartbeat = now + 20.0
 
@@ -466,9 +491,7 @@ def main() -> int:
                 if isinstance(error, DeviceAuthorizationError):
                     runtime["state"] = "credential-recovery-required"
                     return 43
-                runtime["state"] = "control-plane-error"
-                runtime["job_phase"] = "delivery-error"
-                runtime["last_result"] = {"ok": False, "summary": str(error)}
+                _mark_transport_delivery_error(runtime, error)
                 print(f"control-plane error: {error}", file=sys.stderr)
                 time.sleep(max(5.0, config.poll_seconds))
                 runtime["state"] = "ready"
