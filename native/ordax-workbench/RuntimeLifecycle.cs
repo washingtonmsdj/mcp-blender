@@ -32,7 +32,11 @@ internal static class RuntimeLifecycle
                 return new(false, "start_failed", "O Windows não iniciou o ORDAX Runtime.");
 
             if (process.WaitForExit(750))
+            {
+                if (RuntimeAlreadyRunning())
+                    return new(true, "already_running", "ORDAX Runtime já foi iniciado por outra instância.");
                 return new(false, "exited_early", $"ORDAX Runtime encerrou durante a inicialização (código {process.ExitCode}).");
+            }
 
             return new(true, "started", "ORDAX Runtime iniciado pela Workbench.");
         }
