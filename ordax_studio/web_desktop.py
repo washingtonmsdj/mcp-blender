@@ -15,6 +15,73 @@ from .instance_lock import SingleInstanceLock
 
 APP_NAME = "ORDAX Studio"
 
+_RUNTIME_ONLINE_STATES = frozenset({
+    "local-ready",
+    "pairing",
+    "ready",
+    "busy",
+    "recovering-terminal-reports",
+    "restarting",
+})
+
+
+def _device_agent_health(
+    runtime_status: dict[str, Any] | None,
+    scheduled: dict[str, Any] | None,
+    local_health: dict[str, Any] | None,
+    *,
+    configured: bool,
+    resilience_ok: bool,
+    resilience_summary: str,
+) -> dict[str, Any]:
+    runtime_status = runtime_status if isinstance(runtime_status, dict) else {}
+    scheduled = scheduled if isinstance(scheduled, dict) else {}
+    local_health = local_health if isinstance(local_health, dict) else {}
+
+    runtime_state = str(runtime_status.get("state") or "unknown")
+    transport_state = str(runtime_status.get("transport_state") or "unknown")
+    runtime_reachable = bool(runtime_status)
+    runtime_healthy = runtime_reachable and runtime_state in _RUNTIME_ONLINE_STATES
+    legacy_supervisor_healthy = (
+        not runtime_reachable
+        and bool(scheduled.get("exists"))
+        and str(scheduled.get("state") or "").lower() == "running"
+        and bool(local_health)
+    )
+
+    if runtime_healthy:
+        ok = True
+        health_source = "runtime-status"
+        summary = "Device Agent ativo"
+    elif runtime_reachable:
+        ok = False
+        health_source = "runtime-status"
+        summary = f"Device Agent degradado: {runtime_state}"
+    elif legacy_supervisor_healthy:
+        ok = True
+        health_source = "legacy-resilience"
+        summary = "Device Agent ativo (compatibilidade)"
+    else:
+        ok = False
+        health_source = "none"
+        summary = resilience_summary if not resilience_ok else "Device Agent indisponível"
+
+    return {
+        "ok": ok,
+        "configured": bool(configured),
+        "health_source": health_source,
+        "scheduled_task_exists": bool(scheduled.get("exists")),
+        "scheduled_task_state": scheduled.get("state"),
+        "local_health": bool(local_health),
+        "runtime_reachable": runtime_reachable,
+        "runtime_state": runtime_state,
+        "paired": bool(runtime_status.get("paired")),
+        "transport_state": transport_state,
+        "last_transport_error": runtime_status.get("last_transport_error"),
+        "last_transport_recovered_at": runtime_status.get("last_transport_recovered_at"),
+        "summary": summary,
+    }
+
 
 class StudioApi:
     def __init__(self, agent: ActionRegistry | None = None):
@@ -265,22 +332,14 @@ class StudioApi:
         except (httpx.HTTPError, ValueError):
             runtime_status = {}
 
-        transport_state = str(runtime_status.get("transport_state") or "unknown")
-        runtime_state = str(runtime_status.get("state") or "unknown")
-        device_agent = {
-            "ok": bool(scheduled.get("exists")) and str(scheduled.get("state") or "").lower() == "running" and bool(local_health),
-            "configured": bool(config.device_id),
-            "scheduled_task_exists": bool(scheduled.get("exists")),
-            "scheduled_task_state": scheduled.get("state"),
-            "local_health": bool(local_health),
-            "runtime_reachable": bool(runtime_status),
-            "runtime_state": runtime_state,
-            "paired": bool(runtime_status.get("paired")),
-            "transport_state": transport_state,
-            "last_transport_error": runtime_status.get("last_transport_error"),
-            "last_transport_recovered_at": runtime_status.get("last_transport_recovered_at"),
-            "summary": "Device Agent ativo" if local_health else (resilience.summary if not resilience.ok else "Device Agent sem health local"),
-        }
+        device_agent = _device_agent_health(
+            runtime_status,
+            scheduled,
+            local_health,
+            configured=bool(config.device_id),
+            resilience_ok=resilience.ok,
+            resilience_summary=resilience.summary,
+        )
 
         base_url = str(config.control_plane_url or "").rstrip("/")
         remote_mcp = {
