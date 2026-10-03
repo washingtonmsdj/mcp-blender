@@ -56,7 +56,7 @@ class WindowsProductPackagingTests(unittest.TestCase):
     def test_product_shell_is_project_host_not_embedded_chat(self) -> None:
         product = (ROOT / "ordax_studio" / "studio_product.html").read_text(encoding="utf-8")
         script = (ROOT / "ordax_studio" / "assets" / "studio.js").read_text(encoding="utf-8")
-        self.assertIn("ORDAX Dev", product)
+        self.assertIn("ORDAX Studio", product)
         self.assertIn("Visão geral", product)
         self.assertIn("MCP", product)
         self.assertNotIn("Agent / Responses", product)
