@@ -67,6 +67,8 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
             '"computer_directory_list"',
             '"computer_text_read"',
             '"computer_search"',
+            '"computer_processes"',
+            '"computer_terminate_process"',
             '"computer_text_write"',
             '"computer_text_patch"',
             '"computer_directory_create"',
@@ -115,6 +117,8 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
         self.assertIn('computer_access_status: "Inspect computer access policy"', self.mcp)
         self.assertIn('computer_text_read: "Read computer text"', self.mcp)
         self.assertIn('computer_text_write: "Write computer text"', self.mcp)
+        self.assertIn('computer_processes: "List system processes"', self.mcp)
+        self.assertIn('computer_terminate_process: "Terminate system process"', self.mcp)
         self.assertIn('"browser_screenshot"', self.mcp)
         self.assertIn('"computer_click"', self.mcp)
         self.assertIn("effectClassCount !== 1", self.mcp)
