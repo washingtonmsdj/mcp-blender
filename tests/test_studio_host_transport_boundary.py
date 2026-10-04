@@ -14,6 +14,7 @@ class StudioHostTransportBoundaryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.host = (ROOT / "ordax_studio" / "host_bridge.js").read_text(encoding="utf-8")
         self.html = (ROOT / "ordax_studio" / "studio_product.html").read_text(encoding="utf-8")
+        self.legacy_html = (ROOT / "ordax_studio" / "studio.html").read_text(encoding="utf-8")
         self.portable = {
             path.name: path.read_text(encoding="utf-8")
             for path in (
@@ -35,10 +36,12 @@ class StudioHostTransportBoundaryTests(unittest.TestCase):
                 self.assertNotIn("pywebviewready", source)
 
     def test_host_adapter_is_explicit_and_loaded_before_portable_surface(self) -> None:
-        self.assertLess(
-            self.html.index('src="host_bridge.js"'),
-            self.html.index('src="assets/studio.js"'),
-        )
+        for name, html in (("product", self.html), ("legacy", self.legacy_html)):
+            with self.subTest(name=name):
+                self.assertLess(
+                    html.index('src="host_bridge.js"'),
+                    html.index('src="assets/studio.js"'),
+                )
         self.assertIn("Object.defineProperty(window,'ordaxStudioHost'", self.host)
         self.assertIn("projectsCatalog:", self.host)
         self.assertIn("aiSessionsStatus:", self.host)
