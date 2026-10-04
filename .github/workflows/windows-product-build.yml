@@ -56,7 +56,7 @@ jobs:
       - name: Install Inno Setup
         shell: powershell
         run: choco install innosetup --yes --no-progress
-      - name: Build ORDAX Dev product
+      - name: Build ORDAX Studio product
         shell: powershell
         run: .\scripts\windows\build-ordax-studio-product.ps1 -OutputDirectory "$env:GITHUB_WORKSPACE\dist\windows"
       - name: Write checksums
@@ -69,9 +69,9 @@ jobs:
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
-          name: ordax-dev-windows-x64
+          name: ordax-studio-windows-x64
           path: |
-            dist/windows/ORDAX-Dev-Setup-*.exe
+            dist/windows/ORDAX-Studio-Setup-*.exe
             dist/windows/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
@@ -83,9 +83,9 @@ jobs:
       - name: Download Windows installer
         uses: actions/download-artifact@v4
         with:
-          name: ordax-dev-windows-x64
+          name: ordax-studio-windows-x64
           path: artifact
-      - name: Install, upgrade over running runtime, and verify action-ready health
+      - name: Install, migrate legacy launcher, upgrade running runtime, and verify health
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -119,11 +119,24 @@ jobs:
             throw "Installed ORDAX Runtime did not reach action-ready state for $Label"
           }
 
-          $installer = Get-ChildItem .\artifact\ORDAX-Dev-Setup-*.exe | Select-Object -First 1
-          if (-not $installer) { throw "ORDAX Dev installer artifact is missing" }
-          $installRoot = Join-Path $env:RUNNER_TEMP "ordax-dev-install"
-          $installLog = Join-Path $env:RUNNER_TEMP "ordax-dev-install.log"
-          $upgradeLog = Join-Path $env:RUNNER_TEMP "ordax-dev-upgrade.log"
+          function Assert-StudioAlias {
+            param([string]$StudioExe, [string]$LegacyExe)
+            foreach ($path in @($StudioExe, $LegacyExe)) {
+              if (-not (Test-Path $path)) { throw "Studio launcher is missing: $path" }
+            }
+            $studioHash = (Get-FileHash $StudioExe -Algorithm SHA256).Hash
+            $legacyHash = (Get-FileHash $LegacyExe -Algorithm SHA256).Hash
+            if ($studioHash -ne $legacyHash) {
+              throw "ORDAX Dev compatibility alias differs from ORDAX Studio.exe"
+            }
+            Write-Host "ORDAX_LEGACY_ALIAS_IDENTICAL"
+          }
+
+          $installer = Get-ChildItem .\artifact\ORDAX-Studio-Setup-*.exe | Select-Object -First 1
+          if (-not $installer) { throw "ORDAX Studio installer artifact is missing" }
+          $installRoot = Join-Path $env:RUNNER_TEMP "ordax-studio-install"
+          $installLog = Join-Path $env:RUNNER_TEMP "ordax-studio-install.log"
+          $upgradeLog = Join-Path $env:RUNNER_TEMP "ordax-studio-upgrade.log"
           Remove-Item $installRoot -Recurse -Force -ErrorAction SilentlyContinue
 
           # Simulate the historical pre-0.4 supervisor so the product install proves
@@ -146,7 +159,7 @@ jobs:
           ) -Wait -PassThru
           if ($installProcess.ExitCode -ne 0) {
             if (Test-Path $installLog) { Get-Content $installLog -Tail 200 }
-            throw "ORDAX Dev silent install failed: $($installProcess.ExitCode)"
+            throw "ORDAX Studio silent install failed: $($installProcess.ExitCode)"
           }
 
           if (Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue) {
@@ -158,16 +171,18 @@ jobs:
           }
           Write-Host "LEGACY_ORDAX_STARTUP_REMOVED"
 
-          $studioExe = Join-Path $installRoot "ORDAX Dev.exe"
+          $studioExe = Join-Path $installRoot "ORDAX Studio.exe"
+          $legacyStudioExe = Join-Path $installRoot "ORDAX Dev.exe"
           $runtimeExe = Join-Path $installRoot "ORDAX Runtime.exe"
           $workbenchExe = Join-Path $installRoot "workbench\ORDAX Workbench.exe"
           $privatePython = Join-Path $installRoot "runtime\python.exe"
-          foreach ($required in @($studioExe, $runtimeExe, $workbenchExe, $privatePython)) {
+          foreach ($required in @($studioExe, $legacyStudioExe, $runtimeExe, $workbenchExe, $privatePython)) {
             if (-not (Test-Path $required)) {
               if (Test-Path $installLog) { Get-Content $installLog -Tail 200 }
               throw "Installed product file is missing: $required"
             }
           }
+          Assert-StudioAlias -StudioExe $studioExe -LegacyExe $legacyStudioExe
 
           $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
           $autoStart = (Get-ItemProperty -Path $runKey -Name "ORDAX Runtime" -ErrorAction Stop)."ORDAX Runtime"
@@ -183,13 +198,13 @@ jobs:
             Start-Sleep -Seconds 5
             $studio.Refresh()
             if ($studio.HasExited) {
-              throw "ORDAX Dev native Workbench exited during startup smoke with code $($studio.ExitCode)"
+              throw "ORDAX Studio native Workbench exited during startup smoke with code $($studio.ExitCode)"
             }
             $workbench = Get-Process | Where-Object {
               $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq [IO.Path]::GetFullPath($workbenchExe)
             } | Select-Object -First 1
             if (-not $workbench) {
-              throw "ORDAX Dev supervisor did not launch native Workbench"
+              throw "ORDAX Studio supervisor did not launch native Workbench"
             }
             Write-Host "ORDAX_WORKBENCH_READY"
           } finally {
@@ -202,10 +217,29 @@ jobs:
 
           $runtime = Start-Process -FilePath $runtimeExe -WorkingDirectory $installRoot -PassThru
           $upgradedRuntime = $null
+          $legacyProcess = $null
           try {
             $null = Wait-OrdaxReady -Label "ORDAX_RUNTIME"
 
-            Write-Host "Upgrade over running ORDAX Runtime"
+            # Simulate a pre-shutdown-event historical ORDAX Dev process. It runs
+            # outside the installation and has no ORDAX cooperative event, so only
+            # the explicit LegacyAppExeName fallback can retire it during upgrade.
+            $legacyProcessRoot = Join-Path $env:RUNNER_TEMP "ordax-legacy-process"
+            New-Item -ItemType Directory -Force -Path $legacyProcessRoot | Out-Null
+            $legacyProcessExe = Join-Path $legacyProcessRoot "ORDAX Dev.exe"
+            Copy-Item "$PSHOME\powershell.exe" $legacyProcessExe -Force
+            $legacyProcess = Start-Process -FilePath $legacyProcessExe -ArgumentList @(
+              "-NoProfile",
+              "-NonInteractive",
+              "-Command",
+              "Start-Sleep -Seconds 300"
+            ) -PassThru
+            Start-Sleep -Seconds 1
+            $legacyProcess.Refresh()
+            if ($legacyProcess.HasExited) { throw "Synthetic legacy ORDAX Dev process did not start" }
+            Write-Host "LEGACY_ORDAX_DEV_PROCESS_RUNNING"
+
+            Write-Host "Upgrade over running ORDAX Runtime and legacy ORDAX Dev launcher"
             $upgradeProcess = Start-Process -FilePath $installer.FullName -ArgumentList @(
               "/VERYSILENT",
               "/SUPPRESSMSGBOXES",
@@ -215,7 +249,7 @@ jobs:
             ) -Wait -PassThru
             if ($upgradeProcess.ExitCode -ne 0) {
               if (Test-Path $upgradeLog) { Get-Content $upgradeLog -Tail 200 }
-              throw "ORDAX Dev silent upgrade failed: $($upgradeProcess.ExitCode)"
+              throw "ORDAX Studio silent upgrade failed: $($upgradeProcess.ExitCode)"
             }
 
             Start-Sleep -Milliseconds 750
@@ -223,17 +257,26 @@ jobs:
             if (-not $runtime.HasExited) {
               throw "running runtime did not exit during upgrade"
             }
+            $legacyProcess.Refresh()
+            if (-not $legacyProcess.HasExited) {
+              throw "legacy ORDAX Dev process survived Studio upgrade"
+            }
+            Write-Host "LEGACY_ORDAX_DEV_PROCESS_RETIRED"
 
-            foreach ($required in @($studioExe, $runtimeExe, $workbenchExe, $privatePython)) {
+            foreach ($required in @($studioExe, $legacyStudioExe, $runtimeExe, $workbenchExe, $privatePython)) {
               if (-not (Test-Path $required)) {
                 if (Test-Path $upgradeLog) { Get-Content $upgradeLog -Tail 200 }
                 throw "Upgraded product file is missing: $required"
               }
             }
+            Assert-StudioAlias -StudioExe $studioExe -LegacyExe $legacyStudioExe
 
             $upgradedRuntime = Start-Process -FilePath $runtimeExe -WorkingDirectory $installRoot -PassThru
             $null = Wait-OrdaxReady -Label "ORDAX_UPGRADE_RUNTIME"
           } finally {
+            if ($legacyProcess) {
+              Stop-Process -Id $legacyProcess.Id -Force -ErrorAction SilentlyContinue
+            }
             if ($upgradedRuntime) {
               Stop-Process -Id $upgradedRuntime.Id -Force -ErrorAction SilentlyContinue
             }
@@ -242,21 +285,20 @@ jobs:
           }
 
           $uninstaller = Join-Path $installRoot "unins000.exe"
-          if (-not (Test-Path $uninstaller)) { throw "ORDAX Dev uninstaller is missing" }
+          if (-not (Test-Path $uninstaller)) { throw "ORDAX Studio uninstaller is missing" }
           $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @(
             "/VERYSILENT",
             "/SUPPRESSMSGBOXES",
             "/NORESTART"
           ) -Wait -PassThru
           if ($uninstallProcess.ExitCode -ne 0) {
-            throw "ORDAX Dev silent uninstall failed: $($uninstallProcess.ExitCode)"
+            throw "ORDAX Studio silent uninstall failed: $($uninstallProcess.ExitCode)"
           }
 
           $leftoverAutoStart = (Get-ItemProperty -Path $runKey -Name "ORDAX Runtime" -ErrorAction SilentlyContinue)."ORDAX Runtime"
           if ($leftoverAutoStart) {
             throw "ORDAX Runtime auto-start was not removed by uninstall: $leftoverAutoStart"
           }
-
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -270,7 +312,7 @@ jobs:
       - name: Download validated Windows installer
         uses: actions/download-artifact@v4
         with:
-          name: ordax-dev-windows-x64
+          name: ordax-studio-windows-x64
           path: artifact
       - name: Publish GitHub Release assets
         shell: powershell
@@ -279,13 +321,13 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $tag = $env:GITHUB_REF_NAME
-          $installer = Get-ChildItem .\artifact\ORDAX-Dev-Setup-*.exe | Select-Object -First 1
+          $installer = Get-ChildItem .\artifact\ORDAX-Studio-Setup-*.exe | Select-Object -First 1
           $checksums = Get-Item .\artifact\SHA256SUMS.txt
-          if (-not $installer) { throw "Validated ORDAX Dev installer is missing" }
+          if (-not $installer) { throw "Validated ORDAX Studio installer is missing" }
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $installer.FullName $checksums.FullName --clobber --repo $env:GITHUB_REPOSITORY
           } else {
-            gh release create $tag $installer.FullName $checksums.FullName --verify-tag --title "ORDAX Dev $tag" --generate-notes --repo $env:GITHUB_REPOSITORY
+            gh release create $tag $installer.FullName $checksums.FullName --verify-tag --title "ORDAX Studio $tag" --generate-notes --repo $env:GITHUB_REPOSITORY
           }
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release publication failed" }
