@@ -5,8 +5,10 @@
 
   const el=id=>document.getElementById(id);
   const activeProject=()=>typeof state==='object'&&state?state.project:null;
+  const hostMethods=Object.freeze({preview_capture:'previewCapture',blender_install_bridge:'blenderInstallBridge',blender_adopt:'blenderAdopt',blender_start:'blenderStart',blender_prepare:'blenderPrepare'});
   const api=async(name,...args)=>{
-    const fn=window.pywebview?.api?.[name];
+    const methodName=hostMethods[name];
+    const fn=methodName&&window.ordaxStudioHost?.[methodName];
     if(typeof fn!=='function')return{ok:false,summary:`API indisponível: ${name}`};
     try{return await fn(...args)}catch(error){return{ok:false,summary:String(error)}}
   };
