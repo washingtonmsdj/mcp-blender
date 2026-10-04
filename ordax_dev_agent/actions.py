@@ -66,6 +66,23 @@ from .adapter_contracts import (
 
 Action = Callable[[dict[str, Any]], ActionResult]
 
+# Pure observation calls must remain usable while an unrelated long-running
+# action owns the global execution lock. They do not mutate project/runtime
+# state or synthesize input; mutating Computer Control stays serialized below.
+_NONBLOCKING_OBSERVATION_ACTIONS = frozenset({
+    "computer.access_status",
+    "computer.file_stat",
+    "computer.directory_list",
+    "computer.text_read",
+    "computer.search",
+    "computer.windows",
+    "computer.active_window",
+    "computer.screen_info",
+    "computer.processes",
+    "computer.clipboard_read",
+    "computer.screenshot",
+})
+
 
 class ActionRegistry(
     ObservationActions,
@@ -456,6 +473,11 @@ class ActionRegistry(
         if handler is None:
             return ActionResult(False, f"action not allowed: {action}")
         payload = payload or {}
+        if action in _NONBLOCKING_OBSERVATION_ACTIONS:
+            try:
+                return handler(payload)
+            except (ValueError, FileNotFoundError, OSError, subprocess.TimeoutExpired) as error:
+                return ActionResult(False, f"{type(error).__name__}: {error}")
         if action in (
             "agent.status",
             "agent.component_catalog",
