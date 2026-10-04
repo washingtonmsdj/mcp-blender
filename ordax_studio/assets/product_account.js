@@ -37,8 +37,8 @@
             <button id="accountCancel" class="subtleButton" type="button">Cancelar</button>
           </div>
         </form>
-        <div class="accountSecurity">A senha é enviada diretamente ao Supabase Auth por este aplicativo local. O Worker ORDAX não recebe nem armazena a senha. O JWT de login é usado apenas durante o vínculo e não é persistido pelo Studio. O usuário não precisa de conta Cloudflare; GitHub é opcional e serve apenas como provedor de projetos/remotos.</div>
-        <div class="accountSecurity accountAiNotice"><strong>IA e cota do ChatGPT:</strong> conectar sua Conta ORDAX não conecta automaticamente o ChatGPT e não consome cota da OpenAI. Integrações de IA são configuradas separadamente. Se um futuro modo “Usar meu plano ChatGPT” for habilitado, o Studio deverá avisar antes da ativação que esse uso conta para a cota de ChatGPT Work e Codex, não para a cota do chat normal.</div>
+        <div class="accountSecurity">A senha é enviada diretamente ao serviço de autenticação configurado por este aplicativo local. O Control Plane ORDAX não deve receber nem armazenar a senha. Credenciais de sessão usadas durante o vínculo não pertencem ao Studio.</div>
+        <div class="accountSecurity accountAiNotice"><strong>IA e provedores:</strong> conectar sua Conta ORDAX não conecta automaticamente ChatGPT, Grok ou outro provedor de IA. Cada conector é configurado separadamente e deve informar suas próprias regras de uso, cota e custo antes da ativação.</div>
         <div id="accountStatus" class="accountStatus" aria-live="polite"></div>
       </section>`;
     document.body.appendChild(overlay);
@@ -97,10 +97,11 @@
 
       let result;
       try{
-        if(!window.pywebview?.api?.connect_product_account){
-          result={ok:false,summary:'Esta edição do ORDAX Dev não expõe conexão de conta.'};
+        const connect=window.ordaxStudioHost?.connectProductAccount;
+        if(typeof connect!=='function'){
+          result={ok:false,summary:'Esta edição do ORDAX Studio não expõe conexão de conta.'};
         }else{
-          result=await window.pywebview.api.connect_product_account(accountEmail,accountPassword);
+          result=await connect(accountEmail,accountPassword);
         }
       }catch(error){
         result={ok:false,summary:String(error)};
@@ -127,7 +128,7 @@
       if(enrolledNow&&restarted){
         status.textContent=connectedEmail?`Computador registrado e vinculado a ${connectedEmail}. Runtime reiniciado.`:'Computador registrado e vinculado à conta ORDAX. Runtime reiniciado.';
       }else if(enrolledNow&&restartRequired){
-        status.textContent='Computador registrado. Feche e abra o ORDAX Dev ou reinicie o Runtime para concluir a conexão remota.';
+        status.textContent='Computador registrado. Feche e abra o ORDAX Studio ou reinicie o Runtime para concluir a conexão remota.';
       }else{
         status.textContent=connectedEmail?`Computador vinculado a ${connectedEmail}.`:'Computador vinculado à conta ORDAX.';
       }
@@ -136,7 +137,6 @@
     });
   }
 
-  window.addEventListener('pywebviewready',mount);
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(mount,0));
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(mount,0),{once:true});
   else setTimeout(mount,0);
 })();
