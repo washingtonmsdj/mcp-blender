@@ -38,7 +38,7 @@
           </div>
         </form>
         <div class="accountSecurity">A senha é enviada diretamente ao serviço de autenticação configurado por este aplicativo local. O Control Plane ORDAX não deve receber nem armazenar a senha. Credenciais de sessão usadas durante o vínculo não pertencem ao Studio.</div>
-        <div class="accountSecurity accountAiNotice"><strong>IA e provedores:</strong> conectar sua Conta ORDAX não conecta automaticamente o ChatGPT, o Grok ou outro provedor de IA. Cada conector é configurado separadamente e deve informar suas próprias regras de uso, cota e custo antes da ativação.</div>
+        <div class="accountSecurity accountAiNotice"><strong>IA e provedores:</strong> conectar sua Conta ORDAX não conecta automaticamente o ChatGPT, o Grok ou outro provedor de IA e, por si só, não consome cota da OpenAI nem de outro provedor. Cada conector é configurado separadamente e deve informar suas próprias regras de uso, cota e custo antes da ativação.</div>
         <div id="accountStatus" class="accountStatus" aria-live="polite"></div>
       </section>`;
     document.body.appendChild(overlay);
