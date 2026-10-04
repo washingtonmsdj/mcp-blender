@@ -42,7 +42,7 @@ A IA local pode permanecer ativa sem depender de uma janela de provider externo.
 
 Por padrão, tarefas locais não devem consumir quota/créditos de provider externo. Se uma tarefa precisar ser escalada, o router deve usar somente um modo previamente habilitado e autorizado pelo usuário.
 
-A IA local pode preparar um handoff para um cliente externo, mas não deve automatizar a interface web do provider, abrir conversas escondidas ou transformar UI em API não oficial.
+A IA local pode preparar um handoff para um cliente externo, mas não deve automatizar a interface web do provider, abrir conversas escondidas ou transformar UI em API não oficial. Em particular, a integração OpenAI não deve automatizar `chatgpt.com` como substituto de uma API ou integração oficial.
 
 ## Modo 3 — uso de plano/entitlement de provider em aplicativo externo
 
@@ -62,7 +62,9 @@ As regras de quota/custo são metadata/policy do conector do provider, não lóg
 
 Para a integração OpenAI planejada, a copy de produto deve continuar distinguindo explicitamente a conversa normal do ChatGPT de qualquer uso oficial de plano em aplicativo externo. A regra exata de elegibilidade, quota e nomenclatura deve ser revalidada contra documentação oficial da OpenAI antes de cada release que habilite esse modo.
 
-Se a integração oficial aplicável indicar consumo de **ChatGPT Work/Codex** em vez da quota do chat normal, o Studio/conector deve mostrar isso antes da ativação; nunca deve esconder ou inferir equivalência entre as quotas.
+O contrato de produto atualmente preserva o aviso **ChatGPT Work e Codex** para o modo externo aplicável: requisições desse modo não usam a cota do chat normal. Se a nomenclatura ou regra oficial mudar, o conector deve ser atualizado junto com a validação de release — nunca o Runtime genérico.
+
+A distinção que a UI deve preservar é: **chat normal != Work/Codex != API**.
 
 Esse detalhe é específico do conector OpenAI e não concede ao Codex qualquer papel estrutural no ORDAX.
 
