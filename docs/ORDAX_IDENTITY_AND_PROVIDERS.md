@@ -53,6 +53,8 @@ Usuário
 
 O conector atual do ChatGPT se chama **ORDAX for ChatGPT**. Ele é uma implementação de provider edge e não é o aplicativo ORDAX Studio nem um Runtime específico de ChatGPT.
 
+O nome histórico **plugin ORDAX Studio** está aposentado para o conector: `ORDAX Studio` fica reservado ao aplicativo. Essa referência histórica permanece documentada apenas para tornar a migração/review inequívoca.
+
 O fluxo é:
 
 ```text
