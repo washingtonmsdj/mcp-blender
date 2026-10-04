@@ -1,17 +1,19 @@
-# ORDAX Dev
+# ORDAX Studio
 
-> **Nome histórico do repositório:** `mcp-blender`. O nome do repositório é mantido por compatibilidade; o produto atual é **ORDAX Dev**.
+> **Nome histórico do repositório:** `mcp-blender`. O nome do repositório é mantido por compatibilidade. O produto user-facing é **ORDAX Studio**.
 
-ORDAX Dev é um host local de desenvolvimento para Windows. Ele mantém projetos e ferramentas do computador disponíveis para clientes MCP autorizados, sem incorporar um segundo chat ou depender do Codex.
+ORDAX Studio é a bancada de projetos e ferramentas do ORDAX. Ele é **provider-neutral**: ChatGPT, Grok, Codex e outros clientes de IA são integrações externas autorizadas, não runtimes ou variantes do Studio.
 
-A arquitetura de IA, handoff e consumo de cotas é é definida em [`docs/ORDAX_INTELLIGENCE_MODES.md`](docs/ORDAX_INTELLIGENCE_MODES.md). Em particular, uso do plano ChatGPT por um aplicativo externo é distinto do chat normal e deve ser apresentado como consumo da cota de **ChatGPT Work e Codex** quando esse modo estiver disponível.
+No Windows, o produto usa um host persistente **ORDAX Runtime** para manter projetos e capacidades do computador disponíveis mesmo com a janela do Studio fechada. O launcher instalado ainda pode usar o nome histórico `ORDAX Dev.exe` durante a janela de compatibilidade de upgrade; isso não define a identidade do produto.
+
+A arquitetura de providers está em [`docs/ORDAX_PROVIDER_CONNECTORS.md`](docs/ORDAX_PROVIDER_CONNECTORS.md). Modos de IA, handoff e consumo de cota estão em [`docs/ORDAX_INTELLIGENCE_MODES.md`](docs/ORDAX_INTELLIGENCE_MODES.md).
 
 ## Como funciona
 
 ```text
-ChatGPT normal / outro cliente MCP
+ChatGPT / Grok / outro cliente autorizado
               |
-              | MCP HTTPS autenticado
+              | conector/protocolo autenticado
               v
 ORDAX Control Plane · Cloudflare
               |
@@ -21,21 +23,22 @@ ORDAX Runtime.exe · Windows
               |
               +-- projetos / arquivos / Git
               +-- processos / preview / artifacts
-              +-- memória / sessões / checkpoints
+              +-- sessões / checkpoints
+              +-- Computer Control
               +-- Blender / Unity / adapters
 ```
 
-O **ORDAX Dev.exe** é o painel local. O **ORDAX Runtime.exe** inicia com o Windows e permanece disponível mesmo quando o painel é fechado.
+O **ORDAX Studio** é a superfície de produto. O **ORDAX Runtime.exe** é infraestrutura local provider-neutral e inicia com o Windows. O Runtime não depende de ChatGPT, Grok ou Codex para existir ou executar capacidades locais autorizadas.
 
 ## Produto Windows
 
-A distribuição canônica é:
+A distribuição atual permanece compatível com instalações anteriores:
 
 `ORDAX-Dev-Setup-<versão>-x64.exe`
 
 O instalador inclui runtime Python privado e WebView2 quando necessário. Não exige Python instalado pelo usuário e não adiciona Python ao PATH.
 
-No painel você encontra:
+No Studio você encontra:
 
 - catálogo de projetos/workspaces;
 - visão geral de repositório e conexão;
@@ -44,38 +47,41 @@ No painel você encontra:
 - Git diff/status;
 - memória, tarefas e checkpoints;
 - MCP/capabilities;
+- Computer Control e política local;
 - preview web e evidência visual;
 - adapters Blender e Unity.
 
-Nesta etapa **não existe licença, assinatura ou plano pago**. A conexão de conta ORDAX é opcional e serve somente para autenticar/vincular o dispositivo.
+Nesta etapa **não existe licença, assinatura ou plano pago**. A conexão de Conta ORDAX é separada das integrações de IA e serve para autenticação/vínculo do dispositivo quando o fluxo remoto exigir.
 
 Veja [produto Windows](docs/ORDAX_STUDIO_WINDOWS_PRODUCT.md) e [arquitetura do produto](docs/ORDAX_STUDIO_PRODUCT.md).
 
-## ChatGPT / MCP remoto
+## Conectores de IA
 
-O adaptador oficial está em `plugins/ordax-studio/` e aponta para:
+A integração atual com ChatGPT é um cliente/conector do mesmo boundary ORDAX e aponta para o MCP remoto do Control Plane:
 
 `https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/mcp`
 
-A conversa permanece no ChatGPT normal. O ORDAX fornece as ferramentas locais.
+No futuro, um conector Grok ou outro provider deve reutilizar o mesmo Control Plane, grants e ações tipadas. Não deve existir implementação `chatgpt_*`, `grok_*` ou `codex_*` das capacidades locais.
 
-Veja [conexão MCP](docs/PRODUCT_MCP_CONNECT.md).
+Veja [conectores de provider](docs/ORDAX_PROVIDER_CONNECTORS.md) e [conexão MCP atual](docs/PRODUCT_MCP_CONNECT.md).
 
 ## Runtime e arquitetura
 
-O Runtime usa um único `ActionRegistry` tipado. Arquivos, Git, preview, Blender, Unity e futuros adapters não mantêm backends paralelos.
+O Runtime usa um único `ActionRegistry` tipado. Arquivos, Git, preview, Computer Control, Blender, Unity e futuros adapters não mantêm backends paralelos por provider.
 
 Componentes principais:
 
 ```text
-ordax_studio/        painel, MCP e superfície de produto
+ordax_studio/        superfície e experiência do Studio
 ordax_dev_agent/     ActionRegistry e ações locais
 ordax_device_agent/  runtime persistente do dispositivo
-ordax_core/          memória e infraestrutura compartilhada
+ordax_core/          infraestrutura compartilhada do host atual
 control-plane/       Control Plane Cloudflare
-plugins/             manifests para clientes externos
-packaging/windows/   instalador e launchers do produto
+plugins/             conectores/manifests para clientes externos
+packaging/windows/   instalador e launchers do produto Windows
 ```
+
+No OrdaX OS, o Studio será um app first-party que consome os ports públicos da plataforma; ele não deve empacotar uma segunda cópia de Identity, Memory, Intelligence, permissions, updater ou trust. O destino arquitetural está em `washingtonmsdj/ordax-apps`.
 
 O MCP local continua disponível para desenvolvimento e diagnóstico:
 
@@ -86,7 +92,7 @@ pip install -e .
 ordax-studio-mcp
 ```
 
-Aliases históricos permanecem apenas quando necessários para compatibilidade.
+Esse MCP local não é dependência do fluxo de produto remoto. Aliases históricos permanecem apenas quando necessários para compatibilidade.
 
 ## Device Agent
 
@@ -119,8 +125,10 @@ Documentação técnica:
 - acesso remoto é autenticado e auditável;
 - projetos são registrados explicitamente;
 - capacidades privilegiadas são separadas por policy/grant;
+- provider/client metadata não concede autoridade por si só;
 - o Runtime faz conexão de saída; não expõe o computador inteiro como um shell público;
-- a UI do ORDAX Dev não é uma fronteira de autoridade: as validações continuam no Runtime/Control Plane.
+- a UI do ORDAX Studio não é uma fronteira de autoridade: as validações continuam no Runtime/Control Plane;
+- um conector de provider não pode contornar grants nem a política local do dispositivo.
 
 ## Desenvolvimento
 
