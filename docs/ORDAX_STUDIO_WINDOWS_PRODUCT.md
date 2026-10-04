@@ -4,18 +4,31 @@
 
 A identidade user-facing é **ORDAX Studio**.
 
-A distribuição Windows atual permanece compatível com instalações anteriores:
+A distribuição Windows canônica passa a ser:
 
-`ORDAX-Dev-Setup-<versão>-x64.exe`
+`ORDAX-Studio-Setup-<versão>-x64.exe`
 
 Ela instala:
 
-- **ORDAX Dev.exe** — launcher Windows legado/compatível que abre a Workbench do **ORDAX Studio**;
+- **ORDAX Studio.exe** — launcher principal que abre a Workbench do ORDAX Studio;
+- **ORDAX Dev.exe** — alias legado/compatível temporário, byte-idêntico ao launcher principal, mantido somente para atalhos/automação de instalações anteriores;
 - **ORDAX Runtime.exe** — host persistente e provider-neutral que conecta o computador ao Control Plane.
 
 O runtime privado inclui CPython e dependências do produto, sem alterar o PATH do usuário.
 
-`ORDAX Dev.exe` é um nome físico legado mantido durante a janela de compatibilidade de upgrade. Ele não é um produto separado e não indica dependência de Codex. Uma migração futura para `ORDAX Studio.exe` deve preservar AppId, atualização in-place, desinstalação, atalhos, shutdown cooperativo e o estado do dispositivo.
+`ORDAX Dev.exe` não é um produto separado, não possui implementação própria e não indica dependência de Codex. Durante a janela de migração ele existe apenas como alias dos mesmos bytes de `ORDAX Studio.exe`. A remoção futura desse alias exige prova de que não há instalações/atalhos suportados que ainda dependam dele.
+
+## Compatibilidade de upgrade
+
+A migração preserva o mesmo Inno Setup AppId histórico:
+
+`{0D31F22D-8451-4CF4-9E34-F0D4D857F55F}`
+
+Isso mantém o upgrade in-place das instalações existentes. Em instalação nova, o diretório padrão passa a ser `Programs\ORDAX Studio`; upgrades podem continuar no diretório previamente registrado pelo instalador antigo, sem mover estado por conta própria.
+
+O shutdown cooperativo continua usando `Local\ORDAXStudioShutdown` para a UI e `Local\ORDAXRuntimeShutdown` para o Runtime. O instalador também possui fallback explícito para encerrar um `ORDAX Dev.exe` histórico que não exponha o evento cooperativo.
+
+Atalhos antigos `ORDAX Dev` são removidos durante a atualização e substituídos por atalhos `ORDAX Studio`. O estado do dispositivo, identidade, projetos e dados do Runtime não é apagado pela troca de branding.
 
 ## Identidade e integrações
 
@@ -37,7 +50,7 @@ cliente de IA autorizado
                   └─ ORDAX Runtime no PC
 ```
 
-O conector atual de ChatGPT é uma instância desse padrão. Um futuro conector Grok deve seguir o mesmo boundary e não criar outro Runtime.
+`ORDAX for ChatGPT` é uma instância desse padrão. Um futuro `ORDAX for Grok` deve seguir o mesmo boundary e não criar outro Runtime.
 
 Contratos detalhados:
 
@@ -46,9 +59,9 @@ Contratos detalhados:
 
 ## Uso diário
 
-1. instalar o ORDAX Studio (o instalador/binário atual ainda usa `ORDAX Dev` como nome físico legado de compatibilidade);
+1. instalar `ORDAX-Studio-Setup-<versão>-x64.exe`;
 2. o Runtime inicia automaticamente com o Windows;
-3. abrir o Studio para ver projetos, Git, previews, memória, Computer Control e status;
+3. abrir `ORDAX Studio.exe` para ver projetos, Git, previews, memória, Computer Control e status;
 4. conectar um cliente/provider autorizado quando quiser usar uma IA externa com as ferramentas ORDAX;
 5. a janela do Studio pode ser fechada sem derrubar a conexão do Runtime.
 
@@ -60,10 +73,19 @@ Não existe dependência estrutural de Codex, chat embutido, Browser Companion o
 
 Provider metadata serve para autenticação, política, auditoria, revogação e UX; nunca para conceder autoridade implícita.
 
-## Atualização
+## Gates de produto
 
-O instalador mantém o mesmo AppId para atualização segura das instalações anteriores. Antes de substituir arquivos ele encerra cooperativamente a UI e o Runtime; versões antigas que não suportam esse sinal usam o fallback de compatibilidade já existente.
+O pipeline `.github/workflows/windows-product-build.yml` deve provar em cada mudança relevante:
 
-A eventual troca do nome físico `ORDAX Dev.exe` para `ORDAX Studio.exe` deve acontecer como uma migração de packaging testada, e não por simples rename que deixe atalhos, uninstall records ou processos antigos órfãos.
+- build da Workbench nativa;
+- build do instalador `ORDAX Studio`;
+- instalação limpa com `ORDAX Studio.exe` como primário;
+- alias `ORDAX Dev.exe` byte-idêntico, sem segunda implementação;
+- Runtime action-ready;
+- abertura real da Workbench pelo launcher Studio;
+- upgrade sobre Runtime ativo;
+- aposentadoria de processo histórico `ORDAX Dev.exe` sem evento cooperativo;
+- preservação dos entrypoints após upgrade;
+- desinstalação e remoção do autorun do Runtime.
 
-O pipeline oficial é `.github/workflows/windows-product-build.yml`.
+A compatibilidade legada existe para permitir uma migração correta; ela não redefine o nome atual do produto.
