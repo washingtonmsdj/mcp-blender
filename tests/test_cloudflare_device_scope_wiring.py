@@ -77,6 +77,17 @@ class CloudflareDeviceScopeWiringTests(unittest.TestCase):
         )
         self.assertIn("projectBindingMatchesScope", self.worker)
 
+    def test_device_scope_rejects_legacy_project_bound_grant(self) -> None:
+        self.assertIn("DEVICE_SCOPED_ACTIONS.has(context.action)", self.worker)
+        self.assertRegex(
+            self.worker,
+            r"DEVICE_SCOPED_ACTIONS\.has\(context\.action\)[\s\S]{0,260}projects\.length\s*!==\s*0",
+        )
+        self.assertRegex(
+            self.worker,
+            r"DEVICE_SCOPED_ACTIONS\.has\(context\.action\)[\s\S]{0,260}context\.project\s*!==\s*null",
+        )
+
     def test_owner_grant_stays_server_derived(self) -> None:
         self.assertIn("authenticateProductRequest(request, env)", self.owner_grants)
         self.assertIn("linkedDeviceForOwner(env, identity.subjectId, linkId)", self.owner_grants)
