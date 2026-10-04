@@ -28,7 +28,7 @@ async def main(project: str | None = None) -> int:
     async with stdio_client(server) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
             initialized = await session.initialize()
-            if initialized.serverInfo.name != "ordax-studio":
+            if initialized.serverInfo.name != "ordax-runtime":
                 print(f"ERROR: unexpected MCP identity: {initialized.serverInfo.name}")
                 return 3
 

@@ -31,7 +31,7 @@ class ProjectMCPTests(unittest.IsolatedAsyncioTestCase):
             async with stdio_client(server) as (read, write):
                 async with ClientSession(read, write) as session:
                     initialized = await session.initialize()
-                    self.assertEqual('ordax-studio', initialized.serverInfo.name)
+                    self.assertEqual('ordax-runtime', initialized.serverInfo.name)
                     tools = (await session.list_tools()).tools
                     names = [tool.name for tool in tools]
                     schemas = {tool.name: tool.inputSchema for tool in tools}
