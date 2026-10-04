@@ -95,15 +95,41 @@ def _load_agent_settings(path: Path) -> dict[str, Any]:
 def _atomic_agent_settings_write(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    encoded = (json.dumps(payload, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     try:
-        temp.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        with temp.open("wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temp, path)
     finally:
         try:
             temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _agent_settings_lock(path: Path, *, timeout_seconds: float = 3.0) -> tuple[int, Path]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_name(f".{path.name}.lock")
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, f"{os.getpid()}\n".encode("ascii"))
+            return fd, lock_path
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("computer access settings are busy; retry")
+            time.sleep(0.05)
+
+
+def _release_agent_settings_lock(fd: int, lock_path: Path) -> None:
+    try:
+        os.close(fd)
+    finally:
+        try:
+            lock_path.unlink(missing_ok=True)
         except OSError:
             pass
 
@@ -240,6 +266,15 @@ def computer_access_management_status(config) -> dict[str, Any]:
 
 
 def update_computer_access_policy(config, payload: dict[str, Any]) -> dict[str, Any]:
+    settings_path = config.state_dir / "agent-settings.json"
+    lock_fd, lock_path = _agent_settings_lock(settings_path)
+    try:
+        return _update_computer_access_policy_locked(config, payload)
+    finally:
+        _release_agent_settings_lock(lock_fd, lock_path)
+
+
+def _update_computer_access_policy_locked(config, payload: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "enabled",
         "full_filesystem",
