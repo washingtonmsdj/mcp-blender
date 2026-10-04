@@ -25,11 +25,12 @@ class OrdaxIntelligenceModeContractTests(unittest.TestCase):
         self.assertIn("Nunca fazer fallback", self.contract)
         self.assertIn("sem autorização", self.contract)
 
-    def test_ordax_account_ui_separates_account_from_ai_usage(self) -> None:
-        self.assertIn("conectar sua Conta ORDAX não conecta automaticamente o ChatGPT", self.account_ui)
-        self.assertIn("não consome cota da OpenAI", self.account_ui)
-        self.assertIn("ChatGPT Work e Codex", self.account_ui)
-        self.assertIn("não para a cota do chat normal", self.account_ui)
+    def test_ordax_account_ui_separates_account_from_provider_usage(self) -> None:
+        self.assertIn("conectar sua Conta ORDAX não conecta automaticamente nenhum provedor de IA", self.account_ui)
+        self.assertIn("não consome cota de nenhum provedor", self.account_ui)
+        self.assertIn("Cada conector é configurado separadamente", self.account_ui)
+        self.assertNotIn("ChatGPT Work e Codex", self.account_ui)
+        self.assertNotIn("cota do chat normal", self.account_ui)
 
     def test_browser_automation_is_not_the_product_contract(self) -> None:
         self.assertIn("não deve automatizar `chatgpt.com`", self.contract)
