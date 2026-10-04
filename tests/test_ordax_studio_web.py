@@ -361,7 +361,7 @@ class OrdaxStudioWebTests(unittest.TestCase):
 
     def test_web_shell_contains_repository_first_home_and_preview_workspace(self):
         root = Path(__file__).resolve().parents[1] / "ordax_studio"
-        html = (root / "studio.html").read_text(encoding="utf-8")
+        html = (root / "studio_product.html").read_text(encoding="utf-8")
         script = (root / "assets" / "studio.js").read_text(encoding="utf-8")
         stylesheet = (root / "assets" / "studio.css").read_text(encoding="utf-8")
         self.assertIn('id="projectHome"', html)
