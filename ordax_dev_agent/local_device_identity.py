@@ -73,20 +73,28 @@ def load_or_create_local_device_id(state_dir: Path) -> str:
         raise LocalDeviceIdentityError("LOCAL_DEVICE_ID_CREATE_FAILED") from error
 
     try:
-        if os.name != "nt":
-            os.fchmod(fd, 0o600)
-        payload = (value + "\n").encode("utf-8")
-        written = 0
-        while written < len(payload):
-            written += os.write(fd, payload[written:])
-        os.fsync(fd)
+        try:
+            if os.name != "nt":
+                os.fchmod(fd, 0o600)
+            payload = (value + "\n").encode("utf-8")
+            written = 0
+            while written < len(payload):
+                count = os.write(fd, payload[written:])
+                if count <= 0:
+                    raise OSError("local device identity write made no progress")
+                written += count
+            os.fsync(fd)
+        finally:
+            os.close(fd)
     except Exception:
+        # Close the handle before cleanup. Windows does not reliably permit
+        # unlinking an open file, and masking the original write failure would
+        # make recovery harder to diagnose.
         try:
             path.unlink(missing_ok=True)
-        finally:
-            raise
-    finally:
-        os.close(fd)
+        except OSError:
+            pass
+        raise
     return value
 
 
