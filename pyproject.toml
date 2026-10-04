@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "mcp-blender-unity"
 # ORDAX Studio 0.4.1 keeps one shared core for the desktop product and headless Device Agent.
 version = "0.4.1"
-description = "ORDAX Dev host and MCP runtime for projects, Git, preview, Blender, Unity and extensible adapters"
+description = "ORDAX Studio host and provider-neutral runtime for projects, Git, preview, Blender, Unity and extensible adapters"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -45,4 +45,4 @@ include = ["mcp_blender_unity*", "ordax_core*", "ordax_studio*", "ordax_dev_agen
 
 [tool.setuptools.package-data]
 ordax_dev_agent = ["assets/*.py", "assets/*.cs", "assets/*.json"]
-ordax_studio = ["*.html", "assets/*.js", "assets/*.css"]
+ordax_studio = ["*.html", "*.js", "assets/*.js", "assets/*.css"]
