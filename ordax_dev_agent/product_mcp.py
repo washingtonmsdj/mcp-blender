@@ -48,7 +48,7 @@ PRODUCT_MCP_TOOLS: tuple[ProductMcpToolSpec, ...] = (
         name="handoff_create",
         action="handoff.create",
         effect="write",
-        description="Create an expiring continuation handoff for a fresh ChatGPT conversation.",
+        description="Create an expiring continuation handoff for a fresh client conversation.",
     ),
     ProductMcpToolSpec(
         name="project_inventory",

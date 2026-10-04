@@ -40,7 +40,7 @@ class ProjectMaintenanceMcpTests(unittest.IsolatedAsyncioTestCase):
             async with stdio_client(server) as (read, write):
                 async with ClientSession(read, write) as session:
                     initialized = await session.initialize()
-                    self.assertEqual("ordax-studio", initialized.serverInfo.name)
+                    self.assertEqual("ordax-runtime", initialized.serverInfo.name)
                     tools = await session.list_tools()
                     names = {tool.name for tool in tools.tools}
                     for name in (

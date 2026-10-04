@@ -1,9 +1,9 @@
-"""Local MCP front end for ORDAX Studio.
+"""Local provider-neutral MCP front end for the ORDAX Runtime.
 
-The historical repository/connector name is ``mcp-blender``. Blender is now one
-capability of the broader ORDAX Studio runtime alongside workspace, Git, preview,
-memory, Unity and other typed adapters. Remote jobs continue through the paired
-control plane; this stdio server itself is not public.
+The historical repository name is ``mcp-blender``. Blender is one capability of
+the broader ORDAX Runtime alongside workspace, Git, preview, memory, Unity and
+other typed adapters. Remote jobs continue through the paired Control Plane;
+this stdio server itself is not public.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from mcp.types import ImageContent, TextContent
 from .actions import ActionRegistry
 from .config import AgentConfig
 
-mcp = FastMCP("ordax-studio")
+mcp = FastMCP("ordax-runtime")
 _registry: ActionRegistry | None = None
 
 
@@ -57,7 +57,7 @@ def studio_status(project: str | None = None) -> dict:
     preview = agent.execute("project.preview_status", {"project": selected})
     return {
         "product": "ORDAX Studio",
-        "server": "ordax-studio",
+        "server": "ordax-runtime",
         "repository_alias": "mcp-blender",
         "project": selected,
         "health": {"ok": health.ok, "summary": health.summary, "data": health.data},
