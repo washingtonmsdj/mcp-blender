@@ -12,6 +12,17 @@ if (-not $OutputDirectory) {
 
 $canonicalVersion = [string]$env:ORDAX_STUDIO_CANONICAL_VERSION
 $canonicalVersion = $canonicalVersion.Trim()
+$canonicalVersionSource = if ($canonicalVersion) { "canonical-environment" } else { "" }
+
+if (-not $canonicalVersion -and $env:GITHUB_REF_TYPE -eq "tag") {
+    $tagName = ([string]$env:GITHUB_REF_NAME).Trim()
+    if ($tagName -notmatch '^v(.+)$') {
+        throw "ORDAX Studio release tag must use v<semver>: $tagName"
+    }
+    $canonicalVersion = $Matches[1]
+    $canonicalVersionSource = "github-tag"
+}
+
 $Version = $Version.Trim()
 $versionSource = "explicit-argument"
 
@@ -20,7 +31,7 @@ if ($canonicalVersion) {
         throw "ORDAX Studio version mismatch: explicit version '$Version' differs from canonical version '$canonicalVersion'"
     }
     $Version = $canonicalVersion
-    $versionSource = "canonical-environment"
+    $versionSource = $canonicalVersionSource
 } elseif (-not $Version) {
     $pyproject = Get-Content (Join-Path $repoRoot "pyproject.toml") -Raw
     if ($pyproject -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
