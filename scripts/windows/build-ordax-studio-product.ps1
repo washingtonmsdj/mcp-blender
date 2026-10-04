@@ -99,7 +99,8 @@ if (-not $cl) {
     throw "cl.exe was not found. Run from a Visual Studio developer environment."
 }
 $launcherSource = Join-Path $repoRoot "packaging\windows\ordax_launcher.c"
-$studioExe = Join-Path $stageRoot "ORDAX Dev.exe"
+$studioExe = Join-Path $stageRoot "ORDAX Studio.exe"
+$legacyStudioExe = Join-Path $stageRoot "ORDAX Dev.exe"
 $runtimeExe = Join-Path $stageRoot "ORDAX Runtime.exe"
 
 Push-Location $buildRoot
@@ -119,16 +120,31 @@ if (-not (Test-Path $studioExe) -or -not (Test-Path $runtimeExe)) {
     throw "Native ORDAX launchers were not produced"
 }
 
+# Compatibility only: old shortcuts/automation may still point at ORDAX Dev.exe.
+# Keep one implementation by copying the exact Studio launcher bytes rather than
+# compiling or maintaining a second launcher path.
+Copy-Item -LiteralPath $studioExe -Destination $legacyStudioExe -Force
+$studioHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $studioExe).Hash
+$legacyHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $legacyStudioExe).Hash
+if ($studioHash -ne $legacyHash) {
+    throw "Legacy ORDAX Dev launcher alias is not byte-identical to ORDAX Studio.exe"
+}
+
 $manifest = [ordered]@{
     schema = "ordax.windows-product/1"
-    product = "ORDAX Dev"
+    product = "ORDAX Studio"
     version = $Version
     architecture = "x64"
     python = $PythonVersion
     entrypoints = @{
-        studio = "ORDAX Dev.exe"
+        studio = "ORDAX Studio.exe"
+        studio_legacy_alias = "ORDAX Dev.exe"
         workbench = "workbench\\ORDAX Workbench.exe"
         runtime = "ORDAX Runtime.exe"
+    }
+    compatibility = @{
+        legacy_studio_alias = $true
+        legacy_studio_alias_byte_identical = $true
     }
     control_plane = "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev"
     built_at = [DateTimeOffset]::UtcNow.ToString("o")
@@ -156,10 +172,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup compilation failed"
 }
 
-$setup = Get-ChildItem $OutputDirectory -Filter "ORDAX-Dev-Setup-*.exe" | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+$setup = Get-ChildItem $OutputDirectory -Filter "ORDAX-Studio-Setup-*.exe" | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
 if (-not $setup) {
     throw "Installer output was not produced"
 }
 $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $setup.FullName).Hash.ToLowerInvariant()
-Write-Output "ORDAX_DEV_SETUP=$($setup.FullName)"
-Write-Output "ORDAX_DEV_SETUP_SHA256=$hash"
+Write-Output "ORDAX_STUDIO_SETUP=$($setup.FullName)"
+Write-Output "ORDAX_STUDIO_SETUP_SHA256=$hash"

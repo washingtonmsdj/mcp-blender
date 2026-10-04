@@ -4,7 +4,7 @@
 
 ORDAX Studio é a bancada de projetos e ferramentas do ORDAX. Ele é **provider-neutral**: ChatGPT, Grok, Codex e outros clientes de IA são integrações externas autorizadas, não runtimes ou variantes do Studio.
 
-No Windows, o produto usa um host persistente **ORDAX Runtime** para manter projetos e capacidades do computador disponíveis mesmo com a janela do Studio fechada. O launcher instalado ainda pode usar o nome histórico `ORDAX Dev.exe` durante a janela de compatibilidade de upgrade; isso não define a identidade do produto.
+No Windows, o produto usa um host persistente **ORDAX Runtime** para manter projetos e capacidades do computador disponíveis mesmo com a janela do Studio fechada. O launcher principal é `ORDAX Studio.exe`; `ORDAX Dev.exe` permanece temporariamente apenas como alias legado/compatível, byte-idêntico, para migração de instalações antigas.
 
 A arquitetura de providers está em [`docs/ORDAX_PROVIDER_CONNECTORS.md`](docs/ORDAX_PROVIDER_CONNECTORS.md). Modos de IA, handoff e consumo de cota estão em [`docs/ORDAX_INTELLIGENCE_MODES.md`](docs/ORDAX_INTELLIGENCE_MODES.md).
 
@@ -32,9 +32,11 @@ O **ORDAX Studio** é a superfície de produto. O **ORDAX Runtime.exe** é infra
 
 ## Produto Windows
 
-A distribuição atual permanece compatível com instalações anteriores:
+A distribuição canônica é:
 
-`ORDAX-Dev-Setup-<versão>-x64.exe`
+`ORDAX-Studio-Setup-<versão>-x64.exe`
+
+O instalador mantém o AppId histórico para upgrade in-place. Instala `ORDAX Studio.exe`, `ORDAX Runtime.exe`, a Workbench e o alias temporário `ORDAX Dev.exe` para compatibilidade. O alias não possui implementação própria.
 
 O instalador inclui runtime Python privado e WebView2 quando necessário. Não exige Python instalado pelo usuário e não adiciona Python ao PATH.
 
@@ -141,7 +143,7 @@ python -m unittest
 Workflows relevantes:
 
 - **Bridge CI** — unit tests, contratos, scripts e Cloudflare;
-- **Windows Product Build** — compila instalador, instala, atualiza sobre runtime ativo e desinstala;
+- **Windows Product Build** — compila `ORDAX-Studio-Setup`, instala, prova migração do launcher legado, atualiza sobre Runtime ativo e desinstala;
 - **OrdaX Agent Recovery** — recuperação da estação Windows;
 - workflows Blender/Unity específicos — apenas quando necessário.
 

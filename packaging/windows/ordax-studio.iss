@@ -8,9 +8,10 @@
   #define OutputDir "."
 #endif
 
-#define AppName "ORDAX Dev"
+#define AppName "ORDAX Studio"
 #define AppPublisher "ORDAX"
-#define AppExeName "ORDAX Dev.exe"
+#define AppExeName "ORDAX Studio.exe"
+#define LegacyAppExeName "ORDAX Dev.exe"
 #define RuntimeExeName "ORDAX Runtime.exe"
 
 [Setup]
@@ -18,14 +19,14 @@ AppId={{0D31F22D-8451-4CF4-9E34-F0D4D857F55F}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={localappdata}\Programs\ORDAX Dev
+DefaultDirName={localappdata}\Programs\ORDAX Studio
 DefaultGroupName=ORDAX
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
-OutputBaseFilename=ORDAX-Dev-Setup-{#AppVersion}-x64
+OutputBaseFilename=ORDAX-Studio-Setup-{#AppVersion}-x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -35,7 +36,7 @@ UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExeName}
 VersionInfoVersion={#AppVersion}
 VersionInfoCompany={#AppPublisher}
-VersionInfoDescription=ORDAX Dev installer
+VersionInfoDescription=ORDAX Studio installer
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#AppVersion}
 
@@ -43,16 +44,17 @@ VersionInfoProductVersion={#AppVersion}
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
-Type: files; Name: "{app}\ORDAX Studio.exe"
 Type: filesandordirs; Name: "{app}\browser_extension"
 Type: files; Name: "{userstartup}\OrdaX Dev Agent.lnk"
+Type: files; Name: "{group}\ORDAX Dev.lnk"
+Type: files; Name: "{userdesktop}\ORDAX Dev.lnk"
 
 [Icons]
-Name: "{group}\ORDAX Dev"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
-Name: "{userdesktop}\ORDAX Dev"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\ORDAX Studio"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+Name: "{userdesktop}\ORDAX Studio"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Tasks]
-Name: "desktopicon"; Description: "Criar atalho do ORDAX Dev na área de trabalho"; GroupDescription: "Atalhos adicionais:"; Flags: unchecked
+Name: "desktopicon"; Description: "Criar atalho do ORDAX Studio na área de trabalho"; GroupDescription: "Atalhos adicionais:"; Flags: unchecked
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ORDAX Runtime"; ValueData: """{app}\{#RuntimeExeName}"""; Flags: uninsdeletevalue
@@ -60,7 +62,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 Filename: "{app}\redist\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Instalando Microsoft Edge WebView2..."; Flags: waituntilterminated skipifdoesntexist; Check: NeedsWebView2
 Filename: "{app}\{#RuntimeExeName}"; Description: "Iniciar ORDAX Runtime"; Flags: nowait postinstall skipifsilent
-Filename: "{app}\{#AppExeName}"; Description: "Abrir ORDAX Dev"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Description: "Abrir ORDAX Studio"; Flags: nowait postinstall skipifsilent
 
 [Code]
 const
@@ -130,7 +132,7 @@ begin
     end;
   end;
 
-  { Compatibility path for 0.3.0/0.3.1, which predate the shutdown event. }
+  { Compatibility path for launchers that predate the shutdown event. }
   Started := Exec(
     ExpandConstant('{sys}\taskkill.exe'),
     '/F /T /IM "' + ExeName + '"',
@@ -211,7 +213,16 @@ begin
 
   if not StopOrdaxProcess('Local\ORDAXStudioShutdown', '{#AppExeName}') then
   begin
-    Result := 'Não foi possível encerrar o ORDAX Dev para atualizar os arquivos.';
+    Result := 'Não foi possível encerrar o ORDAX Studio para atualizar os arquivos.';
+    Exit;
+  end;
+
+  { Explicitly retire pre-migration ORDAX Dev launchers that may not expose
+    the cooperative Studio shutdown event. The compatibility alias installed
+    by current builds is byte-identical to ORDAX Studio.exe. }
+  if not StopOrdaxProcess('Local\ORDAXStudioShutdown', '{#LegacyAppExeName}') then
+  begin
+    Result := 'Não foi possível encerrar o launcher legado ORDAX Dev para atualizar os arquivos.';
     Exit;
   end;
 
@@ -235,6 +246,7 @@ begin
   if CurUninstallStep = usUninstall then
   begin
     StopOrdaxProcess('Local\ORDAXStudioShutdown', '{#AppExeName}');
+    StopOrdaxProcess('Local\ORDAXStudioShutdown', '{#LegacyAppExeName}');
     StopOrdaxProcess('Local\ORDAXRuntimeShutdown', '{#RuntimeExeName}');
     RetireLegacyScheduledTask();
   end;
