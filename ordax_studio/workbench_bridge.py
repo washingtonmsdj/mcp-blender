@@ -37,6 +37,7 @@ _ALLOWED_METHODS = frozenset(
         "search",
         "git_diff",
         "memory_context",
+        "ai_sessions_status",
         "connect_product_account",
         "blender_prepare",
         "blender_install_bridge",

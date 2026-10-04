@@ -93,7 +93,10 @@ class WindowsProductPackagingTests(unittest.TestCase):
         xaml = (ROOT / "native" / "ordax-workbench" / "MainWindow.xaml").read_text(encoding="utf-8")
         code = (ROOT / "native" / "ordax-workbench" / "MainWindow.xaml.cs").read_text(encoding="utf-8")
         bridge = (ROOT / "ordax_studio" / "workbench_bridge.py").read_text(encoding="utf-8")
+        host_bridge = (ROOT / "ordax_studio" / "host_bridge.js").read_text(encoding="utf-8")
         studio_js = (ROOT / "ordax_studio" / "assets" / "studio.js").read_text(encoding="utf-8")
+        blender_js = (ROOT / "ordax_studio" / "assets" / "blender-connection.js").read_text(encoding="utf-8")
+        account_js = (ROOT / "ordax_studio" / "assets" / "product_account.js").read_text(encoding="utf-8")
 
         self.assertIn("Microsoft.Web.WebView2", project)
         self.assertIn("WebView2CompositionControl", xaml)
@@ -104,8 +107,14 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn("StudioView.CoreWebView2.WebMessageReceived", code)
         self.assertNotIn("ProviderView.CoreWebView2.WebMessageReceived", code)
         self.assertIn("_ALLOWED_METHODS", bridge)
-        self.assertIn("window.chrome?.webview", studio_js)
-        self.assertIn("window.pywebview?.api?.[name]", studio_js)
+        self.assertIn('"ai_sessions_status"', bridge)
+        self.assertIn("window.chrome?.webview", host_bridge)
+        self.assertIn("window.pywebview?.api", host_bridge)
+        self.assertIn("Object.defineProperty(window,'ordaxStudioHost'", host_bridge)
+        for portable in (studio_js, blender_js, account_js):
+            self.assertNotIn("window.chrome", portable)
+            self.assertNotIn("window.pywebview", portable)
+            self.assertNotIn("pywebviewready", portable)
 
     def test_runtime_supervisor_is_client_neutral(self) -> None:
         launcher = (ROOT / "packaging" / "windows" / "ordax_launcher.c").read_text(encoding="utf-8").lower()
