@@ -57,13 +57,13 @@ Veja [produto Windows](docs/ORDAX_STUDIO_WINDOWS_PRODUCT.md) e [arquitetura do p
 
 ## Conectores de IA
 
-A integração atual com ChatGPT é um cliente/conector do mesmo boundary ORDAX e aponta para o MCP remoto do Control Plane:
+O conector atual do ChatGPT se chama **ORDAX for ChatGPT** e vive em `plugins/ordax-chatgpt/`. Ele aponta para o mesmo MCP remoto provider-neutral do Control Plane:
 
 `https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/mcp`
 
-No futuro, um conector Grok ou outro provider deve reutilizar o mesmo Control Plane, grants e ações tipadas. Não deve existir implementação `chatgpt_*`, `grok_*` ou `codex_*` das capacidades locais.
+No futuro, **ORDAX for Grok** ou outro provider deve reutilizar o mesmo Control Plane, grants e ações tipadas. Não deve existir implementação `chatgpt_*`, `grok_*` ou `codex_*` das capacidades locais.
 
-Veja [conectores de provider](docs/ORDAX_PROVIDER_CONNECTORS.md) e [conexão MCP atual](docs/PRODUCT_MCP_CONNECT.md).
+Veja [conectores de provider](docs/ORDAX_PROVIDER_CONNECTORS.md) e [conexão ChatGPT atual](docs/PRODUCT_MCP_CONNECT.md).
 
 ## Runtime e arquitetura
 
