@@ -1,4 +1,4 @@
-"""Device-scoped filesystem capabilities with local allow-root policy.
+"""Device-scoped filesystem capabilities with local computer-access policy.
 
 These actions intentionally complement project-scoped workspace tools. Remote callers
 still require per-action Product grants, while the local policy decides which parts of
@@ -47,17 +47,21 @@ _SKIP_SEARCH_DIRS = frozenset(
 @dataclass(frozen=True)
 class ComputerAccessPolicy:
     enabled: bool
+    full_access: bool
     full_filesystem: bool
     allowed_roots: tuple[Path, ...]
     allowed_applications: tuple[str, ...]
 
     def application_allowed(self, executable: Path) -> bool:
+        if self.full_access:
+            return True
         full_key = os.path.normcase(str(executable.resolve()))
         return full_key in self.allowed_applications
 
     def public(self) -> dict[str, Any]:
         return {
             "enabled": self.enabled,
+            "full_access": self.full_access,
             "full_filesystem": self.full_filesystem,
             "allowed_roots": [str(root) for root in self.allowed_roots],
             "allowed_applications": list(self.allowed_applications),
@@ -194,6 +198,7 @@ def _normalize_allowed_applications(raw_applications: Any) -> list[str]:
 def _environment_management() -> dict[str, bool]:
     return {
         "enabled": "ORDAX_COMPUTER_ACCESS_ENABLED" in os.environ,
+        "full_access": "ORDAX_COMPUTER_FULL_ACCESS" in os.environ,
         "full_filesystem": "ORDAX_COMPUTER_FULL_FILESYSTEM" in os.environ,
         "allowed_roots": "ORDAX_COMPUTER_ALLOWED_ROOTS" in os.environ,
         "allowed_applications": "ORDAX_COMPUTER_ALLOWED_APPLICATIONS" in os.environ,
@@ -211,16 +216,22 @@ def load_computer_access_policy(config) -> ComputerAccessPolicy:
         raise ValueError("computer_access must be an object")
 
     enabled = section.get("enabled", True)
+    full_access = section.get("full_access", False)
     full_filesystem = section.get("full_filesystem", False)
     if not isinstance(enabled, bool):
         raise ValueError("computer_access.enabled must be boolean")
+    if not isinstance(full_access, bool):
+        raise ValueError("computer_access.full_access must be boolean")
     if not isinstance(full_filesystem, bool):
         raise ValueError("computer_access.full_filesystem must be boolean")
 
     env_enabled = _bool_env("ORDAX_COMPUTER_ACCESS_ENABLED")
+    env_full_access = _bool_env("ORDAX_COMPUTER_FULL_ACCESS")
     env_full = _bool_env("ORDAX_COMPUTER_FULL_FILESYSTEM")
     if env_enabled is not None:
         enabled = env_enabled
+    if env_full_access is not None:
+        full_access = env_full_access
     if env_full is not None:
         full_filesystem = env_full
 
@@ -232,8 +243,10 @@ def load_computer_access_policy(config) -> ComputerAccessPolicy:
         raw_roots = [str(Path.home())]
     roots = _normalize_allowed_roots(raw_roots)
 
-    if enabled and not full_filesystem and not roots:
-        raise ValueError("computer access needs at least one allowed root unless full_filesystem=true")
+    if enabled and not full_access and not full_filesystem and not roots:
+        raise ValueError(
+            "computer access needs at least one allowed root unless full_access=true or full_filesystem=true"
+        )
 
     raw_applications = section.get("allowed_applications")
     env_applications = os.environ.get("ORDAX_COMPUTER_ALLOWED_APPLICATIONS")
@@ -247,6 +260,7 @@ def load_computer_access_policy(config) -> ComputerAccessPolicy:
 
     return ComputerAccessPolicy(
         enabled=enabled,
+        full_access=full_access,
         full_filesystem=full_filesystem,
         allowed_roots=tuple(roots),
         allowed_applications=tuple(applications),
@@ -277,6 +291,7 @@ def update_computer_access_policy(config, payload: dict[str, Any]) -> dict[str, 
 def _update_computer_access_policy_locked(config, payload: dict[str, Any]) -> dict[str, Any]:
     allowed = {
         "enabled",
+        "full_access",
         "full_filesystem",
         "allowed_roots",
         "allowed_applications",
@@ -312,6 +327,16 @@ def _update_computer_access_policy_locked(config, payload: dict[str, Any]) -> di
         enabled = candidate
         section["enabled"] = candidate
 
+    full_access = effective_before.full_access
+    if not managed["full_access"]:
+        candidate = payload.get(
+            "full_access", current_section.get("full_access", False)
+        )
+        if not isinstance(candidate, bool):
+            raise ValueError("computer_access.full_access must be boolean")
+        full_access = candidate
+        section["full_access"] = candidate
+
     full_filesystem = effective_before.full_filesystem
     if not managed["full_filesystem"]:
         candidate = payload.get(
@@ -338,9 +363,9 @@ def _update_computer_access_policy_locked(config, payload: dict[str, Any]) -> di
         applications = _normalize_allowed_applications(raw_applications)
         section["allowed_applications"] = applications
 
-    if enabled and not full_filesystem and not roots:
+    if enabled and not full_access and not full_filesystem and not roots:
         raise ValueError(
-            "computer access needs at least one allowed root unless full_filesystem=true"
+            "computer access needs at least one allowed root unless full_access=true or full_filesystem=true"
         )
 
     settings["computer_access"] = section
@@ -374,7 +399,7 @@ def _bounded_int(
 
 
 def _path_allowed(path: Path, policy: ComputerAccessPolicy) -> bool:
-    if policy.full_filesystem:
+    if policy.full_access or policy.full_filesystem:
         return True
     for root in policy.allowed_roots:
         try:
@@ -416,7 +441,7 @@ class ComputerFilesystemActions:
 
     @staticmethod
     def _is_policy_root(path: Path, policy: ComputerAccessPolicy) -> bool:
-        if policy.full_filesystem:
+        if policy.full_access or policy.full_filesystem:
             anchor = Path(path.anchor).resolve(strict=False) if path.anchor else None
             return bool(anchor and path == anchor)
         return any(path == root for root in policy.allowed_roots)
