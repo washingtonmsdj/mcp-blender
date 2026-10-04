@@ -77,41 +77,38 @@ def _bool_env(name: str) -> bool | None:
     raise ValueError(f"{name} must be a boolean")
 
 
-def load_computer_access_policy(config) -> ComputerAccessPolicy:
-    settings_path = config.state_dir / "agent-settings.json"
-    settings: dict[str, Any] = {}
-    if settings_path.is_file():
-        loaded = json.loads(settings_path.read_text(encoding="utf-8-sig"))
-        if not isinstance(loaded, dict):
-            raise ValueError("agent settings must be a JSON object")
-        settings = loaded
+def _settings_revision(path: Path) -> str:
+    if not path.is_file():
+        return "missing"
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
-    section = settings.get("computer_access", {})
-    if section is None:
-        section = {}
-    if not isinstance(section, dict):
-        raise ValueError("computer_access must be an object")
 
-    enabled = section.get("enabled", True)
-    full_filesystem = section.get("full_filesystem", False)
-    if not isinstance(enabled, bool):
-        raise ValueError("computer_access.enabled must be boolean")
-    if not isinstance(full_filesystem, bool):
-        raise ValueError("computer_access.full_filesystem must be boolean")
+def _load_agent_settings(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    loaded = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(loaded, dict):
+        raise ValueError("agent settings must be a JSON object")
+    return loaded
 
-    env_enabled = _bool_env("ORDAX_COMPUTER_ACCESS_ENABLED")
-    env_full = _bool_env("ORDAX_COMPUTER_FULL_FILESYSTEM")
-    if env_enabled is not None:
-        enabled = env_enabled
-    if env_full is not None:
-        full_filesystem = env_full
 
-    raw_roots = section.get("allowed_roots")
-    env_roots = os.environ.get("ORDAX_COMPUTER_ALLOWED_ROOTS")
-    if env_roots is not None:
-        raw_roots = [item for item in env_roots.split(os.pathsep) if item.strip()]
-    if raw_roots is None:
-        raw_roots = [str(Path.home())]
+def _atomic_agent_settings_write(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        temp.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temp, path)
+    finally:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _normalize_allowed_roots(raw_roots: Any) -> list[Path]:
     if (
         not isinstance(raw_roots, list)
         or len(raw_roots) > 32
@@ -130,18 +127,10 @@ def load_computer_access_policy(config) -> ComputerAccessPolicy:
         if key not in seen:
             seen.add(key)
             roots.append(resolved)
+    return roots
 
-    if enabled and not full_filesystem and not roots:
-        raise ValueError("computer access needs at least one allowed root unless full_filesystem=true")
 
-    raw_applications = section.get("allowed_applications")
-    env_applications = os.environ.get("ORDAX_COMPUTER_ALLOWED_APPLICATIONS")
-    if env_applications is not None:
-        raw_applications = [
-            item for item in env_applications.split(os.pathsep) if item.strip()
-        ]
-    if raw_applications is None:
-        raw_applications = []
+def _normalize_allowed_applications(raw_applications: Any) -> list[str]:
     if (
         not isinstance(raw_applications, list)
         or len(raw_applications) > 64
@@ -173,6 +162,62 @@ def load_computer_access_policy(config) -> ComputerAccessPolicy:
         if key not in seen_applications:
             seen_applications.add(key)
             applications.append(key)
+    return applications
+
+
+def _environment_management() -> dict[str, bool]:
+    return {
+        "enabled": "ORDAX_COMPUTER_ACCESS_ENABLED" in os.environ,
+        "full_filesystem": "ORDAX_COMPUTER_FULL_FILESYSTEM" in os.environ,
+        "allowed_roots": "ORDAX_COMPUTER_ALLOWED_ROOTS" in os.environ,
+        "allowed_applications": "ORDAX_COMPUTER_ALLOWED_APPLICATIONS" in os.environ,
+    }
+
+
+def load_computer_access_policy(config) -> ComputerAccessPolicy:
+    settings_path = config.state_dir / "agent-settings.json"
+    settings = _load_agent_settings(settings_path)
+
+    section = settings.get("computer_access", {})
+    if section is None:
+        section = {}
+    if not isinstance(section, dict):
+        raise ValueError("computer_access must be an object")
+
+    enabled = section.get("enabled", True)
+    full_filesystem = section.get("full_filesystem", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("computer_access.enabled must be boolean")
+    if not isinstance(full_filesystem, bool):
+        raise ValueError("computer_access.full_filesystem must be boolean")
+
+    env_enabled = _bool_env("ORDAX_COMPUTER_ACCESS_ENABLED")
+    env_full = _bool_env("ORDAX_COMPUTER_FULL_FILESYSTEM")
+    if env_enabled is not None:
+        enabled = env_enabled
+    if env_full is not None:
+        full_filesystem = env_full
+
+    raw_roots = section.get("allowed_roots")
+    env_roots = os.environ.get("ORDAX_COMPUTER_ALLOWED_ROOTS")
+    if env_roots is not None:
+        raw_roots = [item for item in env_roots.split(os.pathsep) if item.strip()]
+    if raw_roots is None:
+        raw_roots = [str(Path.home())]
+    roots = _normalize_allowed_roots(raw_roots)
+
+    if enabled and not full_filesystem and not roots:
+        raise ValueError("computer access needs at least one allowed root unless full_filesystem=true")
+
+    raw_applications = section.get("allowed_applications")
+    env_applications = os.environ.get("ORDAX_COMPUTER_ALLOWED_APPLICATIONS")
+    if env_applications is not None:
+        raw_applications = [
+            item for item in env_applications.split(os.pathsep) if item.strip()
+        ]
+    if raw_applications is None:
+        raw_applications = []
+    applications = _normalize_allowed_applications(raw_applications)
 
     return ComputerAccessPolicy(
         enabled=enabled,
@@ -180,6 +225,96 @@ def load_computer_access_policy(config) -> ComputerAccessPolicy:
         allowed_roots=tuple(roots),
         allowed_applications=tuple(applications),
     )
+
+
+def computer_access_management_status(config) -> dict[str, Any]:
+    settings_path = config.state_dir / "agent-settings.json"
+    policy = load_computer_access_policy(config)
+    managed = _environment_management()
+    return {
+        **policy.public(),
+        "revision": _settings_revision(settings_path),
+        "managed_by_environment": managed,
+        "settings_path": str(settings_path),
+    }
+
+
+def update_computer_access_policy(config, payload: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "enabled",
+        "full_filesystem",
+        "allowed_roots",
+        "allowed_applications",
+        "expected_revision",
+    }
+    unsupported = sorted(set(payload) - allowed)
+    if unsupported:
+        raise ValueError("unsupported computer access field(s): " + ", ".join(unsupported))
+
+    settings_path = config.state_dir / "agent-settings.json"
+    expected_revision = str(payload.get("expected_revision") or "").strip()
+    if not expected_revision:
+        raise ValueError("expected_revision is required")
+    current_revision = _settings_revision(settings_path)
+    if expected_revision != current_revision:
+        raise ValueError("computer access settings changed; reload before saving")
+
+    settings = _load_agent_settings(settings_path)
+    current_section = settings.get("computer_access", {})
+    if current_section is None:
+        current_section = {}
+    if not isinstance(current_section, dict):
+        raise ValueError("computer_access must be an object")
+    section = dict(current_section)
+    effective_before = load_computer_access_policy(config)
+    managed = _environment_management()
+
+    enabled = effective_before.enabled
+    if not managed["enabled"]:
+        candidate = payload.get("enabled", current_section.get("enabled", True))
+        if not isinstance(candidate, bool):
+            raise ValueError("computer_access.enabled must be boolean")
+        enabled = candidate
+        section["enabled"] = candidate
+
+    full_filesystem = effective_before.full_filesystem
+    if not managed["full_filesystem"]:
+        candidate = payload.get(
+            "full_filesystem", current_section.get("full_filesystem", False)
+        )
+        if not isinstance(candidate, bool):
+            raise ValueError("computer_access.full_filesystem must be boolean")
+        full_filesystem = candidate
+        section["full_filesystem"] = candidate
+
+    roots = list(effective_before.allowed_roots)
+    if not managed["allowed_roots"]:
+        raw_roots = payload.get(
+            "allowed_roots", current_section.get("allowed_roots", [str(Path.home())])
+        )
+        roots = _normalize_allowed_roots(raw_roots)
+        section["allowed_roots"] = [str(root) for root in roots]
+
+    applications = list(effective_before.allowed_applications)
+    if not managed["allowed_applications"]:
+        raw_applications = payload.get(
+            "allowed_applications", current_section.get("allowed_applications", [])
+        )
+        applications = _normalize_allowed_applications(raw_applications)
+        section["allowed_applications"] = applications
+
+    if enabled and not full_filesystem and not roots:
+        raise ValueError(
+            "computer access needs at least one allowed root unless full_filesystem=true"
+        )
+
+    settings["computer_access"] = section
+    _atomic_agent_settings_write(settings_path, settings)
+    result = computer_access_management_status(config)
+    result["ignored_environment_managed_fields"] = sorted(
+        field for field, is_managed in managed.items() if is_managed and field in payload
+    )
+    return result
 
 
 def _sha256(data: bytes) -> str:

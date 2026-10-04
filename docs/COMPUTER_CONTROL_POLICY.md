@@ -44,6 +44,13 @@ Environment overrides exist for managed deployments:
 
 On Windows, path-list environment values use the platform path separator (`;`). Invalid policy fails closed.
 
+
+## Owner-local Studio controls
+
+ORDAX Studio exposes **Acesso ao computador** as a local owner surface for the same `computer_access` SSOT. The UI can enable/disable Computer Control, manage `allowed_roots`, manage `allowed_applications`, and explicitly opt into `full_filesystem`.
+
+The editor is deliberately **not** a Product MCP action. Remote GPT clients can read the effective non-secret policy through `computer.access_status`, but they cannot widen local roots, allow applications or enable full-filesystem access. Local writes preserve unrelated agent settings, use an atomic file replacement and require an `expected_revision` so a stale Studio window cannot overwrite a newer settings file. Fields controlled by `ORDAX_COMPUTER_*` environment variables are shown as externally managed and are not overwritten by Studio.
+
 ## App launch
 
 `computer.launch_app` does not use a shell. The Runtime resolves exactly one Windows `.exe`, validates bounded arguments and requires that resolved executable to be in `allowed_applications`.
