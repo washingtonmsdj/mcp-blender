@@ -9,12 +9,40 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 if (-not $OutputDirectory) {
     $OutputDirectory = Join-Path $repoRoot "dist\windows"
 }
-if (-not $Version) {
+
+$canonicalVersion = [string]$env:ORDAX_STUDIO_CANONICAL_VERSION
+$canonicalVersion = $canonicalVersion.Trim()
+$canonicalVersionSource = if ($canonicalVersion) { "canonical-environment" } else { "" }
+
+if (-not $canonicalVersion -and $env:GITHUB_REF_TYPE -eq "tag") {
+    $tagName = ([string]$env:GITHUB_REF_NAME).Trim()
+    if ($tagName -notmatch '^v(.+)$') {
+        throw "ORDAX Studio release tag must use v<semver>: $tagName"
+    }
+    $canonicalVersion = $Matches[1]
+    $canonicalVersionSource = "github-tag"
+}
+
+$Version = $Version.Trim()
+$versionSource = "explicit-argument"
+
+if ($canonicalVersion) {
+    if ($Version -and $Version -ne $canonicalVersion) {
+        throw "ORDAX Studio version mismatch: explicit version '$Version' differs from canonical version '$canonicalVersion'"
+    }
+    $Version = $canonicalVersion
+    $versionSource = $canonicalVersionSource
+} elseif (-not $Version) {
     $pyproject = Get-Content (Join-Path $repoRoot "pyproject.toml") -Raw
     if ($pyproject -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
         throw "Unable to read project version from pyproject.toml"
     }
     $Version = $Matches[1]
+    $versionSource = "historical-pyproject"
+}
+
+if ($Version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+    throw "ORDAX Studio version is not valid semantic version syntax: $Version"
 }
 
 $hostVersion = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
@@ -134,6 +162,10 @@ $manifest = [ordered]@{
     schema = "ordax.windows-product/1"
     product = "ORDAX Studio"
     version = $Version
+    version_provenance = @{
+        source = $versionSource
+        canonical_version_asserted = [bool]$canonicalVersion
+    }
     architecture = "x64"
     python = $PythonVersion
     entrypoints = @{
@@ -177,5 +209,7 @@ if (-not $setup) {
     throw "Installer output was not produced"
 }
 $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $setup.FullName).Hash.ToLowerInvariant()
+Write-Output "ORDAX_STUDIO_VERSION=$Version"
+Write-Output "ORDAX_STUDIO_VERSION_SOURCE=$versionSource"
 Write-Output "ORDAX_STUDIO_SETUP=$($setup.FullName)"
 Write-Output "ORDAX_STUDIO_SETUP_SHA256=$hash"

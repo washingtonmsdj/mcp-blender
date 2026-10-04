@@ -77,6 +77,19 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn('studio_legacy_alias = "ORDAX Dev.exe"', build)
         self.assertIn('Get-ChildItem $OutputDirectory -Filter "ORDAX-Studio-Setup-*.exe"', build)
 
+    def test_product_build_enforces_canonical_studio_version_provenance(self) -> None:
+        build = (ROOT / "scripts" / "windows" / "build-ordax-studio-product.ps1").read_text(encoding="utf-8")
+        self.assertIn("ORDAX_STUDIO_CANONICAL_VERSION", build)
+        self.assertIn('$env:GITHUB_REF_TYPE -eq "tag"', build)
+        self.assertIn('"github-tag"', build)
+        self.assertIn('"historical-pyproject"', build)
+        self.assertIn("ORDAX Studio version mismatch", build)
+        self.assertIn("ORDAX Studio version is not valid semantic version syntax", build)
+        self.assertIn("version_provenance", build)
+        self.assertIn("canonical_version_asserted", build)
+        self.assertIn('Write-Output "ORDAX_STUDIO_VERSION=$Version"', build)
+        self.assertIn('Write-Output "ORDAX_STUDIO_VERSION_SOURCE=$versionSource"', build)
+
     def test_product_shell_is_project_host_not_embedded_chat(self) -> None:
         product = (ROOT / "ordax_studio" / "studio_product.html").read_text(encoding="utf-8")
         script = (ROOT / "ordax_studio" / "assets" / "studio.js").read_text(encoding="utf-8")
