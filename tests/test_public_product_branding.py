@@ -8,14 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PublicProductBrandingTests(unittest.TestCase):
-    def test_public_surfaces_use_ordax_studio_name(self) -> None:
+    def test_control_plane_surfaces_use_generic_ordax_identity(self) -> None:
         public_pages = (ROOT / "control-plane" / "cloudflare" / "src" / "public_pages.ts").read_text(encoding="utf-8")
         consent = (ROOT / "control-plane" / "cloudflare" / "src" / "oauth_consent.ts").read_text(encoding="utf-8")
         mcp = (ROOT / "control-plane" / "cloudflare" / "src" / "mcp_http.ts").read_text(encoding="utf-8")
 
-        self.assertIn('const PRODUCT_NAME = "ORDAX Studio"', public_pages)
-        self.assertIn("Autorizar ORDAX Studio", consent)
-        self.assertIn('serverInfo: { name: "ORDAX Studio", version: "0.4.1" }', mcp)
+        self.assertIn('const PRODUCT_NAME = "ORDAX"', public_pages)
+        self.assertIn("Autorizar acesso ao ORDAX", consent)
+        self.assertIn('serverInfo: { name: "ORDAX Control Plane", version: "0.4.1" }', mcp)
+        self.assertNotIn("ORDAX Studio", public_pages)
+        self.assertNotIn("ORDAX Studio", consent)
+        self.assertNotIn("Conecte o ChatGPT", consent)
         self.assertNotIn("ORDAX Dev", public_pages)
         self.assertNotIn("ORDAX Dev", consent)
 
