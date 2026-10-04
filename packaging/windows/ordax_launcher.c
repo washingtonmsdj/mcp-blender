@@ -11,7 +11,7 @@
 #define ORDAX_MAX_PATH 32768
 
 static void fatal_message(const wchar_t *message) {
-    MessageBoxW(NULL, message, L"ORDAX Dev", MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+    MessageBoxW(NULL, message, L"ORDAX Studio", MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
 }
 
 static bool get_install_root(wchar_t *root, DWORD capacity) {
@@ -246,7 +246,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
     wchar_t python[ORDAX_MAX_PATH];
     wchar_t workbench[ORDAX_MAX_PATH];
     if (!get_install_root(root, ORDAX_MAX_PATH)) {
-        fatal_message(L"Não foi possível localizar a instalação do ORDAX Dev.");
+        fatal_message(L"Não foi possível localizar a instalação do ORDAX Studio.");
         CloseHandle(shutdown_event);
         ReleaseMutex(mutex);
         CloseHandle(mutex);
@@ -261,7 +261,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
             L"%ls\\runtime\\%ls",
             root,
             python_name) < 0 || !file_exists(python)) {
-        fatal_message(L"O runtime privado do ORDAX Dev está ausente ou corrompido.");
+        fatal_message(L"O runtime privado do ORDAX Studio está ausente ou corrompido.");
         CloseHandle(shutdown_event);
         ReleaseMutex(mutex);
         CloseHandle(mutex);
@@ -275,7 +275,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_lin
                 _TRUNCATE,
                 L"%ls\\workbench\\ORDAX Workbench.exe",
                 root) < 0 || !file_exists(workbench)) {
-            fatal_message(L"A Workbench nativa do ORDAX Dev está ausente ou corrompida.");
+            fatal_message(L"A Workbench nativa do ORDAX Studio está ausente ou corrompida.");
             CloseHandle(shutdown_event);
             ReleaseMutex(mutex);
             CloseHandle(mutex);
