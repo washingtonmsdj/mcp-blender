@@ -21,7 +21,7 @@
           <div class="accountDialogTitle">
             <div class="eyebrow">CONEXÃO SEGURA</div>
             <h2 id="accountDialogTitle">Conectar conta ORDAX</h2>
-            <p>Vincule este computador à sua conta ORDAX para acesso remoto autenticado ao Runtime. GitHub e outros provedores de projeto são integrações separadas e não substituem a conta ORDAX.</p>
+            <p>Vincule este computador à sua conta ORDAX para acesso remoto autenticado ao Runtime. GitHub é uma integração separada e serve apenas como provedor de projetos/remotos; ele não substitui a conta ORDAX. Outros provedores de projeto seguem o mesmo limite.</p>
           </div>
           <button id="accountClose" class="accountClose" type="button" aria-label="Fechar">×</button>
         </div>
@@ -38,7 +38,7 @@
           </div>
         </form>
         <div class="accountSecurity">A senha é enviada diretamente ao serviço de autenticação configurado por este aplicativo local. O Control Plane ORDAX não deve receber nem armazenar a senha. Credenciais de sessão usadas durante o vínculo não pertencem ao Studio.</div>
-        <div class="accountSecurity accountAiNotice"><strong>IA e provedores:</strong> conectar sua Conta ORDAX não conecta automaticamente ChatGPT, Grok ou outro provedor de IA. Cada conector é configurado separadamente e deve informar suas próprias regras de uso, cota e custo antes da ativação.</div>
+        <div class="accountSecurity accountAiNotice"><strong>IA e provedores:</strong> conectar sua Conta ORDAX não conecta automaticamente o ChatGPT, o Grok ou outro provedor de IA. Cada conector é configurado separadamente e deve informar suas próprias regras de uso, cota e custo antes da ativação.</div>
         <div id="accountStatus" class="accountStatus" aria-live="polite"></div>
       </section>`;
     document.body.appendChild(overlay);
