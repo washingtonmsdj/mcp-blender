@@ -4,37 +4,8 @@ const $=id=>document.getElementById(id);
 const storageKey=(name,project=state.project)=>`ordax-studio:${project||'global'}:${name}`;
 function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function setStatus(text){$('globalStatus').textContent=text||''}
-let nativeRpcSequence=0;
-const nativeRpcPending=new Map();
-if(window.chrome?.webview){
-  window.chrome.webview.addEventListener('message',event=>{
-    const message=event.data||{};
-    const id=String(message.id||'');
-    const pending=nativeRpcPending.get(id);
-    if(!pending)return;
-    nativeRpcPending.delete(id);
-    if(message.error)pending.reject(new Error(String(message.error)));
-    else pending.resolve(message.result);
-  });
-}
-function nativeCall(name,args){
-  return new Promise((resolve,reject)=>{
-    const id='rpc-'+(++nativeRpcSequence)+'-'+Date.now();
-    nativeRpcPending.set(id,{resolve,reject});
-    window.chrome.webview.postMessage({type:'ordax-rpc',id,method:name,args});
-    setTimeout(()=>{
-      const pending=nativeRpcPending.get(id);
-      if(!pending)return;
-      nativeRpcPending.delete(id);
-      reject(new Error('ORDAX native bridge timeout'));
-    },120000);
-  });
-}
-async function call(name,...args){try{
-  if(window.pywebview?.api?.[name])return await window.pywebview.api[name](...args);
-  if(window.chrome?.webview)return await nativeCall(name,args);
-  throw new Error('ORDAX bridge indisponível');
-}catch(error){setStatus(String(error));return {ok:false,summary:String(error)}}}
+const HOST_METHODS=Object.freeze({projects_catalog:'projectsCatalog',startup_project:'startupProject',bootstrap:'bootstrap',select_project:'selectProject',inventory:'inventory',read_file:'readFile',save_file:'saveFile',preview_status:'previewStatus',preview_start:'previewStart',preview_stop:'previewStop',preview_capture:'previewCapture',preview_logs:'previewLogs',preview_image:'previewImage',execution_status:'executionStatus',task_add:'taskAdd',checkpoint:'checkpoint',product_status:'productStatus',computer_access_settings:'computerAccessSettings',save_computer_access_settings:'saveComputerAccessSettings',health:'health',briefing:'briefing',search:'search',git_diff:'gitDiff',memory_context:'memoryContext',ai_sessions_status:'aiSessionsStatus',connect_product_account:'connectProductAccount',blender_prepare:'blenderPrepare',blender_install_bridge:'blenderInstallBridge',blender_instances:'blenderInstances',blender_adopt:'blenderAdopt',blender_start:'blenderStart'});
+async function call(name,...args){try{const methodName=HOST_METHODS[name];const method=methodName&&window.ordaxStudioHost?.[methodName];if(typeof method!=='function')throw new Error(`ORDAX host method indisponível: ${name}`);return await method(...args)}catch(error){setStatus(String(error));return{ok:false,summary:String(error)}}}
 function repoName(project){const remote=(project.repository||{}).remote||'';const clean=remote.replace(/\.git$/,'').replace(/\\/g,'/');const parts=clean.split(/[/:]/).filter(Boolean);return parts.length?parts.at(-1):project.slug}
 function repoOwner(project){const remote=(project.repository||{}).remote||'';const clean=remote.replace(/\.git$/,'').replace(/\\/g,'/');const parts=clean.split(/[/:]/).filter(Boolean);return parts.length>1?parts.at(-2):'local'}
 function projectMatches(project,query){if(!query)return true;const repo=project.repository||{};return [project.slug,project.path,repo.remote,repo.branch,repoName(project)].join(' ').toLowerCase().includes(query.toLowerCase())}
@@ -80,13 +51,6 @@ async function togglePreviewLogs(){const box=$('previewLogs');const opening=box.
 function togglePreviewFocus(){$('workspace').classList.toggle('previewFocus')}
 setInterval(()=>{if(state.project&&!state.previewPreparing)refreshPreview(false)},3500);
 let initStarted=false;
-function startInitOnce(){
-  if(initStarted)return;
-  initStarted=true;
-  void init();
-}
-window.addEventListener('pywebviewready',startInitOnce,{once:true});
-if(window.chrome?.webview){
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',startInitOnce,{once:true});
-  else queueMicrotask(startInitOnce);
-}
+function startInitOnce(){if(initStarted)return;initStarted=true;void init()}
+if(window.ordaxStudioHost?.whenReady)window.ordaxStudioHost.whenReady(startInitOnce);
+else setStatus('ORDAX host bridge indisponível');
