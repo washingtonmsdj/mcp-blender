@@ -30,13 +30,17 @@ class StudioComputerAccessSurfaceTests(unittest.TestCase):
         self.assertIn("computer_access_settings", self.access_js)
         self.assertIn("save_computer_access_settings", self.access_js)
         self.assertIn("expected_revision", self.access_js)
+        self.assertIn("full_access", self.access_js)
+        self.assertIn("Full Access", self.access_js)
         self.assertIn("window.confirm", self.access_js)
-        self.assertIn("grants MCP continuam obrigatórios", self.access_js)
+        self.assertIn("O cliente remoto não pode ativar este modo", self.access_js)
+        self.assertIn("Windows/UAC", self.access_js)
         self.assertIn('"computer_access_settings"', self.bridge)
         self.assertIn('"save_computer_access_settings"', self.bridge)
 
     def test_remote_product_mcp_cannot_mutate_local_policy(self) -> None:
         self.assertNotIn("computer.access_update", self.product_mcp)
+        self.assertNotIn("full_access", self.product_mcp)
         self.assertNotIn("save_computer_access_settings", self.product_mcp)
 
 
