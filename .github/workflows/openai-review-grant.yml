@@ -69,6 +69,7 @@ jobs:
               "computer.screenshot",
               "computer.scroll",
               "computer.type",
+              "computer.windows",
               "git.status",
               "project.search_text",
               "project.text_read",
@@ -93,6 +94,7 @@ jobs:
                   "Authorization": f"Bearer {token}",
                   "Content-Type": "application/json",
                   "Accept": "application/json",
+                  "User-Agent": "ORDAX-OpenAI-Review-Provisioner/1.0 (+https://github.com/washingtonmsdj/mcp-blender)",
               },
           )
           try:
