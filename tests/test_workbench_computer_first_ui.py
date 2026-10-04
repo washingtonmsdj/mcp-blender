@@ -54,6 +54,21 @@ class WorkbenchComputerFirstUiTests(unittest.TestCase):
         self.assertNotIn('>Ajustes<', html)
         self.assertNotIn('>Sistema<', html)
 
+    def test_primary_surface_initializes_before_auxiliary_webviews(self) -> None:
+        code = (ROOT / "native" / "ordax-workbench" / "MainWindow.xaml.cs").read_text(encoding="utf-8")
+        startup = code.split("private async void MainWindow_Loaded", 1)[1].split("private async Task InitializeViewAsync", 1)[0]
+        self.assertIn("await EnsureStudioViewAsync();", startup)
+        self.assertNotIn("ProviderView", startup)
+        self.assertNotIn("PreviewView", startup)
+        self.assertNotIn("WorkbenchBrowserView", startup)
+        self.assertIn('Equals(tab.Header, "Web IA")', code)
+        self.assertIn("await EnsureProviderViewAsync();", code)
+        self.assertIn("await EnsurePreviewViewAsync();", code)
+        self.assertIn("await EnsureBrowserViewAsync();", code)
+        self.assertIn("_providerViewReady", code)
+        self.assertIn("_previewViewReady", code)
+        self.assertIn("_browserViewReady", code)
+
     def test_shared_surface_boots_through_host_bridge(self) -> None:
         html = (ROOT / "ordax_studio" / "studio_product.html").read_text(encoding="utf-8")
         script = (ROOT / "ordax_studio" / "assets" / "studio.js").read_text(encoding="utf-8")
