@@ -41,6 +41,7 @@ jobs:
       - name: Validate ORDAX Dev JavaScript
         run: |
           node --check ordax_studio/assets/studio.js
+          node --check ordax_studio/assets/computer_access.js
           node --check ordax_studio/assets/product_account.js
           node --check ordax_studio/assets/blender-connection.js
 

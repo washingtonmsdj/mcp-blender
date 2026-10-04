@@ -30,6 +30,8 @@ _ALLOWED_METHODS = frozenset(
         "task_add",
         "checkpoint",
         "product_status",
+        "computer_access_settings",
+        "save_computer_access_settings",
         "health",
         "briefing",
         "search",

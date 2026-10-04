@@ -10,6 +10,10 @@ import httpx
 from ordax_core.orchestrator import OrchestratorStore
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
+from ordax_dev_agent.computer_filesystem_actions import (
+    computer_access_management_status,
+    update_computer_access_policy,
+)
 
 from .blender_connection import prepare_blender_connection
 from .instance_lock import SingleInstanceLock
@@ -258,6 +262,34 @@ class StudioApi:
         except Exception as error:
             return {"ok": False, "summary": f"{type(error).__name__}: {error}", "data": {}}
         return {"ok": True, "data": data}
+
+    def computer_access_settings(self) -> dict[str, Any]:
+        try:
+            data = computer_access_management_status(self.agent.config)
+        except Exception as error:
+            return {
+                "ok": False,
+                "summary": f"{type(error).__name__}: {error}",
+                "data": {},
+            }
+        return {"ok": True, "summary": "Política local carregada", "data": data}
+
+    def save_computer_access_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            return {"ok": False, "summary": "Configuração de acesso inválida", "data": {}}
+        try:
+            data = update_computer_access_policy(self.agent.config, payload)
+        except Exception as error:
+            return {
+                "ok": False,
+                "summary": f"{type(error).__name__}: {error}",
+                "data": {},
+            }
+        return {
+            "ok": True,
+            "summary": "Política local de acesso ao computador atualizada",
+            "data": data,
+        }
 
     def product_status(self) -> dict[str, Any]:
         config = self.agent.config
