@@ -32,6 +32,10 @@ class OrdaxChatGptConnectorPackageTests(unittest.TestCase):
         self.assertIn("durable project continuity", interface["longDescription"])
         self.assertIn("does not own ORDAX Studio", interface["longDescription"])
 
+    def test_connector_has_single_authoritative_source_tree(self):
+        self.assertTrue(PLUGIN_ROOT.is_dir())
+        self.assertFalse((ROOT / "plugins" / "ordax-studio").exists())
+
     def test_plugin_uses_production_streamable_http_mcp(self):
         config = json.loads((PLUGIN_ROOT / "mcp.json").read_text(encoding="utf-8-sig"))
         server = config["mcpServers"]["ordax"]
