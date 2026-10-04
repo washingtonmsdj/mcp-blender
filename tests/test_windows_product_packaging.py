@@ -8,21 +8,37 @@ class WindowsProductPackagingTests(unittest.TestCase):
     def test_native_launchers_are_product_entrypoints(self) -> None:
         launcher = (ROOT / "packaging" / "windows" / "ordax_launcher.c").read_text(encoding="utf-8")
         installer = (ROOT / "packaging" / "windows" / "ordax-studio.iss").read_text(encoding="utf-8")
-        self.assertIn("ORDAX Dev.exe", installer)
+        self.assertIn('#define AppName "ORDAX Studio"', installer)
+        self.assertIn('#define AppExeName "ORDAX Studio.exe"', installer)
+        self.assertIn('#define LegacyAppExeName "ORDAX Dev.exe"', installer)
         self.assertIn("ORDAX Runtime.exe", installer)
         self.assertIn('L"%ls\\\\workbench\\\\ORDAX Workbench.exe"', launcher)
         self.assertIn("run_executable_child", launcher)
         self.assertNotIn('L"ordax_studio.product_web_desktop"', launcher)
         self.assertNotIn("ordax_chat_app", launcher)
         self.assertIn("ordax_device_agent.main", launcher)
+        self.assertNotIn('L"ORDAX Dev"', launcher)
+
+    def test_installer_preserves_app_id_while_migrating_branding(self) -> None:
+        installer = (ROOT / "packaging" / "windows" / "ordax-studio.iss").read_text(encoding="utf-8")
+        self.assertIn("AppId={{0D31F22D-8451-4CF4-9E34-F0D4D857F55F}", installer)
+        self.assertIn("DefaultDirName={localappdata}\\Programs\\ORDAX Studio", installer)
+        self.assertIn("OutputBaseFilename=ORDAX-Studio-Setup-{#AppVersion}-x64", installer)
+        self.assertIn('Name: "{group}\\ORDAX Studio"', installer)
+        self.assertIn('Name: "{userdesktop}\\ORDAX Studio"', installer)
+        self.assertIn('Name: "{group}\\ORDAX Dev.lnk"', installer)
+        self.assertIn('Name: "{userdesktop}\\ORDAX Dev.lnk"', installer)
 
     def test_launchers_expose_cooperative_shutdown_for_updates(self) -> None:
         launcher = (ROOT / "packaging" / "windows" / "ordax_launcher.c").read_text(encoding="utf-8")
+        installer = (ROOT / "packaging" / "windows" / "ordax-studio.iss").read_text(encoding="utf-8")
         self.assertIn("ORDAXRuntimeShutdown", launcher)
         self.assertIn("ORDAXStudioShutdown", launcher)
         self.assertIn("CreateEventW", launcher)
         self.assertIn("WaitForMultipleObjects", launcher)
         self.assertIn("TerminateJobObject", launcher)
+        self.assertIn("LegacyAppExeName", installer)
+        self.assertIn("StopOrdaxProcess('Local\\ORDAXStudioShutdown', '{#LegacyAppExeName}')", installer)
 
     def test_installer_is_host_only_and_has_no_chat_browser_bundle(self) -> None:
         installer = (ROOT / "packaging" / "windows" / "ordax-studio.iss").read_text(encoding="utf-8").lower()
@@ -43,15 +59,23 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn('{userstartup}\\OrdaX Dev Agent.lnk', installer)
         self.assertNotIn('filesandordirs; Name: "{localappdata}\\OrdaX\\DevAgent"', installer)
 
-    def test_product_build_bundles_private_runtime(self) -> None:
+    def test_product_build_bundles_private_runtime_and_identical_legacy_alias(self) -> None:
         build = (ROOT / "scripts" / "windows" / "build-ordax-studio-product.ps1").read_text(encoding="utf-8")
         self.assertIn("python-$PythonVersion-embed-amd64.zip", build)
         self.assertIn("Lib\\site-packages", build)
         self.assertIn("pip install", build)
-        self.assertIn("ORDAX_DEV_SETUP_SHA256", build)
+        self.assertIn("ORDAX_STUDIO_SETUP_SHA256", build)
         self.assertIn("dotnet publish", build)
         self.assertIn("ORDAX Workbench.exe", build)
         self.assertIn("--self-contained true", build)
+        self.assertIn('$studioExe = Join-Path $stageRoot "ORDAX Studio.exe"', build)
+        self.assertIn('$legacyStudioExe = Join-Path $stageRoot "ORDAX Dev.exe"', build)
+        self.assertIn("Copy-Item -LiteralPath $studioExe -Destination $legacyStudioExe -Force", build)
+        self.assertIn("Legacy ORDAX Dev launcher alias is not byte-identical", build)
+        self.assertIn('product = "ORDAX Studio"', build)
+        self.assertIn('studio = "ORDAX Studio.exe"', build)
+        self.assertIn('studio_legacy_alias = "ORDAX Dev.exe"', build)
+        self.assertIn('Get-ChildItem $OutputDirectory -Filter "ORDAX-Studio-Setup-*.exe"', build)
 
     def test_product_shell_is_project_host_not_embedded_chat(self) -> None:
         product = (ROOT / "ordax_studio" / "studio_product.html").read_text(encoding="utf-8")
@@ -90,11 +114,16 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertNotIn("claude", launcher)
         self.assertIn("ordaxruntime", launcher)
 
-    def test_windows_ci_reinstalls_over_running_runtime(self) -> None:
+    def test_windows_ci_proves_branding_migration_and_running_runtime_upgrade(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "windows-product-build.yml").read_text(encoding="utf-8")
-        self.assertIn("Upgrade over running ORDAX Runtime", workflow)
+        self.assertIn("ORDAX-Studio-Setup-*.exe", workflow)
+        self.assertIn("ordax-studio-windows-x64", workflow)
+        self.assertIn("Upgrade over running ORDAX Runtime and legacy ORDAX Dev launcher", workflow)
         self.assertIn('Wait-OrdaxReady -Label "ORDAX_UPGRADE_RUNTIME"', workflow)
         self.assertIn("running runtime did not exit during upgrade", workflow)
+        self.assertIn("legacy ORDAX Dev process survived Studio upgrade", workflow)
+        self.assertIn("LEGACY_ORDAX_DEV_PROCESS_RETIRED", workflow)
+        self.assertIn("ORDAX_LEGACY_ALIAS_IDENTICAL", workflow)
         self.assertIn("LEGACY_ORDAX_TASK_REMOVED", workflow)
         self.assertIn("LEGACY_ORDAX_STARTUP_REMOVED", workflow)
         self.assertIn("ORDAX_WORKBENCH_READY", workflow)
