@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "ordax-dev",
+  "name": "ordax-chatgpt",
   "version": "0.4.1",
-  "description": "Connect ChatGPT to an authorized ORDAX Studio computer for grant-scoped projects, typed Computer Control, files, Git and specialized adapters.",
+  "description": "Connect ChatGPT to an authorized ORDAX device for grant-scoped projects, typed Computer Control, files, Git and specialized adapters.",
   "author": {
     "name": "ORDAX",
     "url": "https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/"
@@ -12,6 +12,7 @@
   "license": "Proprietary",
   "keywords": [
     "ordax",
+    "chatgpt",
     "developer-tools",
     "mcp",
     "projects",
@@ -22,9 +23,9 @@
   "extensions": {
     "com.openai": {
       "interface": {
-        "displayName": "ORDAX Studio",
-        "shortDescription": "Connect your ORDAX Studio",
-        "longDescription": "Work with projects and the interactive computer you explicitly connect to ORDAX Studio. Grant-scoped typed tools can inspect screens and windows, focus and interact with the desktop, launch locally allowlisted applications, inspect processes, work with authorized files and Git, use managed browser tooling, and load durable project continuity in fresh conversations. Blender and Unity are specialized project adapters, not the product boundary. Every remote action remains limited by device, project and action grants plus local Runtime policy; the integration does not request unrestricted conversation history or silently bypass local permissions.",
+        "displayName": "ORDAX for ChatGPT",
+        "shortDescription": "Use ORDAX from ChatGPT",
+        "longDescription": "Connect ChatGPT to the ORDAX device you explicitly authorize. This ChatGPT connector exposes grant-scoped typed tools for screens and windows, bounded desktop interaction, locally allowlisted applications, processes, authorized files and Git, managed browser tooling, and durable project continuity. Blender and Unity are specialized project adapters. The connector does not own ORDAX Studio or the Runtime: every remote action remains limited by device, scope and action grants plus local Runtime policy, and the integration does not request unrestricted conversation history or silently bypass local permissions.",
         "developerName": "ORDAX",
         "category": "Developer Tools",
         "capabilities": [
@@ -119,21 +120,21 @@
               "prompt": "Terminate the Notepad process."
             },
             {
-              "description": "Do not select ORDAX Studio for unrelated financial actions.",
+              "description": "Do not select ORDAX for ChatGPT for unrelated financial actions.",
               "prompt": "Transfer $100 to another bank account for me."
             }
           ]
         },
         "commerce": false,
-        "commerce_description": "ORDAX Studio does not sell products or process payments."
+        "commerce_description": "ORDAX for ChatGPT does not sell products or process payments."
       },
       "publication": {
         "countries": [],
-        "release_notes": "Initial public-review package for ORDAX Studio remote MCP with grant-scoped typed Computer Control, projects, files, Git, durable context, production OAuth, local Runtime policy and specialized adapters.",
+        "release_notes": "Initial public-review package for the ORDAX for ChatGPT connector with grant-scoped typed Computer Control, projects, files, Git, durable context, production OAuth, local Runtime policy and specialized adapters.",
         "translations": {
           "pt-BR": {
-            "subtitle": "Conecte seu ORDAX Studio",
-            "description": "Conecte o ChatGPT ao computador autorizado pelo ORDAX Studio. A integração usa ações tipadas e grants para tela, janelas, entrada controlada, aplicativos permitidos localmente, processos, arquivos, Git e continuidade de projetos. Blender e Unity são adapters especializados. O Runtime e a política local continuam limitando cada ação por dispositivo, projeto e permissão."
+            "subtitle": "Use o ORDAX no ChatGPT",
+            "description": "Conecte o ChatGPT ao dispositivo autorizado pelo ORDAX. O conector usa ações tipadas e grants para tela, janelas, entrada controlada, aplicativos permitidos localmente, processos, arquivos, Git e continuidade de projetos. Blender e Unity são adapters especializados. O Runtime e a política local continuam limitando cada ação por dispositivo, escopo e permissão."
           }
         }
       }

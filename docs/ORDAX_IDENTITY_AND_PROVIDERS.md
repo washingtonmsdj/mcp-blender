@@ -51,18 +51,20 @@ Usuário
 
 ## ChatGPT, Grok e outros clientes
 
-O conector atual de ChatGPT é apenas uma implementação de provider edge. Na integração existente, ele é apresentado ao ChatGPT como **plugin ORDAX Studio**; esse nome identifica o conector atual, não um Runtime específico de ChatGPT.
+O conector atual do ChatGPT se chama **ORDAX for ChatGPT**. Ele é uma implementação de provider edge e não é o aplicativo ORDAX Studio nem um Runtime específico de ChatGPT.
+
+O nome histórico **plugin ORDAX Studio** está aposentado para o conector: `ORDAX Studio` fica reservado ao aplicativo. Essa referência histórica permanece documentada apenas para tornar a migração/review inequívoca.
 
 O fluxo é:
 
 ```text
-ChatGPT → plugin ORDAX Studio → Control Plane → ORDAX Runtime
+ChatGPT → ORDAX for ChatGPT → Control Plane → ORDAX Runtime
 ```
 
 Um futuro Grok segue o mesmo padrão:
 
 ```text
-Grok → conector ORDAX para Grok → Control Plane → ORDAX Runtime
+Grok → ORDAX for Grok → Control Plane → ORDAX Runtime
 ```
 
 Não deve existir um `ChatGPT Runtime`, `Grok Runtime` ou `Codex Runtime` dentro do ORDAX.
@@ -71,7 +73,7 @@ O boundary detalhado está em `docs/ORDAX_PROVIDER_CONNECTORS.md`.
 
 ## GitHub em clientes de IA
 
-Uma integração GitHub nativa do ChatGPT, Grok ou outro cliente é separada do ORDAX. O **plugin GitHub do ChatGPT**, por exemplo, é uma integração independente do plugin ORDAX Studio.
+Uma integração GitHub nativa do ChatGPT, Grok ou outro cliente é separada do ORDAX. O **plugin GitHub do ChatGPT**, por exemplo, é uma integração independente do **ORDAX for ChatGPT**.
 
 Ela pode ser usada em paralelo para operar repositórios hospedados, mas **não é a ponte entre o cliente de IA e ORDAX Studio**. A ponte do ORDAX é o conector ORDAX → Control Plane → Runtime.
 
@@ -103,7 +105,7 @@ Quando uma tarefa também precisar do GitHub, o GitHub entra como provedor/repos
 - Control Plane remoto: Cloudflare v3.
 - MCP remoto: publicado pelo Control Plane.
 - Projetos locais e Git local: suportados pelo Runtime.
-- plugin ORDAX Studio: conector atual do ChatGPT/provider edge.
+- ORDAX for ChatGPT: conector atual do ChatGPT/provider edge.
 - Outros conectores de IA: futuros, usando o mesmo boundary.
 - plugin GitHub do ChatGPT e integrações equivalentes: opcionais e independentes.
 - OAuth GitHub dentro do ORDAX Studio: ainda não é requisito para o fluxo principal; quando implementado, deve ser uma integração de provedor de projeto separada.

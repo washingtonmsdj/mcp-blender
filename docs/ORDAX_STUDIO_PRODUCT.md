@@ -43,7 +43,7 @@ O destino arquitetural do app está em `washingtonmsdj/ordax-apps/docs/STUDIO-BO
 
 A identidade pública do app é **ORDAX Studio**.
 
-O launcher Windows existente `ORDAX Dev.exe` e o nome atual do instalador permanecem, por enquanto, como superfície de compatibilidade com instalações anteriores. Eles não definem uma arquitetura `Dev` separada e não justificam dependências de Codex. A eventual troca do nome físico do binário deve preservar upgrade/uninstall, AppId, shutdown cooperativo e testes de instalação real.
+O launcher Windows existente `ORDAX Dev.exe` e o nome atual do instalador permanecem, por enquanto, como superfície de compatibilidade com instalações anteriores. Eles não definem uma arquitetura `Dev` separada e não justificam dependências de Codex. A migração física para `ORDAX Studio.exe` é acompanhada separadamente para preservar upgrade/uninstall, AppId, shutdown cooperativo e testes de instalação real.
 
 ## Sem licença/assinatura nesta etapa
 
@@ -51,13 +51,11 @@ A versão atual não possui plano pago, licença ou gate de assinatura. O víncu
 
 ## Conectores externos
 
-O pacote `plugins/ordax-studio/` é atualmente o conector usado pelo ChatGPT e aponta para o MCP de produção.
-
-Endpoint canônico atual:
+O conector atual do ChatGPT se chama **ORDAX for ChatGPT** e sua fonte fica em `plugins/ordax-chatgpt/`. Ele aponta para o MCP de produção:
 
 `https://ordax-control-plane-v3.ordax-ac1ca1b50d09.workers.dev/mcp`
 
-Esse conector é uma integração de provider, não o núcleo do Studio. Um futuro conector Grok, Claude, Gemini ou outro deve reutilizar o mesmo boundary de ação e autorização em vez de duplicar capacidades locais.
+O conector é uma integração de provider, não o núcleo do Studio. Um futuro **ORDAX for Grok**, Claude, Gemini ou outro conector deve reutilizar o mesmo boundary de ação e autorização em vez de duplicar capacidades locais.
 
 Provider/product identity pode ser registrada como metadata autenticada para auditoria, revogação e UX, mas não concede autoridade por si só.
 
