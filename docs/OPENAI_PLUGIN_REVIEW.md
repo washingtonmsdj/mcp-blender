@@ -90,8 +90,8 @@ The workflow uses the protected `cloudflare-v3` Environment and its existing `OR
 The grant is intentionally fixed to:
 
 - project: `ordax-review-demo`;
-- project/Git actions: `projects.list`, `project.text_read`, `project.search_text`, `project.text_write`, `git.status`;
-- bounded Computer Control: access status, active/list windows, screen info, screenshot, focus, pointer move/click/scroll, bounded typing, process listing and app launch;
+- project-bounded discovery/actions: `projects.list`, `workspace.repository_catalog`, `project.text_read`, `project.search_text`, `project.text_write`, `git.status`;
+- bounded device-scoped Computer Control: access status, active/list windows, screen info, screenshot, focus, pointer move/click/scroll, bounded typing, process listing and app launch;
 - expiry: 30 days;
 - shell, hotkeys, process termination and persistent process start/stop: **not granted**.
 
