@@ -108,8 +108,10 @@ class PersistentProcessActions:
         log_path = self._process_log_path(project, process_id)
         probe_path = log_path.with_name(f".{log_path.name}.release-probe")
         deadline = time.monotonic() + max(0.1, timeout_seconds)
+        quiet_since: float | None = None
 
         while time.monotonic() < deadline:
+            files_released = False
             try:
                 if probe_path.exists() and not log_path.exists():
                     os.replace(probe_path, log_path)
@@ -117,14 +119,22 @@ class PersistentProcessActions:
                     os.replace(log_path, probe_path)
                     os.replace(probe_path, log_path)
                 runtime_temps = list(root.glob(f".{process_id}.json.*.tmp"))
-                if not runtime_temps:
-                    return True
+                files_released = not runtime_temps
             except OSError:
                 try:
                     if probe_path.exists() and not log_path.exists():
                         os.replace(probe_path, log_path)
                 except OSError:
                     pass
+
+            now = time.monotonic()
+            if files_released:
+                if quiet_since is None:
+                    quiet_since = now
+                elif now - quiet_since >= 0.25:
+                    return True
+            else:
+                quiet_since = None
             time.sleep(0.05)
         return False
 
