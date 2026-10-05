@@ -106,6 +106,11 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
         self.assertIn('method === "tools/call"', self.mcp)
         self.assertIn('method === "notifications/initialized"', self.mcp)
 
+    def test_session_reports_tool_surface_fingerprint(self) -> None:
+        self.assertIn('const MCP_TOOL_SURFACE_REVISION = "2026-10-05.1"', self.mcp)
+        self.assertIn("mcp_tool_surface_revision: MCP_TOOL_SURFACE_REVISION", self.mcp)
+        self.assertIn("mcp_tool_count: TOOLS.length", self.mcp)
+
     def test_mcp_advertises_public_review_metadata(self) -> None:
         self.assertIn("annotations: toolAnnotations(tool.name)", self.mcp)
         self.assertIn("readOnlyHint: readOnly", self.mcp)
