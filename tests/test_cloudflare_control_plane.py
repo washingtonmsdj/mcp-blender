@@ -187,7 +187,7 @@ class CloudflareControlPlaneTests(unittest.TestCase):
 
             self.assertEqual(calls, ["recover", "socket"])
 
-    def test_worker_never_releases_expired_running_job_automatically(self) -> None:
+    def test_worker_fences_expired_running_job_after_runtime_identity_changes(self) -> None:
         root = Path(__file__).resolve().parents[1]
         worker = (
             root / "control-plane" / "cloudflare" / "src" / "index.ts"
@@ -205,6 +205,14 @@ class CloudflareControlPlaneTests(unittest.TestCase):
             worker,
         )
         self.assertIn("if (activeExecution) return;", worker)
+        self.assertIn("fenceExpiredForeignRunningJobs", worker)
+        self.assertIn("error_code = 'execution_context_lost'", worker)
+        self.assertIn("lease_expires_at < ?1", worker)
+        self.assertIn("agent_instance_id != ?3 OR boot_id != ?4", worker)
+        self.assertIn(
+            "await this.fenceExpiredForeignRunningJobs(deviceId, agentInstanceId, bootId);",
+            worker,
+        )
         self.assertIn("/v3/device/recover-report", worker)
         self.assertIn("execution_context_superseded", worker)
         self.assertIn("AND status IN ('leased','running') AND report_id IS NULL", worker)
