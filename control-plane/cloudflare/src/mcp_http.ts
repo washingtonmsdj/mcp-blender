@@ -48,6 +48,8 @@ const REPLACEMENTS = {
   },
 };
 
+const MCP_TOOL_SURFACE_REVISION = "2026-10-05.1";
+
 const TOOLS: ToolSpec[] = [
   { name: "ordax_session", description: "Inspect whether the current ORDAX Product connection is authenticated." },
   { name: "ordax_profile", description: "Return the stable opaque profile id represented by the authenticated ORDAX credentials." },
@@ -521,8 +523,19 @@ async function callTool(source: Request, name: string, args: JsonObject, handler
     const response = await handlers.session(cloneWithAuth(source, new URL("/v3/product/session", source.url).toString(), "GET"));
     return textToolResult(
       response.ok
-        ? { ok: true, authenticated: true }
-        : { ok: false, authenticated: false, error: "authentication_required" },
+        ? {
+            ok: true,
+            authenticated: true,
+            mcp_tool_surface_revision: MCP_TOOL_SURFACE_REVISION,
+            mcp_tool_count: TOOLS.length,
+          }
+        : {
+            ok: false,
+            authenticated: false,
+            error: "authentication_required",
+            mcp_tool_surface_revision: MCP_TOOL_SURFACE_REVISION,
+            mcp_tool_count: TOOLS.length,
+          },
       !response.ok,
     );
   }
