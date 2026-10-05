@@ -42,11 +42,12 @@ def build_archive(output_dir: Path) -> tuple[Path, str]:
     version = str(manifest.get("version") or "0.0.0")
     output_dir.mkdir(parents=True, exist_ok=True)
     for legacy_stem in ("ordax-studio-plugin", "ordax-dev-plugin"):
-        for legacy in (
-            output_dir / f"{legacy_stem}-{version}.zip",
-            output_dir / f"{legacy_stem}-{version}.zip.sha256",
+        for pattern in (
+            f"{legacy_stem}-*.zip",
+            f"{legacy_stem}-*.zip.sha256",
         ):
-            legacy.unlink(missing_ok=True)
+            for legacy in output_dir.glob(pattern):
+                legacy.unlink(missing_ok=True)
     archive = output_dir / f"ordax-chatgpt-plugin-{version}.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
         for name in sorted(PACKAGE_FILES):
