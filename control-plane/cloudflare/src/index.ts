@@ -2506,6 +2506,28 @@ export class DeviceSession extends DurableObject<Env> {
       : null;
   }
 
+  private async fenceExpiredForeignRunningJobs(
+    deviceId: string,
+    agentInstanceId: string,
+    bootId: string,
+  ): Promise<void> {
+    const now = nowIso();
+    await this.env.DB.prepare(
+      `UPDATE ordax_jobs SET
+         status = 'failed',
+         error_code = 'execution_context_lost',
+         finished_at = COALESCE(finished_at, ?1)
+       WHERE device_id = ?2
+         AND status = 'running'
+         AND report_id IS NULL
+         AND lease_expires_at < ?1
+         AND (
+           agent_instance_id IS NULL OR boot_id IS NULL
+           OR agent_instance_id != ?3 OR boot_id != ?4
+         )`,
+    ).bind(now, deviceId, agentInstanceId, bootId).run();
+  }
+
   private async deliverNextJob(ws: WebSocket, deviceId: string): Promise<void> {
     const now = nowIso();
 
@@ -2607,6 +2629,7 @@ export class DeviceSession extends DurableObject<Env> {
         device_id: deviceId,
         protocol: "cloudflare-v3",
       }));
+      await this.fenceExpiredForeignRunningJobs(deviceId, agentInstanceId, bootId);
       await this.deliverNextJob(server, deviceId);
       return new Response(null, { status: 101, webSocket: client });
     }
