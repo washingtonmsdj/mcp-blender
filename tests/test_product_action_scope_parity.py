@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ordax_dev_agent.product_action_scope import DEVICE_SCOPED_ACTIONS
 from ordax_dev_agent.product_mcp import PRODUCT_MCP_TOOLS
+from ordax_dev_agent.product_gateway import PRODUCT_ACTIONS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +28,15 @@ class ProductActionScopeParityTests(unittest.TestCase):
             tool.action for tool in PRODUCT_MCP_TOOLS if tool.action.startswith("computer.")
         }
         self.assertEqual(computer_actions, set(DEVICE_SCOPED_ACTIONS))
+
+    def test_product_gateway_keeps_every_device_action_project_free(self) -> None:
+        gateway_actions = set(PRODUCT_ACTIONS)
+        self.assertTrue(set(DEVICE_SCOPED_ACTIONS).issubset(gateway_actions))
+        for action in DEVICE_SCOPED_ACTIONS:
+            with self.subTest(action=action):
+                spec = PRODUCT_ACTIONS[action]
+                self.assertFalse(spec.project_required)
+                self.assertNotIn("project", spec.allowed_fields)
 
     def test_device_scope_does_not_absorb_other_execution_authority(self) -> None:
         self.assertNotIn("terminal.exec", DEVICE_SCOPED_ACTIONS)
