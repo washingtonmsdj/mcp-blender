@@ -96,6 +96,38 @@ class PersistentProcessActions:
         except OSError:
             return ""
 
+    def _wait_process_files_released(
+        self,
+        project,
+        process_id: str,
+        *,
+        timeout_seconds: float = 2.0,
+    ) -> bool:
+        """Wait until Windows has released runtime-owned files for safe cleanup."""
+        root = self._process_root(project)
+        log_path = self._process_log_path(project, process_id)
+        probe_path = log_path.with_name(f".{log_path.name}.release-probe")
+        deadline = time.monotonic() + max(0.1, timeout_seconds)
+
+        while time.monotonic() < deadline:
+            try:
+                if probe_path.exists() and not log_path.exists():
+                    os.replace(probe_path, log_path)
+                if log_path.exists():
+                    os.replace(log_path, probe_path)
+                    os.replace(probe_path, log_path)
+                runtime_temps = list(root.glob(f".{process_id}.json.*.tmp"))
+                if not runtime_temps:
+                    return True
+            except OSError:
+                try:
+                    if probe_path.exists() and not log_path.exists():
+                        os.replace(probe_path, log_path)
+                except OSError:
+                    pass
+            time.sleep(0.05)
+        return False
+
     def _load_process_state(self, project, process_id: str) -> dict[str, Any]:
         path = self._process_state_path(project, process_id)
         if not path.is_file():
@@ -117,15 +149,37 @@ class PersistentProcessActions:
 
         # A live Popen handle created by this ActionRegistry is stronger and much
         # cheaper ownership evidence than spawning tasklist/PowerShell during the
-        # startup hot path. The runtime may not have persisted manager_pid yet,
-        # especially on Windows, so do not turn that short handshake window into
-        # a false startup failure. If a PID is already persisted it must still
-        # match the managed handle exactly.
-        handle = getattr(self, "_persistent_process_handles", {}).get(process_id)
+        # startup hot path. On Windows, a venv launcher and the supervised Python
+        # runtime may legitimately have different PIDs, so a local ephemeral
+        # launch token completes the ownership proof for that case.
+        handles = getattr(self, "_persistent_process_handles", {})
+        handle = handles.get(process_id)
+        handle_running = False
+        launch_tokens = getattr(self, "_persistent_process_launch_tokens", {})
+        local_token = str(launch_tokens.get(process_id) or "")
         if handle is not None:
-            if pid and handle.pid != pid:
-                return False
-            return handle.poll() is None
+            handle_running = handle.poll() is None
+            if handle_running and (not pid or handle.pid == pid):
+                return True
+            if not handle_running:
+                # A virtual-environment python.exe may be only a launcher. Once
+                # that local handle exits, remove it; the current ORDAX process
+                # can still prove ownership with its ephemeral launch token.
+                handles.pop(process_id, None)
+
+        if (
+            local_token
+            and local_token == token
+            and state.get("manager_ready_at_unix")
+            and pid
+        ):
+            # Fast-path for a process launched by this ActionRegistry. The
+            # runtime-authored manager handshake plus the in-memory launch token
+            # is sufficient proof for the current ORDAX instance. A separate PID
+            # probe here is racy on Windows during venv launcher handoff.
+            # The ephemeral token never survives an ORDAX restart, so recovered
+            # state still uses the stricter live-PID + command-line proof below.
+            return True
 
         if not pid or not self._pid_running(pid):
             return False
@@ -258,27 +312,43 @@ class PersistentProcessActions:
                 handles = {}
                 self._persistent_process_handles = handles
             handles[process_id] = manager
+            launch_tokens = getattr(self, "_persistent_process_launch_tokens", None)
+            if launch_tokens is None:
+                launch_tokens = {}
+                self._persistent_process_launch_tokens = launch_tokens
+            launch_tokens[process_id] = token
         except OSError as error:
             state.update({"state": "failed", "error": str(error), "ended_at_unix": time.time()})
             state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
             return ActionResult(False, f"cannot start persistent process: {error}", state)
 
-        deadline = time.monotonic() + min(max(float(payload.get("wait_seconds", 0.5)), 0.1), 5.0)
-        while time.monotonic() < deadline:
+        requested_wait = min(max(float(payload.get("wait_seconds", 0.5)), 0.1), 5.0)
+        # The caller's wait preference must not shorten the supervisor's own
+        # startup handshake. A small fixed floor prevents Windows launcher/runtime
+        # PID transitions and antivirus/process-enumeration latency from turning a
+        # healthy process into a false startup failure.
+        handshake_deadline = time.monotonic() + max(3.0, requested_wait)
+        while time.monotonic() < handshake_deadline:
             time.sleep(0.05)
-            current = self._load_process_state(project, process_id)
-            if current.get("state") != "starting":
+            current_raw = self._load_process_state(project, process_id)
+            lifecycle = str(current_raw.get("state") or "")
+            if lifecycle in {"running", "failed", "exited", "stopped"}:
                 break
-        current_raw = self._load_process_state(project, process_id)
-        if not current_raw.get("manager_pid") and manager.poll() is None:
-            current_raw["manager_pid"] = manager.pid
-            temp = state_path.with_suffix(".tmp")
-            temp.write_text(json.dumps(current_raw, ensure_ascii=False, indent=2), encoding="utf-8")
-            temp.replace(state_path)
+
+        # After the initial state file is created, the detached runtime is the
+        # sole writer of manager_pid/lifecycle. Do not patch those fields from
+        # the caller process: doing so can overwrite a concurrent atomic runtime
+        # update and reintroduce a startup race.
         current = self._public_process_state(self._load_process_state(project, process_id))
         started_ok = bool(
-            current.get("state") in {"starting", "running"}
-            and current.get("ownership_valid")
+            current.get("ownership_valid")
+            and (
+                current.get("state") == "running"
+                or (
+                    current.get("state") == "starting"
+                    and current.get("manager_ready_at_unix")
+                )
+            )
         )
         if not started_ok and manager.poll() is None:
             try:
@@ -299,6 +369,7 @@ class PersistentProcessActions:
             except (OSError, subprocess.TimeoutExpired):
                 pass
             getattr(self, "_persistent_process_handles", {}).pop(process_id, None)
+            getattr(self, "_persistent_process_launch_tokens", {}).pop(process_id, None)
             current = self._public_process_state(self._load_process_state(project, process_id))
         return ActionResult(
             started_ok,
@@ -404,29 +475,84 @@ class PersistentProcessActions:
         if not state.get("ownership_valid"):
             return ActionResult(False, "refusing to stop a process not owned by ORDAX", state)
 
-        try:
-            if os.name == "nt":
-                completed = subprocess.run(
-                    ["taskkill", "/PID", str(pid), "/T", "/F"],
-                    capture_output=True,
-                    text=True,
-                    timeout=15,
-                    shell=False,
-                )
-                if completed.returncode != 0 and self._pid_running(pid):
-                    return ActionResult(False, "persistent process stop failed", {
-                        **state,
-                        "stderr": (completed.stderr or "")[-2000:],
-                    })
-            else:
-                os.kill(pid, signal.SIGTERM)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            return ActionResult(False, f"persistent process stop failed: {error}", state)
+        handles = getattr(self, "_persistent_process_handles", {})
+        handle = handles.get(process_id)
+        termination_pid = pid
+        if handle is not None and handle.poll() is None:
+            # A Windows venv launcher can differ from the supervised runtime PID.
+            # Keep its root PID available only for the forced fallback path.
+            termination_pid = int(handle.pid)
 
-        deadline = time.monotonic() + 5.0
-        while self._pid_running(pid) and time.monotonic() < deadline:
+        # Normal shutdown is cooperative. The runtime already owns a durable
+        # stdin/control queue, so ask the supervisor to stop its child, flush its
+        # final state/log writes, and exit cleanly before considering force.
+        control_error = ""
+        try:
+            stdin_path = self._process_stdin_path(project, process_id)
+            control_entry = json.dumps(
+                {"control": "stop", "created_at_unix": time.time()},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            with stdin_path.open("a", encoding="utf-8", newline="\n") as stream:
+                stream.write(control_entry + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+        except OSError as error:
+            control_error = str(error)
+
+        graceful_deadline = time.monotonic() + 3.0
+        while time.monotonic() < graceful_deadline:
+            manager_running = self._pid_running(pid)
+            root_running = bool(
+                handle is not None
+                and handle.poll() is None
+            ) or self._pid_running(termination_pid)
+            if not manager_running and not root_running:
+                break
             time.sleep(0.05)
-        handle = getattr(self, "_persistent_process_handles", {}).pop(process_id, None)
+
+        manager_running = self._pid_running(pid)
+        root_running = bool(
+            handle is not None
+            and handle.poll() is None
+        ) or self._pid_running(termination_pid)
+
+        if manager_running or root_running:
+            try:
+                if os.name == "nt":
+                    completed = subprocess.run(
+                        ["taskkill", "/PID", str(termination_pid), "/T", "/F"],
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                        shell=False,
+                    )
+                    if (
+                        completed.returncode != 0
+                        and self._pid_running(termination_pid)
+                        and self._pid_running(pid)
+                    ):
+                        return ActionResult(False, "persistent process stop failed", {
+                            **state,
+                            "control_error": control_error,
+                            "stderr": (completed.stderr or "")[-2000:],
+                        })
+                else:
+                    os.kill(pid, signal.SIGTERM)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                return ActionResult(False, f"persistent process stop failed: {error}", state)
+
+            forced_deadline = time.monotonic() + 5.0
+            while time.monotonic() < forced_deadline:
+                root_running = self._pid_running(termination_pid)
+                manager_running = self._pid_running(pid)
+                if not root_running and not manager_running:
+                    break
+                time.sleep(0.05)
+
+        handle = handles.pop(process_id, None)
+        getattr(self, "_persistent_process_launch_tokens", {}).pop(process_id, None)
         if handle is not None:
             try:
                 handle.wait(timeout=2)
@@ -437,9 +563,24 @@ class PersistentProcessActions:
                 os.waitpid(pid, os.WNOHANG)
             except (ChildProcessError, OSError):
                 pass
+        files_released = True
+        if os.name == "nt":
+            files_released = self._wait_process_files_released(
+                project,
+                process_id,
+                timeout_seconds=2.0,
+            )
+
         final = self._public_process_state(self._load_process_state(project, process_id))
         final["running"] = False
         final["ownership_valid"] = False
+        final["files_released"] = files_released
         if final.get("state") in {"starting", "running", "stopping"}:
             final["state"] = "stopped"
-        return ActionResult(not self._pid_running(pid), "persistent process stopped", final)
+
+        stopped = bool(not self._pid_running(pid) and files_released)
+        return ActionResult(
+            stopped,
+            "persistent process stopped" if stopped else "persistent process stop incomplete",
+            final,
+        )
