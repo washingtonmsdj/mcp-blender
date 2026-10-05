@@ -71,10 +71,11 @@ jobs:
               "computer.scroll",
               "computer.type",
               "computer.windows",
-              "projects.list",
           ]
           project_actions = [
               "git.status",
+              "projects.list",
+              "workspace.repository_catalog",
               "project.search_text",
               "project.text_read",
               "project.text_write",
@@ -167,8 +168,8 @@ jobs:
                   handle.write(f"- Device grant: `{device_grant['id']}`\n")
                   handle.write(f"- Project grant: `{project_grant['id']}`\n")
                   handle.write(f"- Device: `{device_grant['device_id']}`\n")
-                  handle.write("- Device scope: **bounded Computer Control + project discovery**\n")
-                  handle.write("- Project scope: `ordax-review-demo` only\n")
+                  handle.write("- Device scope: **bounded Computer Control only**\n")
+                  handle.write("- Project scope: `ordax-review-demo` only, including bounded project/repository discovery\n")
                   handle.write("- Shell / hotkey / process termination: **not granted**\n")
                   handle.write(f"- Expires: `{device_grant.get('expires_at')}`\n")
           print("Least-privilege ORDAX review grants created")

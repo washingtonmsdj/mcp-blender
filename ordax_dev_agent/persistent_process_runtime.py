@@ -22,11 +22,24 @@ def atomic_json(path: Path, payload: dict) -> None:
             json.dump(payload, handle, ensure_ascii=False, indent=2)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp, path)
+        last_error: OSError | None = None
+        for attempt in range(40):
+            try:
+                os.replace(temp, path)
+                last_error = None
+                break
+            except OSError as error:
+                last_error = error
+                if attempt < 39:
+                    time.sleep(0.025)
+                    continue
+                raise
+        if last_error is not None:
+            raise last_error
     finally:
         try:
             temp.unlink()
-        except FileNotFoundError:
+        except OSError:
             pass
 
 

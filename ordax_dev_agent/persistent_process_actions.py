@@ -108,8 +108,10 @@ class PersistentProcessActions:
         log_path = self._process_log_path(project, process_id)
         probe_path = log_path.with_name(f".{log_path.name}.release-probe")
         deadline = time.monotonic() + max(0.1, timeout_seconds)
+        quiet_since: float | None = None
 
         while time.monotonic() < deadline:
+            files_released = False
             try:
                 if probe_path.exists() and not log_path.exists():
                     os.replace(probe_path, log_path)
@@ -117,14 +119,22 @@ class PersistentProcessActions:
                     os.replace(log_path, probe_path)
                     os.replace(probe_path, log_path)
                 runtime_temps = list(root.glob(f".{process_id}.json.*.tmp"))
-                if not runtime_temps:
-                    return True
+                files_released = not runtime_temps
             except OSError:
                 try:
                     if probe_path.exists() and not log_path.exists():
                         os.replace(probe_path, log_path)
                 except OSError:
                     pass
+
+            now = time.monotonic()
+            if files_released:
+                if quiet_since is None:
+                    quiet_since = now
+                elif now - quiet_since >= 0.25:
+                    return True
+            else:
+                quiet_since = None
             time.sleep(0.05)
         return False
 
@@ -132,13 +142,22 @@ class PersistentProcessActions:
         path = self._process_state_path(project, process_id)
         if not path.is_file():
             raise ValueError(f"persistent process not found: {process_id}")
-        try:
-            state = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise ValueError(f"persistent process state is invalid: {process_id}") from error
-        if not isinstance(state, dict) or state.get("process_id") != process_id or state.get("project") != project.slug:
-            raise ValueError("persistent process state identity mismatch")
-        return state
+
+        last_error: OSError | json.JSONDecodeError | None = None
+        for attempt in range(40):
+            try:
+                state = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                last_error = error
+                if attempt < 39:
+                    time.sleep(0.025)
+                    continue
+                break
+            if not isinstance(state, dict) or state.get("process_id") != process_id or state.get("project") != project.slug:
+                raise ValueError("persistent process state identity mismatch")
+            return state
+
+        raise ValueError(f"persistent process state is invalid: {process_id}") from last_error
 
     def _owned(self, state: dict[str, Any]) -> bool:
         pid = int(state.get("manager_pid") or 0)
@@ -339,16 +358,14 @@ class PersistentProcessActions:
         # sole writer of manager_pid/lifecycle. Do not patch those fields from
         # the caller process: doing so can overwrite a concurrent atomic runtime
         # update and reintroduce a startup race.
-        current = self._public_process_state(self._load_process_state(project, process_id))
+        current_raw = self._load_process_state(project, process_id)
+        current = self._public_process_state(current_raw)
         started_ok = bool(
-            current.get("ownership_valid")
-            and (
-                current.get("state") == "running"
-                or (
-                    current.get("state") == "starting"
-                    and current.get("manager_ready_at_unix")
-                )
-            )
+            current_raw.get("state") == "running"
+            and current_raw.get("child_pid")
+            and current_raw.get("running_at_unix")
+            and current.get("ownership_valid")
+            and current.get("running")
         )
         if not started_ok and manager.poll() is None:
             try:

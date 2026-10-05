@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import sys
 import tempfile
 import time
@@ -10,6 +12,7 @@ from unittest.mock import patch
 
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
+from ordax_dev_agent.persistent_process_runtime import atomic_json
 
 
 class PersistentProcessActionsTests(unittest.TestCase):
@@ -42,6 +45,57 @@ class PersistentProcessActionsTests(unittest.TestCase):
                 )
             except Exception:
                 pass
+
+    def test_atomic_json_retries_transient_replace_error(self):
+        path = self.root / "atomic-state.json"
+        original_replace = os.replace
+        attempts = 0
+
+        def flaky_replace(source, destination):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise PermissionError(32, "sharing violation")
+            return original_replace(source, destination)
+
+        with patch(
+            "ordax_dev_agent.persistent_process_runtime.os.replace",
+            side_effect=flaky_replace,
+        ):
+            atomic_json(path, {"state": "running"})
+
+        self.assertEqual({"state": "running"}, json.loads(path.read_text(encoding="utf-8")))
+        self.assertEqual(2, attempts)
+
+    def test_process_state_read_retries_atomic_replace_race(self):
+        project = self.registry._project({"project": "demo"})
+        process_id = "66666666-6666-4666-8666-666666666666"
+        state_path = self.registry._process_state_path(project, process_id)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        expected = {
+            "process_id": process_id,
+            "project": "demo",
+            "state": "running",
+            "token": "owned-token",
+        }
+        state_path.write_text(json.dumps(expected), encoding="utf-8")
+
+        original_read_text = Path.read_text
+        attempts = 0
+
+        def flaky_read_text(path, *args, **kwargs):
+            nonlocal attempts
+            if path == state_path and attempts == 0:
+                attempts += 1
+                raise PermissionError(32, "sharing violation")
+            attempts += 1
+            return original_read_text(path, *args, **kwargs)
+
+        with patch.object(Path, "read_text", new=flaky_read_text):
+            loaded = self.registry._load_process_state(project, process_id)
+
+        self.assertEqual(expected, loaded)
+        self.assertGreaterEqual(attempts, 2)
 
     def test_start_status_logs_list_and_stop(self):
         started = self.registry.execute(

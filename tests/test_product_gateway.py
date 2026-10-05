@@ -4,6 +4,7 @@ import unittest
 from typing import Any
 
 from ordax_dev_agent.models import ActionResult
+from ordax_dev_agent.product_action_scope import DEVICE_SCOPED_ACTIONS
 from ordax_dev_agent.product_gateway import (
     PRODUCT_ACTIONS,
     PRODUCT_READ_ONLY_ACTIONS,
@@ -358,6 +359,15 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertNotIn("artifact.read_chunk", names)
         self.assertFalse(any(name.startswith("unity.") for name in names))
 
+    def test_all_device_scoped_actions_are_projectless_in_gateway_contract(self) -> None:
+        self.assertTrue(DEVICE_SCOPED_ACTIONS)
+        self.assertTrue(DEVICE_SCOPED_ACTIONS <= set(PRODUCT_ACTIONS))
+        for action in sorted(DEVICE_SCOPED_ACTIONS):
+            spec = PRODUCT_ACTIONS[action]
+            with self.subTest(action=action):
+                self.assertFalse(spec.project_required)
+                self.assertNotIn("project", spec.allowed_fields)
+
     def test_project_create_is_global_explicitly_granted_and_redacts_local_paths(self) -> None:
         result = self.gateway.execute(
             "workspace.project_create",
@@ -401,7 +411,7 @@ class ProductGatewayTests(unittest.TestCase):
             [("workspace.bind_project", {"slug": "existing-app", "relative_path": "existing-app", "apps": []})],
         )
 
-    def test_browser_and_computer_actions_require_explicit_project_grants_and_redact_paths(self) -> None:
+    def test_browser_is_project_scoped_while_computer_control_is_device_scoped(self) -> None:
         browser = self.gateway.execute(
             "browser.screenshot",
             {
@@ -419,9 +429,9 @@ class ProductGatewayTests(unittest.TestCase):
 
         desktop = self.gateway.execute(
             "computer.screenshot",
-            {"project": "scene", "mode": "desktop"},
+            {"mode": "desktop"},
             context=self.context,
-            grant=self.grant("computer.screenshot"),
+            grant=self.grant("computer.screenshot", projects=()),
         )
         self.assertTrue(desktop.ok)
         self.assertNotIn("image_path", desktop.data)
@@ -429,9 +439,9 @@ class ProductGatewayTests(unittest.TestCase):
 
         denied = self.gateway.execute(
             "computer.click",
-            {"project": "scene", "x": 10, "y": 20},
+            {"x": 10, "y": 20},
             context=self.context,
-            grant=self.grant("computer.screenshot"),
+            grant=self.grant("computer.screenshot", projects=()),
         )
         self.assertFalse(denied.ok)
         self.assertEqual(denied.data["error_code"], "grant_required")

@@ -134,7 +134,7 @@ class CloudflareRemoteMcpContractTests(unittest.TestCase):
         self.assertIn('"openai/toolInvocation/invoked"', self.mcp)
         self.assertIn('"openai/profile": true', self.mcp)
         self.assertIn('required: ["id"]', self.mcp)
-        self.assertIn('serverInfo: { name: "ORDAX Control Plane", version: "0.4.1" }', self.mcp)
+        self.assertIn('serverInfo: { name: "ORDAX Control Plane", version: "0.4.2" }', self.mcp)
 
     def test_device_enrollment_uses_ordax_product_identity_not_github_admin(self) -> None:
         self.assertIn('X-Ordax-Product-Subject', self.worker)

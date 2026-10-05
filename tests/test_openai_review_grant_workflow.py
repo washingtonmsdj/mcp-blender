@@ -55,7 +55,6 @@ class OpenAiReviewGrantWorkflowTests(unittest.TestCase):
                 "computer.scroll",
                 "computer.type",
                 "computer.windows",
-                "projects.list",
             },
         )
         self.assertEqual(
@@ -65,9 +64,16 @@ class OpenAiReviewGrantWorkflowTests(unittest.TestCase):
                 "project.search_text",
                 "project.text_read",
                 "project.text_write",
+                "projects.list",
+                "workspace.repository_catalog",
             },
         )
         self.assertFalse(device_actions & project_actions)
+        self.assertNotIn("projects.list", device_actions)
+        self.assertNotIn("workspace.repository_catalog", device_actions)
+        self.assertTrue(
+            {"projects.list", "workspace.repository_catalog"} <= project_actions
+        )
 
         forbidden = {
             "computer.hotkey",
@@ -129,10 +135,17 @@ class OpenAiReviewGrantWorkflowTests(unittest.TestCase):
                     granted_actions,
                     f"review tool {tool} requires ungranted action {action}",
                 )
-                if action.startswith("computer.") or action == "projects.list":
+                if action.startswith("computer."):
                     self.assertIn(action, device_actions)
                     self.assertNotIn(action, project_actions)
-                elif action.startswith("project.") or action == "git.status":
+                elif (
+                    action.startswith("project.")
+                    or action in {
+                        "git.status",
+                        "projects.list",
+                        "workspace.repository_catalog",
+                    }
+                ):
                     self.assertIn(action, project_actions)
                     self.assertNotIn(action, device_actions)
 

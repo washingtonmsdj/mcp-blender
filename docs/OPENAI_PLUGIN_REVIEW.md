@@ -1,6 +1,6 @@
 # ORDAX for ChatGPT — OpenAI plugin review runbook
 
-Status: pre-submission checklist for the **ORDAX for ChatGPT** connector 0.4.1.
+Status: pre-submission checklist for the **ORDAX for ChatGPT** connector 0.4.2.
 
 `ORDAX Studio` is the application name. This runbook covers only the ChatGPT connector and must not use the Studio name as the connector/product identity.
 
@@ -58,7 +58,7 @@ Use `.github/workflows/plugin-review-package.yml` on the verified `main` revisio
 
 The artifact contains only:
 
-- `ordax-chatgpt-plugin-0.4.1.zip`;
+- `ordax-chatgpt-plugin-0.4.2.zip`;
 - its matching `.sha256` file.
 
 The ZIP contains exactly `plugin.json`, `mcp.json` and `assets/ordax.svg`. Legacy `ordax-dev-plugin-*` or `ordax-studio-plugin-*` package names are rejected by the canonical packaging flow.
@@ -90,8 +90,8 @@ The workflow uses the protected `cloudflare-v3` Environment and its existing `OR
 The grant is intentionally fixed to:
 
 - project: `ordax-review-demo`;
-- project/Git actions: `projects.list`, `project.text_read`, `project.search_text`, `project.text_write`, `git.status`;
-- bounded Computer Control: access status, active/list windows, screen info, screenshot, focus, pointer move/click/scroll, bounded typing, process listing and app launch;
+- project-bounded discovery/actions: `projects.list`, `workspace.repository_catalog`, `project.text_read`, `project.search_text`, `project.text_write`, `git.status`;
+- bounded device-scoped Computer Control: access status, active/list windows, screen info, screenshot, focus, pointer move/click/scroll, bounded typing, process listing and app launch;
 - expiry: 30 days;
 - shell, hotkeys, process termination and persistent process start/stop: **not granted**.
 

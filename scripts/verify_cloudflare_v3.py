@@ -108,7 +108,7 @@ def run(base_url: str, operator_token: str) -> None:
                 "subject_id": "ci:user",
                 "space_id": "ci:space",
                 "device_id": device_id,
-                "actions": ["git.status", "projects.list"],
+                "actions": ["git.status", "projects.list", "workspace.repository_catalog"],
                 "projects": ["scene"],
                 "expires_at": grant_expiry,
             },
@@ -119,7 +119,11 @@ def run(base_url: str, operator_token: str) -> None:
         grant_id = str(grant.get("id") or "")
         if not grant_id or grant.get("subject_id") != "ci:user":
             raise RuntimeError("Product grant creation returned invalid provenance")
-        if grant.get("actions") != ["git.status", "projects.list"]:
+        if grant.get("actions") != [
+            "git.status",
+            "projects.list",
+            "workspace.repository_catalog",
+        ]:
             raise RuntimeError("Product grant actions were not canonicalized")
         if grant.get("projects") != ["scene"]:
             raise RuntimeError("Product grant projects were not persisted")
@@ -153,6 +157,31 @@ def run(base_url: str, operator_token: str) -> None:
         resolved_grant.raise_for_status()
         if (resolved_grant.json().get("grant") or {}).get("id") != grant_id:
             raise RuntimeError("Product grant resolver returned the wrong grant")
+
+        for discovery_action in (
+            "projects.list",
+            "workspace.repository_catalog",
+        ):
+            resolved_discovery = operator.post(
+                "/v3/product-grants/resolve",
+                json={
+                    "subject_id": "ci:user",
+                    "space_id": "ci:space",
+                    "device_id": device_id,
+                    "action": discovery_action,
+                    "project": None,
+                },
+            )
+            resolved_discovery.raise_for_status()
+            discovery_grant = resolved_discovery.json().get("grant") or {}
+            if discovery_grant.get("id") != grant_id:
+                raise RuntimeError(
+                    f"{discovery_action} did not resolve the project-bounded discovery grant"
+                )
+            if discovery_grant.get("projects") != ["scene"]:
+                raise RuntimeError(
+                    f"{discovery_action} lost the discovery project filter"
+                )
 
         wrong_project = operator.post(
             "/v3/product-grants/resolve",
