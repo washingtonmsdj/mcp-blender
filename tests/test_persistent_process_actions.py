@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import time
@@ -11,6 +12,7 @@ from unittest.mock import patch
 
 from ordax_dev_agent.actions import ActionRegistry
 from ordax_dev_agent.config import AgentConfig
+from ordax_dev_agent.persistent_process_runtime import atomic_json
 
 
 class PersistentProcessActionsTests(unittest.TestCase):
@@ -43,6 +45,27 @@ class PersistentProcessActionsTests(unittest.TestCase):
                 )
             except Exception:
                 pass
+
+    def test_atomic_json_retries_transient_replace_error(self):
+        path = self.root / "atomic-state.json"
+        original_replace = os.replace
+        attempts = 0
+
+        def flaky_replace(source, destination):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise PermissionError(32, "sharing violation")
+            return original_replace(source, destination)
+
+        with patch(
+            "ordax_dev_agent.persistent_process_runtime.os.replace",
+            side_effect=flaky_replace,
+        ):
+            atomic_json(path, {"state": "running"})
+
+        self.assertEqual({"state": "running"}, json.loads(path.read_text(encoding="utf-8")))
+        self.assertEqual(2, attempts)
 
     def test_process_state_read_retries_atomic_replace_race(self):
         project = self.registry._project({"project": "demo"})
