@@ -15,7 +15,7 @@ class PublicProductBrandingTests(unittest.TestCase):
 
         self.assertIn('const PRODUCT_NAME = "ORDAX"', public_pages)
         self.assertIn("Autorizar acesso ao ORDAX", consent)
-        self.assertIn('serverInfo: { name: "ORDAX Control Plane", version: "0.4.1" }', mcp)
+        self.assertIn('serverInfo: { name: "ORDAX Control Plane", version: "0.4.2" }', mcp)
         self.assertNotIn("ORDAX Studio", public_pages)
         self.assertNotIn("ORDAX Studio", consent)
         self.assertNotIn("Conecte o ChatGPT", consent)
