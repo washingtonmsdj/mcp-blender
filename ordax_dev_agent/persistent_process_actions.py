@@ -132,13 +132,22 @@ class PersistentProcessActions:
         path = self._process_state_path(project, process_id)
         if not path.is_file():
             raise ValueError(f"persistent process not found: {process_id}")
-        try:
-            state = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise ValueError(f"persistent process state is invalid: {process_id}") from error
-        if not isinstance(state, dict) or state.get("process_id") != process_id or state.get("project") != project.slug:
-            raise ValueError("persistent process state identity mismatch")
-        return state
+
+        last_error: OSError | json.JSONDecodeError | None = None
+        for attempt in range(40):
+            try:
+                state = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                last_error = error
+                if attempt < 39:
+                    time.sleep(0.025)
+                    continue
+                break
+            if not isinstance(state, dict) or state.get("process_id") != process_id or state.get("project") != project.slug:
+                raise ValueError("persistent process state identity mismatch")
+            return state
+
+        raise ValueError(f"persistent process state is invalid: {process_id}") from last_error
 
     def _owned(self, state: dict[str, Any]) -> bool:
         pid = int(state.get("manager_pid") or 0)
