@@ -83,7 +83,6 @@ class ComputerParityActions:
             time.sleep(0.025)
         return False
     def computer_screen_info(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             user32 = self._user32()
         except ValueError as error:
@@ -143,7 +142,6 @@ class ComputerParityActions:
             },
         )
     def computer_mouse_move(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             user32 = self._user32()
             x = int(payload.get("x"))
@@ -165,7 +163,6 @@ class ComputerParityActions:
             {"x": x, "y": y, "duration_ms": duration_ms},
         )
     def computer_drag(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             user32 = self._user32()
             from_x = int(payload.get("from_x"))
@@ -206,7 +203,6 @@ class ComputerParityActions:
         )
 
     def computer_clipboard_read(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             self._windows_only()
             max_bytes = int(payload.get("max_bytes", 65536))
@@ -264,7 +260,6 @@ class ComputerParityActions:
         )
 
     def computer_clipboard_write(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             self._windows_only()
         except ValueError as error:
@@ -320,7 +315,6 @@ class ComputerParityActions:
         )
 
     def computer_launch_app(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             self._windows_only()
         except ValueError as error:
