@@ -4,6 +4,14 @@ import {
   productAuthConfigured,
   type ProductAuthEnv,
 } from "./product_auth";
+import {
+  DEVICE_SCOPED_ACTIONS,
+  projectBindingMatchesScope,
+} from "./product_action_scope";
+import {
+  createOwnerDeviceComputerGrant,
+  revokeOwnerDeviceComputerGrant,
+} from "./product_device_grants";
 import { handleOrdaxMcp } from "./mcp_http";
 import { scopeProductResult } from "./product_results";
 import { oauthConsentResponse } from "./oauth_consent";
@@ -173,20 +181,6 @@ const PRODUCT_PROJECT_ACTIONS = new Set([
   "browser.click",
   "browser.type",
   "browser.stop",
-  "computer.windows",
-  "computer.active_window",
-  "computer.screenshot",
-  "computer.screen_info",
-  "computer.clipboard_read",
-  "computer.focus_window",
-  "computer.click",
-  "computer.mouse_move",
-  "computer.drag",
-  "computer.clipboard_write",
-  "computer.launch_app",
-  "computer.scroll",
-  "computer.type",
-  "computer.hotkey",
   "project.text_write",
   "project.text_patch",
   "blender.live_status",
@@ -692,6 +686,14 @@ async function resolveProductGrantForContext(
     project: string | null;
   },
 ): Promise<ProductGrantRow | null> {
+  if (!projectBindingMatchesScope(
+    context.action,
+    context.project,
+    PRODUCT_PROJECT_ACTIONS,
+  )) {
+    return null;
+  }
+
   const now = nowIso();
   const rows = await env.DB.prepare(
     `SELECT id, subject_id, space_id, device_id, actions_json, projects_json,
@@ -722,18 +724,15 @@ async function resolveProductGrantForContext(
       !Array.isArray(actions)
       || !actions.every((item) => typeof item === "string")
       || !actions.includes(context.action)
+      || !Array.isArray(projects)
+      || !projects.every((item) => typeof item === "string")
     ) {
       continue;
     }
-    if (PRODUCT_PROJECT_ACTIONS.has(context.action)) {
-      if (
-        context.project === null
-        || !Array.isArray(projects)
-        || !projects.every((item) => typeof item === "string")
-        || !projects.includes(context.project)
-      ) {
-        continue;
-      }
+    if (DEVICE_SCOPED_ACTIONS.has(context.action)) {
+      if (projects.length !== 0 || context.project !== null) continue;
+    } else if (PRODUCT_PROJECT_ACTIONS.has(context.action)) {
+      if (context.project === null || !projects.includes(context.project)) continue;
     }
     return row;
   }
@@ -766,8 +765,7 @@ async function resolveProductGrantAdmin(
     || !UUID_RE.test(deviceId)
     || !PRODUCT_ACTIONS.has(action)
     || (project !== null && !PROJECT_SLUG_RE.test(project))
-    || (PRODUCT_PROJECT_ACTIONS.has(action) && project === null)
-    || (!PRODUCT_PROJECT_ACTIONS.has(action) && project !== null)
+    || !projectBindingMatchesScope(action, project, PRODUCT_PROJECT_ACTIONS)
   ) {
     return json({ ok: false, error: "product_grant_resolution_invalid" }, 400);
   }
@@ -1207,7 +1205,7 @@ async function createProductAction(request: Request, env: Env): Promise<Response
   const action = typeof body.action === "string" ? body.action : "";
   const project = body.project == null ? null : typeof body.project === "string" ? body.project : "";
   const argumentsValue = isRecord(body.arguments) ? { ...body.arguments } : {};
-  if (!UUID_RE.test(deviceId) || (spaceId !== null && !PRODUCT_ID_RE.test(spaceId)) || !PRODUCT_ACTIONS.has(action) || (project !== null && !PROJECT_SLUG_RE.test(project)) || (PRODUCT_PROJECT_ACTIONS.has(action) && project === null) || (!PRODUCT_PROJECT_ACTIONS.has(action) && project !== null)) {
+  if (!UUID_RE.test(deviceId) || (spaceId !== null && !PRODUCT_ID_RE.test(spaceId)) || !PRODUCT_ACTIONS.has(action) || (project !== null && !PROJECT_SLUG_RE.test(project)) || !projectBindingMatchesScope(action, project, PRODUCT_PROJECT_ACTIONS)) {
     return json({ ok: false, error: "product_action_invalid" }, 400);
   }
   if (project !== null) {
@@ -2274,6 +2272,18 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/v3/product/session") {
       return productSession(request, env);
+    }
+    if (request.method === "POST" && url.pathname === "/v3/product/device-computer-grants") {
+      return createOwnerDeviceComputerGrant(request, env);
+    }
+    if (
+      request.method === "DELETE"
+      && parts[0] === "v3"
+      && parts[1] === "product"
+      && parts[2] === "device-computer-grants"
+      && parts.length === 4
+    ) {
+      return revokeOwnerDeviceComputerGrant(request, env, parts[3]);
     }
     if (request.method === "POST" && url.pathname === "/v3/product/device-links") {
       return claimProductDevicePairing(request, env);
