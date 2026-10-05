@@ -1,4 +1,4 @@
-"""Persistent multi-agent orchestration for ORDAX Chat App.
+"""Persistent multi-agent orchestration for ORDAX Studio.
 
 The orchestrator owns durable agent identity, goals, model-session chains,
 checkpoints and coordinator/worker messaging. It deliberately does not call a

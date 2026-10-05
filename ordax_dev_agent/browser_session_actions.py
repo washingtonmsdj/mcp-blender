@@ -1,4 +1,4 @@
-"""Persistent Chromium CDP sessions for ORDAX Dev browser tools."""
+"""Persistent Chromium CDP sessions for ORDAX Studio browser tools."""
 from __future__ import annotations
 
 import base64
@@ -29,6 +29,12 @@ def _free_port() -> int:
 def _http_json(url: str, timeout: float = 2.0) -> Any:
     with urllib.request.urlopen(url, timeout=timeout) as response:
         return json.loads(response.read())
+
+
+def _same_origin(left: str, right: str) -> bool:
+    a = urllib.parse.urlsplit(left)
+    b = urllib.parse.urlsplit(right)
+    return (a.scheme, a.hostname, a.port) == (b.scheme, b.hostname, b.port)
 
 
 class BrowserSessionActions:
@@ -268,7 +274,24 @@ class BrowserSessionActions:
                         and item.get("webSocketDebuggerUrl")
                     ] if isinstance(items, list) else []
                     if pages:
-                        return pages[0]
+                        if create_url:
+                            exact = next(
+                                (item for item in pages if str(item.get("url") or "") == create_url),
+                                None,
+                            )
+                            if exact is not None:
+                                return exact
+                            same_origin = next(
+                                (
+                                    item for item in pages
+                                    if _same_origin(str(item.get("url") or ""), create_url)
+                                ),
+                                None,
+                            )
+                            if same_origin is not None:
+                                return same_origin
+                        else:
+                            return pages[0]
                 except Exception:
                     pass
 
@@ -281,11 +304,11 @@ class BrowserSessionActions:
         detail = "CDP ready but no page target" if cdp_ready else "CDP endpoint unavailable"
         raise BrowserCaptureError(f"Chromium CDP page target is unavailable ({detail})")
 
-    def _with_page(self, project, session_id: str, fn):
+    def _with_page(self, project, session_id: str, fn, *, preferred_url: str | None = None):
         state = self._refresh_browser_pid(project, self._load_browser_state(project, session_id))
         if not self._browser_owned(project, state):
             raise ValueError("browser session is not running or is not owned by ORDAX")
-        target = self._browser_target(state)
+        target = self._browser_target(state, create_url=preferred_url)
         self._assert_automation_url_allowed(str(target.get("url") or ""))
         with connect(str(target["webSocketDebuggerUrl"]), open_timeout=3, close_timeout=1) as ws:
             return fn(ws, state, target)
@@ -425,12 +448,11 @@ class BrowserSessionActions:
         else:
             def initialize_page(ws, _state, _target):
                 _cdp_call(ws, 1, "Page.enable")
-                _cdp_call(ws, 2, "Page.navigate", {"url": url})
                 deadline = time.monotonic() + max(
                     5.0,
                     min(float(payload.get("wait_seconds", 8)), 30.0),
                 )
-                request_id = 3
+                request_id = 2
                 current_url = ""
                 title = ""
                 while time.monotonic() < deadline:
@@ -448,25 +470,45 @@ class BrowserSessionActions:
                 )
 
             try:
-                ready = self._with_page(project, session_id, initialize_page)
+                ready = self._with_page(
+                    project,
+                    session_id,
+                    initialize_page,
+                    preferred_url=url,
+                )
             except (ValueError, BrowserCaptureError) as error:
+                cleanup = None
                 try:
-                    if os.name == "nt":
-                        subprocess.run(
-                            ["taskkill", "/PID", str(int(state.get("pid") or process.pid)), "/T", "/F"],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            timeout=15,
-                            shell=False,
-                        )
-                    else:
-                        try:
-                            os.killpg(int(state.get("pid") or process.pid), 15)
-                        except ProcessLookupError:
-                            pass
-                except (OSError, subprocess.TimeoutExpired):
-                    pass
-                handles.pop(session_id, None)
+                    cleanup = self.browser_stop(
+                        {"project": project.slug, "session_id": session_id}
+                    )
+                except (OSError, ValueError, subprocess.SubprocessError):
+                    cleanup = None
+                if cleanup is None or not cleanup.ok:
+                    try:
+                        if os.name == "nt":
+                            subprocess.run(
+                                [
+                                    "taskkill",
+                                    "/PID",
+                                    str(int(state.get("pid") or process.pid)),
+                                    "/T",
+                                    "/F",
+                                ],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                timeout=15,
+                                shell=False,
+                            )
+                        else:
+                            try:
+                                os.killpg(int(state.get("pid") or process.pid), 15)
+                            except ProcessLookupError:
+                                pass
+                        process.wait(timeout=5)
+                    except (OSError, subprocess.TimeoutExpired):
+                        pass
+                    handles.pop(session_id, None)
                 state.update({"startup_error": str(error), "stopped_at_unix": time.time()})
                 self._write_browser_state(project, state)
                 return ActionResult(

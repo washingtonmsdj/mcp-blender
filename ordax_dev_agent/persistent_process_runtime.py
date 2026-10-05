@@ -123,6 +123,12 @@ class ProcessRuntime:
                             continue
                         if not isinstance(payload, dict):
                             continue
+                        control = payload.get("control")
+                        if control == "stop":
+                            self.stop()
+                            return
+                        if control is not None:
+                            continue
                         text = payload.get("text")
                         if not isinstance(text, str):
                             continue

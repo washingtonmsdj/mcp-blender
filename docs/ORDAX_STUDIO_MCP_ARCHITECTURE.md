@@ -55,8 +55,8 @@ O bootstrap/add-on não recebe Python arbitrário, caminho de companion fornecid
 
 ## Superfície remota
 
-O MCP remoto é a base do **ORDAX Chat App**, criado para dar ao ChatGPT normal
-uma superfície comparável a um agente de desenvolvimento completo. Toda chamada
+O MCP remoto é a superfície do **ORDAX Studio** para clientes autorizados, incluindo o ChatGPT normal,
+e fornece uma capacidade comparável à de um agente de desenvolvimento completo. Toda chamada
 passa por autenticação, device binding, Space/grant, catálogo explícito e auditoria.
 
 A superfície é dividida por autoridade, não por uma limitação artificial de

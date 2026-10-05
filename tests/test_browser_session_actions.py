@@ -80,9 +80,13 @@ class BrowserSessionActionsTests(unittest.TestCase):
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.server_thread.start()
-        self.addCleanup(self.server.shutdown)
-        self.addCleanup(self.server.server_close)
+        self.addCleanup(self._stop_server)
         self.session_id = None
+
+    def _stop_server(self):
+        self.server.shutdown()
+        self.server_thread.join(timeout=5)
+        self.server.server_close()
 
     def tearDown(self):
         if self.session_id:
