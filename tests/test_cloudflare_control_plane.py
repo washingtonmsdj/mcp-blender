@@ -531,15 +531,21 @@ class CloudflareControlPlaneTests(unittest.TestCase):
         self.assertIn('"agent.project_briefing"', project_block)
         self.assertIn('"browser.screenshot"', project_block)
         self.assertIn('"browser.start"', project_block)
-        self.assertIn('"computer.screenshot"', project_block)
-        self.assertIn('"computer.click"', project_block)
-        self.assertNotIn('"computer.access_status"', project_block)
-        self.assertNotIn('"computer.file_stat"', project_block)
-        self.assertNotIn('"computer.text_read"', project_block)
-        self.assertNotIn('"computer.text_write"', project_block)
-        self.assertNotIn('"computer.path_remove"', project_block)
-        self.assertNotIn('"computer.processes"', project_block)
-        self.assertNotIn('"computer.terminate_process"', project_block)
+        self.assertIn('"terminal.exec"', project_block)
+        self.assertIn('"git.command"', project_block)
+        self.assertIn('"process.start"', project_block)
+        for action in (
+            "computer.screenshot",
+            "computer.click",
+            "computer.access_status",
+            "computer.file_stat",
+            "computer.text_read",
+            "computer.text_write",
+            "computer.path_remove",
+            "computer.processes",
+            "computer.terminate_process",
+        ):
+            self.assertNotIn(f'"{action}"', project_block)
 
     def test_operator_job_prefixes_cover_typed_computer_runtime_surfaces(self) -> None:
         root = Path(__file__).resolve().parents[1]
