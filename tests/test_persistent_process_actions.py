@@ -223,6 +223,57 @@ class PersistentProcessActionsTests(unittest.TestCase):
         self.assertEqual("stopped", public["state"])
         self.assertEqual(7272, public["manager_pid"])
 
+    def test_live_windows_launcher_mismatch_uses_ephemeral_launch_token(self):
+        process_id = "44444444-4444-4444-8444-444444444444"
+        handle = SimpleNamespace(pid=8181, poll=lambda: None)
+        self.registry._persistent_process_handles = {process_id: handle}
+        self.registry._persistent_process_launch_tokens = {process_id: "owned-token"}
+        state = {
+            "process_id": process_id,
+            "project": "demo",
+            "manager_pid": 9191,
+            "manager_ready_at_unix": 123.0,
+            "token": "owned-token",
+            "state": "running",
+        }
+
+        with (
+            patch.object(self.registry, "_pid_running", return_value=True),
+            patch.object(self.registry, "_commandline") as commandline,
+        ):
+            public = self.registry._public_process_state(state)
+
+        self.assertTrue(public["running"])
+        self.assertTrue(public["ownership_valid"])
+        commandline.assert_not_called()
+
+    def test_exited_windows_launcher_yields_to_runtime_owned_pid(self):
+        process_id = "55555555-5555-4555-8555-555555555555"
+        handle = SimpleNamespace(pid=8181, poll=lambda: 0)
+        self.registry._persistent_process_handles = {process_id: handle}
+        state = {
+            "process_id": process_id,
+            "project": "demo",
+            "manager_pid": 9191,
+            "token": "owned-token",
+            "state": "running",
+        }
+
+        with (
+            patch.object(self.registry, "_pid_running", return_value=True),
+            patch.object(
+                self.registry,
+                "_commandline",
+                return_value="python persistent_process_runtime.py --token owned-token",
+            ),
+        ):
+            public = self.registry._public_process_state(state)
+
+        self.assertTrue(public["running"])
+        self.assertTrue(public["ownership_valid"])
+        self.assertEqual("running", public["state"])
+        self.assertNotIn(process_id, self.registry._persistent_process_handles)
+
     def test_process_id_is_project_scoped(self):
         result = self.registry.execute(
             "process.status",
