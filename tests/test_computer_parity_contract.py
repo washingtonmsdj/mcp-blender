@@ -52,6 +52,23 @@ class ComputerParityContractTests(unittest.TestCase):
         self.assertIn('"computer_clipboard_write"', mcp)
         self.assertIn('"computer_launch_app"', mcp)
 
+    def test_device_scoped_computer_runtime_does_not_require_project(self):
+        for relative in (
+            "ordax_dev_agent/computer_control_actions.py",
+            "ordax_dev_agent/computer_parity_actions.py",
+        ):
+            source = (ROOT / relative).read_text(encoding="utf-8")
+            with self.subTest(source=relative):
+                self.assertNotIn("self._project(payload)", source)
+
+    def test_computer_screenshot_uses_device_artifact_namespace(self):
+        source = (
+            ROOT / "ordax_dev_agent" / "computer_control_actions.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('self.config.state_dir / "artifacts" / "computer"', source)
+        self.assertIn('"scope": "device"', source)
+        self.assertNotIn('self._computer_artifact_path(project)', source)
+
 
 if __name__ == "__main__":
     unittest.main()
