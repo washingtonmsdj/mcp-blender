@@ -4,6 +4,7 @@ import unittest
 from typing import Any
 
 from ordax_dev_agent.models import ActionResult
+from ordax_dev_agent.product_action_scope import DEVICE_SCOPED_ACTIONS
 from ordax_dev_agent.product_gateway import (
     PRODUCT_ACTIONS,
     PRODUCT_READ_ONLY_ACTIONS,
@@ -357,6 +358,15 @@ class ProductGatewayTests(unittest.TestCase):
         self.assertNotIn("git.sync", names)
         self.assertNotIn("artifact.read_chunk", names)
         self.assertFalse(any(name.startswith("unity.") for name in names))
+
+    def test_all_device_scoped_actions_are_projectless_in_gateway_contract(self) -> None:
+        self.assertTrue(DEVICE_SCOPED_ACTIONS)
+        self.assertTrue(DEVICE_SCOPED_ACTIONS <= set(PRODUCT_ACTIONS))
+        for action in sorted(DEVICE_SCOPED_ACTIONS):
+            spec = PRODUCT_ACTIONS[action]
+            with self.subTest(action=action):
+                self.assertFalse(spec.project_required)
+                self.assertNotIn("project", spec.allowed_fields)
 
     def test_project_create_is_global_explicitly_granted_and_redacts_local_paths(self) -> None:
         result = self.gateway.execute(
