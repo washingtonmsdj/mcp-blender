@@ -358,16 +358,14 @@ class PersistentProcessActions:
         # sole writer of manager_pid/lifecycle. Do not patch those fields from
         # the caller process: doing so can overwrite a concurrent atomic runtime
         # update and reintroduce a startup race.
-        current = self._public_process_state(self._load_process_state(project, process_id))
+        current_raw = self._load_process_state(project, process_id)
+        current = self._public_process_state(current_raw)
         started_ok = bool(
-            current.get("ownership_valid")
-            and (
-                current.get("state") == "running"
-                or (
-                    current.get("state") == "starting"
-                    and current.get("manager_ready_at_unix")
-                )
-            )
+            current_raw.get("state") == "running"
+            and current_raw.get("child_pid")
+            and current_raw.get("running_at_unix")
+            and current.get("ownership_valid")
+            and current.get("running")
         )
         if not started_ok and manager.poll() is None:
             try:
