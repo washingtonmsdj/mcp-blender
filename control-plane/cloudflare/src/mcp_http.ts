@@ -402,6 +402,7 @@ function sanitizeTargets(payload: JsonObject): JsonObject {
     return [{
       device_id: typeof target.device_id === "string" ? target.device_id : "",
       name: typeof target.name === "string" ? target.name : "ORDAX device",
+      link_id: typeof target.link_id === "string" ? target.link_id : null,
       grants,
     }];
   });

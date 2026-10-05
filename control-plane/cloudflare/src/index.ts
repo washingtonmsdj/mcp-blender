@@ -853,7 +853,17 @@ async function listProductTargets(request: Request, env: Env): Promise<Response>
     `SELECT
        g.id AS grant_id, g.space_id, g.device_id, g.actions_json, g.projects_json,
        g.expires_at, g.created_at,
-       d.name AS device_name, d.last_seen_at
+       d.name AS device_name, d.last_seen_at,
+       (
+         SELECT l.id
+         FROM ordax_product_device_links l
+         WHERE l.subject_id = g.subject_id
+           AND l.device_id = g.device_id
+           AND l.revoked_at IS NULL
+           AND COALESCE(l.space_id, '') = COALESCE(g.space_id, '')
+         ORDER BY l.created_at DESC
+         LIMIT 1
+       ) AS link_id
      FROM ordax_product_grants g
      JOIN ordax_devices d ON d.id = g.device_id
      WHERE g.subject_id = ?1
@@ -874,6 +884,7 @@ async function listProductTargets(request: Request, env: Env): Promise<Response>
     created_at: string;
     device_name: string;
     last_seen_at: string | null;
+    link_id: string | null;
   }>();
 
   const devices = new Map<string, JsonObject>();
@@ -896,6 +907,7 @@ async function listProductTargets(request: Request, env: Env): Promise<Response>
         device_id: row.device_id,
         name: row.device_name,
         last_seen_at: row.last_seen_at,
+        link_id: row.link_id,
         grants: [],
       };
       devices.set(row.device_id, entry);

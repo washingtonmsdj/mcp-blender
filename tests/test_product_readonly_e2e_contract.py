@@ -27,6 +27,10 @@ class ProductReadonlyE2EContractTests(unittest.TestCase):
         self.assertIn('"/v3/product/targets"', self.worker)
         self.assertIn('g.device_id IS NOT NULL', self.worker)
         self.assertIn('g.subject_id = ?1', self.worker)
+        self.assertIn('FROM ordax_product_device_links l', self.worker)
+        self.assertIn("COALESCE(l.space_id, '') = COALESCE(g.space_id, '')", self.worker)
+        self.assertIn(') AS link_id', self.worker)
+        self.assertIn('link_id: row.link_id', self.worker)
 
     def test_product_poll_is_subject_scoped(self):
         self.assertIn("r.subject_id = ?2", self.worker)
