@@ -22,6 +22,15 @@ class PublicProductBrandingTests(unittest.TestCase):
         self.assertNotIn("ORDAX Dev", public_pages)
         self.assertNotIn("ORDAX Dev", consent)
 
+    def test_removed_chat_app_brand_does_not_return_to_canonical_runtime_or_architecture(self) -> None:
+        orchestrator = (ROOT / "ordax_core" / "orchestrator.py").read_text(encoding="utf-8")
+        architecture = (ROOT / "docs" / "ORDAX_STUDIO_MCP_ARCHITECTURE.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("ORDAX Chat App", orchestrator)
+        self.assertNotIn("ORDAX Chat App", architecture)
+        self.assertIn("ORDAX Studio", orchestrator)
+        self.assertIn("ORDAX Studio", architecture)
+
     def test_historical_windows_binary_name_remains_explicit_compatibility(self) -> None:
         document = (ROOT / "docs" / "ORDAX_STUDIO_WINDOWS_PRODUCT.md").read_text(encoding="utf-8")
         self.assertIn("ORDAX Studio para Windows", document)
