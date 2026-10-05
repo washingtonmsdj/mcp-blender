@@ -156,5 +156,15 @@ class WindowsProductPackagingTests(unittest.TestCase):
         self.assertIn('- "ordax_studio/**"', workflow)
 
 
+    def test_release_publish_handles_missing_release_without_powershell_error_stream_failure(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "windows-product-build.yml").read_text(encoding="utf-8")
+        self.assertIn('$ErrorActionPreference = "Stop"', workflow)
+        self.assertIn('cmd /c "gh release view $tag --repo $env:GITHUB_REPOSITORY >nul 2>nul"', workflow)
+        self.assertIn("$releaseExists = $LASTEXITCODE -eq 0", workflow)
+        self.assertNotIn('gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null', workflow)
+        self.assertIn("gh release upload $tag", workflow)
+        self.assertIn("gh release create $tag", workflow)
+
+
 if __name__ == "__main__":
     unittest.main()
