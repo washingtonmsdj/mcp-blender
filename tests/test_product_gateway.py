@@ -401,7 +401,7 @@ class ProductGatewayTests(unittest.TestCase):
             [("workspace.bind_project", {"slug": "existing-app", "relative_path": "existing-app", "apps": []})],
         )
 
-    def test_browser_and_computer_actions_require_explicit_project_grants_and_redact_paths(self) -> None:
+    def test_browser_is_project_scoped_while_computer_control_is_device_scoped(self) -> None:
         browser = self.gateway.execute(
             "browser.screenshot",
             {
@@ -419,9 +419,9 @@ class ProductGatewayTests(unittest.TestCase):
 
         desktop = self.gateway.execute(
             "computer.screenshot",
-            {"project": "scene", "mode": "desktop"},
+            {"mode": "desktop"},
             context=self.context,
-            grant=self.grant("computer.screenshot"),
+            grant=self.grant("computer.screenshot", projects=()),
         )
         self.assertTrue(desktop.ok)
         self.assertNotIn("image_path", desktop.data)
@@ -429,9 +429,9 @@ class ProductGatewayTests(unittest.TestCase):
 
         denied = self.gateway.execute(
             "computer.click",
-            {"project": "scene", "x": 10, "y": 20},
+            {"x": 10, "y": 20},
             context=self.context,
-            grant=self.grant("computer.screenshot"),
+            grant=self.grant("computer.screenshot", projects=()),
         )
         self.assertFalse(denied.ok)
         self.assertEqual(denied.data["error_code"], "grant_required")

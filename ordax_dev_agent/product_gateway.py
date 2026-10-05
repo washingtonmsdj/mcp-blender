@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Protocol
 
 from .models import ActionResult
+from .product_action_scope import DEVICE_SCOPED_ACTIONS
 
 
 class ActionExecutor(Protocol):
@@ -478,7 +479,13 @@ PRODUCT_TYPED_ACTIONS: dict[str, ProductActionSpec] = {
     "blender.live_material_apply": ProductActionSpec("blender.live_material_apply", "blender.live_material_apply", frozenset({"project", "object_name", "ordax_object_id", "material_name", "base_color", "roughness", "metallic", "transmission", "alpha", "ior", "surface_render_method", "transparency_overlap", "timeout_seconds"}), effect="write"),
     "blender.live_save": ProductActionSpec("blender.live_save", "blender.live_save", frozenset({"project", "target_path", "timeout_seconds"}), effect="write"),
 }
-PRODUCT_ACTIONS: dict[str, ProductActionSpec] = {**PRODUCT_READ_ONLY_ACTIONS, **PRODUCT_TYPED_ACTIONS}
+_RAW_PRODUCT_ACTIONS: dict[str, ProductActionSpec] = {**PRODUCT_READ_ONLY_ACTIONS, **PRODUCT_TYPED_ACTIONS}
+PRODUCT_ACTIONS: dict[str, ProductActionSpec] = {
+    name: replace(spec, allowed_fields=spec.allowed_fields - {"project"}, project_required=False)
+    if name in DEVICE_SCOPED_ACTIONS
+    else spec
+    for name, spec in _RAW_PRODUCT_ACTIONS.items()
+}
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$")
 
