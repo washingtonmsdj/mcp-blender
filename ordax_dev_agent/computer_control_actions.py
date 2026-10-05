@@ -298,8 +298,8 @@ class ComputerControlActions:
         ComputerControlActions._windows_only()
         return ctypes.windll.user32
 
-    def _computer_artifact_path(self, project) -> Path:
-        root = (self.config.state_dir / "artifacts" / project.slug).resolve()
+    def _computer_artifact_path(self) -> Path:
+        root = (self.config.state_dir / "artifacts" / "computer").resolve()
         root.mkdir(parents=True, exist_ok=True)
         return root / f"computer-{uuid.uuid4().hex}.png"
 
@@ -368,7 +368,6 @@ class ComputerControlActions:
         return value
 
     def computer_windows(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             self._windows_only()
         except ValueError as error:
@@ -396,7 +395,6 @@ class ComputerControlActions:
         )
 
     def computer_active_window(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             hwnd = int(self._user32().GetForegroundWindow())
         except ValueError as error:
@@ -407,7 +405,6 @@ class ComputerControlActions:
         return ActionResult(True, "foreground window ready", info)
 
     def computer_screenshot(self, payload: dict[str, Any]) -> ActionResult:
-        project = self._project(payload)
         try:
             self._windows_only()
         except ValueError as error:
@@ -415,7 +412,7 @@ class ComputerControlActions:
         mode = str(payload.get("mode") or "desktop").strip().lower()
         if mode not in {"desktop", "active_window"}:
             return ActionResult(False, "mode must be desktop or active_window")
-        target = self._computer_artifact_path(project)
+        target = self._computer_artifact_path()
         try:
             if mode == "active_window":
                 hwnd = int(self._user32().GetForegroundWindow())
@@ -435,7 +432,7 @@ class ComputerControlActions:
             True,
             "desktop screenshot captured",
             {
-                "project": project.slug,
+                "scope": "device",
                 "mode": mode,
                 "coordinate_space": "physical_pixels",
                 "artifact_name": target.name,
@@ -451,7 +448,6 @@ class ComputerControlActions:
         return int(ctypes.windll.kernel32.GetCurrentThreadId())
 
     def computer_focus_window(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             user32 = self._user32()
             hwnd = self._parse_handle(payload.get("handle"))
@@ -509,7 +505,6 @@ class ComputerControlActions:
         )
 
     def computer_click(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             user32 = self._user32()
         except ValueError as error:
@@ -536,7 +531,6 @@ class ComputerControlActions:
         return ActionResult(True, "desktop click sent", {"x": x, "y": y, "button": button, "clicks": clicks})
 
     def computer_scroll(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             user32 = self._user32()
             amount = int(payload.get("amount"))
@@ -565,7 +559,6 @@ class ComputerControlActions:
                 raise OSError("Windows rejected unicode key up")
 
     def computer_type(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             self._windows_only()
         except ValueError as error:
@@ -582,7 +575,6 @@ class ComputerControlActions:
         return ActionResult(True, "desktop text sent", {"characters": len(text)})
 
     def computer_hotkey(self, payload: dict[str, Any]) -> ActionResult:
-        self._project(payload)
         try:
             user32 = self._user32()
         except ValueError as error:
