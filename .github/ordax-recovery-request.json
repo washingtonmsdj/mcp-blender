@@ -1,5 +1,0 @@
-{
-  "job_id": "4a9fa6c0-f521-4616-b8cb-b3422e3ae5ee",
-  "reason": "activate fresh Windows OIDC recovery after stale self-hosted queue cleanup",
-  "requested_by": "ChatGPT OrdaX control loop"
-}
