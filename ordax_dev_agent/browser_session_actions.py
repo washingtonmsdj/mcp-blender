@@ -291,16 +291,95 @@ class BrowserSessionActions:
             return fn(ws, state, target)
 
     @staticmethod
-    def _eval(ws, request_id: int, expression: str, *, await_promise: bool = False) -> Any:
+    def _eval(
+        ws,
+        request_id: int,
+        expression: str,
+        *,
+        await_promise: bool = False,
+        timeout_seconds: float = 15.0,
+    ) -> Any:
         result = _cdp_call(ws, request_id, "Runtime.evaluate", {
             "expression": expression,
             "returnByValue": True,
             "awaitPromise": await_promise,
-        })
+        }, timeout_seconds=timeout_seconds)
         remote = result.get("result") or {}
         if remote.get("subtype") == "error":
             raise BrowserCaptureError(str(remote.get("description") or "browser JavaScript failed"))
         return remote.get("value")
+
+    def _navigate_and_wait(
+        self,
+        project,
+        session_id: str,
+        url: str,
+        *,
+        wait_seconds: float,
+        require_exact_url: bool,
+    ) -> dict[str, str]:
+        def navigate(ws, _state, target):
+            initial_url = str(target.get("url") or "")
+            _cdp_call(ws, 1, "Page.enable", timeout_seconds=3.0)
+            navigation = _cdp_call(
+                ws,
+                2,
+                "Page.navigate",
+                {"url": url},
+                timeout_seconds=15.0,
+            )
+            return {
+                "initial_url": initial_url,
+                "loader_id": str(navigation.get("loaderId") or ""),
+            }
+
+        # Do not keep the navigation socket for readiness probes. Chromium can
+        # replace the renderer while navigating; reconnecting to the page target
+        # avoids waiting on a stale Runtime.evaluate command on Windows.
+        navigation_info = self._with_page(project, session_id, navigate)
+        initial_url = str(navigation_info.get("initial_url") or "")
+
+        deadline = time.monotonic() + max(2.0, min(float(wait_seconds), 30.0))
+        last_error: Exception | None = None
+        last_url = ""
+        while time.monotonic() < deadline:
+            remaining = max(0.2, deadline - time.monotonic())
+
+            def inspect(ws, _state, target):
+                actual_url = str(target.get("url") or "")
+                timeout = min(2.0, remaining)
+                ready_state = self._eval(
+                    ws,
+                    1,
+                    "document.readyState",
+                    timeout_seconds=timeout,
+                )
+                return {
+                    "ready_state": str(ready_state or ""),
+                    "url": actual_url,
+                    "title": str(target.get("title") or ""),
+                }
+
+            try:
+                info = self._with_page(project, session_id, inspect)
+                last_url = info["url"]
+                if require_exact_url or url == initial_url:
+                    navigation_visible = info["url"] == url
+                else:
+                    navigation_visible = bool(info["url"]) and info["url"] not in {
+                        initial_url,
+                        "about:blank",
+                    }
+                if info["ready_state"] in {"interactive", "complete"} and navigation_visible:
+                    return {"url": info["url"], "title": info["title"]}
+            except (ValueError, BrowserCaptureError) as error:
+                last_error = error
+            time.sleep(0.1)
+
+        detail = f": {last_error}" if last_error is not None else ""
+        raise BrowserCaptureError(
+            f"Chromium page did not become ready: {last_url or 'unknown URL'}{detail}"
+        )
 
     def browser_start(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
@@ -325,7 +404,7 @@ class BrowserSessionActions:
             f"--user-data-dir={profile}",
             f"--remote-debugging-port={port}",
             "--remote-debugging-address=127.0.0.1",
-            url,
+            "about:blank",
         ]
         if bool(payload.get("headless", False)):
             command.insert(1, "--headless=new")
@@ -423,47 +502,38 @@ class BrowserSessionActions:
                 "title": str(target.get("title") or ""),
             }
         else:
-            def initialize_page(ws, _state, _target):
-                _cdp_call(ws, 1, "Page.enable")
-                _cdp_call(ws, 2, "Page.navigate", {"url": url})
-                deadline = time.monotonic() + max(
-                    5.0,
-                    min(float(payload.get("wait_seconds", 8)), 30.0),
-                )
-                request_id = 3
-                current_url = ""
-                title = ""
-                while time.monotonic() < deadline:
-                    ready_state = self._eval(ws, request_id, "document.readyState")
-                    request_id += 1
-                    current_url = str(self._eval(ws, request_id, "location.href") or "")
-                    request_id += 1
-                    title = str(self._eval(ws, request_id, "document.title") or "")
-                    request_id += 1
-                    if ready_state in {"interactive", "complete"} and current_url == url:
-                        return {"url": current_url, "title": title}
-                    time.sleep(0.1)
-                raise BrowserCaptureError(
-                    f"Chromium page did not become ready: {current_url or 'unknown URL'}"
-                )
-
             try:
-                ready = self._with_page(project, session_id, initialize_page)
+                ready = self._navigate_and_wait(
+                    project,
+                    session_id,
+                    url,
+                    wait_seconds=float(payload.get("wait_seconds", 8)),
+                    require_exact_url=True,
+                )
             except (ValueError, BrowserCaptureError) as error:
                 try:
                     if os.name == "nt":
-                        subprocess.run(
-                            ["taskkill", "/PID", str(int(state.get("pid") or process.pid)), "/T", "/F"],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            timeout=15,
-                            shell=False,
-                        )
+                        for candidate in {
+                            int(process.pid),
+                            int(state.get("pid") or process.pid),
+                        }:
+                            subprocess.run(
+                                ["taskkill", "/PID", str(candidate), "/T", "/F"],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                timeout=15,
+                                shell=False,
+                            )
                     else:
                         try:
-                            os.killpg(int(state.get("pid") or process.pid), 15)
+                            os.killpg(int(process.pid), 15)
                         except ProcessLookupError:
                             pass
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
                 except (OSError, subprocess.TimeoutExpired):
                     pass
                 handles.pop(session_id, None)
@@ -517,28 +587,20 @@ class BrowserSessionActions:
         url = self._valid_url(str(payload.get("url") or ""))
         self._assert_automation_url_allowed(url)
 
-        def run(ws, state, _target):
-            _cdp_call(ws, 1, "Page.enable")
-            _cdp_call(ws, 2, "Page.navigate", {"url": url})
-            deadline = time.monotonic() + max(2.0, min(float(payload.get("wait_seconds", 15)), 30.0))
-            request_id = 3
-            while time.monotonic() < deadline:
-                ready = self._eval(ws, request_id, "document.readyState")
-                request_id += 1
-                if ready in {"interactive", "complete"}:
-                    break
-                time.sleep(0.1)
-            return {
-                "session_id": session_id,
-                "url": self._eval(ws, request_id, "location.href"),
-                "title": self._eval(ws, request_id + 1, "document.title"),
-            }
-
         try:
-            data = self._with_page(project, session_id, run)
+            ready = self._navigate_and_wait(
+                project,
+                session_id,
+                url,
+                wait_seconds=float(payload.get("wait_seconds", 15)),
+                require_exact_url=False,
+            )
         except (ValueError, BrowserCaptureError) as error:
             return ActionResult(False, f"browser navigation failed: {error}")
-        return ActionResult(True, "browser navigation complete", data)
+        return ActionResult(True, "browser navigation complete", {
+            "session_id": session_id,
+            **ready,
+        })
 
     def browser_snapshot(self, payload: dict[str, Any]) -> ActionResult:
         project = self._project(payload)
@@ -713,55 +775,53 @@ class BrowserSessionActions:
         if not self._browser_owned(project, state):
             return ActionResult(False, "refusing to stop a browser process not owned by ORDAX", state)
 
+        handles = getattr(self, "_browser_process_handles", {})
+        handle = handles.get(session_id)
         try:
             if os.name == "nt":
-                deadline = time.monotonic() + 12.0
-                attempted: set[int] = set()
-                while time.monotonic() < deadline:
-                    candidates = [pid]
-                    discovered = self._discover_browser_pid(project, state)
-                    if discovered is not None:
-                        candidates.append(discovered)
-                    candidates = [item for item in candidates if item > 0 and item not in attempted]
-                    if not candidates:
-                        if self._discover_browser_pid(project, state) is None:
-                            break
-                        time.sleep(0.05)
-                        continue
-                    for candidate in candidates:
-                        attempted.add(candidate)
-                        subprocess.run(
-                            ["taskkill", "/PID", str(candidate), "/T", "/F"],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            timeout=15,
-                            shell=False,
-                        )
-                    time.sleep(0.1)
+                discovered = self._discover_browser_pid(project, state)
+                candidates = {
+                    item
+                    for item in (
+                        int(handle.pid) if handle is not None else 0,
+                        pid,
+                        int(discovered or 0),
+                    )
+                    if item > 0
+                }
+                for candidate in candidates:
+                    subprocess.run(
+                        ["taskkill", "/PID", str(candidate), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=15,
+                        shell=False,
+                    )
             else:
+                group_leader = int(handle.pid) if handle is not None else pid
                 try:
-                    os.killpg(pid, 15)
+                    os.killpg(group_leader, 15)
                 except ProcessLookupError:
                     pass
         except (OSError, subprocess.TimeoutExpired) as error:
             return ActionResult(False, f"browser stop failed: {error}", state)
 
-        handle = getattr(self, "_browser_process_handles", {}).pop(session_id, None)
         if handle is not None:
             try:
-                handle.wait(timeout=5)
+                handle.wait(timeout=4)
             except subprocess.TimeoutExpired:
                 try:
                     handle.kill()
-                    handle.wait(timeout=5)
+                    handle.wait(timeout=3)
                 except (OSError, subprocess.TimeoutExpired):
                     pass
 
-        deadline = time.monotonic() + 8.0
+        deadline = time.monotonic() + 4.0
         while time.monotonic() < deadline:
             owned_pid = self._discover_browser_pid(project, state)
             original_running = self._pid_running(pid)
-            if owned_pid is None and not original_running:
+            handle_running = bool(handle is not None and handle.poll() is None)
+            if owned_pid is None and not original_running and not handle_running:
                 break
             if os.name == "nt" and owned_pid is not None:
                 try:
@@ -775,6 +835,7 @@ class BrowserSessionActions:
                 except (OSError, subprocess.TimeoutExpired):
                     pass
             time.sleep(0.1)
+        handles.pop(session_id, None)
 
         owned_pid = self._discover_browser_pid(project, state)
         stopped = owned_pid is None and not self._pid_running(pid)

@@ -68,11 +68,19 @@ def _page_target(port: int, target_url: str, deadline: float) -> dict[str, Any]:
         time.sleep(0.1)
     raise BrowserCaptureError("Chromium page target did not become ready")
 
-def _cdp_call(ws, request_id: int, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+def _cdp_call(
+    ws,
+    request_id: int,
+    method: str,
+    params: dict[str, Any] | None = None,
+    *,
+    timeout_seconds: float = 15.0,
+) -> dict[str, Any]:
+    timeout = max(0.1, min(float(timeout_seconds), 60.0))
     ws.send(json.dumps({"id": request_id, "method": method, "params": params or {}}))
     while True:
         try:
-            raw = ws.recv(timeout=15)
+            raw = ws.recv(timeout=timeout)
         except TimeoutError as error:
             raise BrowserCaptureError(f"CDP {method} timed out") from error
         message = json.loads(raw)

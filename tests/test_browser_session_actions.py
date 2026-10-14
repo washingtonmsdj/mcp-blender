@@ -80,8 +80,11 @@ class BrowserSessionActionsTests(unittest.TestCase):
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.server_thread.start()
-        self.addCleanup(self.server.shutdown)
+        # unittest cleanups run LIFO: stop the server, join the serving thread,
+        # then close the socket. Closing first is racy on Windows (WinError 10038).
         self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server_thread.join, 5.0)
+        self.addCleanup(self.server.shutdown)
         self.session_id = None
 
     def tearDown(self):
