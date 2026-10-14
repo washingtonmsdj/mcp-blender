@@ -1,0 +1,64 @@
+Use case: ui-mockup.
+Asset type: refined premium desktop application concept screenshot, one single full-screen landscape image, 16:9, beautifully aligned crisp readable Portuguese UI. EDIT the attached ORDAX Studio v2 concept. The user requests better premium-app UI/UX, especially multiple accounts, no ordinary-browser appearance, and REVERSED pane order: CHAT ON THE LEFT, PROJECT PREVIEW ON THE RIGHT. This left/right reversal is mandatory.
+
+Input image 1: edit target and authoritative OrdaX visual identity reference. Preserve the original shell: full-height far-left OS rail approximately 102px with the same nine outline icons and labels "Arquivos", "Projetos", "Notas", "Assistente", "Internet", "Network", "Ajustes", "Conta", "Sistema", selected Projetos and power icon at bottom. Preserve the native Studio titlebar with the small white circle/glacial diagonal slash logo, "ORDAX Studio", understated "Seu ambiente de criação", and minimalist window controls. Preserve bottom 44px OS bar "Área 01", running "Studio", notification/Wi-Fi and clock "10:24". This layout belongs to the actual prototipo-ordax-os project and must remain recognizable.
+
+Visual art direction:
+A premium purposeful native creation workspace, exceptionally quiet, spacious and precise, with quality coming from proportion, typography, subtle depth and alignment. Graphite #080f19, app #090f1b, soft panels #111e30, thin borders #243249, text #e2ebf7, secondary #8e9db4, glacial accent #a9c9f7, primary pale blue #d1e4ff with #172b47 text. Use Inter, 450-weight titles and 550-weight controls, disciplined spacing, 8px control/12px panel corners. Very faint gradients only for depth, no decorative neon, no large gradients, no heavy glass, no bright rainbow account badges. Subtle precise 1.6px outline icons. Remove excess nested cards, giant banners, repeated labels, excessive topbars. Readable main 14–16px UI text and 24–28px titles.
+
+Crucial premium multi-account UX:
+REMOVE the entire browser tab strip, address field "chatgpt.com", navigation back/forward/reload toolbar, "Navegador" heading, and the open floating "Contas abertas" popup from the original. No ordinary web browser chrome anywhere in the main workspace. The user should perceive a coherent application for working with AI and project content. Actual provider websites can be hosted behind this app-managed shell, but this image is a visual concept and not a fabricated working native AI API integration.
+
+Replace the second narrow sidebar with a refined single contextual Studio sidebar around 220px. The hierarchy is workspace -> provider -> named account -> conversation. The persistent OS rail is separate and unchanged.
+At top of this Studio sidebar, small eyebrow "PROJETO", compact project switcher "Salvador histórico" with outline folder and chevron. Two simple navigation rows "Conversas" selected and "Arquivos" below; beneath a compact understated "Git" and "Memória" control row. Avoid filling the sidebar with unrelated project lists.
+After a fine divider, eyebrow "CONTAS" and small "Gerenciar" text action on the same row.
+
+Under CONTAS, group accounts by provider:
+First provider heading: a modest white ChatGPT icon, "ChatGPT", tiny muted count "2".
+Under it, two comfortable account rows, each with its own restrained circular initials avatar, distinct nickname, and meaningful secondary status:
+- "Pessoal", avatar "P", secondary "Em foco". This is SELECTED. Soft glacial selection surface, fine 2px accent indicator, subtle check mark. Name is primary, state is secondary, no repeated provider text within each row.
+- "Trabalho", avatar "T", secondary "Respondendo". A tiny understated progress-ring glyph next to the status. This row is open simultaneously in the background.
+Second provider heading: minimal Grok-style white provider glyph, "Grok", tiny count "1".
+- "Pesquisa", avatar "G", secondary "Pronta", small quiet outlined status dot.
+All three account rows must be visible at once, with correct provider grouping. Do not represent accounts as URL tabs. Account avatars are primarily graphite/glacial with subtle tone differences, not saturated colored balls.
+Then the tasteful outlined full-width button "+ Conectar conta".
+Near the bottom, a lightweight section "CONVERSAS RECENTES" with just two lines: "Revisão da iluminação" selected softly, "Materiais das fachadas". These belong to the active Pessoal account and must not imply mixed histories across providers.
+Sidebar footer: small OS-owned identity row "Espaço pessoal".
+No emails, passwords, quota counters, cookies, tokens or developer jargon in the UI.
+
+Main workspace to the right of contextual sidebar:
+One compact shared header about 64px high: small breadcrumb "Studio / Salvador histórico", tasteful 24px title "Salvador histórico". On the right a tiny outlined icon/text layout control "Chat + prévia" with chevron, and a restrained icon for toggling project context. No huge repeated project heading taking half a screen.
+
+Below this shared header, TWO PANES side by side:
+LEFT is the generous conversation pane, around 52–55% of main content width.
+RIGHT is the scene preview pane, around 45–48%.
+A subtle adjustable vertical divider with a tiny handle separates them. No third inspector to the right. Left-to-right composition MUST clearly read conversation first, then project preview.
+
+LEFT conversation pane:
+Calm header at top: title "Revisão da iluminação" in 20–22px, visible small account identity "ChatGPT · Pessoal" underneath, small outlined new-conversation icon at the far right. This makes the recipient account explicit at the point of interaction.
+Conversation body is a subtle website-like charcoal surface, stylistically composed within the OrdaX shell, recognizable as the ChatGPT conversation via the provider mark. Use generous margins, readable text, no nested dashboard cards or browser navigation. This is an illustrative hosted provider page, not a claim to reproduce the latest ChatGPT website pixel for pixel.
+Right-aligned compact user message bubble:
+"Analise a iluminação da cena e sugira melhorias."
+A tasteful small attachment tile with miniature thumbnail of the SAME right-side Salvador scene and exact filename "Cena principal.png".
+Left-aligned response with a small ChatGPT mark, accurate readable Portuguese:
+"A luz de fim de tarde valoriza as fachadas. Sugiro equilibrar as sombras e preservar os detalhes do céu."
+Three concise numbered suggestions:
+"1. Suavizar as sombras"
+"2. Ajustar a exposição"
+"3. Comparar uma nova prévia"
+Subdued copy/reaction icons under the response.
+Leave meaningful breathing room below conversation without looking empty.
+At the bottom, a very comfortable wide two-line composer with text "Pergunte alguma coisa", subtly rounded charcoal/glacial border, attach plus at left, microphone and pale-blue round send-arrow at right. The active "ChatGPT · Pessoal" identity stays visible in the pane header, so do not clutter the composer with another provider switcher.
+Just above composer, a small discreet strip with file icon, "Cena principal.png" and remove x, showing explicitly shared context, not an automatic cross-account upload.
+One single elegant background-session notice below or alongside the pane header/bottom area: tiny progress ring, "Trabalho está respondendo", text action "Ver conversa". This should illustrate account concurrency without modal interruption and without covering the composer. It references the same ChatGPT Trabalho account listed in sidebar.
+Composer must be fully visible and comfortably usable, not squeezed.
+
+RIGHT preview pane:
+Header "Prévia", understated source label "Blender", camera and maximize outline actions. Below a simple tab/selector row "Cena principal" selected and "Arquivos" alternative. Large portrait-to-square framed viewport of the SAME warm Salvador historic colonial architecture from the original: ochre, blue and white facades, stone plaza, afternoon light; reframe elegantly and do not stretch the architecture. Very subtle grid/XYZ gizmo, tiny "Prévia conceitual" label. Make the scene panel substantial and premium with thin border and 12px radius.
+Under the viewport, slim metadata line "Cena principal" on the left and "Inspeção" on the right.
+Below it, compact quiet project-context area: eyebrow "CONTEXTO DO PROJETO"; three simple rows "Cena", "Materiais", "Iluminação" with outline icons and small chevrons. One restrained outlined action "Anexar ao chat…" makes manual sharing obvious. Do not have a duplicate AI composer in the preview.
+This project context never automatically merges chats between accounts.
+
+Footer:
+Within app, quiet "Conceito de interface • Dados ilustrativos" above preserved OS bottom bar.
+Premium finish with excellent alignment, generous panel widths, restrained distinction between app chrome and hosted conversation page. The result must clearly answer the user's UX problem: account switching is persistent and easy, provider grouping eliminates ambiguity, active account is unmistakable, concurrent background response is visible but unobtrusive, no browser tabs or address bar consume space, CHAT LEFT, PREVIEW RIGHT, same prototipo-ordax-os identity. Single outstanding cohesive UI mockup, no annotation arrows, no device frame, no watermark.

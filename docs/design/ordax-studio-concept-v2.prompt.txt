@@ -1,0 +1,49 @@
+Use case: ui-mockup.
+Asset type: updated high-fidelity desktop application concept screenshot, a single landscape screen filling the entire image, 16:9 wide, clean readable typography. EDIT the attached ORDAX Studio v1 concept into v2. The user now requires a substantial embedded real web browser where they interact with ChatGPT, multiple sites such as Grok, and multiple accounts of the same site concurrently. This browser is the primary way the user chats with AI. Make this feature immediately obvious, well integrated and spacious.
+
+Input image 1: edit target and authoritative visual reference. Preserve its established graphite/glacial design and OS layout. Keep the same full-height 102px OS rail, its nine outline icons and captions ("Arquivos", "Projetos", "Notas", "Assistente", "Internet", "Network", "Ajustes", "Conta", "Sistema"), selected Projetos, power icon, same 44px OS bottom statusbar with "Área 01", "Studio", tray and "10:24". Preserve native Studio top titlebar, minimalist white-circle/glacial-slash identity, "ORDAX Studio", subtitle, and window controls. Same Inter typography, restrained surfaces, #080f19 background, #090f1b app background, #111e30 panels, #243249 dividers, #e2ebf7 text, #8e9db4 muted, #a9c9f7 accent and #d1e4ff primary controls. This must still look native to the GitHub project prototipo-ordax-os, not a different app.
+
+Core layout change:
+Remove the old narrow right Contexto/assistant inspector and its tiny prompt field. Replace the application's content area with a balanced two-pane workspace: a project/scene pane taking approximately 42% and a full embedded web browser taking approximately 58%, separated by a thin draggable vertical divider. Browser should be visibly larger than the preview, with enough width for a real conversation. Keep a compact contextual project sidebar around 190px so the content is spacious. The browser fills the entire height available beneath a compact shared project header. No extra giant third inspector. Calm whitespace and practical desktop density.
+
+Left contextual sidebar:
+Heading "STUDIO"; project switcher "Salvador histórico". Navigation exact words "Visão geral", "Navegador", "Arquivos", "Git", "Memória", "Capacidades", with "Navegador" softly highlighted. Compact project list "Salvador histórico", "mcp-blender", "prototipo-ordax-os". "Espaço pessoal" at bottom refers to the OS identity only. Browser website accounts are separate profiles, not a change of the OrdaX system account.
+
+Shared project header:
+Tiny breadcrumb "Projetos / Salvador histórico"; medium-large heading "Salvador histórico", subtitle "Projeto e conversas no mesmo espaço." On right a subtle workspace layout control with two-pane icon and text "Dividir", and small collapse arrows. Keep header height restrained; do not repeat giant brand banners.
+
+Left work pane:
+Tab strip "Prévia", "Arquivos", "Alterações", with "Prévia" active. Preview toolbar "Cena principal", small Blender label and capture/expand outline icons. Keep the warm Salvador Bahia colonial architectural scene from the original image; resize/reframe it to fill a generously sized viewport without stretching the buildings. Subtle XYZ gizmo and small "Prévia conceitual" label. Under the scene, a clean compact "Contexto do projeto" panel with 3 aligned simple rows: "Cena principal", "Materiais e iluminação", "Arquivos do projeto". Bottom understated outlined button "Compartilhar contexto…" — manually initiated concept action, not an automated website integration. No invented executed AI action, token counters or fake production metrics.
+
+Right pane — substantial real embedded browser:
+A full tabbed-browser surface visibly housing the ChatGPT website, not a generic OrdaX assistant chat. Clear pane title "Navegador". Header shows "3 sessões abertas" in muted text and a small layout/split icon.
+Three concurrently OPEN website tabs across the top, concise and readable, exact captions:
+1. "ChatGPT · Pessoal" — selected, small ChatGPT-style white provider icon, a subtle circular "P" profile badge, close x.
+2. "ChatGPT · Trabalho" — an open inactive tab, small white provider icon, distinct "T" profile badge, close x.
+3. "Grok · Pessoal" — open inactive tab, a minimal Grok-style provider mark, "P" badge, close x.
+Then a "+" new-tab button. Tabs represent independent retained sessions; choosing one should not imply logging out of another. These three tabs MUST appear simultaneously and all captions must be fully readable.
+Under tabs, a slim browser navigation toolbar: back arrow, forward arrow, reload, lock icon, address field containing exact "chatgpt.com". At right a visible account/profile dropdown button, "Pessoal" with circular P badge and chevron.
+Display an open, beautifully aligned compact dropdown anchored to that profile button near the upper right of the browser, not a giant modal. Heading "Contas abertas"; three simple rows:
+"ChatGPT · Pessoal" with a small checkmark and "Nesta aba";
+"ChatGPT · Trabalho" with "Em outra aba";
+"Grok · Pessoal" with "Em outra aba".
+Fine divider, actions "+ Adicionar conta" and "Gerenciar perfis". Small muted footer "Sessões independentes". Keep this dropdown compact and avoid covering the main conversation or composer. This is the visible account-switching affordance required by the user. Do not include emails, passwords, tokens, cookies or technical developer configuration.
+
+Inside the website viewport:
+Recognizably an illustrative dark ChatGPT website, with its own charcoal background (#212121 / #171717), subtly different from the surrounding glacial OrdaX browser chrome. Small ChatGPT header with hamburger icon and "ChatGPT", top-right small user avatar. Page title "Revisão da cena". It should look like a website running inside the browser, bounded by the address bar above; do NOT label it "Assistente ORDAX" or substitute a native chat implementation.
+Spacious natural conversation, a short right-aligned user message bubble:
+"Analise a iluminação desta cena e sugira melhorias."
+An understated attachment tile below or inside that message "Cena principal.png", using a tiny thumbnail of the same scene.
+A left-aligned ChatGPT response, crisp readable text:
+"A luz de fim de tarde valoriza as fachadas. Eu revisaria o contraste das sombras e a exposição do céu."
+Below, three concise suggestions in readable lines, no large cards:
+"Equilibrar luz e sombra"
+"Preservar os detalhes das fachadas"
+"Comparar uma nova prévia"
+The reply is illustrative proposed content, not evidence of actual analysis.
+A LARGE website-native ChatGPT message composer pinned at the bottom of the browser viewport, charcoal rounded rectangle, placeholder exact "Pergunte alguma coisa", attachment + at left, microphone and round send-arrow at right. Give the composer enough space for multi-line prompts. It must be fully visible, unobscured and feel comfortable to use.
+Above or below the composer, only a tiny neutral illustration label if needed, not developer instructions.
+
+Footer:
+Within Studio, a quiet readable "Conceito de interface • Dados ilustrativos" above the unchanged OS statusbar. This screenshot shows a proposed UI, not a running verified login or supported integration.
+Goal: user can see their project and talk to the actual ChatGPT site side by side, keep a work account and a personal account plus Grok open simultaneously, switch accounts without losing the other sessions, and optionally split browser views with the layout control. Preserve the precise OrdaX OS layout, dark graphite/glacial identity and familiar source screenshot scene. Large browser, clear tabs, account names, no crowded dashboard, no tiny illegible labels. One single polished cohesive concept screenshot, no external presentation frame, no physical monitor, no marketing slogans, no watermark.
